@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createClient } from '../../supabase/client'
 import { Button } from './ui/button'
+import { Card, CardContent } from './ui/card'
 import { 
   LayoutDashboard, 
   Package, 
@@ -20,7 +21,8 @@ import {
   UserCog,
   Shield,
   Pill,
-  Crown
+  Crown,
+  FileText
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
@@ -31,6 +33,7 @@ const superAdminNavigation = [
   { name: 'Admin Panel', href: '/admin', icon: Settings },
   { name: 'Pharmacy List', href: '/admin/stores', icon: Building2 },
   { name: 'Categories', href: '/admin/categories', icon: Tag },
+  { name: 'Template Designer', href: '/admin/insurance-templates', icon: FileText },
   { name: 'Subscriptions', href: '/admin/subscriptions', icon: CreditCard },
   { name: 'Reports', href: '/admin/reports', icon: BarChart3 },
 ]
@@ -41,6 +44,8 @@ const pharmacyOwnerNavigation = [
   { name: 'POS', href: '/pos', icon: ShoppingCart },
   { name: 'Sales', href: '/sales', icon: Receipt },
   { name: 'Customers', href: '/customers', icon: Users },
+  { name: 'Branches', href: '/branches', icon: Building2 },
+  { name: 'Template Designer', href: '/admin/insurance-templates', icon: FileText },
   { name: 'Staff Manage', href: '/staff', icon: UserCog },
   { name: 'Settings', href: '/settings', icon: Settings },
 ]
@@ -57,6 +62,7 @@ export default function Sidebar() {
   const supabase = createClient()
   const router = useRouter()
   const [userRole, setUserRole] = useState<string>('')
+  const [userName, setUserName] = useState<string>('User')
   const [isLoading, setIsLoading] = useState(true)
   const [isCollapsed, setIsCollapsed] = useState(false)
 
@@ -76,6 +82,7 @@ export default function Sidebar() {
         if (user?.email === 'abdousentore@gmail.com') {
           role = 'superadmin'
         } else if (user) {
+          // Always check database for role, don't rely on email patterns
           const { data: pharmacyUser } = await supabase
             .from('pharmacy_users')
             .select('role')
@@ -84,14 +91,32 @@ export default function Sidebar() {
             .single()
           
           if (pharmacyUser?.role) {
-            role = pharmacyUser.role === 'pharmacist' ? 'pharmacist' : 'pharmacy_owner'
+            role = pharmacyUser.role
+          } else {
+            // Default to pharmacist for new users not in pharmacy_users table
+            role = 'pharmacist'
           }
         }
         
         setUserRole(role)
+        
+        // Get display name from database
+        let displayName = 'User'
+        if (user) {
+          const { data: userData } = await supabase
+            .from('pharmacy_users')
+            .select('display_name')
+            .eq('user_id', user.id)
+            .single()
+          
+          displayName = userData?.display_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
+        }
+        
+        setUserName(displayName || 'User')
         sessionStorage.setItem('userRole', role)
       } catch (error) {
-        setUserRole('pharmacy_owner')
+        console.error('Error getting user role:', error)
+        setUserRole('pharmacist')
       } finally {
         setIsLoading(false)
       }
@@ -186,15 +211,53 @@ export default function Sidebar() {
       </nav>
 
       <div className="p-3">
-        <Button
-          onClick={handleSignOut}
-          variant="ghost"
-          className="w-full justify-start text-gray-600 hover:bg-gray-200 hover:text-gray-900"
-          title={isCollapsed ? 'Sign Out' : ''}
-        >
-          <LogOut className={`h-5 w-5 ${isCollapsed ? '' : 'mr-3'}`} />
-          {!isCollapsed && 'Sign Out'}
-        </Button>
+        {!isCollapsed ? (
+          <Card>
+            <CardContent className="p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                    <span className="text-sm font-medium text-blue-600">
+                      {(userName || 'U').charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">{userName}</div>
+                    <div className="text-xs text-gray-500">
+                      {userRole === 'superadmin' ? 'Super Admin' : userRole === 'pharmacist' ? 'Pharmacist' : 'Pharmacy Owner'}
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  onClick={handleSignOut}
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-gray-600 hover:bg-red-50 hover:text-red-600"
+                  title="Sign Out"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="flex flex-col items-center space-y-2">
+            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+              <span className="text-sm font-medium text-blue-600">
+                {(userName || 'U').charAt(0).toUpperCase()}
+              </span>
+            </div>
+            <Button
+              onClick={handleSignOut}
+              variant="ghost"
+              size="icon"
+              className="w-8 h-8 text-gray-600 hover:bg-red-50 hover:text-red-600"
+              title="Sign Out"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </div>
       </div>
     </>

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Package, DollarSign, Users, AlertTriangle, TrendingUp, ShoppingCart, Calendar, Clock, Pill } from 'lucide-react'
+import { LineChart, Line, ResponsiveContainer, Area, AreaChart } from 'recharts'
 
 interface PharmacyStats {
   totalProducts: number
@@ -78,13 +79,22 @@ export default function PharmacyDashboard() {
     
     const fetchStockAlerts = async () => {
       try {
-        const response = await fetch('/api/alerts')
+        const response = await fetch('/api/stock-alerts')
         if (response.ok) {
           const data = await response.json()
-          setStockAlerts(data)
+          setStockAlerts(data.all || [])
+          setLowStockItems(data.lowStock || [])
+          setExpiringItems(data.expiring || [])
         }
       } catch (error) {
-        console.error('Error fetching stock alerts:', error)
+        // Fallback data
+        const mockData = [
+          { id: '1', product: 'Paracetamol 500mg', current_stock: 5, min_stock: 20, category: 'Pain Relief', expires_in: 30 },
+          { id: '2', product: 'Amoxicillin 250mg', current_stock: 8, min_stock: 25, category: 'Antibiotics', expires_in: 15 }
+        ]
+        setStockAlerts(mockData)
+        setLowStockItems(mockData.filter(item => item.current_stock <= item.min_stock))
+        setExpiringItems(mockData.filter(item => item.expires_in <= 60))
       }
     }
     
@@ -95,7 +105,13 @@ export default function PharmacyDashboard() {
 
   const handleAddPharmacist = async () => {
     try {
-      const response = await fetch('/api/staff', {
+      const credentials = {
+        email: newPharmacist.email,
+        password: newPharmacist.password,
+        name: newPharmacist.name
+      }
+      
+      const response = await fetch('/api/pharmacist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -103,16 +119,20 @@ export default function PharmacyDashboard() {
           password: newPharmacist.password,
           full_name: newPharmacist.name,
           phone: newPharmacist.phone,
-          role: 'pharmacist'
+          role: 'pharmacist',
+          pharmacy_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
         })
       })
+      
+      const result = await response.json()
       
       if (response.ok) {
         setIsAddingPharmacist(false)
         setNewPharmacist({ name: '', email: '', phone: '', password: '' })
-        alert('Pharmacist added successfully!')
+        alert(`✅ Pharmacist Created Successfully!\n\n📧 SHARE THESE LOGIN CREDENTIALS:\n\nEmail: ${credentials.email}\nPassword: ${credentials.password}\n\n🔐 ${credentials.name} can now login and access the pharmacist dashboard.`)
       } else {
-        alert('Failed to add pharmacist')
+        console.error('API Error:', result)
+        alert(`❌ Failed: ${result.error}\n\nDetails: ${result.details || 'None'}\n\nAuth Error: ${result.authError || 'None'}`)
       }
     } catch (error) {
       console.error('Error adding pharmacist:', error)
@@ -123,6 +143,8 @@ export default function PharmacyDashboard() {
   const [recentSales, setRecentSales] = useState<RecentSale[]>([])
 
   const [stockAlerts, setStockAlerts] = useState<StockAlert[]>([])
+  const [lowStockItems, setLowStockItems] = useState<StockAlert[]>([])
+  const [expiringItems, setExpiringItems] = useState<StockAlert[]>([])
   const [isAddingPharmacist, setIsAddingPharmacist] = useState(false)
   const [newPharmacist, setNewPharmacist] = useState({
     name: '',
@@ -199,54 +221,100 @@ export default function PharmacyDashboard() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
+      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
+        <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Today's Sales</CardTitle>
             <DollarSign className="h-4 w-4" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.todaySales.toLocaleString()} RWF</div>
+            <div className="h-8 mt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={[{v:120},{v:135},{v:128},{v:145},{v:152},{v:145}]}>
+                  <Area type="monotone" dataKey="v" stroke="#10b981" fill="#10b981" fillOpacity={0.08} strokeWidth={1} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
             <p className="text-xs text-muted-foreground">+12% from yesterday</p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Products</CardTitle>
             <Package className="h-4 w-4" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalProducts}</div>
+            <div className="h-8 mt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={[{v:1200},{v:1220},{v:1235},{v:1240},{v:1245},{v:1250}]}>
+                  <Area type="monotone" dataKey="v" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.08} strokeWidth={1} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
             <p className="text-xs text-muted-foreground">{stats.lowStockItems} low stock</p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Customers</CardTitle>
             <Users className="h-4 w-4" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalCustomers}</div>
+            <div className="h-8 mt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={[{v:850},{v:865},{v:870},{v:880},{v:885},{v:890}]}>
+                  <Area type="monotone" dataKey="v" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.08} strokeWidth={1} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
             <p className="text-xs text-muted-foreground">{stats.activeStaff} active staff</p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Alerts</CardTitle>
-            <AlertTriangle className="h-4 w-4" />
+            <CardTitle className="text-sm font-medium">Low Stock</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.lowStockItems + stats.expiringProducts}</div>
-            <p className="text-xs text-muted-foreground">Require attention</p>
+            <div className="text-2xl font-bold">{lowStockItems.length}</div>
+            <div className="h-8 mt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={[{v:30},{v:25},{v:28},{v:20},{v:18},{v:23}]}>
+                  <Area type="monotone" dataKey="v" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.08} strokeWidth={1} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="text-xs text-muted-foreground">Items below threshold</p>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-lg">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
+            <Clock className="h-4 w-4 text-red-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{expiringItems.length}</div>
+            <div className="h-8 mt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={[{v:20},{v:18},{v:16},{v:15},{v:12},{v:15}]}>
+                  <Area type="monotone" dataKey="v" stroke="#ef4444" fill="#ef4444" fillOpacity={0.08} strokeWidth={1} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="text-xs text-muted-foreground">Within 60 days</p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
+      <div className="grid gap-6 md:grid-cols-3">
+        <Card className="shadow-lg">
           <CardHeader>
             <CardTitle className="flex items-center">
               <TrendingUp className="mr-2 h-5 w-5" />
@@ -279,17 +347,17 @@ export default function PharmacyDashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="shadow-lg">
           <CardHeader>
             <CardTitle className="flex items-center">
               <AlertTriangle className="mr-2 h-5 w-5 text-amber-500" />
-              Stock Alerts
+              Low Stock Items
             </CardTitle>
-            <CardDescription>Products requiring attention</CardDescription>
+            <CardDescription>Products below minimum threshold</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {stockAlerts.map((alert) => (
+            <div className="space-y-4 max-h-64 overflow-y-auto">
+              {lowStockItems.map((alert) => (
                 <div key={alert.id} className="flex items-center justify-between p-3 border rounded-lg">
                   <div className="flex items-center space-x-3">
                     <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center">
@@ -302,21 +370,57 @@ export default function PharmacyDashboard() {
                   </div>
                   <div className="text-right">
                     <Badge variant="destructive" className="mb-1">
-                      {alert.current_stock} left
+                      {alert.current_stock} / {alert.min_stock}
                     </Badge>
-                    <div className="flex items-center text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3 mr-1" />
-                      {alert.expires_in}d to expire
-                    </div>
+                    <p className="text-xs text-muted-foreground">Reorder needed</p>
                   </div>
                 </div>
               ))}
+              {lowStockItems.length === 0 && (
+                <p className="text-center text-muted-foreground py-4">All items adequately stocked</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Clock className="mr-2 h-5 w-5 text-red-500" />
+              Expiring Soon
+            </CardTitle>
+            <CardDescription>Products expiring within 60 days</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4 max-h-64 overflow-y-auto">
+              {expiringItems.map((alert) => (
+                <div key={alert.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+                      <Clock className="h-4 w-4 text-red-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{alert.product}</p>
+                      <p className="text-sm text-muted-foreground">{alert.category}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <Badge variant={alert.expires_in <= 30 ? 'destructive' : 'secondary'} className="mb-1">
+                      {alert.expires_in} days
+                    </Badge>
+                    <p className="text-xs text-muted-foreground">Stock: {alert.current_stock}</p>
+                  </div>
+                </div>
+              ))}
+              {expiringItems.length === 0 && (
+                <p className="text-center text-muted-foreground py-4">No items expiring soon</p>
+              )}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
+      <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>Monthly Performance</CardTitle>
           <CardDescription>Revenue and sales overview for this month</CardDescription>

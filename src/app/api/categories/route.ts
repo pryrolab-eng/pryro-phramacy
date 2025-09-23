@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '../../../../supabase/server'
 
 let categories = [
   { id: '1', name: "Prescription Medications", description: "Medications requiring prescription", is_active: true },
@@ -15,7 +16,14 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = createClient()
     const body = await request.json()
+    
+    // Check if user is superadmin
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user || user.email !== 'abdousentore@gmail.com') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     
     const newCategory = {
       id: Date.now().toString(),

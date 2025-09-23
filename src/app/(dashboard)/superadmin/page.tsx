@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Building2, Users, CreditCard, TrendingUp, Plus, MapPin, Crown, Pill, Shield } from 'lucide-react'
+import { Building2, Users, CreditCard, TrendingUp, Plus, MapPin, Crown, Pill, Shield, FileText } from 'lucide-react'
 
 interface DashboardStats {
   totalPharmacies: number
@@ -37,17 +37,14 @@ interface Insurance {
 
 export default function SuperAdminDashboard() {
   const [stats, setStats] = useState<DashboardStats>({
-    totalPharmacies: 25,
-    activePharmacies: 22,
+    totalPharmacies: 0,
+    activePharmacies: 0,
     totalRevenue: 1250000,
     monthlyGrowth: 15.2,
     totalUsers: 156,
     newRegistrations: 8
   })
-  const [pharmacies, setPharmacies] = useState<Pharmacy[]>([
-    { id: '1', name: 'City Pharmacy', location: 'Kigali', owner: 'John Doe', status: 'active', plan: 'premium', created_at: '2024-01-15' },
-    { id: '2', name: 'Health Plus', location: 'Butare', owner: 'Jane Smith', status: 'active', plan: 'standard', created_at: '2024-02-10' }
-  ])
+  const [pharmacies, setPharmacies] = useState<Pharmacy[]>([])
   const [insurance, setInsurance] = useState<Insurance[]>([])
   const [isAddingPharmacy, setIsAddingPharmacy] = useState(false)
   const [isAddingInsurance, setIsAddingInsurance] = useState(false)
@@ -63,29 +60,51 @@ export default function SuperAdminDashboard() {
   })
   const [newInsurance, setNewInsurance] = useState({
     name: '',
-    coverage_percentage: 80
+    coverage_percentage: 80,
+    contact_email: '',
+    contact_phone: '',
+    policy_number: '',
+    invoice_template: 'default',
+    template_html: ''
   })
 
   useEffect(() => {
     fetchInsurance()
     fetchPharmacies()
     
-    // Load from localStorage
-    const storedPharmacies = localStorage.getItem('superadmin_pharmacies')
-    if (storedPharmacies) {
-      setPharmacies(JSON.parse(storedPharmacies))
-    }
+    // Initial load from API
     
     const interval = setInterval(() => {
       fetchInsurance()
       fetchPharmacies()
-    }, 3000)
+    }, 30000) // Poll every 30 seconds instead of 3
     return () => clearInterval(interval)
   }, [])
 
   const fetchPharmacies = async () => {
-    // Keep existing pharmacies for now since we don't have a backend endpoint
-    // This will be called to refresh the list
+    try {
+      const response = await fetch('/api/admin/pharmacies')
+      if (response.ok) {
+        const data = await response.json()
+        const formattedPharmacies = data.map(p => ({
+          id: p.id,
+          name: p.name,
+          location: p.address || p.city || 'Unknown',
+          owner: p.owner_name || 'Unknown',
+          status: p.status || 'active',
+          plan: p.subscription_plan || 'free',
+          created_at: p.created_at?.split('T')[0] || new Date().toISOString().split('T')[0]
+        }))
+        setPharmacies(formattedPharmacies)
+        setStats(prev => ({ 
+          ...prev, 
+          totalPharmacies: formattedPharmacies.length,
+          activePharmacies: formattedPharmacies.filter(p => p.status === 'active').length
+        }))
+      }
+    } catch (error) {
+      console.error('Error fetching pharmacies:', error)
+    }
   }
 
   const handleInsuranceChange = (insuranceId: string, checked: boolean) => {
@@ -116,14 +135,27 @@ export default function SuperAdminDashboard() {
 
   const handleAddPharmacy = async () => {
     try {
-      const response = await fetch('/api/superadmin/pharmacies', {
+      // Use the same API endpoint as admin stores page
+      const response = await fetch('/api/admin/pharmacies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPharmacy)
+        body: JSON.stringify({
+          name: newPharmacy.name,
+          address: newPharmacy.location,
+          phone: newPharmacy.owner_phone,
+          email: newPharmacy.owner_email,
+          license_number: `LIC-${Date.now()}`,
+          owner_name: newPharmacy.owner_name,
+          owner_email: newPharmacy.owner_email,
+          owner_password: newPharmacy.owner_password,
+          subscription_plan: newPharmacy.plan,
+          insurance_providers: newPharmacy.insurance_providers
+        })
       })
       
-      if (response.ok) {
-        const result = await response.json()
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
         const pharmacy = {
           id: result.pharmacy?.id || Date.now().toString(),
           name: newPharmacy.name,
@@ -134,17 +166,16 @@ export default function SuperAdminDashboard() {
           created_at: new Date().toISOString().split('T')[0]
         }
         
-        // Store in localStorage for persistence
-        const updatedPharmacies = [pharmacy, ...pharmacies]
-        setPharmacies(updatedPharmacies)
-        localStorage.setItem('superadmin_pharmacies', JSON.stringify(updatedPharmacies))
+        // Force refresh both lists
+        await fetchPharmacies()
+        // Also trigger a page refresh to ensure all components update
+        window.location.reload()
         
         setIsAddingPharmacy(false)
         setNewPharmacy({ name: '', location: '', owner_name: '', owner_email: '', owner_phone: '', owner_password: '', plan: 'free', insurance_providers: [] })
-        setStats(prev => ({ ...prev, totalPharmacies: prev.totalPharmacies + 1, activePharmacies: prev.activePharmacies + 1 }))
         alert('Pharmacy created successfully!')
       } else {
-        alert('Failed to create pharmacy')
+        alert(result.error || 'Failed to create pharmacy')
       }
     } catch (error) {
       console.error('Error creating pharmacy:', error)
@@ -165,7 +196,7 @@ export default function SuperAdminDashboard() {
         if (result.success) {
           await fetchInsurance()
           setIsAddingInsurance(false)
-          setNewInsurance({ name: '', coverage_percentage: 80 })
+          setNewInsurance({ name: '', coverage_percentage: 80, contact_email: '', contact_phone: '', policy_number: '', invoice_template: 'default', template_html: '' })
           alert('Insurance provider added successfully!')
         } else {
           alert('Failed to add insurance provider')
@@ -204,34 +235,95 @@ export default function SuperAdminDashboard() {
                 Add Insurance
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>Add Insurance Provider</DialogTitle>
-                <DialogDescription>Create a new insurance provider</DialogDescription>
+                <DialogDescription>Create a new insurance provider with custom invoice template</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Insurance Name</Label>
+                    <Input
+                      value={newInsurance.name}
+                      onChange={(e) => setNewInsurance({...newInsurance, name: e.target.value})}
+                      placeholder="e.g., RSSB, MMI"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Coverage Percentage</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={newInsurance.coverage_percentage}
+                      onChange={(e) => setNewInsurance({...newInsurance, coverage_percentage: Number(e.target.value)})}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Contact Email</Label>
+                    <Input
+                      type="email"
+                      value={newInsurance.contact_email || ''}
+                      onChange={(e) => setNewInsurance({...newInsurance, contact_email: e.target.value})}
+                      placeholder="contact@insurance.com"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Contact Phone</Label>
+                    <Input
+                      value={newInsurance.contact_phone || ''}
+                      onChange={(e) => setNewInsurance({...newInsurance, contact_phone: e.target.value})}
+                      placeholder="+250 xxx xxx xxx"
+                    />
+                  </div>
+                </div>
                 <div className="grid gap-2">
-                  <Label>Insurance Name</Label>
+                  <Label>Policy Number</Label>
                   <Input
-                    value={newInsurance.name}
-                    onChange={(e) => setNewInsurance({...newInsurance, name: e.target.value})}
-                    placeholder="e.g., RSSB, MMI"
+                    value={newInsurance.policy_number || ''}
+                    onChange={(e) => setNewInsurance({...newInsurance, policy_number: e.target.value})}
+                    placeholder="Policy reference number"
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Coverage Percentage</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={newInsurance.coverage_percentage}
-                    onChange={(e) => setNewInsurance({...newInsurance, coverage_percentage: Number(e.target.value)})}
-                  />
+                  <Label>Invoice Template</Label>
+                  <Select value={newInsurance.invoice_template || 'default'} onValueChange={(value) => setNewInsurance({...newInsurance, invoice_template: value})}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Default Template</SelectItem>
+                      <SelectItem value="rssb">RSSB Format</SelectItem>
+                      <SelectItem value="mmi">MMI Format</SelectItem>
+                      <SelectItem value="radiant">Radiant Format</SelectItem>
+                      <SelectItem value="custom">Custom Format</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+                {newInsurance.invoice_template === 'custom' && (
+                  <div className="grid gap-2">
+                    <Label>Custom Template</Label>
+                    <div className="p-4 border rounded-lg bg-blue-50">
+                      <p className="text-sm text-blue-800 mb-2">Create a custom template using our template designer</p>
+                      <Button 
+                        type="button"
+                        variant="outline" 
+                        onClick={() => window.open('/admin/insurance-templates', '_blank')}
+                        className="w-full"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        Open Template Designer
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button onClick={handleAddInsurance} disabled={!newInsurance.name}>
-                  Add Insurance
+                  Add Insurance Provider
                 </Button>
               </DialogFooter>
             </DialogContent>

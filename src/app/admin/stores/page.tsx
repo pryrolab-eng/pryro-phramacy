@@ -82,8 +82,13 @@ export default function PharmacyManagementPage() {
         body: JSON.stringify(newPharmacy)
       })
       
-      if (response.ok) {
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        // Force refresh the pharmacy list
         await fetchPharmacies()
+        // Trigger page refresh to ensure UI updates
+        window.location.reload()
         setIsAddingPharmacy(false)
         setNewPharmacy({
           name: '', address: '', phone: '', email: '', license_number: '',
@@ -92,10 +97,11 @@ export default function PharmacyManagementPage() {
         })
         alert('Pharmacy added successfully!')
       } else {
-        alert('Failed to add pharmacy')
+        alert(result.error || 'Failed to add pharmacy')
       }
     } catch (error) {
       console.error('Error adding pharmacy:', error)
+      alert('Error adding pharmacy. Please try again.')
     }
   }
 

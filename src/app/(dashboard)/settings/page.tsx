@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Settings, CreditCard, Users, Building2, Check } from 'lucide-react'
+import { Settings, CreditCard, Users, Building2, Check, Globe, DollarSign } from 'lucide-react'
 
 interface SubscriptionPlan {
   name: string
@@ -21,7 +21,9 @@ export default function SettingsPage() {
     license: '',
     location: '',
     phone: '',
-    email: ''
+    email: '',
+    currency: 'RWF',
+    language: 'en'
   })
   const [isEditing, setIsEditing] = useState(false)
   const [isBillingOpen, setIsBillingOpen] = useState(false)
@@ -29,7 +31,9 @@ export default function SettingsPage() {
     name: '',
     location: '',
     phone: '',
-    email: ''
+    email: '',
+    currency: 'RWF',
+    language: 'en'
   })
   const [billingInfo, setBillingInfo] = useState({
     nextBilling: '2024-01-15',
@@ -83,7 +87,9 @@ export default function SettingsPage() {
           name: data.name,
           location: data.location,
           phone: data.phone,
-          email: data.email
+          email: data.email,
+          currency: data.currency || 'RWF',
+          language: data.language || 'en'
         })
         setCurrentPlan(data.subscription)
       }
@@ -122,7 +128,7 @@ export default function SettingsPage() {
         <p className="text-muted-foreground">Manage your pharmacy settings and subscription</p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 md:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -194,6 +200,49 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Globe className="mr-2 h-5 w-5" />
+              System Preferences
+            </CardTitle>
+            <CardDescription>Currency and language settings</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Currency</label>
+              <select
+                className="w-full p-2 border rounded mt-1"
+                value={editInfo.currency}
+                onChange={(e) => setEditInfo({...editInfo, currency: e.target.value})}
+              >
+                <option value="RWF">Rwandan Franc (RWF)</option>
+                <option value="USD">US Dollar (USD)</option>
+                <option value="EUR">Euro (EUR)</option>
+                <option value="KES">Kenyan Shilling (KES)</option>
+                <option value="UGX">Ugandan Shilling (UGX)</option>
+                <option value="TZS">Tanzanian Shilling (TZS)</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Language</label>
+              <select
+                className="w-full p-2 border rounded mt-1"
+                value={editInfo.language}
+                onChange={(e) => setEditInfo({...editInfo, language: e.target.value})}
+              >
+                <option value="en">English</option>
+                <option value="rw">Kinyarwanda</option>
+                <option value="fr">Français</option>
+                <option value="sw">Kiswahili</option>
+              </select>
+            </div>
+            <Button onClick={handleSaveEdit} className="w-full">
+              Save Preferences
+            </Button>
           </CardContent>
         </Card>
 

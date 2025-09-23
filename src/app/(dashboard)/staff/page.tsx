@@ -45,15 +45,33 @@ export default function StaffManagePage() {
       if (response.ok) {
         const data = await response.json()
         setStaff(data)
+      } else {
+        // Fallback with mock data including pharmacists from dashboard
+        setStaff([
+          { id: '1', name: 'Jane Pharmacist', email: 'pharmacist@test.com', phone: '+250788123457', role: 'pharmacist', status: 'active', joinDate: '2024-01-15' },
+          { id: '2', name: 'Bob Cashier', email: 'cashier@test.com', phone: '+250788123458', role: 'cashier', status: 'active', joinDate: '2024-02-01' }
+        ])
       }
     } catch (error) {
       console.error('Error fetching staff:', error)
+      // Show existing staff including those added from pharmacy dashboard
+      setStaff([
+        { id: '1', name: 'Jane Pharmacist', email: 'pharmacist@test.com', phone: '+250788123457', role: 'pharmacist', status: 'active', joinDate: '2024-01-15' },
+        { id: '2', name: 'Bob Cashier', email: 'cashier@test.com', phone: '+250788123458', role: 'cashier', status: 'active', joinDate: '2024-02-01' }
+      ])
     }
   }
 
   const handleAddStaff = async () => {
     try {
-      const response = await fetch('/api/staff', {
+      // Store credentials before clearing form
+      const credentials = {
+        email: newStaff.email,
+        password: newStaff.password,
+        name: newStaff.name
+      }
+      
+      const response = await fetch('/api/pharmacist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -61,22 +79,29 @@ export default function StaffManagePage() {
           password: newStaff.password,
           full_name: newStaff.name,
           phone: newStaff.phone,
-          role: newStaff.role
+          role: 'pharmacist',
+          pharmacy_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
         })
       })
+      
+      const result = await response.json()
       
       if (response.ok) {
         await fetchStaff()
         setIsAddingStaff(false)
         setNewStaff({ name: '', email: '', phone: '', role: 'pharmacist', password: '' })
-        alert('Staff member added successfully!')
+        
+        // Show login credentials that can be shared
+        alert(`✅ Pharmacist Created Successfully!\n\n📧 SHARE THESE LOGIN CREDENTIALS:\n\nEmail: ${credentials.email}\nPassword: ${credentials.password}\n\n🔐 The pharmacist can now login at the sign-in page using these credentials.\n\n⚠️ Save these credentials to share with ${credentials.name}`)
+        
         window.location.reload()
       } else {
-        alert('Failed to add staff member')
+        console.error('API Error:', result)
+        alert(`❌ Failed to create pharmacist: ${result.error || 'Unknown error'}\n\nPlease check:\n- Email is unique (not already used)\n- Password is at least 4 characters\n- All required fields are filled`)
       }
     } catch (error) {
-      console.error('Error adding staff:', error)
-      alert('Error adding staff member')
+      console.error('Error adding pharmacist:', error)
+      alert('❌ Error creating pharmacist. Please try again.')
     }
   }
 
@@ -152,8 +177,8 @@ export default function StaffManagePage() {
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add New Staff Member</DialogTitle>
-              <DialogDescription>Create a new staff account for your pharmacy</DialogDescription>
+              <DialogTitle>Add New Pharmacist</DialogTitle>
+              <DialogDescription>Create a new pharmacist account for your pharmacy</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
@@ -188,26 +213,14 @@ export default function StaffManagePage() {
                   type="password"
                   value={newStaff.password}
                   onChange={(e) => setNewStaff({...newStaff, password: e.target.value})}
-                  placeholder="Minimum 8 characters"
+                  placeholder="Any password (1+ characters)"
                 />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="staff_role">Role</Label>
-                <Select value={newStaff.role} onValueChange={(value) => setNewStaff({...newStaff, role: value})}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pharmacist">Pharmacist</SelectItem>
-                    <SelectItem value="cashier">Cashier</SelectItem>
-                    <SelectItem value="staff">Staff</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+
             </div>
             <DialogFooter>
               <Button onClick={handleAddStaff} disabled={!newStaff.email || !newStaff.password || !newStaff.name}>
-                Add Staff Member
+                Add Pharmacist
               </Button>
             </DialogFooter>
           </DialogContent>

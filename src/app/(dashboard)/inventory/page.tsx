@@ -50,6 +50,13 @@ export default function InventoryPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [bulkMode, setBulkMode] = useState(false)
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
+  const [adjustmentDialogOpen, setAdjustmentDialogOpen] = useState(false)
+  const [purchaseDialogOpen, setPurchaseDialogOpen] = useState(false)
+  const [adjustmentForm, setAdjustmentForm] = useState({ productId: '', quantity: '', reason: '', type: 'increase' })
+  const [purchaseForm, setPurchaseForm] = useState({ productId: '', quantity: '', costPrice: '', supplier: '' })
+  const [suppliers, setSuppliers] = useState([])
+  const [isAddingSupplier, setIsAddingSupplier] = useState(false)
+  const [newSupplier, setNewSupplier] = useState({ name: '', contact: '', phone: '', email: '' })
   const [newProduct, setNewProduct] = useState({
     productCode: '',
     name: '',
@@ -72,7 +79,39 @@ export default function InventoryPage() {
 
   useEffect(() => {
     fetchInventory()
+    fetchSuppliers()
   }, [])
+
+  const fetchSuppliers = async () => {
+    try {
+      const response = await fetch('/api/inventory/suppliers')
+      if (response.ok) {
+        const data = await response.json()
+        setSuppliers(data)
+      }
+    } catch (error) {
+      console.error('Error fetching suppliers:', error)
+    }
+  }
+
+  const handleAddSupplier = async () => {
+    try {
+      const response = await fetch('/api/inventory/suppliers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSupplier)
+      })
+      
+      if (response.ok) {
+        await fetchSuppliers()
+        setIsAddingSupplier(false)
+        setNewSupplier({ name: '', contact: '', phone: '', email: '' })
+        alert('Supplier added successfully!')
+      }
+    } catch (error) {
+      console.error('Error adding supplier:', error)
+    }
+  }
 
   const fetchInventory = async () => {
     try {
@@ -288,6 +327,38 @@ export default function InventoryPage() {
     }
   }
 
+  const handleAdjustment = async () => {
+    await fetch('/api/inventory/adjustment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        productId: adjustmentForm.productId, 
+        quantity: parseInt(adjustmentForm.quantity), 
+        reason: adjustmentForm.reason, 
+        adjustmentType: adjustmentForm.type 
+      })
+    })
+    setAdjustmentDialogOpen(false)
+    setAdjustmentForm({ productId: '', quantity: '', reason: '', type: 'increase' })
+    fetchInventory()
+  }
+
+  const handlePurchase = async () => {
+    await fetch('/api/inventory/purchase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        productId: purchaseForm.productId, 
+        quantity: parseInt(purchaseForm.quantity), 
+        costPrice: parseFloat(purchaseForm.costPrice), 
+        supplier: purchaseForm.supplier 
+      })
+    })
+    setPurchaseDialogOpen(false)
+    setPurchaseForm({ productId: '', quantity: '', costPrice: '', supplier: '' })
+    fetchInventory()
+  }
+
   const printBulkBarcodes = () => {
     const printWindow = window.open('', '_blank')
     if (printWindow) {
@@ -339,16 +410,12 @@ export default function InventoryPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold">Inventory Management</h1>
           <p className="text-muted-foreground">Manage your pharmacy stock with automated alerts</p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={exportToExcel}>
-            <Download className="mr-2 h-4 w-4" />
-            Export Excel
-          </Button>
+        <div>
           <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline">
@@ -718,7 +785,23 @@ export default function InventoryPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="col-span-2 md:col-span-1">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Value</CardTitle>
+            <Package className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{(inventory.reduce((sum, item) => sum + (item.stock * item.price), 0)).toLocaleString()} RWF</div>
+            <div className="h-8 mt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={[{v:2800000},{v:3100000},{v:3350000},{v:3200000},{v:3400000},{v:inventory.reduce((sum, item) => sum + (item.stock * item.price), 0)}]}>
+                  <Area type="monotone" dataKey="v" stroke="#10b981" fill="#10b981" fillOpacity={0.08} strokeWidth={1} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Barcode Generator</CardTitle>
             <QrCode className="h-4 w-4 text-blue-500" />
@@ -736,8 +819,49 @@ export default function InventoryPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Inventory Items</CardTitle>
-          <CardDescription>Stock levels with automated alerts</CardDescription>
+          <div className="flex justify-between items-start">
+            <div>
+              <CardTitle>Inventory Items</CardTitle>
+              <CardDescription>Stock levels with automated alerts</CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="bg-blue-50 hover:bg-blue-100 text-blue-700"
+                onClick={() => alert('Stock Transfer - Transfer inventory between branches, track movements, and maintain stock levels across locations')}
+              >
+                <Package className="mr-2 h-4 w-4" />
+                Stock Transfer
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setAdjustmentDialogOpen(true)}>
+                Stock Adjustment
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setPurchaseDialogOpen(true)}>
+                Purchase Stock
+              </Button>
+              <Button size="sm" onClick={exportToExcel}>
+                <Download className="mr-2 h-4 w-4" />
+                Export Excel
+              </Button>
+              <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Upload className="mr-2 h-4 w-4" />
+                    Import Excel
+                  </Button>
+                </DialogTrigger>
+              </Dialog>
+              <Dialog open={isAddingProduct} onOpenChange={setIsAddingProduct}>
+                <DialogTrigger asChild>
+                  <Button size="sm">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Product
+                  </Button>
+                </DialogTrigger>
+              </Dialog>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="mb-4">
@@ -840,6 +964,187 @@ export default function InventoryPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={adjustmentDialogOpen} onOpenChange={setAdjustmentDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Stock Adjustment</DialogTitle>
+            <DialogDescription>Adjust stock quantities for inventory corrections</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Select Product</Label>
+              <Select value={adjustmentForm.productId} onValueChange={(value) => setAdjustmentForm({...adjustmentForm, productId: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose product" />
+                </SelectTrigger>
+                <SelectContent>
+                  {inventory.map(item => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name} (Current: {item.stock})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Adjustment Type</Label>
+              <Select value={adjustmentForm.type} onValueChange={(value) => setAdjustmentForm({...adjustmentForm, type: value})}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="increase">Increase Stock</SelectItem>
+                  <SelectItem value="decrease">Decrease Stock</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Quantity</Label>
+              <Input 
+                type="number" 
+                value={adjustmentForm.quantity}
+                onChange={(e) => setAdjustmentForm({...adjustmentForm, quantity: e.target.value})}
+                placeholder="Enter quantity"
+              />
+            </div>
+            <div>
+              <Label>Reason</Label>
+              <Input 
+                value={adjustmentForm.reason}
+                onChange={(e) => setAdjustmentForm({...adjustmentForm, reason: e.target.value})}
+                placeholder="Reason for adjustment"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdjustmentDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleAdjustment} disabled={!adjustmentForm.productId || !adjustmentForm.quantity || !adjustmentForm.reason}>
+              Adjust Stock
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={purchaseDialogOpen} onOpenChange={setPurchaseDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Purchase Stock</DialogTitle>
+            <DialogDescription>Add new stock through purchase</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Select Product</Label>
+              <Select value={purchaseForm.productId} onValueChange={(value) => setPurchaseForm({...purchaseForm, productId: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose product" />
+                </SelectTrigger>
+                <SelectContent>
+                  {inventory.map(item => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name} (Current: {item.stock})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Purchase Quantity</Label>
+              <Input 
+                type="number" 
+                value={purchaseForm.quantity}
+                onChange={(e) => setPurchaseForm({...purchaseForm, quantity: e.target.value})}
+                placeholder="Enter quantity to purchase"
+              />
+            </div>
+            <div>
+              <Label>Cost Price per Unit</Label>
+              <Input 
+                type="number" 
+                value={purchaseForm.costPrice}
+                onChange={(e) => setPurchaseForm({...purchaseForm, costPrice: e.target.value})}
+                placeholder="Cost price in RWF"
+              />
+            </div>
+            <div>
+              <Label>Supplier</Label>
+              <div className="flex gap-2">
+                <Select value={purchaseForm.supplier} onValueChange={(value) => setPurchaseForm({...purchaseForm, supplier: value})}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose supplier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers.map(supplier => (
+                      <SelectItem key={supplier.id} value={supplier.name}>
+                        {supplier.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button size="icon" variant="outline" onClick={() => setIsAddingSupplier(true)}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPurchaseDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handlePurchase} disabled={!purchaseForm.productId || !purchaseForm.quantity || !purchaseForm.costPrice}>
+              Purchase Stock
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isAddingSupplier} onOpenChange={setIsAddingSupplier}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Supplier</DialogTitle>
+            <DialogDescription>Create a new supplier for purchasing</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Supplier Name</Label>
+              <Input 
+                value={newSupplier.name}
+                onChange={(e) => setNewSupplier({...newSupplier, name: e.target.value})}
+                placeholder="e.g. PharmaCorp Ltd"
+              />
+            </div>
+            <div>
+              <Label>Contact Person</Label>
+              <Input 
+                value={newSupplier.contact}
+                onChange={(e) => setNewSupplier({...newSupplier, contact: e.target.value})}
+                placeholder="Contact person name"
+              />
+            </div>
+            <div>
+              <Label>Phone</Label>
+              <Input 
+                value={newSupplier.phone}
+                onChange={(e) => setNewSupplier({...newSupplier, phone: e.target.value})}
+                placeholder="+250 xxx xxx xxx"
+              />
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input 
+                type="email"
+                value={newSupplier.email}
+                onChange={(e) => setNewSupplier({...newSupplier, email: e.target.value})}
+                placeholder="contact@supplier.com"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddingSupplier(false)}>Cancel</Button>
+            <Button onClick={handleAddSupplier} disabled={!newSupplier.name}>
+              Add Supplier
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={barcodeDialogOpen} onOpenChange={setBarcodeDialogOpen}>
         <DialogContent>

@@ -45,30 +45,38 @@ export default function SettingsPage() {
     ]
   })
 
-  const plans: SubscriptionPlan[] = [
-    {
-      name: 'Free',
-      price: 0,
-      current: currentPlan === 'free',
-      features: ['Up to 100 products', 'Basic POS', 'Monthly reports', 'Email support']
-    },
-    {
-      name: 'Standard',
-      price: 25000,
-      current: currentPlan === 'standard',
-      features: ['Up to 1000 products', 'Advanced POS', 'Real-time reports', 'Staff management', 'Phone support']
-    },
-    {
-      name: 'Premium',
-      price: 50000,
-      current: currentPlan === 'premium',
-      features: ['Unlimited products', 'Multi-location', 'Advanced analytics', 'API access', 'Priority support']
-    }
-  ]
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([])
 
   useEffect(() => {
     fetchPharmacyInfo()
+    fetchPlans()
   }, [])
+
+  const fetchPlans = async () => {
+    try {
+      const response = await fetch('/api/plans')
+      if (response.ok) {
+        const data = await response.json()
+        setPlans(data.map((plan: any) => ({
+          name: plan.name,
+          price: plan.price,
+          current: currentPlan === plan.name.toLowerCase(),
+          features: plan.features
+        })))
+      }
+    } catch (error) {
+      console.error('Error fetching plans:', error)
+    }
+  }
+
+  useEffect(() => {
+    if (plans.length > 0) {
+      setPlans(plans.map(plan => ({
+        ...plan,
+        current: currentPlan === plan.name.toLowerCase()
+      })))
+    }
+  }, [currentPlan])
 
   const fetchPharmacyInfo = async () => {
     try {

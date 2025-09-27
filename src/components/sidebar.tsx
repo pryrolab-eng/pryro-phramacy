@@ -26,7 +26,7 @@ import {
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 
 const superAdminNavigation = [
   { name: 'Dashboard', href: '/superadmin', icon: LayoutDashboard },
@@ -56,6 +56,56 @@ const pharmacistNavigation = [
   { name: 'Inventory', href: '/inventory', icon: Package },
   { name: 'Customers', href: '/customers', icon: Users },
 ]
+
+function SubscriptionPlanCard() {
+  const [planData, setPlanData] = useState({
+    plan: 'Standard',
+    daysRemaining: 25,
+    totalDays: 30,
+    status: 'active'
+  })
+
+  useEffect(() => {
+    // Calculate days remaining (mock data)
+    const endDate = new Date()
+    endDate.setDate(endDate.getDate() + 25)
+    const today = new Date()
+    const diffTime = endDate.getTime() - today.getTime()
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    
+    setPlanData(prev => ({ ...prev, daysRemaining: diffDays }))
+  }, [])
+
+  const getStatusColor = () => {
+    if (planData.daysRemaining <= 7) return 'text-red-600 bg-red-50'
+    if (planData.daysRemaining <= 15) return 'text-orange-600 bg-orange-50'
+    return 'text-green-600 bg-green-50'
+  }
+
+  return (
+    <Card className="border-blue-200">
+      <CardContent className="p-2">
+        <div className="flex items-center space-x-1 mb-1">
+          <Crown className="h-3 w-3 text-blue-600" />
+          <span className="text-xs font-medium text-gray-900">{planData.plan} Plan</span>
+        </div>
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-gray-500">Days remaining</span>
+            <span className={`text-[10px] px-1 py-0.5 rounded ${getStatusColor()}`}>
+              {planData.daysRemaining} days
+            </span>
+          </div>
+          <Link href="/settings" className="block">
+            <Button variant="outline" size="sm" className="w-full text-[10px] h-6">
+              Manage Plan
+            </Button>
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
 export default function Sidebar() {
   const pathname = usePathname()
@@ -210,7 +260,12 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="p-3">
+      <div className="p-3 space-y-3">
+        {/* Subscription Plan Card - Only for Pharmacy Owners */}
+        {userRole === 'pharmacy_owner' && !isCollapsed && (
+          <SubscriptionPlanCard />
+        )}
+        
         {!isCollapsed ? (
           <Card>
             <CardContent className="p-3">

@@ -71,19 +71,31 @@ export default function SuperAdminDashboard() {
   useEffect(() => {
     fetchInsurance()
     fetchPharmacies()
-    
-    // Initial load from API
+    fetchDashboardStats()
     
     const interval = setInterval(() => {
       fetchInsurance()
       fetchPharmacies()
-    }, 30000) // Poll every 30 seconds instead of 3
+      fetchDashboardStats()
+    }, 30000)
     return () => clearInterval(interval)
   }, [])
 
+  const fetchDashboardStats = async () => {
+    try {
+      const response = await fetch('/api/superadmin/dashboard')
+      if (response.ok) {
+        const data = await response.json()
+        setStats(data)
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error)
+    }
+  }
+
   const fetchPharmacies = async () => {
     try {
-      const response = await fetch('/api/admin/pharmacies')
+      const response = await fetch('/api/superadmin/pharmacies')
       if (response.ok) {
         const data = await response.json()
         const formattedPharmacies = data.map(p => ({
@@ -136,7 +148,7 @@ export default function SuperAdminDashboard() {
   const handleAddPharmacy = async () => {
     try {
       // Use the same API endpoint as admin stores page
-      const response = await fetch('/api/admin/pharmacies', {
+      const response = await fetch('/api/superadmin/pharmacies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

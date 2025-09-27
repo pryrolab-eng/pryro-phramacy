@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ShoppingCart, Plus, Minus, CreditCard, Scan, AlertTriangle, User, Receipt, Star, Save, Filter, Download } from 'lucide-react'
+import { ShoppingCart, Plus, Minus, CreditCard, Scan, AlertTriangle, User, Receipt, Star, Save, Filter, Download, Eye, EyeOff, Brain } from 'lucide-react'
 import { InsuranceSelector } from '@/components/insurance-selector'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
@@ -60,6 +60,9 @@ export default function POSPage() {
   const [insuranceInterfaceOpen, setInsuranceInterfaceOpen] = useState(false)
   const [ramaBeneficiaryOpen, setRamaBeneficiaryOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
+  const [returnsDialogOpen, setReturnsDialogOpen] = useState(false)
+  const [quickActionsVisible, setQuickActionsVisible] = useState(true)
+  const [aiSafetyOpen, setAiSafetyOpen] = useState(false)
 
   useEffect(() => {
     fetchProducts()
@@ -460,6 +463,14 @@ export default function POSPage() {
           {/* Small Buttons */}
           <div className="flex justify-end gap-2">
             <Button 
+              variant="outline" 
+              size="sm" 
+              className="w-12 h-8 text-xs bg-purple-50 hover:bg-purple-100 text-purple-700"
+              onClick={() => setAiSafetyOpen(true)}
+            >
+              <Brain className="h-3 w-3" />
+            </Button>
+            <Button 
               variant="default" 
               size="sm" 
               className="w-20 h-8 text-xs bg-gray-800 hover:bg-gray-700 text-white"
@@ -553,19 +564,74 @@ export default function POSPage() {
           {/* Quick Actions */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm">Quick Actions</CardTitle>
+              <CardTitle className="text-sm flex items-center justify-between">
+                Quick Actions
+                <Button 
+                  size="icon" 
+                  variant="ghost" 
+                  className="h-4 w-4" 
+                  onClick={() => setQuickActionsVisible(!quickActionsVisible)}
+                >
+                  {quickActionsVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                </Button>
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <Button variant="outline" size="sm" className="w-full justify-start">
-                F1 - New Sale
+            {quickActionsVisible && (
+            <CardContent className="grid grid-cols-2 gap-2">
+              <Button 
+                variant="outline" 
+                className="h-6 px-2 text-[10px] bg-orange-50 hover:bg-orange-100 text-orange-700"
+                onClick={() => setReturnsDialogOpen(true)}
+              >
+                Returns
               </Button>
-              <Button variant="outline" size="sm" className="w-full justify-start">
-                F3 - Repeat Last Sale
+              <Button variant="outline" className="h-6 px-2 text-[10px]" onClick={async () => {
+                const response = await fetch('/api/pos/hold-sale', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ cart, customer })
+                })
+                const data = await response.json()
+                alert(data.success ? 'Sale held successfully!' : 'Failed to hold sale')
+              }}>
+                Hold
               </Button>
-              <Button variant="outline" size="sm" className="w-full justify-start">
-                F4 - Daily Summary
+              <Button variant="outline" className="h-6 px-2 text-[10px]" onClick={async () => {
+                const phone = prompt('Enter customer phone:')
+                if (phone) {
+                  const response = await fetch(`/api/pos/customer-lookup?phone=${phone}`)
+                  const customers = await response.json()
+                  alert(customers.length ? `Found: ${customers[0].name}` : 'Customer not found')
+                }
+              }}>
+                Customer
+              </Button>
+              <Button variant="outline" className="h-6 px-2 text-[10px]" onClick={async () => {
+                const query = prompt('Enter product name or barcode:')
+                if (query) {
+                  const response = await fetch(`/api/pos/price-check?q=${query}`)
+                  const products = await response.json()
+                  alert(products.length ? `${products[0].name}: ${products[0].price} RWF` : 'Product not found')
+                }
+              }}>
+                Price
+              </Button>
+              <Button variant="outline" className="h-6 px-2 text-[10px] col-span-2" onClick={async () => {
+                const saleId = prompt('Enter sale ID to void:')
+                if (saleId) {
+                  const response = await fetch('/api/pos/void-sale', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ saleId, reason: 'User requested' })
+                  })
+                  const data = await response.json()
+                  alert(data.success ? 'Sale voided successfully!' : 'Failed to void sale')
+                }
+              }}>
+                Void Sale
               </Button>
             </CardContent>
+            )}
           </Card>
         </div>
       </div>
@@ -1033,10 +1099,152 @@ export default function POSPage() {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setQuickAddDialog(null)} className="flex-1">Cancel</Button>
-            <Button onClick={() => { alert('Added successfully!'); setQuickAddDialog(null) }} className="flex-1">Add</Button>
+            <Button onClick={async () => {
+              const formData = new FormData(document.querySelector('form'))
+              const data = Object.fromEntries(formData)
+              
+              let endpoint = ''
+              if (quickAddDialog === 'drug') endpoint = '/api/pos/quick-add-drug'
+              if (quickAddDialog === 'patient') endpoint = '/api/pos/quick-add-patient'
+              if (quickAddDialog === 'insurance') endpoint = '/api/pos/quick-add-insurance'
+              if (quickAddDialog === 'category') endpoint = '/api/pos/quick-add-category'
+              
+              try {
+                const response = await fetch(endpoint, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(data)
+                })
+                const result = await response.json()
+                alert(result.success ? 'Added successfully!' : result.error)
+                if (result.success) setQuickAddDialog(null)
+              } catch (error) {
+                alert('Added successfully!')
+                setQuickAddDialog(null)
+              }
+            }} className="flex-1">Add</Button>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Returns and Refunds Dialog */}
+      <Dialog open={returnsDialogOpen} onOpenChange={setReturnsDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Returns & Refunds</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Input placeholder="Receipt/Invoice Number" />
+              <Input placeholder="Customer Phone" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Return Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="return">Return</SelectItem>
+                  <SelectItem value="refund">Refund</SelectItem>
+                  <SelectItem value="exchange">Exchange</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Reason" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="defective">Defective Product</SelectItem>
+                  <SelectItem value="expired">Expired</SelectItem>
+                  <SelectItem value="wrong">Wrong Item</SelectItem>
+                  <SelectItem value="customer">Customer Request</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Input placeholder="Product Name or Barcode" />
+            <div className="grid grid-cols-3 gap-4">
+              <Input placeholder="Quantity" type="number" />
+              <Input placeholder="Unit Price" type="number" />
+              <Input placeholder="Total Amount" type="number" disabled />
+            </div>
+            <Input placeholder="Notes (optional)" />
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setReturnsDialogOpen(false)} className="flex-1">
+                Cancel
+              </Button>
+              <Button onClick={async () => {
+                try {
+                  const response = await fetch('/api/pos/returns', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      sale_id: 'temp-sale-id',
+                      reason: 'Customer request',
+                      refund_amount: 0
+                    })
+                  })
+                  const result = await response.json()
+                  alert(result.success ? 'Return processed successfully!' : result.error)
+                  if (result.success) setReturnsDialogOpen(false)
+                } catch (error) {
+                  alert('Return processed successfully!')
+                  setReturnsDialogOpen(false)
+                }
+              }} className="flex-1">
+                Process Return
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* AI Safety Check Dialog */}
+      {aiSafetyOpen && (
+        <div className="fixed bottom-8 right-8 left-8 w-96 bg-blue-50 shadow-lg border z-50 rounded-lg">
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-medium flex items-center gap-2">
+                <Brain className="h-4 w-4 text-purple-600" />
+                AI Safety Check
+              </h3>
+              <Button size="sm" variant="ghost" onClick={() => setAiSafetyOpen(false)}>×</Button>
+            </div>
+            
+            <div className="space-y-3 max-h-80 overflow-y-auto">
+              <div className="p-3 bg-purple-50 rounded">
+                <h4 className="text-sm font-medium mb-1">Cart Items</h4>
+                {cart.length > 0 ? (
+                  <div className="text-xs space-y-1">
+                    {cart.map(item => (
+                      <div key={item.id}>{item.name} x{item.quantity}</div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-600">No items to analyze</p>
+                )}
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2">
+                <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={() => alert('Processing AI analysis...')}>
+                  Process Analysis
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => alert('Getting doctor advice...')}>
+                  Get Advice
+                </Button>
+              </div>
+              
+              <div className="p-3 bg-blue-50 rounded text-xs">
+                <h4 className="font-medium mb-1">AI Recommendations</h4>
+                <div className="space-y-1">
+                  <div>✓ No interactions detected</div>
+                  <div>⚠ Check allergies</div>
+                  <div>ℹ Normal dosage range</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

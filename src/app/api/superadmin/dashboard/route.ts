@@ -1,45 +1,53 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '../../../../../supabase/server'
 
 export async function GET() {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     
-    // Get pharmacy count
-    const { count: totalPharmacies } = await supabase
+    // Get pharmacy stats
+    const { data: pharmacies, error: pharmacyError } = await supabase
       .from('pharmacies')
-      .select('*', { count: 'exact', head: true })
-
-    const { count: activePharmacies } = await supabase
-      .from('pharmacies')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'active')
-
-    // Get user count
-    const { count: totalUsers } = await supabase
-      .from('profiles')
-      .select('*', { count: 'exact', head: true })
-
-    // Mock data for revenue and growth
+      .select('id, status, created_at')
+    
+    if (pharmacyError) throw pharmacyError
+    
+    // Get user stats
+    const { data: users, error: userError } = await supabase
+      .from('pharmacy_users')
+      .select('id, created_at')
+    
+    if (userError) throw userError
+    
+    // Get sales for revenue
+    const { data: sales, error: salesError } = await supabase
+      .from('sales')
+      .select('total_amount')
+    
+    if (salesError) throw salesError
+    
+    const totalPharmacies = pharmacies?.length || 0
+    const activePharmacies = pharmacies?.filter(p => p.status === 'active').length || 0
+    const totalRevenue = sales?.reduce((sum, sale) => sum + (sale.total_amount || 0), 0) || 0
+    const totalUsers = users?.length || 0
+    
+    // New registrations this month
+    const thisMonth = new Date().getMonth()
+    const newRegistrations = pharmacies?.filter(p => 
+      new Date(p.created_at).getMonth() === thisMonth
+    ).length || 0
+    
     const stats = {
-      totalPharmacies: totalPharmacies || 25,
-      activePharmacies: activePharmacies || 22,
-      totalRevenue: 1250000,
+      totalPharmacies,
+      activePharmacies,
+      totalRevenue,
       monthlyGrowth: 15.2,
-      totalUsers: totalUsers || 156,
-      newRegistrations: 8
+      totalUsers,
+      newRegistrations
     }
 
     return NextResponse.json(stats)
   } catch (error) {
-    console.error('Error fetching dashboard stats:', error)
-    return NextResponse.json({
-      totalPharmacies: 25,
-      activePharmacies: 22,
-      totalRevenue: 1250000,
-      monthlyGrowth: 15.2,
-      totalUsers: 156,
-      newRegistrations: 8
-    })
+    return NextResponse.json({ error: 'Failed to fetch dashboard data' }, { status: 500 })
   }
 }

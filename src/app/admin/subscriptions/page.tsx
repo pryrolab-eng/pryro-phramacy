@@ -12,35 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { CreditCard, Plus, Edit, Crown, CheckCircle } from "lucide-react";
 
 export default function SubscriptionsPage() {
-  const [plans, setPlans] = useState([
-    {
-      id: '1',
-      name: "Free",
-      price: 0,
-      period: "forever",
-      users: 4,
-      features: ["Basic POS", "Up to 3 users", "Email support", "Basic reports"],
-      popular: false
-    },
-    {
-      id: '2',
-      name: "Standard",
-      price: 50000,
-      period: "per month",
-      users: 12,
-      features: ["Full POS", "Up to 10 users", "Insurance integration", "Phone support", "Advanced reports"],
-      popular: true
-    },
-    {
-      id: '3',
-      name: "Premium",
-      price: 120000,
-      period: "per month",
-      users: 8,
-      features: ["Everything in Standard", "Unlimited users", "Advanced analytics", "Priority support", "Custom integrations"],
-      popular: false
-    }
-  ])
+  const [plans, setPlans] = useState<any[]>([])
 
   const [isAddingPlan, setIsAddingPlan] = useState(false)
   const [isEditingPlan, setIsEditingPlan] = useState(false)
@@ -52,11 +24,31 @@ export default function SubscriptionsPage() {
     features: ''
   })
 
-  const chartData = [
-    { plan: 'Free', subscribers: 4, width: 20 },
-    { plan: 'Standard', subscribers: 12, width: 60 },
-    { plan: 'Premium', subscribers: 8, width: 40 }
-  ]
+  const chartData = plans.map(plan => ({
+    plan: plan.name,
+    subscribers: plan.users || 0,
+    width: Math.max(20, (plan.users || 0) * 5)
+  }))
+
+  const fetchPlans = async () => {
+    try {
+      const response = await fetch('/api/admin/plans')
+      if (response.ok) {
+        const data = await response.json()
+        setPlans(data.map((plan: any) => ({
+          ...plan,
+          users: 0, // TODO: Get actual subscriber count
+          popular: plan.is_popular
+        })))
+      }
+    } catch (error) {
+      console.error('Error fetching plans:', error)
+    }
+  }
+
+  useEffect(() => {
+    fetchPlans()
+  }, [])
 
   const handleAddPlan = async () => {
     try {
@@ -70,23 +62,20 @@ export default function SubscriptionsPage() {
         })
       })
       
+      const result = await response.json()
+      
       if (response.ok) {
-        const plan = {
-          id: Date.now().toString(),
-          name: newPlan.name,
-          price: parseInt(newPlan.price),
-          period: newPlan.period,
-          users: 0,
-          features: newPlan.features.split(',').map(f => f.trim()),
-          popular: false
-        }
-        setPlans([...plans, plan])
+        await fetchPlans()
         setIsAddingPlan(false)
         setNewPlan({ name: '', price: '', period: 'per month', features: '' })
         alert('Plan added successfully!')
+      } else {
+        console.error('API Error:', result)
+        alert(`Error: ${result.error || 'Failed to add plan'}`)
       }
     } catch (error) {
       console.error('Error adding plan:', error)
+      alert('Network error occurred')
     }
   }
 
@@ -95,11 +84,14 @@ export default function SubscriptionsPage() {
       const response = await fetch(`/api/admin/plans/${selectedPlan.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(selectedPlan)
+        body: JSON.stringify({
+          ...selectedPlan,
+          is_popular: selectedPlan.popular
+        })
       })
       
       if (response.ok) {
-        setPlans(plans.map(p => p.id === selectedPlan.id ? selectedPlan : p))
+        await fetchPlans()
         setIsEditingPlan(false)
         setSelectedPlan(null)
         alert('Plan updated successfully!')

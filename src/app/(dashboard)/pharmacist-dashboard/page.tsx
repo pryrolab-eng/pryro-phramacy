@@ -57,76 +57,97 @@ interface ExpirationAlert {
 export default function PharmacistDashboard() {
   const router = useRouter()
   const [stats, setStats] = useState<PharmacistStats>({
-    prescriptionsToday: 28,
-    customersServed: 45,
+    prescriptionsToday: 0,
+    customersServed: 0,
     averageWaitTime: 8,
-    completedSales: 32,
-    pendingPrescriptions: 6,
-    consultationsGiven: 12,
+    completedSales: 0,
+    pendingPrescriptions: 0,
+    consultationsGiven: 0,
     inventoryChecks: 3,
     alertsHandled: 5
   })
 
-  const [pendingPrescriptions] = useState<PendingPrescription[]>([
-    {
-      id: '1',
-      patient: 'Alice Mukamana',
-      doctor: 'Dr. Uwimana',
-      medications: ['Amoxicillin 500mg', 'Paracetamol 500mg'],
-      priority: 'high',
-      time: '10:30 AM',
-      insurance: 'RSSB'
-    },
-    {
-      id: '2',
-      patient: 'John Nkurunziza',
-      doctor: 'Dr. Habimana',
-      medications: ['Metformin 850mg', 'Lisinopril 10mg'],
-      priority: 'medium',
-      time: '11:15 AM',
-      insurance: 'Radiant'
-    },
-    {
-      id: '3',
-      patient: 'Grace Uwase',
-      doctor: 'Dr. Mutesi',
-      medications: ['Vitamin D3', 'Calcium tablets'],
-      priority: 'low',
-      time: '11:45 AM',
-      insurance: 'None'
+  const [pendingPrescriptions, setPendingPrescriptions] = useState<PendingPrescription[]>([])
+
+  useEffect(() => {
+    fetchDashboardStats()
+    fetchPendingPrescriptions()
+    fetchStockAlerts()
+    fetchRecentActivities()
+    fetchChartData()
+  }, [])
+
+  const fetchRecentActivities = async () => {
+    try {
+      const response = await fetch('/api/pharmacist/activities')
+      if (response.ok) {
+        const data = await response.json()
+        setRecentActivities(data)
+      }
+    } catch (error) {
+      console.error('Error fetching activities:', error)
     }
-  ])
+  }
 
-  const [recentActivities] = useState<RecentActivity[]>([
-    { id: '1', type: 'prescription', description: 'Dispensed prescription for Marie Uwimana', time: '10:45 AM', status: 'completed' },
-    { id: '2', type: 'consultation', description: 'Provided medication counseling', time: '10:30 AM', status: 'completed' },
-    { id: '3', type: 'sale', description: 'OTC sale - Pain relief medication', time: '10:15 AM', status: 'completed' },
-    { id: '4', type: 'inventory', description: 'Stock check for antibiotics section', time: '09:30 AM', status: 'completed' }
-  ])
+  const fetchChartData = async () => {
+    try {
+      const response = await fetch('/api/pharmacist/chart-data')
+      if (response.ok) {
+        const data = await response.json()
+        setChartData(data)
+      }
+    } catch (error) {
+      console.error('Error fetching chart data:', error)
+    }
+  }
 
-  const [stockAlerts] = useState<StockAlert[]>([
-    { id: '1', drugName: 'Paracetamol 500mg', currentStock: 5, minStock: 20, status: 'low' },
-    { id: '2', drugName: 'Amoxicillin 250mg', currentStock: 0, minStock: 15, status: 'out' },
-    { id: '3', drugName: 'Ibuprofen 400mg', currentStock: 8, minStock: 25, status: 'low' }
-  ])
+  const fetchDashboardStats = async () => {
+    try {
+      const response = await fetch('/api/pharmacist/dashboard')
+      if (response.ok) {
+        const data = await response.json()
+        setStats(data)
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error)
+    }
+  }
 
-  const [expirationAlerts] = useState<ExpirationAlert[]>([
-    { id: '1', drugName: 'Aspirin 100mg', batchNumber: 'ASP001', expiryDate: '2024-01-15', daysUntilExpiry: 5, quantity: 50 },
-    { id: '2', drugName: 'Vitamin C 500mg', batchNumber: 'VTC002', expiryDate: '2024-01-20', daysUntilExpiry: 10, quantity: 30 },
-    { id: '3', drugName: 'Cough Syrup', batchNumber: 'CS003', expiryDate: '2024-01-25', daysUntilExpiry: 15, quantity: 12 }
-  ])
+  const fetchPendingPrescriptions = async () => {
+    try {
+      const response = await fetch('/api/pharmacist/prescriptions')
+      if (response.ok) {
+        const data = await response.json()
+        setPendingPrescriptions(data)
+      }
+    } catch (error) {
+      console.error('Error fetching prescriptions:', error)
+    }
+  }
+
+  const fetchStockAlerts = async () => {
+    try {
+      const response = await fetch('/api/stock-alerts')
+      if (response.ok) {
+        const data = await response.json()
+        setStockAlerts(data.lowStock || [])
+        setExpirationAlerts(data.expiring || [])
+      }
+    } catch (error) {
+      console.error('Error fetching stock alerts:', error)
+    }
+  }
 
 
 
-  const chartData = [
-    { time: '9:00', prescriptions: 5, customers: 8 },
-    { time: '10:00', prescriptions: 12, customers: 15 },
-    { time: '11:00', prescriptions: 18, customers: 22 },
-    { time: '12:00', prescriptions: 25, customers: 30 },
-    { time: '13:00', prescriptions: 28, customers: 35 },
-    { time: '14:00', prescriptions: 32, customers: 40 },
-    { time: '15:00', prescriptions: 35, customers: 45 }
-  ]
+  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([])
+
+  const [stockAlerts, setStockAlerts] = useState<StockAlert[]>([])
+  const [expirationAlerts, setExpirationAlerts] = useState<ExpirationAlert[]>([])
+
+
+
+  const [chartData, setChartData] = useState([])
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -401,7 +422,7 @@ export default function PharmacistDashboard() {
                 <Search className="mr-3 h-5 w-5" />
                 Search Drug Inventory
               </Button>
-              <Button variant="outline" size="lg" className="w-full justify-start">
+              <Button variant="outline" size="lg" className="w-full justify-start" onClick={() => router.push('/prescriptions')}>
                 <Pill className="mr-3 h-5 w-5" />
                 Process New Prescription
               </Button>

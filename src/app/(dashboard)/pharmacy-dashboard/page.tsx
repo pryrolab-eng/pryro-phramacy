@@ -229,13 +229,7 @@ export default function PharmacyDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.todaySales.toLocaleString()} RWF</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[{v:120},{v:135},{v:128},{v:145},{v:152},{v:145}]}>
-                  <Area type="monotone" dataKey="v" stroke="#10b981" fill="#10b981" fillOpacity={0.08} strokeWidth={1} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+
             <p className="text-xs text-muted-foreground">+12% from yesterday</p>
           </CardContent>
         </Card>
@@ -247,13 +241,7 @@ export default function PharmacyDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalProducts}</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[{v:1200},{v:1220},{v:1235},{v:1240},{v:1245},{v:1250}]}>
-                  <Area type="monotone" dataKey="v" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.08} strokeWidth={1} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+
             <p className="text-xs text-muted-foreground">{stats.lowStockItems} low stock</p>
           </CardContent>
         </Card>
@@ -265,13 +253,7 @@ export default function PharmacyDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalCustomers}</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[{v:850},{v:865},{v:870},{v:880},{v:885},{v:890}]}>
-                  <Area type="monotone" dataKey="v" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.08} strokeWidth={1} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+
             <p className="text-xs text-muted-foreground">{stats.activeStaff} active staff</p>
           </CardContent>
         </Card>
@@ -283,13 +265,7 @@ export default function PharmacyDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{lowStockItems.length}</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[{v:30},{v:25},{v:28},{v:20},{v:18},{v:23}]}>
-                  <Area type="monotone" dataKey="v" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.08} strokeWidth={1} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+
             <p className="text-xs text-muted-foreground">Items below threshold</p>
           </CardContent>
         </Card>
@@ -301,13 +277,7 @@ export default function PharmacyDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{expiringItems.length}</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[{v:20},{v:18},{v:16},{v:15},{v:12},{v:15}]}>
-                  <Area type="monotone" dataKey="v" stroke="#ef4444" fill="#ef4444" fillOpacity={0.08} strokeWidth={1} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+
             <p className="text-xs text-muted-foreground">Within 60 days</p>
           </CardContent>
         </Card>
@@ -436,7 +406,7 @@ export default function PharmacyDashboard() {
               <p className="text-sm text-muted-foreground">Pending Orders</p>
             </div>
             <div className="text-center p-4 border rounded-lg">
-              <div className="text-2xl font-bold text-purple-600">85%</div>
+              <div className="text-2xl font-bold text-purple-600">{Math.round((stats.totalCustomers / (stats.totalCustomers + 10)) * 100)}%</div>
               <p className="text-sm text-muted-foreground">Customer Satisfaction</p>
             </div>
           </div>

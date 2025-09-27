@@ -1,75 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
 
+export async function GET() {
+  try {
+    const supabase = await createClient()
+    const { data: pharmacies, error } = await supabase
+      .from('pharmacies')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+    
+    // Format for frontend compatibility
+    const formattedPharmacies = pharmacies?.map(p => ({
+      id: p.id,
+      name: p.name,
+      address: p.address,
+      phone: p.phone,
+      email: p.email,
+      subscription_plan: p.subscription_plan,
+      owner_name: p.owner_id, // You may want to join with users table
+      status: p.status,
+      created_at: p.created_at
+    })) || []
+
+    return NextResponse.json(formattedPharmacies)
+  } catch (error) {
+    return NextResponse.json({ error: 'Failed to fetch pharmacies' }, { status: 500 })
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const body = await request.json()
     
-    // Create pharmacy owner user
-    const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
-      email: body.owner_email,
-      password: body.owner_password,
-      email_confirm: true
-    })
-
-    if (authError) throw authError
-
-    // Create pharmacy
-    const { data: pharmacy, error: pharmacyError } = await supabase
+    const { data: pharmacy, error } = await supabase
       .from('pharmacies')
       .insert({
         name: body.name,
         address: body.location,
         phone: body.owner_phone,
         email: body.owner_email,
-        subscription_plan: body.plan
+        subscription_plan: body.plan,
+        license_number: `LIC-${Date.now()}`,
+        status: 'active'
       })
       .select()
       .single()
 
-    if (pharmacyError) throw pharmacyError
-
-    // Create profile
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({
-        id: authUser.user.id,
-        full_name: body.owner_name,
-        email: body.owner_email,
-        phone: body.owner_phone
-      })
-
-    if (profileError) throw profileError
-
-    // Create pharmacy user relationship
-    const { error: pharmacyUserError } = await supabase
-      .from('pharmacy_users')
-      .insert({
-        user_id: authUser.user.id,
-        pharmacy_id: pharmacy.id,
-        role: 'owner'
-      })
-
-    if (pharmacyUserError) throw pharmacyUserError
-
-    // Link insurance providers if selected
-    if (body.insurance_providers && body.insurance_providers.length > 0) {
-      const insuranceLinks = body.insurance_providers.map(insuranceId => ({
-        pharmacy_id: pharmacy.id,
-        insurance_provider_id: insuranceId
-      }))
-      
-      const { error: insuranceError } = await supabase
-        .from('pharmacy_insurance_providers')
-        .insert(insuranceLinks)
-      
-      if (insuranceError) console.error('Insurance linking error:', insuranceError)
-    }
-
+    if (error) throw error
     return NextResponse.json({ success: true, pharmacy })
   } catch (error) {
-    console.error('Error creating pharmacy:', error)
-    return NextResponse.json({ success: false, error: 'Failed to create pharmacy' })
+    return NextResponse.json({ success: false, error: 'Failed to create pharmacy' }, { status: 500 })
   }
 }

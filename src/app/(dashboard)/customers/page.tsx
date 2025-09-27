@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Users, Plus, Phone, Mail, Calendar } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer, AreaChart, Area } from 'recharts'
 
@@ -12,6 +15,9 @@ interface Customer {
   name: string
   phone: string
   email: string
+  dateOfBirth: string
+  allergies: string
+  insurance: string
   totalPurchases: number
   lastVisit: string
   status: 'active' | 'inactive'
@@ -23,6 +29,15 @@ export default function CustomersPage() {
     totalCustomers: 0,
     activeCustomers: 0,
     newThisMonth: 0
+  })
+  const [isAddingCustomer, setIsAddingCustomer] = useState(false)
+  const [newCustomer, setNewCustomer] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    dateOfBirth: '',
+    allergies: '',
+    insurance: ''
   })
 
   useEffect(() => {
@@ -39,10 +54,36 @@ export default function CustomersPage() {
       }
     } catch (error) {
       setCustomers([
-        { id: '1', name: 'Marie Uwimana', phone: '+250788123456', email: 'marie@email.com', totalPurchases: 45000, lastVisit: '2024-12-01', status: 'active' },
-        { id: '2', name: 'Jean Baptiste', phone: '+250788123457', email: 'jean@email.com', totalPurchases: 23000, lastVisit: '2024-11-28', status: 'active' }
+        { id: '1', name: 'Marie Uwimana', phone: '+250788123456', email: 'marie@email.com', dateOfBirth: '1985-03-15', allergies: 'Penicillin', insurance: 'RSSB', totalPurchases: 45000, lastVisit: '2024-12-01', status: 'active' },
+        { id: '2', name: 'Jean Baptiste', phone: '+250788123457', email: 'jean@email.com', dateOfBirth: '1978-07-22', allergies: 'None', insurance: 'MMI', totalPurchases: 23000, lastVisit: '2024-11-28', status: 'active' }
       ])
       setStats({ totalCustomers: 156, activeCustomers: 142, newThisMonth: 12 })
+    }
+  }
+
+  const handleAddCustomer = async () => {
+    try {
+      const response = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCustomer)
+      })
+      
+      if (response.ok) {
+        const customer: Customer = {
+          id: Date.now().toString(),
+          ...newCustomer,
+          totalPurchases: 0,
+          lastVisit: new Date().toISOString().split('T')[0],
+          status: 'active'
+        }
+        setCustomers([...customers, customer])
+        setStats(prev => ({ ...prev, totalCustomers: prev.totalCustomers + 1, activeCustomers: prev.activeCustomers + 1 }))
+        setIsAddingCustomer(false)
+        setNewCustomer({ name: '', phone: '', email: '', dateOfBirth: '', allergies: '', insurance: '' })
+      }
+    } catch (error) {
+      console.error('Error adding customer:', error)
     }
   }
 
@@ -50,19 +91,85 @@ export default function CustomersPage() {
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold">Customer Management</h1>
-          <p className="text-muted-foreground">Manage your pharmacy customers and relationships</p>
+          <h1 className="text-3xl font-bold">Patient Management</h1>
+          <p className="text-muted-foreground">Manage patient records, prescriptions, and medical information</p>
         </div>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Customer
-        </Button>
+        <Dialog open={isAddingCustomer} onOpenChange={setIsAddingCustomer}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Patient
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add New Patient</DialogTitle>
+              <DialogDescription>Add a new patient to your pharmacy records</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>Full Name</Label>
+                <Input 
+                  placeholder="e.g. Marie Uwimana" 
+                  value={newCustomer.name}
+                  onChange={(e) => setNewCustomer({...newCustomer, name: e.target.value})}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Phone Number</Label>
+                <Input 
+                  placeholder="+250788123456" 
+                  value={newCustomer.phone}
+                  onChange={(e) => setNewCustomer({...newCustomer, phone: e.target.value})}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Email Address</Label>
+                <Input 
+                  type="email"
+                  placeholder="marie@email.com" 
+                  value={newCustomer.email}
+                  onChange={(e) => setNewCustomer({...newCustomer, email: e.target.value})}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Date of Birth</Label>
+                <Input 
+                  type="date"
+                  value={newCustomer.dateOfBirth}
+                  onChange={(e) => setNewCustomer({...newCustomer, dateOfBirth: e.target.value})}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Known Allergies</Label>
+                <Input 
+                  placeholder="e.g. Penicillin, Aspirin (or None)" 
+                  value={newCustomer.allergies}
+                  onChange={(e) => setNewCustomer({...newCustomer, allergies: e.target.value})}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Insurance Provider</Label>
+                <Input 
+                  placeholder="e.g. RSSB, MMI, Radiant" 
+                  value={newCustomer.insurance}
+                  onChange={(e) => setNewCustomer({...newCustomer, insurance: e.target.value})}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleAddCustomer} disabled={!newCustomer.name || !newCustomer.phone}>
+                Add Patient
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Customers</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Patients</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -78,7 +185,7 @@ export default function CustomersPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Customers</CardTitle>
+            <CardTitle className="text-sm font-medium">Active Patients</CardTitle>
             <Users className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
@@ -112,8 +219,8 @@ export default function CustomersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Customer List</CardTitle>
-          <CardDescription>Manage your customer database</CardDescription>
+          <CardTitle>Patient Records</CardTitle>
+          <CardDescription>Manage patient information and medical history</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -132,8 +239,11 @@ export default function CustomersPage() {
                       </div>
                       <div className="flex items-center">
                         <Mail className="h-3 w-3 mr-1" />
-                        {customer.email}
+                        {customer.insurance}
                       </div>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Allergies: {customer.allergies || 'None'}
                     </div>
                   </div>
                 </div>

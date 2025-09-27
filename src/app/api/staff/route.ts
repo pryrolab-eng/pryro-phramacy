@@ -1,62 +1,59 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../supabase/server'
 
 export async function GET() {
   try {
-    const supabase = createClient()
-    
+    const supabase = await createClient()
     const { data: staff, error } = await supabase
-      .from('pharmacy_users')
-      .select(`
-        user_id,
-        role,
-        is_active,
-        created_at,
-        profiles (
-          full_name,
-          email,
-          phone
-        )
-      `)
-      .eq('pharmacy_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+      .from('staff')
+      .select('*')
       .eq('is_active', true)
+      .order('created_at', { ascending: false })
 
     if (error) throw error
-
-    const formattedStaff = staff?.map(member => ({
-      id: member.user_id,
-      name: member.profiles?.full_name || 'Unknown',
-      email: member.profiles?.email || 'No email',
-      phone: member.profiles?.phone || 'No phone',
-      role: member.role,
-      status: member.is_active ? 'active' : 'inactive',
-      joinDate: member.created_at?.split('T')[0] || '2024-01-01'
+    
+    // Format for frontend compatibility
+    const formattedStaff = staff?.map(s => ({
+      id: s.id,
+      name: `${s.first_name} ${s.last_name}`,
+      email: s.email,
+      phone: s.phone,
+      role: s.position,
+      status: s.is_active ? 'active' : 'inactive',
+      branch: s.department || 'Main Branch',
+      joinDate: s.hire_date
     })) || []
 
     return NextResponse.json(formattedStaff)
   } catch (error) {
-    console.error('Error fetching staff:', error)
-    
-    // Return mock data including pharmacists added from dashboard
-    return NextResponse.json([
-      { id: '1', name: 'Jane Pharmacist', email: 'pharmacist@test.com', phone: '+250788123457', role: 'pharmacist', status: 'active', joinDate: '2024-01-15' },
-      { id: '2', name: 'Bob Cashier', email: 'cashier@test.com', phone: '+250788123458', role: 'cashier', status: 'active', joinDate: '2024-02-01' }
-    ])
+    return NextResponse.json({ error: 'Failed to fetch staff' }, { status: 500 })
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient()
     const body = await request.json()
-    const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('/rest/v1', '')}/api/pharmacist`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    })
     
-    const result = await response.json()
-    return NextResponse.json(result, { status: response.status })
+    const { data: staffMember, error } = await supabase
+      .from('staff')
+      .insert({
+        pharmacy_id: body.pharmacy_id || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        first_name: body.name.split(' ')[0],
+        last_name: body.name.split(' ').slice(1).join(' ') || '',
+        email: body.email,
+        phone: body.phone,
+        position: body.role,
+        department: body.branch || 'Main Branch',
+        hire_date: new Date().toISOString().split('T')[0],
+        is_active: true
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return NextResponse.json({ success: true, staff: staffMember })
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to create staff member' }, { status: 500 })
+    return NextResponse.json({ success: false, error: 'Failed to create staff member' }, { status: 500 })
   }
 }

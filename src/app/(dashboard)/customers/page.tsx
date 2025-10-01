@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Users, Plus, Phone, Mail, Calendar } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer, AreaChart, Area } from 'recharts'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 
 interface Customer {
   id: string
@@ -90,9 +91,13 @@ export default function CustomersPage() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Patient Management</h1>
-          <p className="text-muted-foreground">Manage patient records, prescriptions, and medical information</p>
+        <div className="flex items-center gap-4">
+          <SidebarTrigger />
+          <div className="h-4 w-px bg-border" />
+          <div>
+            <h1 className="text-3xl font-bold">Patient Management</h1>
+            <p className="text-muted-foreground">Manage patient records, prescriptions, and medical information</p>
+          </div>
         </div>
         <Dialog open={isAddingCustomer} onOpenChange={setIsAddingCustomer}>
           <DialogTrigger asChild>

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Settings, CreditCard, Users, Building2, Check, Globe, DollarSign } from 'lucide-react'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 
 interface SubscriptionPlan {
   name: string
@@ -131,9 +132,13 @@ export default function SettingsPage() {
 
   return (
     <div className="p-6 space-y-6 bg-gray-100 min-h-screen">
-      <div>
-        <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">Manage your pharmacy settings and subscription</p>
+      <div className="flex items-center gap-4">
+        <SidebarTrigger />
+        <div className="h-4 w-px bg-border" />
+        <div>
+          <h1 className="text-3xl font-bold">Settings</h1>
+          <p className="text-muted-foreground">Manage your pharmacy settings and subscription</p>
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">

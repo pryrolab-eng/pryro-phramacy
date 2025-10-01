@@ -1,7 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { usePharmacyStore } from '@/hooks/usePharmacyStore'
+import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -9,7 +12,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Package, DollarSign, Users, AlertTriangle, TrendingUp, ShoppingCart, Calendar, Clock, Pill } from 'lucide-react'
-import { LineChart, Line, ResponsiveContainer, Area, AreaChart } from 'recharts'
+import { LineChart, Line, ResponsiveContainer, Area, AreaChart, BarChart, Bar, XAxis, CartesianGrid, LabelList, YAxis } from 'recharts'
+import { PharmacyRadialChart } from '@/components/pharmacy-radial-chart'
+import { PharmacyBarChart } from '@/components/pharmacy-bar-chart'
+import { PharmacyInventoryChart } from '@/components/pharmacy-inventory-chart'
+import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 
 interface PharmacyStats {
   totalProducts: number
@@ -41,7 +48,8 @@ interface StockAlert {
 }
 
 export default function PharmacyDashboard() {
-  const [stats, setStats] = useState<PharmacyStats>({
+  const { inventory, sales, alerts, stats, setInventory, addSale, setAlerts, setStats } = usePharmacyStore()
+  const [localStats, setLocalStats] = useState<PharmacyStats>({
     totalProducts: 1250,
     lowStockItems: 23,
     todaySales: 145000,
@@ -52,12 +60,24 @@ export default function PharmacyDashboard() {
     expiringProducts: 15
   })
 
+  // Real-time updates
+  useRealtimeUpdates((update) => {
+    if (update.type === 'inventory_update') {
+      fetchStockAlerts()
+    }
+    if (update.type === 'new_sale') {
+      fetchStats()
+      fetchRecentSales()
+    }
+  })
+
   useEffect(() => {
     const fetchStats = async () => {
       try {
         const response = await fetch('/api/pharmacy/dashboard')
         if (response.ok) {
           const data = await response.json()
+          setLocalStats(data)
           setStats(data)
         }
       } catch (error) {
@@ -85,9 +105,9 @@ export default function PharmacyDashboard() {
           setStockAlerts(data.all || [])
           setLowStockItems(data.lowStock || [])
           setExpiringItems(data.expiring || [])
+          setAlerts(data.all || [])
         }
       } catch (error) {
-        // Fallback data
         const mockData = [
           { id: '1', product: 'Paracetamol 500mg', current_stock: 5, min_stock: 20, category: 'Pain Relief', expires_in: 30 },
           { id: '2', product: 'Amoxicillin 250mg', current_stock: 8, min_stock: 25, category: 'Antibiotics', expires_in: 15 }
@@ -95,6 +115,7 @@ export default function PharmacyDashboard() {
         setStockAlerts(mockData)
         setLowStockItems(mockData.filter(item => item.current_stock <= item.min_stock))
         setExpiringItems(mockData.filter(item => item.expires_in <= 60))
+        setAlerts(mockData)
       }
     }
     
@@ -156,9 +177,13 @@ export default function PharmacyDashboard() {
   return (
     <div className="p-6 space-y-6 bg-gray-100 min-h-screen ml-0">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Pharmacy Dashboard</h1>
-          <p className="text-muted-foreground">Welcome back! Here's your pharmacy overview</p>
+        <div className="flex items-center gap-4">
+          <SidebarTrigger />
+          <div className="h-4 w-px bg-border" />
+          <div>
+            <h1 className="text-3xl font-bold">Pharmacy Dashboard</h1>
+            <p className="text-muted-foreground">Welcome back! Here's your pharmacy overview</p>
+          </div>
         </div>
         <div className="flex space-x-2">
           <Button variant="outline" onClick={() => window.print()}>
@@ -228,7 +253,7 @@ export default function PharmacyDashboard() {
             <DollarSign className="h-4 w-4" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.todaySales.toLocaleString()} RWF</div>
+            <div className="text-2xl font-bold">{localStats.todaySales.toLocaleString()} RWF</div>
 
             <p className="text-xs text-muted-foreground">+12% from yesterday</p>
           </CardContent>
@@ -240,9 +265,9 @@ export default function PharmacyDashboard() {
             <Package className="h-4 w-4" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalProducts}</div>
+            <div className="text-2xl font-bold">{localStats.totalProducts}</div>
 
-            <p className="text-xs text-muted-foreground">{stats.lowStockItems} low stock</p>
+            <p className="text-xs text-muted-foreground">{localStats.lowStockItems} low stock</p>
           </CardContent>
         </Card>
 
@@ -252,9 +277,9 @@ export default function PharmacyDashboard() {
             <Users className="h-4 w-4" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalCustomers}</div>
+            <div className="text-2xl font-bold">{localStats.totalCustomers}</div>
 
-            <p className="text-xs text-muted-foreground">{stats.activeStaff} active staff</p>
+            <p className="text-xs text-muted-foreground">{localStats.activeStaff} active staff</p>
           </CardContent>
         </Card>
 
@@ -390,28 +415,78 @@ export default function PharmacyDashboard() {
         </Card>
       </div>
 
-      <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle>Monthly Performance</CardTitle>
-          <CardDescription>Revenue and sales overview for this month</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="text-center p-4 border rounded-lg">
-              <div className="text-2xl font-bold text-green-600">{stats.monthlyRevenue.toLocaleString()} RWF</div>
-              <p className="text-sm text-muted-foreground">Monthly Revenue</p>
-            </div>
-            <div className="text-center p-4 border rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">{stats.pendingOrders}</div>
-              <p className="text-sm text-muted-foreground">Pending Orders</p>
-            </div>
-            <div className="text-center p-4 border rounded-lg">
-              <div className="text-2xl font-bold text-purple-600">{Math.round((stats.totalCustomers / (stats.totalCustomers + 10)) * 100)}%</div>
-              <p className="text-sm text-muted-foreground">Customer Satisfaction</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-6 md:grid-cols-3">
+        <Card className="shadow-lg md:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-lg">Monthly Performance</CardTitle>
+            <CardDescription>January - June 2024</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={{
+              revenue: { label: "Revenue", color: "#3b82f6" },
+              label: { color: "var(--background)" }
+            }}>
+              <BarChart
+                accessibilityLayer
+                data={[
+                  { month: "January", revenue: 186000 },
+                  { month: "February", revenue: 305000 },
+                  { month: "March", revenue: 237000 },
+                  { month: "April", revenue: 173000 },
+                  { month: "May", revenue: 209000 },
+                  { month: "June", revenue: 214000 }
+                ]}
+                layout="vertical"
+                margin={{ right: 16 }}
+              >
+                <CartesianGrid horizontal={false} />
+                <YAxis
+                  dataKey="month"
+                  type="category"
+                  tickLine={false}
+                  tickMargin={10}
+                  axisLine={false}
+                  tickFormatter={(value) => value.slice(0, 3)}
+                  hide
+                />
+                <XAxis dataKey="revenue" type="number" hide />
+                <ChartTooltip
+                  cursor={false}
+                  content={<ChartTooltipContent indicator="line" />}
+                />
+                <Bar
+                  dataKey="revenue"
+                  layout="vertical"
+                  fill="#3b82f6"
+                  radius={4}
+                >
+                  <LabelList
+                    dataKey="month"
+                    position="insideLeft"
+                    offset={8}
+                    className="fill-white"
+                    fontSize={12}
+                  />
+                  <LabelList
+                    dataKey="revenue"
+                    position="right"
+                    offset={8}
+                    className="fill-foreground"
+                    fontSize={12}
+                  />
+                </Bar>
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+        
+        <PharmacyRadialChart />
+      </div>
+      
+      <div className="grid gap-6 md:grid-cols-2">
+        <PharmacyBarChart />
+        <PharmacyInventoryChart />
+      </div>
     </div>
   )
 }

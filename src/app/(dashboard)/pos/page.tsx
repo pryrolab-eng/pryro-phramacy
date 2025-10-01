@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { usePharmacyStore } from '@/hooks/usePharmacyStore'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ShoppingCart, Plus, Minus, CreditCard, Scan, AlertTriangle, User, Receipt, Star, Save, Filter, Download, Eye, EyeOff, Brain } from 'lucide-react'
 import { InsuranceSelector } from '@/components/insurance-selector'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 
 interface Product {
   id: string
@@ -179,6 +181,8 @@ export default function POSPage() {
 
 
 
+  const { addSale, updateStock } = usePharmacyStore()
+
   const processSale = async () => {
     const saleData = {
       customer,
@@ -208,6 +212,32 @@ export default function POSPage() {
       
       if (saleResponse.ok) {
         const invoiceData = await invoiceResponse.json()
+        
+        // Update store with new sale
+        const newSale = {
+          id: Date.now().toString(),
+          customer: customer.name || 'Walk-in Customer',
+          amount: getPatientAmount(),
+          items: cart.length,
+          time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+        }
+        addSale(newSale)
+        
+        // Update inventory stock levels
+        cart.forEach(item => {
+          updateStock(item.id, item.stock - item.quantity)
+        })
+        
+        // Broadcast update
+        await fetch('/api/notifications/broadcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'new_sale',
+            data: { sale: newSale, updatedItems: cart }
+          })
+        }).catch(() => {}) // Silent fail
+        
         alert(`Sale processed! Invoice: ${invoiceData.invoice?.invoiceNumber || 'Generated'}`)
         
         // Clear form
@@ -229,9 +259,13 @@ export default function POSPage() {
 
   return (
     <div className="p-4 h-screen flex flex-col">
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold">Point of Sale</h1>
-        <p className="text-muted-foreground">Advanced pharmacy POS system</p>
+      <div className="mb-4 flex items-center gap-4">
+        <SidebarTrigger />
+        <div className="h-4 w-px bg-border" />
+        <div>
+          <h1 className="text-2xl font-bold">Point of Sale</h1>
+          <p className="text-muted-foreground">Advanced pharmacy POS system</p>
+        </div>
       </div>
 
       <div className="flex-1 grid grid-cols-12 gap-4">

@@ -2,25 +2,21 @@ import { redirect } from "next/navigation";
 import { createClient } from "../../../supabase/server";
 
 export default async function Dashboard() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
     return redirect("/sign-in");
   }
 
-  // Redirect to appropriate dashboard based on user role
   if (user.email === 'abdousentore@gmail.com') {
     return redirect("/superadmin");
   }
   
   // Check user's pharmacy access and role
-  const { data: userPharmacy } = await supabase
+  const { data: userPharmacy, error: pharmacyError } = await supabase
     .from('pharmacy_users')
-    .select('pharmacy_id, role, pharmacies(*)')
+    .select('pharmacy_id, role')
     .eq('user_id', user.id)
     .eq('is_active', true)
     .single();

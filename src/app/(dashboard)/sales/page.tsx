@@ -4,7 +4,14 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Receipt, DollarSign, TrendingUp, Calendar } from 'lucide-react'
-import { LineChart, Line, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell } from 'recharts'
+import { LineChart, Line, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, CartesianGrid, LabelList, XAxis } from 'recharts'
+import { SidebarTrigger } from '@/components/ui/sidebar'
+import {
+  ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart"
 
 interface Sale {
   id: string
@@ -14,6 +21,171 @@ interface Sale {
   date: string
   paymentMethod: string
   status: string
+}
+
+const weeklyChartConfig = {
+  sales: {
+    label: "Sales (RWF)",
+    color: "#3b82f6",
+  },
+} satisfies ChartConfig
+
+const hourlyChartConfig = {
+  sales: {
+    label: "Sales (RWF)",
+    color: "#10b981",
+  },
+} satisfies ChartConfig
+
+function WeeklySalesChart() {
+  const weeklyData = [
+    { day: "Mon", sales: 120000 },
+    { day: "Tue", sales: 135000 },
+    { day: "Wed", sales: 142000 },
+    { day: "Thu", sales: 138000 },
+    { day: "Fri", sales: 150000 },
+    { day: "Sat", sales: 148000 },
+    { day: "Sun", sales: 156000 },
+  ]
+
+  return (
+    <Card className="shadow-lg">
+      <CardHeader>
+        <CardTitle>Weekly Sales Trend</CardTitle>
+        <CardDescription>Daily sales performance over the past week</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ChartContainer config={weeklyChartConfig} className="h-64">
+          <LineChart
+            accessibilityLayer
+            data={weeklyData}
+            margin={{
+              top: 20,
+              left: 12,
+              right: 12,
+            }}
+          >
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="day"
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+            />
+            <ChartTooltip
+              cursor={false}
+              content={<ChartTooltipContent indicator="line" />}
+            />
+            <Line
+              dataKey="sales"
+              type="natural"
+              stroke="var(--color-sales)"
+              strokeWidth={2}
+              dot={{
+                fill: "var(--color-sales)",
+              }}
+              activeDot={{
+                r: 6,
+              }}
+            >
+              <LabelList
+                position="top"
+                offset={12}
+                className="fill-foreground"
+                fontSize={12}
+                formatter={(value) => `${(value / 1000).toFixed(0)}k`}
+              />
+            </Line>
+          </LineChart>
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  )
+}
+
+function HourlySalesChart() {
+  const generateHourlyData = () => {
+    const now = new Date()
+    const currentHour = now.getHours()
+    const data = []
+    
+    // Generate data for the last 8 hours up to current hour
+    for (let i = 7; i >= 0; i--) {
+      const hour = currentHour - i
+      const adjustedHour = hour < 0 ? hour + 24 : hour
+      const timeStr = adjustedHour === 0 ? '12AM' : 
+                     adjustedHour < 12 ? `${adjustedHour}AM` :
+                     adjustedHour === 12 ? '12PM' :
+                     `${adjustedHour - 12}PM`
+      
+      // Simulate sales data based on typical pharmacy hours
+      const baseSales = adjustedHour >= 8 && adjustedHour <= 20 ? 
+                       Math.random() * 15000 + 5000 : 
+                       Math.random() * 3000 + 1000
+      
+      data.push({
+        hour: timeStr,
+        sales: Math.round(baseSales)
+      })
+    }
+    return data
+  }
+  
+  const hourlyData = generateHourlyData()
+
+  return (
+    <Card className="shadow-lg">
+      <CardHeader>
+        <CardTitle>Today's Hourly Sales</CardTitle>
+        <CardDescription>Sales performance throughout the day</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ChartContainer config={hourlyChartConfig} className="h-64">
+          <LineChart
+            accessibilityLayer
+            data={hourlyData}
+            margin={{
+              top: 20,
+              left: 12,
+              right: 12,
+            }}
+          >
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="hour"
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+            />
+            <ChartTooltip
+              cursor={false}
+              content={<ChartTooltipContent indicator="line" />}
+            />
+            <Line
+              dataKey="sales"
+              type="natural"
+              stroke="var(--color-sales)"
+              strokeWidth={2}
+              dot={{
+                fill: "var(--color-sales)",
+              }}
+              activeDot={{
+                r: 6,
+              }}
+            >
+              <LabelList
+                position="top"
+                offset={12}
+                className="fill-foreground"
+                fontSize={12}
+                formatter={(value) => `${(value / 1000).toFixed(0)}k`}
+              />
+            </Line>
+          </LineChart>
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  )
 }
 
 export default function SalesPage() {
@@ -48,9 +220,13 @@ export default function SalesPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Sales Reports</h1>
-        <p className="text-muted-foreground">Track your sales performance and transactions</p>
+      <div className="flex items-center gap-4">
+        <SidebarTrigger />
+        <div className="h-4 w-px bg-border" />
+        <div>
+          <h1 className="text-3xl font-bold">Sales Reports</h1>
+          <p className="text-muted-foreground">Track your sales performance and transactions</p>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -158,53 +334,8 @@ export default function SalesPage() {
       </Card>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle>Weekly Sales Trend</CardTitle>
-            <CardDescription>Daily sales performance over the past week</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[
-                  {day: 'Mon', sales: 120000},
-                  {day: 'Tue', sales: 135000},
-                  {day: 'Wed', sales: 142000},
-                  {day: 'Thu', sales: 138000},
-                  {day: 'Fri', sales: 150000},
-                  {day: 'Sat', sales: 148000},
-                  {day: 'Sun', sales: 156000}
-                ]}>
-                  <Area type="monotone" dataKey="sales" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.1} strokeWidth={3} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle>Today's Hourly Sales</CardTitle>
-            <CardDescription>Sales performance throughout the day</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[
-                  {hour: '8AM', sales: 5000},
-                  {hour: '10AM', sales: 8000},
-                  {hour: '12PM', sales: 15000},
-                  {hour: '2PM', sales: 12000},
-                  {hour: '4PM', sales: 18000},
-                  {hour: '6PM', sales: 20000},
-                  {hour: '8PM', sales: 23500}
-                ]}>
-                  <Area type="monotone" dataKey="sales" stroke="#10b981" fill="#10b981" fillOpacity={0.2} strokeWidth={3} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+        <WeeklySalesChart />
+        <HourlySalesChart />
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">

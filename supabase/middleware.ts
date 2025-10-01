@@ -2,8 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 
 export const updateSession = async (request: NextRequest) => {
-  // This `try/catch` block is only here for the interactive tutorial.
-  // Feel free to remove once you have Supabase connected.
+  console.log('🔍 MIDDLEWARE:', request.nextUrl.pathname);
+  
   try {
     // Create an unmodified response
     let response = NextResponse.next({
@@ -41,21 +41,64 @@ export const updateSession = async (request: NextRequest) => {
     // This will refresh session if expired - required for Server Components
     // https://supabase.com/docs/guides/auth/server-side/nextjs
     const { data: { user }, error } = await supabase.auth.getUser();
+    
+    console.log('👤 USER:', user?.email || 'No user');
+    console.log('❌ ERROR:', error?.message || 'No error');
 
-    // protected routes
-    if (request.nextUrl.pathname.startsWith("/dashboard") && error) {
+    // protected routes - redirect to sign-in if no user
+    const protectedPaths = [
+      "/dashboard",
+      "/superadmin", 
+      "/pharmacy-dashboard",
+      "/pharmacist-dashboard",
+      "/inventory",
+      "/pos",
+      "/sales",
+      "/customers",
+      "/branches",
+      "/staff",
+      "/settings",
+      "/prescriptions",
+      "/admin"
+    ];
+    
+    const authPaths = ["/sign-in", "/sign-up", "/forgot-password", "/auth/success", "/auth/callback", "/auth-success"];
+    
+    const isProtectedPath = protectedPaths.some(path => 
+      request.nextUrl.pathname.startsWith(path)
+    );
+    
+    if (isProtectedPath && (!user || error)) {
+      console.log('➡️ REDIRECTING unauthenticated user to /sign-in');
       return NextResponse.redirect(new URL("/sign-in", request.url));
     }
 
-    if (request.nextUrl.pathname === "/" && !error) {
-      return NextResponse.redirect(new URL("/", request.url));
+    // Redirect authenticated users away from auth pages (except success/callback)
+    const publicAuthPaths = ["/sign-in", "/sign-up", "/forgot-password"];
+    const isPublicAuthPath = publicAuthPaths.some(path => 
+      request.nextUrl.pathname.startsWith(path)
+    );
+    
+    if (isPublicAuthPath && user && !error) {
+      console.log('➡️ REDIRECTING authenticated user from auth page to /dashboard');
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    
+    // Allow auth success/callback pages to run without protection
+    const isAuthProcessingPath = authPaths.some(path => 
+      request.nextUrl.pathname.startsWith(path)
+    );
+    
+    if (isAuthProcessingPath) {
+      console.log('✅ ALLOWING auth processing path:', request.nextUrl.pathname);
+      return response;
     }
 
     return response;
   } catch (e) {
+    console.error('❌ MIDDLEWARE ERROR:', e);
     // If you are here, a Supabase client could not be created!
     // This is likely because you have not set up environment variables.
-    // Check out http://localhost:3000 for Next Steps.
     return NextResponse.next({
       request: {
         headers: request.headers,

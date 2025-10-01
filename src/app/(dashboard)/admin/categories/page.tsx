@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Sidebar from "@/components/sidebar";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tag, Plus, Edit, Trash2 } from "lucide-react";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState([
@@ -92,15 +93,17 @@ export default function CategoriesPage() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto p-6">
+    <div className="p-6">
         <div className="max-w-7xl mx-auto">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-2">
-              <Tag className="h-8 w-8 text-blue-600" />
-              Category Management
-            </h1>
+            <div className="flex items-center gap-4 mb-2">
+              <SidebarTrigger />
+              <div className="h-4 w-px bg-border" />
+              <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
+                <Tag className="h-8 w-8 text-blue-600" />
+                Category Management
+              </h1>
+            </div>
             <p className="text-gray-600">Organize product and service categories</p>
           </div>
 
@@ -240,7 +243,6 @@ export default function CategoriesPage() {
             </DialogContent>
           </Dialog>
         </div>
-      </main>
     </div>
   );
 }

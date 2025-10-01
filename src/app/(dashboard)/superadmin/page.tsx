@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { usePharmacyStore } from '@/hooks/usePharmacyStore'
+import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,6 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Building2, Users, CreditCard, TrendingUp, Plus, MapPin, Crown, Pill, Shield, FileText } from 'lucide-react'
+import { RealtimeStatus } from '@/components/RealtimeStatus'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 
 interface DashboardStats {
   totalPharmacies: number
@@ -66,6 +70,16 @@ export default function SuperAdminDashboard() {
     policy_number: '',
     invoice_template: 'default',
     template_html: ''
+  })
+
+  const { inventory, sales, alerts } = usePharmacyStore()
+
+  // Real-time updates
+  useRealtimeUpdates((update) => {
+    if (update.type === 'new_sale' || update.type === 'inventory_update') {
+      fetchDashboardStats()
+      fetchPharmacies()
+    }
   })
 
   useEffect(() => {
@@ -180,8 +194,16 @@ export default function SuperAdminDashboard() {
         
         // Force refresh both lists
         await fetchPharmacies()
-        // Also trigger a page refresh to ensure all components update
-        window.location.reload()
+        
+        // Broadcast update to all connected systems
+        await fetch('/api/notifications/broadcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'pharmacy_created',
+            data: { pharmacy }
+          })
+        }).catch(() => {})
         
         setIsAddingPharmacy(false)
         setNewPharmacy({ name: '', location: '', owner_name: '', owner_email: '', owner_phone: '', owner_password: '', plan: 'free', insurance_providers: [] })
@@ -207,6 +229,17 @@ export default function SuperAdminDashboard() {
         const result = await response.json()
         if (result.success) {
           await fetchInsurance()
+          
+          // Broadcast insurance update
+          await fetch('/api/notifications/broadcast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'insurance_added',
+              data: { insurance: newInsurance }
+            })
+          }).catch(() => {})
+          
           setIsAddingInsurance(false)
           setNewInsurance({ name: '', coverage_percentage: 80, contact_email: '', contact_phone: '', policy_number: '', invoice_template: 'default', template_html: '' })
           alert('Insurance provider added successfully!')
@@ -227,9 +260,16 @@ export default function SuperAdminDashboard() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Super Admin Dashboard</h1>
-          <p className="text-muted-foreground">Platform overview and management</p>
+        <div className="flex items-center gap-4">
+          <SidebarTrigger />
+          <div className="h-4 w-px bg-border" />
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold">Super Admin Dashboard</h1>
+              <RealtimeStatus />
+            </div>
+            <p className="text-muted-foreground">Platform overview and management</p>
+          </div>
         </div>
         <div className="flex gap-2">
           <Dialog open={isAddingPharmacy} onOpenChange={setIsAddingPharmacy}>

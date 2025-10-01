@@ -3,12 +3,47 @@ import { createClient } from '@supabase/supabase-js'
 
 export async function POST(request: Request) {
   try {
+    // First check if user is authenticated and authorized
+    const userSupabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    
+    userSupabase.auth.setSession({ access_token: authHeader.replace('Bearer ', ''), refresh_token: '' })
+    const { data: { user }, error: authError } = await userSupabase.auth.getUser()
+    
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    
+    // Check if user is pharmacy owner or superadmin
+    const { data: pharmacyUser } = await userSupabase
+      .from('users')
+      .select('role, pharmacy_id')
+      .eq('id', user.id)
+      .single()
+    
+    const isSuperAdmin = user.email === 'abdousentore@gmail.com'
+    const isPharmacyOwner = pharmacyUser?.role === 'pharmacy_owner'
+    
+    if (!isSuperAdmin && !isPharmacyOwner) {
+      return NextResponse.json({ error: 'Only pharmacy owners can add pharmacists' }, { status: 403 })
+    }
+    
     // Use service role for admin operations
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
     const body = await request.json()
+    
+    // Use the user's pharmacy_id if they're a pharmacy owner
+    const targetPharmacyId = isPharmacyOwner ? pharmacyUser.pharmacy_id : body.pharmacy_id
     
     // Create user in Supabase Auth
     const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
@@ -21,17 +56,16 @@ export async function POST(request: Request) {
     
     if (authError) throw authError
     
-    // Add to pharmacy_users table
+    // Add to users table
     const { data: pharmacyUser, error: dbError } = await supabase
-      .from('pharmacy_users')
+      .from('users')
       .insert({
-        user_id: authUser.user.id,
-        pharmacy_id: body.pharmacy_id,
+        id: authUser.user.id,
+        pharmacy_id: targetPharmacyId,
         role: body.role || 'pharmacist',
-        display_name: body.full_name,
+        full_name: body.full_name,
         email: body.email,
-        phone: body.phone,
-        is_active: true
+        phone: body.phone
       })
       .select()
       .single()
@@ -42,7 +76,7 @@ export async function POST(request: Request) {
     const { error: staffError } = await supabase
       .from('staff')
       .insert({
-        pharmacy_id: body.pharmacy_id,
+        pharmacy_id: targetPharmacyId,
         user_id: authUser.user.id,
         first_name: body.full_name.split(' ')[0],
         last_name: body.full_name.split(' ').slice(1).join(' ') || '',

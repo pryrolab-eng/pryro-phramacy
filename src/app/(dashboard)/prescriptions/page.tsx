@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Pill, Plus, Clock, CheckCircle, AlertCircle, User, Calendar } from 'lucide-react'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 
 interface Prescription {
   id: string
@@ -114,9 +115,13 @@ export default function PrescriptionsPage() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Prescriptions</h1>
-          <p className="text-muted-foreground">Manage patient prescriptions and dispensing</p>
+        <div className="flex items-center gap-4">
+          <SidebarTrigger />
+          <div className="h-4 w-px bg-border" />
+          <div>
+            <h1 className="text-3xl font-bold">Prescriptions</h1>
+            <p className="text-muted-foreground">Manage patient prescriptions and dispensing</p>
+          </div>
         </div>
         <Dialog open={isAddingPrescription} onOpenChange={setIsAddingPrescription}>
           <DialogTrigger asChild>

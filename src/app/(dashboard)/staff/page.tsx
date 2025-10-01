@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { UserCog, Plus, Mail, Phone, Calendar } from 'lucide-react'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 
 interface StaffMember {
   id: string
@@ -164,9 +165,13 @@ export default function StaffManagePage() {
   return (
     <div className="p-6 space-y-6 bg-gray-100 min-h-screen">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Staff Management</h1>
-          <p className="text-muted-foreground">Manage your pharmacy staff members</p>
+        <div className="flex items-center gap-4">
+          <SidebarTrigger />
+          <div className="h-4 w-px bg-border" />
+          <div>
+            <h1 className="text-3xl font-bold">Staff Management</h1>
+            <p className="text-muted-foreground">Manage your pharmacy staff members</p>
+          </div>
         </div>
         <Dialog open={isAddingStaff} onOpenChange={setIsAddingStaff}>
           <DialogTrigger asChild>

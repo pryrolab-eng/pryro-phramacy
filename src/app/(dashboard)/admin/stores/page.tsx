@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Sidebar from "@/components/sidebar";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -142,9 +142,9 @@ export default function PharmacyManagementPage() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto p-6">
+    <div className="p-6">
+
+
         <div className="max-w-7xl mx-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-2">
@@ -426,7 +426,7 @@ export default function PharmacyManagementPage() {
             )}
           </DialogContent>
         </Dialog>
-      </main>
+
     </div>
   );
 }

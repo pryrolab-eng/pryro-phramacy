@@ -1,12 +1,15 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { usePharmacyStore } from '@/hooks/usePharmacyStore'
+import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Pill, Users, Clock, CheckCircle, AlertCircle, Search, UserCheck, Calendar, ShoppingCart, Plus, Package, AlertTriangle } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useRouter } from 'next/navigation'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 
 interface PharmacistStats {
   prescriptionsToday: number
@@ -56,6 +59,7 @@ interface ExpirationAlert {
 
 export default function PharmacistDashboard() {
   const router = useRouter()
+  const { inventory, sales, alerts, setInventory, addSale, setAlerts } = usePharmacyStore()
   const [stats, setStats] = useState<PharmacistStats>({
     prescriptionsToday: 0,
     customersServed: 0,
@@ -68,6 +72,17 @@ export default function PharmacistDashboard() {
   })
 
   const [pendingPrescriptions, setPendingPrescriptions] = useState<PendingPrescription[]>([])
+
+  // Real-time updates
+  useRealtimeUpdates((update) => {
+    if (update.type === 'inventory_update') {
+      fetchStockAlerts()
+    }
+    if (update.type === 'new_sale') {
+      fetchDashboardStats()
+      fetchRecentActivities()
+    }
+  })
 
   useEffect(() => {
     fetchDashboardStats()
@@ -132,6 +147,7 @@ export default function PharmacistDashboard() {
         const data = await response.json()
         setStockAlerts(data.lowStock || [])
         setExpirationAlerts(data.expiring || [])
+        setAlerts(data.all || [])
       }
     } catch (error) {
       console.error('Error fetching stock alerts:', error)
@@ -171,9 +187,13 @@ export default function PharmacistDashboard() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Pharmacist Dashboard</h1>
-          <p className="text-muted-foreground">Your daily workflow and patient care overview</p>
+        <div className="flex items-center gap-4">
+          <SidebarTrigger />
+          <div className="h-4 w-px bg-border" />
+          <div>
+            <h1 className="text-3xl font-bold">Pharmacist Dashboard</h1>
+            <p className="text-muted-foreground">Your daily workflow and patient care overview</p>
+          </div>
         </div>
         <div className="flex space-x-2">
           <Button size="lg" className="bg-blue-600 hover:bg-blue-700" onClick={() => router.push('/pos')}>

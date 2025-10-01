@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { usePharmacyStore } from '@/hooks/usePharmacyStore'
+import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -9,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Package, Plus, AlertTriangle, Calendar, Upload, Download, QrCode, Scan } from 'lucide-react'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 import * as XLSX from 'xlsx'
 import JsBarcode from 'jsbarcode'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, AreaChart, Area } from 'recharts'
@@ -35,7 +38,8 @@ interface InventoryItem {
 }
 
 export default function InventoryPage() {
-  const [inventory, setInventory] = useState<InventoryItem[]>([])
+  const { inventory, setInventory } = usePharmacyStore()
+  const [localInventory, setLocalInventory] = useState<InventoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [isAddingProduct, setIsAddingProduct] = useState(false)
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
@@ -75,6 +79,13 @@ export default function InventoryPage() {
     vatRate: 'A',
     stockLocation: 'main-store',
     notes: ''
+  })
+
+  // Real-time updates
+  useRealtimeUpdates((update) => {
+    if (update.type === 'inventory_update') {
+      fetchInventory()
+    }
   })
 
   useEffect(() => {
@@ -118,14 +129,17 @@ export default function InventoryPage() {
       const response = await fetch('/api/inventory')
       if (response.ok) {
         const data = await response.json()
+        setLocalInventory(data)
         setInventory(data)
       }
     } catch (error) {
       console.error('Error fetching inventory:', error)
-      setInventory([
+      const fallbackData = [
         { id: '1', productCode: 'PAR500', name: 'Paracetamol 500mg', category: 'Pain Relief', classificationCode: 'N02BE01', barcode: '1234567890123', manufacturer: 'PharmaCorp', purchasePrice: 80, price: 100, stock: 100, minStock: 20, maxStock: 500, batchNumber: 'PAR001', expiryDate: '2025-12-31', trackByBatch: true, vatRate: 'A', stockLocation: 'main-store', notes: '' },
         { id: '2', productCode: 'AMX250', name: 'Amoxicillin 250mg', category: 'Antibiotics', classificationCode: 'J01CA04', barcode: '1234567890124', manufacturer: 'MediLab', purchasePrice: 320, price: 400, stock: 5, minStock: 10, maxStock: 200, batchNumber: 'AMX001', expiryDate: '2025-06-30', trackByBatch: true, vatRate: 'A', stockLocation: 'main-store', notes: 'Prescription required' }
-      ])
+      ]
+      setLocalInventory(fallbackData)
+      setInventory(fallbackData)
     } finally {
       setLoading(false)
     }
@@ -153,7 +167,19 @@ export default function InventoryPage() {
       notes: newProduct.notes
     }
     
-    setInventory([...inventory, product])
+    const updatedInventory = [...localInventory, product]
+    setLocalInventory(updatedInventory)
+    setInventory(updatedInventory)
+    
+    // Broadcast inventory update
+    await fetch('/api/notifications/broadcast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'inventory_update',
+        data: { action: 'add', product }
+      })
+    }).catch(() => {})
     setIsAddingProduct(false)
     setNewProduct({ productCode: '', name: '', category: '', classificationCode: '', barcode: '', manufacturer: '', purchasePrice: '', price: '', stock: '', minStock: '', maxStock: '', batchNumber: '', expiryDate: '', trackByBatch: false, vatRate: 'A', stockLocation: 'main-store', notes: '' })
     alert('Product added successfully with stock alert threshold!')
@@ -411,9 +437,13 @@ export default function InventoryPage() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">Inventory Management</h1>
-          <p className="text-muted-foreground">Manage your pharmacy stock with automated alerts</p>
+        <div className="flex items-center gap-4">
+          <SidebarTrigger />
+          <div className="h-4 w-px bg-border" />
+          <div>
+            <h1 className="text-3xl font-bold">Inventory Management</h1>
+            <p className="text-muted-foreground">Manage your pharmacy stock with automated alerts</p>
+          </div>
         </div>
         <div>
           <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
@@ -735,7 +765,7 @@ export default function InventoryPage() {
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{inventory.length}</div>
+            <div className="text-2xl font-bold">{localInventory.length}</div>
             <div className="h-8 mt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={[{v:inventory.length-5},{v:inventory.length-3},{v:inventory.length-1},{v:inventory.length},{v:inventory.length+2},{v:inventory.length}]}>
@@ -751,7 +781,7 @@ export default function InventoryPage() {
             <AlertTriangle className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{inventory.filter(item => item.stock <= item.minStock).length}</div>
+            <div className="text-2xl font-bold">{localInventory.filter(item => item.stock <= item.minStock).length}</div>
             <div className="h-8 mt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={[{v:8},{v:6},{v:4},{v:3},{v:2},{v:inventory.filter(item => item.stock <= item.minStock).length}]}>
@@ -768,7 +798,7 @@ export default function InventoryPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {inventory.filter(item => {
+              {localInventory.filter(item => {
                 const daysToExpiry = Math.ceil((new Date(item.expiryDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
                 return daysToExpiry <= 60
               }).length}
@@ -791,7 +821,7 @@ export default function InventoryPage() {
             <Package className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{(inventory.reduce((sum, item) => sum + (item.stock * item.price), 0)).toLocaleString()} RWF</div>
+            <div className="text-2xl font-bold">{(localInventory.reduce((sum, item) => sum + (item.stock * item.price), 0)).toLocaleString()} RWF</div>
             <div className="h-8 mt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={[{v:2800000},{v:3100000},{v:3350000},{v:3200000},{v:3400000},{v:inventory.reduce((sum, item) => sum + (item.stock * item.price), 0)}]}>
@@ -878,7 +908,7 @@ export default function InventoryPage() {
             </div>
           </div>
           <div className="space-y-4">
-            {inventory.filter(item => 
+            {localInventory.filter(item => 
               item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
               item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
               item.batchNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||

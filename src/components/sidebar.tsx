@@ -129,22 +129,24 @@ export default function Sidebar() {
         const { data: { user } } = await supabase.auth.getUser()
         let role = 'pharmacy_owner'
         
-        if (user?.email === 'abdousentore@gmail.com') {
-          role = 'superadmin'
-        } else if (user) {
-          // Always check database for role, don't rely on email patterns
-          const { data: pharmacyUser } = await supabase
-            .from('pharmacy_users')
-            .select('role')
-            .eq('user_id', user.id)
-            .eq('is_active', true)
-            .single()
-          
-          if (pharmacyUser?.role) {
-            role = pharmacyUser.role
+        if (user) {
+          // Check if user is super admin by email
+          if (user.email === 'abdousentore@gmail.com') {
+            role = 'superadmin'
           } else {
-            // Default to pharmacist for new users not in pharmacy_users table
-            role = 'pharmacist'
+            // Check pharmacy_users table for pharmacy-specific roles
+            const { data: pharmacyUser } = await supabase
+              .from('pharmacy_users')
+              .select('role')
+              .eq('user_id', user.id)
+              .eq('is_active', true)
+              .single()
+            
+            if (pharmacyUser?.role) {
+              role = pharmacyUser.role
+            } else {
+              role = 'pharmacist'
+            }
           }
         }
         

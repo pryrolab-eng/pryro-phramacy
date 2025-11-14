@@ -35,7 +35,24 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient()
     const { prescriptionId, action } = await request.json()
     
+    if (action === 'start') {
+      // Track prescription processing start
+      await supabase
+        .from('prescription_processing')
+        .insert({ prescription_id: prescriptionId })
+      
+      return NextResponse.json({ success: true })
+    }
+    
     if (action === 'dispense') {
+      // Complete prescription processing tracking
+      await supabase
+        .from('prescription_processing')
+        .update({ completed_at: new Date().toISOString() })
+        .eq('prescription_id', prescriptionId)
+        .is('completed_at', null)
+      
+      // Update prescription status
       const { error } = await supabase
         .from('prescriptions')
         .update({ status: 'dispensed' })

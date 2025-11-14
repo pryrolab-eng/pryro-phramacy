@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     const { data: pharmacy } = await supabase
       .from('pharmacies')
       .select('*')
-      .eq('id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+      .eq('id', 'userPharmacy.pharmacy_id')
       .single()
 
     // Get insurance details

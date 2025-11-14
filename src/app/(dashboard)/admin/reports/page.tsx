@@ -1,13 +1,21 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BarChart3, Download, TrendingUp, Users, Building2, CreditCard, DollarSign, Package } from "lucide-react";
+import { Spinner } from '@/components/ui/spinner';
 
 export default function ReportsPage() {
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setLoading(false), 700)
+    return () => clearTimeout(timer)
+  }, [])
+
   const reports = [
     { name: "Revenue Report", description: "Monthly subscription revenue breakdown", lastGenerated: "2 hours ago", type: "Financial" },
     { name: "User Activity", description: "User engagement and activity metrics", lastGenerated: "1 day ago", type: "Analytics" },
@@ -28,6 +36,12 @@ export default function ReportsPage() {
     { month: 'Mar', revenue: 1500000, pharmacies: 22 },
     { month: 'Apr', revenue: 1800000, pharmacies: 24 },
   ];
+
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <Spinner className="size-6" />
+    </div>
+  )
 
   return (
     <div className="p-6">

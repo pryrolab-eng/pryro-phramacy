@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
     const { data: insurance, error } = await supabase
       .from('insurance_providers')
       .insert({
-        pharmacy_id: body.pharmacy_id || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',
         name: body.name,
         coverage_percentage: body.coverage_percentage || 80,
         is_active: true

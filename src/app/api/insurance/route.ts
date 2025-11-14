@@ -13,7 +13,8 @@ export async function GET() {
     if (error) throw error
     return NextResponse.json(providers)
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch insurance providers' }, { status: 500 })
+    console.error('GET /api/insurance error:', error)
+    return NextResponse.json({ error: 'Failed to fetch insurance providers', details: error.message }, { status: 500 })
   }
 }
 
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
     const { data: provider, error } = await supabase
       .from('insurance_providers')
       .insert({
-        pharmacy_id: body.pharmacy_id || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: null,
         name: body.name,
         coverage_percentage: body.coverage_percentage || 80,
         contact_email: body.contact_email || '',
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
     if (error) throw error
     return NextResponse.json({ success: true, provider })
   } catch (error) {
-    return NextResponse.json({ success: false, error: 'Failed to add insurance provider' }, { status: 500 })
+    console.error('POST /api/insurance error:', error)
+    return NextResponse.json({ success: false, error: 'Failed to add insurance provider', details: error.message }, { status: 500 })
   }
 }

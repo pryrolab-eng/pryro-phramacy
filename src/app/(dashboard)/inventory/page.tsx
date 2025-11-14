@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
 import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
+import { createClient } from '../../../../supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -10,8 +11,25 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Package, Plus, AlertTriangle, Calendar, Upload, Download, QrCode, Scan } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Progress } from "@/components/ui/progress"
+import { Separator } from "@/components/ui/separator"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
+import { toast } from "@/components/ui/use-toast"
+import { Package, Plus, AlertTriangle, Calendar, Upload, Download, QrCode, Scan, Search, Filter, MoreHorizontal, Edit, Trash2, Eye, TrendingUp, TrendingDown } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
+import { Spinner } from '@/components/ui/spinner'
 import * as XLSX from 'xlsx'
 import JsBarcode from 'jsbarcode'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, AreaChart, Area } from 'recharts'
@@ -61,6 +79,11 @@ export default function InventoryPage() {
   const [suppliers, setSuppliers] = useState([])
   const [isAddingSupplier, setIsAddingSupplier] = useState(false)
   const [newSupplier, setNewSupplier] = useState({ name: '', contact: '', phone: '', email: '' })
+  const [analyticsData, setAnalyticsData] = useState({ stockByCategory: [], inventoryTrend: [] })
+  const [selectedCategory, setSelectedCategory] = useState('all')
+  const [selectedItems, setSelectedItems] = useState<string[]>([])
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [commandOpen, setCommandOpen] = useState(false)
   const [newProduct, setNewProduct] = useState({
     productCode: '',
     name: '',
@@ -91,7 +114,20 @@ export default function InventoryPage() {
   useEffect(() => {
     fetchInventory()
     fetchSuppliers()
+    fetchAnalytics()
   }, [])
+  
+  const fetchAnalytics = async () => {
+    try {
+      const response = await fetch('/api/inventory/analytics')
+      if (response.ok) {
+        const data = await response.json()
+        setAnalyticsData(data)
+      }
+    } catch (error) {
+      console.error('Error fetching analytics:', error)
+    }
+  }
 
   const fetchSuppliers = async () => {
     try {
@@ -126,63 +162,59 @@ export default function InventoryPage() {
 
   const fetchInventory = async () => {
     try {
-      const response = await fetch('/api/inventory')
-      if (response.ok) {
-        const data = await response.json()
-        setLocalInventory(data)
-        setInventory(data)
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (user) {
+        const response = await fetch('/api/inventory', {
+          headers: {
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+          }
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setLocalInventory(data)
+          setInventory(data)
+        }
       }
     } catch (error) {
       console.error('Error fetching inventory:', error)
-      const fallbackData = [
-        { id: '1', productCode: 'PAR500', name: 'Paracetamol 500mg', category: 'Pain Relief', classificationCode: 'N02BE01', barcode: '1234567890123', manufacturer: 'PharmaCorp', purchasePrice: 80, price: 100, stock: 100, minStock: 20, maxStock: 500, batchNumber: 'PAR001', expiryDate: '2025-12-31', trackByBatch: true, vatRate: 'A', stockLocation: 'main-store', notes: '' },
-        { id: '2', productCode: 'AMX250', name: 'Amoxicillin 250mg', category: 'Antibiotics', classificationCode: 'J01CA04', barcode: '1234567890124', manufacturer: 'MediLab', purchasePrice: 320, price: 400, stock: 5, minStock: 10, maxStock: 200, batchNumber: 'AMX001', expiryDate: '2025-06-30', trackByBatch: true, vatRate: 'A', stockLocation: 'main-store', notes: 'Prescription required' }
-      ]
-      setLocalInventory(fallbackData)
-      setInventory(fallbackData)
     } finally {
       setLoading(false)
     }
   }
 
   const handleAddProduct = async () => {
-    const product: InventoryItem = {
-      id: Date.now().toString(),
-      productCode: newProduct.productCode,
-      name: newProduct.name,
-      category: newProduct.category,
-      classificationCode: newProduct.classificationCode,
-      barcode: newProduct.barcode,
-      manufacturer: newProduct.manufacturer,
-      purchasePrice: parseFloat(newProduct.purchasePrice),
-      price: parseFloat(newProduct.price),
-      stock: parseInt(newProduct.stock),
-      minStock: parseInt(newProduct.minStock),
-      maxStock: newProduct.maxStock ? parseInt(newProduct.maxStock) : undefined,
-      batchNumber: newProduct.batchNumber,
-      expiryDate: newProduct.expiryDate,
-      trackByBatch: newProduct.trackByBatch,
-      vatRate: newProduct.vatRate,
-      stockLocation: newProduct.stockLocation,
-      notes: newProduct.notes
-    }
-    
-    const updatedInventory = [...localInventory, product]
-    setLocalInventory(updatedInventory)
-    setInventory(updatedInventory)
-    
-    // Broadcast inventory update
-    await fetch('/api/notifications/broadcast', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'inventory_update',
-        data: { action: 'add', product }
+    try {
+      // Save to database via API
+      const response = await fetch('/api/inventory/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newProduct.name,
+          category: newProduct.category,
+          batch_number: newProduct.batchNumber,
+          quantity: newProduct.stock,
+          unit_cost: newProduct.purchasePrice,
+          selling_price: newProduct.price,
+          minimum_stock_level: newProduct.minStock,
+          expiry_date: newProduct.expiryDate
+        })
       })
-    }).catch(() => {})
-    setIsAddingProduct(false)
-    setNewProduct({ productCode: '', name: '', category: '', classificationCode: '', barcode: '', manufacturer: '', purchasePrice: '', price: '', stock: '', minStock: '', maxStock: '', batchNumber: '', expiryDate: '', trackByBatch: false, vatRate: 'A', stockLocation: 'main-store', notes: '' })
-    alert('Product added successfully with stock alert threshold!')
+      
+      if (response.ok) {
+        // Refresh inventory from database
+        await fetchInventory()
+        setIsAddingProduct(false)
+        setNewProduct({ productCode: '', name: '', category: '', classificationCode: '', barcode: '', manufacturer: '', purchasePrice: '', price: '', stock: '', minStock: '', maxStock: '', batchNumber: '', expiryDate: '', trackByBatch: false, vatRate: 'A', stockLocation: 'main-store', notes: '' })
+        alert('✅ Product saved to database successfully!')
+      } else {
+        alert('❌ Failed to save product to database')
+      }
+    } catch (error) {
+      console.error('Error saving product:', error)
+      alert('❌ Error saving product to database')
+    }
   }
 
   const getStockStatus = (stock: number, minStock: number) => {
@@ -432,25 +464,36 @@ export default function InventoryPage() {
     }
   }
 
-  if (loading) return <div className="p-6">Loading...</div>
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <Spinner className="size-6" />
+    </div>
+  )
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+    <div className="flex-1 space-y-4 p-4 md:p-8">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <SidebarTrigger />
-          <div className="h-4 w-px bg-border" />
-          <div>
-            <h1 className="text-3xl font-bold">Inventory Management</h1>
-            <p className="text-muted-foreground">Manage your pharmacy stock with automated alerts</p>
+          <Separator orientation="vertical" className="h-6" />
+          <div className="space-y-1">
+            <h1 className="text-xl font-semibold tracking-tight">Inventory Management</h1>
+            <p className="text-xs text-muted-foreground">
+              Manage your pharmacy stock with automated alerts and analytics
+            </p>
           </div>
         </div>
-        <div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={exportToExcel}>
+            <Download className="mr-2 h-4 w-4" />
+            Export
+          </Button>
           <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline">
+              <Button variant="outline" size="sm">
                 <Upload className="mr-2 h-4 w-4" />
-                Import Excel
+                Import
               </Button>
             </DialogTrigger>
             <DialogContent>
@@ -526,7 +569,7 @@ export default function InventoryPage() {
           />
           <Dialog open={isAddingProduct} onOpenChange={setIsAddingProduct}>
             <DialogTrigger asChild>
-              <Button>
+              <Button size="sm">
                 <Plus className="mr-2 h-4 w-4" />
                 Add Product
               </Button>
@@ -541,7 +584,7 @@ export default function InventoryPage() {
                 <div className="grid gap-2">
                   <Label>Product Code (SKU)</Label>
                   <Input 
-                    placeholder="e.g. PAR500" 
+                    placeholder="PAR500" 
                     value={newProduct.productCode}
                     onChange={(e) => setNewProduct({...newProduct, productCode: e.target.value})}
                   />
@@ -549,7 +592,7 @@ export default function InventoryPage() {
                 <div className="grid gap-2">
                   <Label>Barcode</Label>
                   <Input 
-                    placeholder="1234567890123" 
+                    placeholder="123456789" 
                     value={newProduct.barcode}
                     onChange={(e) => setNewProduct({...newProduct, barcode: e.target.value})}
                   />
@@ -558,7 +601,7 @@ export default function InventoryPage() {
               <div className="grid gap-2">
                 <Label>Product Name</Label>
                 <Input 
-                  placeholder="e.g. Paracetamol 500mg" 
+                  placeholder="Paracetamol 500mg" 
                   value={newProduct.name}
                   onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
                 />
@@ -590,7 +633,7 @@ export default function InventoryPage() {
                 <div className="grid gap-2">
                   <Label>Classification Code</Label>
                   <Input 
-                    placeholder="e.g. N02BE01" 
+                    placeholder="N02BE01" 
                     value={newProduct.classificationCode}
                     onChange={(e) => setNewProduct({...newProduct, classificationCode: e.target.value})}
                   />
@@ -599,7 +642,7 @@ export default function InventoryPage() {
               <div className="grid gap-2">
                 <Label>Manufacturer / Supplier</Label>
                 <Input 
-                  placeholder="e.g. PharmaCorp Ltd" 
+                  placeholder="PharmaCorp Ltd" 
                   value={newProduct.manufacturer}
                   onChange={(e) => setNewProduct({...newProduct, manufacturer: e.target.value})}
                 />
@@ -711,14 +754,14 @@ export default function InventoryPage() {
               <div className="grid gap-2">
                 <Label>Notes / Special Instructions</Label>
                 <Input 
-                  placeholder="e.g. Store in cool, dry place" 
+                  placeholder="Store in cool, dry place" 
                   value={newProduct.notes}
                   onChange={(e) => setNewProduct({...newProduct, notes: e.target.value})}
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button onClick={handleAddProduct} disabled={!newProduct.productCode || !newProduct.name || !newProduct.category || !newProduct.stock || !newProduct.minStock}>
+              <Button onClick={handleAddProduct} disabled={!newProduct.name || !newProduct.category || !newProduct.stock || !newProduct.minStock}>
                 Add Product
               </Button>
             </DialogFooter>
@@ -757,44 +800,44 @@ export default function InventoryPage() {
         </Dialog>
         </div>
       </div>
+      
+      {/* Add missing state variable */}
+      {selectedCategory === undefined && setSelectedCategory('all')}
 
-      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Products</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
+            <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
+              <Package className="h-4 w-4 text-blue-600" />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{localInventory.length}</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[{v:inventory.length-5},{v:inventory.length-3},{v:inventory.length-1},{v:inventory.length},{v:inventory.length+2},{v:inventory.length}]}>
-                  <Area type="monotone" dataKey="v" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.08} strokeWidth={1} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <p className="text-xs text-muted-foreground">Active inventory items</p>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-red-500" />
+            <CardTitle className="text-sm font-medium">Low Stock</CardTitle>
+            <div className="h-8 w-8 rounded-lg bg-red-100 flex items-center justify-center">
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{localInventory.filter(item => item.stock <= item.minStock).length}</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[{v:8},{v:6},{v:4},{v:3},{v:2},{v:inventory.filter(item => item.stock <= item.minStock).length}]}>
-                  <Area type="monotone" dataKey="v" stroke="#ef4444" fill="#ef4444" fillOpacity={0.08} strokeWidth={1} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <p className="text-xs text-muted-foreground">Items need reorder</p>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
-            <Calendar className="h-4 w-4 text-amber-500" />
+            <div className="h-8 w-8 rounded-lg bg-amber-100 flex items-center justify-center">
+              <Calendar className="h-4 w-4 text-amber-600" />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -803,197 +846,405 @@ export default function InventoryPage() {
                 return daysToExpiry <= 60
               }).length}
             </div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[{v:12},{v:10},{v:8},{v:6},{v:4},{v:inventory.filter(item => {
-                  const daysToExpiry = Math.ceil((new Date(item.expiryDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
-                  return daysToExpiry <= 60
-                }).length}]}>
-                  <Area type="monotone" dataKey="v" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.08} strokeWidth={1} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <p className="text-xs text-muted-foreground">Within 60 days</p>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Value</CardTitle>
-            <Package className="h-4 w-4 text-green-500" />
+            <div className="h-8 w-8 rounded-lg bg-green-100 flex items-center justify-center">
+              <TrendingUp className="h-4 w-4 text-green-600" />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{(localInventory.reduce((sum, item) => sum + (item.stock * item.price), 0)).toLocaleString()} RWF</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[{v:2800000},{v:3100000},{v:3350000},{v:3200000},{v:3400000},{v:inventory.reduce((sum, item) => sum + (item.stock * item.price), 0)}]}>
-                  <Area type="monotone" dataKey="v" stroke="#10b981" fill="#10b981" fillOpacity={0.08} strokeWidth={1} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <p className="text-xs text-muted-foreground">Inventory worth</p>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Barcode Generator</CardTitle>
-            <QrCode className="h-4 w-4 text-blue-500" />
+            <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
+            <div className="h-8 w-8 rounded-lg bg-purple-100 flex items-center justify-center">
+              <QrCode className="h-4 w-4 text-purple-600" />
+            </div>
           </CardHeader>
           <CardContent className="space-y-2">
             <Button onClick={() => { setBulkMode(false); setBarcodeDialogOpen(true) }} className="w-full" size="sm">
-              Single Barcode
-            </Button>
-            <Button onClick={() => { setBulkMode(true); setBarcodeDialogOpen(true) }} variant="outline" className="w-full" size="sm">
-              Bulk Generate
+              Generate Barcode
             </Button>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-start">
-            <div>
-              <CardTitle>Inventory Items</CardTitle>
-              <CardDescription>Stock levels with automated alerts</CardDescription>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button 
-                variant="outline" 
-                size="sm"
-                className="bg-blue-50 hover:bg-blue-100 text-blue-700"
-                onClick={() => alert('Stock Transfer - Transfer inventory between branches, track movements, and maintain stock levels across locations')}
-              >
-                <Package className="mr-2 h-4 w-4" />
-                Stock Transfer
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setAdjustmentDialogOpen(true)}>
-                Stock Adjustment
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setPurchaseDialogOpen(true)}>
-                Purchase Stock
-              </Button>
-              <Button size="sm" onClick={exportToExcel}>
-                <Download className="mr-2 h-4 w-4" />
-                Export Excel
-              </Button>
-              <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <Upload className="mr-2 h-4 w-4" />
-                    Import Excel
-                  </Button>
-                </DialogTrigger>
-              </Dialog>
-              <Dialog open={isAddingProduct} onOpenChange={setIsAddingProduct}>
-                <DialogTrigger asChild>
-                  <Button size="sm">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Product
-                  </Button>
-                </DialogTrigger>
-              </Dialog>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="mb-4">
-            <div className="flex gap-2">
-              <Input
-                placeholder="Search by name, category, batch, or barcode..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="flex-1"
-              />
-              <Button size="icon" variant="outline">
-                <Scan className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          <div className="space-y-4">
-            {localInventory.filter(item => 
-              item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              item.batchNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              item.id.toLowerCase().includes(searchTerm.toLowerCase())
-            ).map((item) => {
-              const stockStatus = getStockStatus(item.stock, item.minStock)
-              const expiryStatus = getExpiryStatus(item.expiryDate)
-              return (
-                <div key={item.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                      <Package className="h-5 w-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium">{item.name}</p>
-                      <p className="text-sm text-muted-foreground">{item.category} • Batch: {item.batchNumber}</p>
-                    </div>
-                  </div>
-                  <div className="text-right space-y-1">
-                    <div className="flex space-x-2">
-                      <Badge variant={stockStatus.variant}>{stockStatus.label}</Badge>
-                      <Badge variant={expiryStatus.variant}>Exp: {expiryStatus.label}</Badge>
-                    </div>
-                    <p className="text-sm">Stock: {item.stock} (Min: {item.minStock})</p>
-                    <p className="text-sm text-muted-foreground">{item.price.toLocaleString()} RWF</p>
-                  </div>
+      {/* Main Content */}
+      <Tabs defaultValue="inventory" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="inventory">Inventory</TabsTrigger>
+          <TabsTrigger value="alerts">Alerts</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger value="actions">Actions</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="inventory" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm">Inventory Items</CardTitle>
+                  <CardDescription>Manage your pharmacy stock levels</CardDescription>
                 </div>
-              )
-            })}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <Search className="h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search products..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-64"
+                    />
+                  </div>
+                  <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      <SelectItem value="Pain Relief">Pain Relief</SelectItem>
+                      <SelectItem value="Antibiotics">Antibiotics</SelectItem>
+                      <SelectItem value="Vitamins">Vitamins</SelectItem>
+                      <SelectItem value="Prescription">Prescription</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox />
+                      </TableHead>
+                      <TableHead>Product</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Stock</TableHead>
+                      <TableHead>Price</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Expiry</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {localInventory
+                      .filter(item => {
+                        const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                            item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                            item.batchNumber.toLowerCase().includes(searchTerm.toLowerCase())
+                        const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory
+                        return matchesSearch && matchesCategory
+                      })
+                      .map((item) => {
+                        const stockStatus = getStockStatus(item.stock, item.minStock)
+                        const expiryStatus = getExpiryStatus(item.expiryDate)
+                        const stockPercentage = (item.stock / (item.maxStock || item.minStock * 3)) * 100
+                        
+                        return (
+                          <TableRow key={item.id}>
+                            <TableCell>
+                              <Checkbox />
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-3">
+                                <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                                  <Package className="h-4 w-4 text-blue-600" />
+                                </div>
+                                <div>
+                                  <div className="font-medium">{item.name}</div>
+                                  <div className="text-sm text-muted-foreground">Batch: {item.batchNumber}</div>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{item.category}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">{item.stock}</span>
+                                  <span className="text-sm text-muted-foreground">/ {item.minStock} min</span>
+                                </div>
+                                <Progress value={Math.min(stockPercentage, 100)} className="h-1" />
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-medium">{item.price.toLocaleString()} RWF</TableCell>
+                            <TableCell>
+                              <Badge variant={stockStatus.variant}>{stockStatus.label}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={expiryStatus.variant}>{expiryStatus.label}</Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" className="h-8 w-8 p-0">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                  <DropdownMenuItem>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => {
+                                    setSelectedProduct(item)
+                                    setBarcodeDialogOpen(true)
+                                  }}>
+                                    <QrCode className="mr-2 h-4 w-4" />
+                                    Generate Barcode
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem className="text-red-600">
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                  </TableBody>
+                </Table>
+              </div>
+              
+              {/* Pagination */}
+              <div className="flex items-center justify-between px-2 py-4">
+                <div className="text-sm text-muted-foreground">
+                  Showing 1 to 10 of {localInventory.length} products
+                </div>
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious />
+                    </PaginationItem>
+                    <PaginationItem>
+                      <PaginationLink isActive>1</PaginationLink>
+                    </PaginationItem>
+                    <PaginationItem>
+                      <PaginationLink>2</PaginationLink>
+                    </PaginationItem>
+                    <PaginationItem>
+                      <PaginationNext />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="alerts" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <AlertTriangle className="h-4 w-4 text-red-500" />
+                  Low Stock Alerts
+                </CardTitle>
+                <CardDescription>Items below minimum threshold</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-64">
+                  <div className="space-y-3">
+                    {localInventory.filter(item => item.stock <= item.minStock).map((item) => (
+                      <div key={item.id} className="flex items-center justify-between p-3 rounded-lg border border-red-200 bg-red-50">
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
+                            <Package className="h-4 w-4 text-red-600" />
+                          </div>
+                          <div>
+                            <div className="font-medium">{item.name}</div>
+                            <div className="text-sm text-muted-foreground">{item.category}</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-medium text-red-700">{item.stock} / {item.minStock}</div>
+                          <Progress value={(item.stock / item.minStock) * 100} className="w-16 h-2 mt-1" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Calendar className="h-4 w-4 text-amber-500" />
+                  Expiring Items
+                </CardTitle>
+                <CardDescription>Products expiring within 60 days</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-64">
+                  <div className="space-y-3">
+                    {localInventory.filter(item => {
+                      const daysToExpiry = Math.ceil((new Date(item.expiryDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+                      return daysToExpiry <= 60 && daysToExpiry > 0
+                    }).map((item) => {
+                      const daysToExpiry = Math.ceil((new Date(item.expiryDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+                      return (
+                        <div key={item.id} className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50">
+                          <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center">
+                              <Calendar className="h-4 w-4 text-amber-600" />
+                            </div>
+                            <div>
+                              <div className="font-medium">{item.name}</div>
+                              <div className="text-sm text-muted-foreground">{item.category}</div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <Badge variant={daysToExpiry <= 30 ? 'destructive' : 'secondary'}>
+                              {daysToExpiry} days
+                            </Badge>
+                            <div className="text-sm text-muted-foreground mt-1">Stock: {item.stock}</div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
+        </TabsContent>
+        
+        <TabsContent value="analytics" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Stock by Category</CardTitle>
+                <CardDescription>Inventory distribution</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={analyticsData.stockByCategory}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="category" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="stock" fill="#3b82f6" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Inventory Value Trend</CardTitle>
+                <CardDescription>Monthly inventory worth</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={analyticsData.inventoryTrend}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" />
+                      <YAxis />
+                      <Tooltip formatter={(value) => [`${value.toLocaleString()} RWF`, 'Value']} />
+                      <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+        
+        <TabsContent value="actions" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Stock Management</CardTitle>
+                <CardDescription>Adjust and manage inventory levels</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button className="w-full" onClick={() => setAdjustmentDialogOpen(true)}>
+                  Stock Adjustment
+                </Button>
+                <Button variant="outline" className="w-full" onClick={() => setPurchaseDialogOpen(true)}>
+                  Purchase Stock
+                </Button>
+                <Button variant="outline" className="w-full" onClick={() => alert('Stock Transfer - Transfer inventory between branches')}>
+                  Stock Transfer
+                </Button>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Data Management</CardTitle>
+                <CardDescription>Import and export inventory data</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button className="w-full" onClick={exportToExcel}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Export to Excel
+                </Button>
+                <Button variant="outline" className="w-full" onClick={() => setIsImportDialogOpen(true)}>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Import from Excel
+                </Button>
+                <Button variant="outline" className="w-full" onClick={downloadSample}>
+                  Download Sample
+                </Button>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Barcode Tools</CardTitle>
+                <CardDescription>Generate and print barcodes</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button className="w-full" onClick={() => { setBulkMode(false); setBarcodeDialogOpen(true) }}>
+                  <QrCode className="mr-2 h-4 w-4" />
+                  Single Barcode
+                </Button>
+                <Button variant="outline" className="w-full" onClick={() => { setBulkMode(true); setBarcodeDialogOpen(true) }}>
+                  Bulk Generate
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Sales by Insurance Provider</CardTitle>
-            <CardDescription>Total sales value by insurance company</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64 sm:h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={[
-                  { insurance: 'RSSB', sales: 2500000 },
-                  { insurance: 'MMI', sales: 1800000 },
-                  { insurance: 'Radiant', sales: 1200000 },
-                  { insurance: 'SANLAM', sales: 950000 },
-                  { insurance: 'RAMA', sales: 3200000 },
-                  { insurance: 'Cash', sales: 1600000 }
-                ]} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                  <XAxis dataKey="insurance" axisLine={false} tickLine={false} className="text-xs" />
-                  <YAxis axisLine={false} tickLine={false} className="text-xs" />
-                  <Tooltip formatter={(value) => [`${value.toLocaleString()} RWF`, 'Sales Value']} />
-                  <Line type="monotone" dataKey="sales" stroke="#3b82f6" strokeWidth={3} dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }} activeDot={{ r: 6 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Stock by Category</CardTitle>
-            <CardDescription>Current inventory distribution</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={[
-                  { category: 'Pain Relief', stock: 320, value: 1200000 },
-                  { category: 'Antibiotics', stock: 180, value: 850000 },
-                  { category: 'Vitamins', stock: 240, value: 650000 },
-                  { category: 'Prescription', stock: 150, value: 2100000 }
-                ]}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="category" />
-                  <YAxis />
-                  <Tooltip formatter={(value, name) => [name === 'stock' ? `${value} items` : `${value.toLocaleString()} RWF`, name === 'stock' ? 'Stock Quantity' : 'Total Value']} />
-                  <Bar dataKey="stock" fill="#10b981" name="stock" maxBarSize={40} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the product from your inventory.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={adjustmentDialogOpen} onOpenChange={setAdjustmentDialogOpen}>
         <DialogContent>

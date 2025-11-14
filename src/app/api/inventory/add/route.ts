@@ -4,6 +4,23 @@ import { createClient } from '../../../../../supabase/server'
 export async function POST(request: NextRequest) {
   try {
     const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' })
+    }
+
+    // Get user's pharmacy_id
+    const { data: userPharmacy } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!userPharmacy) {
+      return NextResponse.json({ success: false, error: 'Pharmacy not found' })
+    }
+    
     const body = await request.json()
     
     // First create or find the medication
@@ -35,7 +52,7 @@ export async function POST(request: NextRequest) {
     const { data: inventory, error } = await supabase
       .from('inventory')
       .insert({
-        pharmacy_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: userPharmacy.pharmacy_id,
         medication_id: medicationId,
         batch_number: body.batch_number,
         quantity_in_stock: parseInt(body.quantity),

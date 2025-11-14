@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Building2, Users, CreditCard, TrendingUp, Plus, MapPin, Crown, Pill, Shield, FileText } from 'lucide-react'
 import { RealtimeStatus } from '@/components/RealtimeStatus'
 import { SidebarTrigger } from '@/components/ui/sidebar'
+import { Spinner } from '@/components/ui/spinner'
 
 interface DashboardStats {
   totalPharmacies: number
@@ -73,6 +74,7 @@ export default function SuperAdminDashboard() {
   })
 
   const { inventory, sales, alerts } = usePharmacyStore()
+  const [loading, setLoading] = useState(true)
 
   // Real-time updates
   useRealtimeUpdates((update) => {
@@ -83,9 +85,16 @@ export default function SuperAdminDashboard() {
   })
 
   useEffect(() => {
-    fetchInsurance()
-    fetchPharmacies()
-    fetchDashboardStats()
+    const loadData = async () => {
+      setLoading(true)
+      await Promise.all([
+        fetchInsurance(),
+        fetchPharmacies(),
+        fetchDashboardStats()
+      ])
+      setLoading(false)
+    }
+    loadData()
     
     const interval = setInterval(() => {
       fetchInsurance()
@@ -256,6 +265,12 @@ export default function SuperAdminDashboard() {
   }
 
 
+
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <Spinner className="size-6" />
+    </div>
+  )
 
   return (
     <div className="p-6 space-y-6">

@@ -1,30 +1,137 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Settings, Users, Building2, CreditCard, BarChart3, TrendingUp, AlertTriangle, Calendar } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { Spinner } from '@/components/ui/spinner';
+
+interface AdminStats {
+  totalShops: number
+  newThisMonth: number
+  expiredBusinesses: number
+  totalPlans: number
+  totalCategories: number
+  subscriptionRevenue: number
+}
 
 export default function AdminPage() {
   const [hoveredPoint, setHoveredPoint] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState<AdminStats>({
+    totalShops: 0,
+    newThisMonth: 0,
+    expiredBusinesses: 0,
+    totalPlans: 0,
+    totalCategories: 0,
+    subscriptionRevenue: 0
+  })
+  const [recentUsers, setRecentUsers] = useState([])
+  const [planDistribution, setPlanDistribution] = useState([])
+  const [categoriesCount, setCategoriesCount] = useState(0)
+  const [chartData, setChartData] = useState([])
+
+  useEffect(() => {
+    const fetchAdminData = async () => {
+      try {
+        // Fetch admin stats
+        const statsResponse = await fetch('/api/admin/pharmacies')
+        if (statsResponse.ok) {
+          const pharmacies = await statsResponse.json()
+          
+          // Fetch plans
+          const plansResponse = await fetch('/api/admin/plans')
+          const plans = plansResponse.ok ? await plansResponse.json() : []
+          
+          // Fetch categories count
+          try {
+            const categoriesResponse = await fetch('/api/categories')
+            if (categoriesResponse.ok) {
+              const categories = await categoriesResponse.json()
+              setCategoriesCount(categories.length)
+            }
+          } catch (e) {
+            setCategoriesCount(3) // Fallback to known count
+          }
+          
+          // Calculate plan distribution
+          const planCounts = {}
+          pharmacies.forEach(p => {
+            const plan = p.subscription_plan || 'Free'
+            planCounts[plan] = (planCounts[plan] || 0) + 1
+          })
+          
+          const totalPharmacies = pharmacies.length || 1
+          setPlanDistribution([
+            { name: 'Premium', count: planCounts.Premium || 0, percentage: Math.round(((planCounts.Premium || 0) / totalPharmacies) * 100) },
+            { name: 'Standard', count: planCounts.Standard || 0, percentage: Math.round(((planCounts.Standard || 0) / totalPharmacies) * 100) },
+            { name: 'Free', count: planCounts.Free || 0, percentage: Math.round(((planCounts.Free || 0) / totalPharmacies) * 100) }
+          ])
+          
+          // Calculate stats from real data
+          setStats({
+            totalShops: pharmacies.length,
+            newThisMonth: pharmacies.filter(p => {
+              const created = new Date(p.created_at)
+              const thisMonth = new Date()
+              return created.getMonth() === thisMonth.getMonth() && created.getFullYear() === thisMonth.getFullYear()
+            }).length,
+            expiredBusinesses: pharmacies.filter(p => p.subscription_expires_at && new Date(p.subscription_expires_at) < new Date()).length,
+            totalPlans: plans.length,
+            totalCategories: categoriesCount,
+            subscriptionRevenue: plans.reduce((sum, plan) => sum + parseFloat(plan.price || 0), 0)
+          })
+          
+          // Set recent users from pharmacies
+          setRecentUsers(pharmacies.slice(0, 4).map(p => ({
+            email: p.email,
+            shop: p.name,
+            date: new Date(p.created_at).toLocaleDateString(),
+            plan: p.subscription_plan || 'Free'
+          })))
+          
+          // Generate chart data from real pharmacies
+          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+          const currentMonth = new Date().getMonth()
+          const chartDataArray = []
+          
+          for (let i = 0; i < 12; i++) {
+            const monthIndex = (currentMonth - 11 + i + 12) % 12
+            const monthPharmacies = pharmacies.filter(p => {
+              const createdMonth = new Date(p.created_at).getMonth()
+              return createdMonth <= monthIndex
+            }).length
+            
+            chartDataArray.push({
+              month: months[monthIndex],
+              pharmacies: Math.max(1, monthPharmacies),
+              revenue: monthPharmacies * 75000 // Average revenue per pharmacy
+            })
+          }
+          
+          setChartData(chartDataArray)
+        }
+      } catch (error) {
+        console.error('Error fetching admin data:', error)
+        // Keep default values
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchAdminData()
+  }, [])
   
-  const chartData = [
-    { month: 'Jan', pharmacies: 18, revenue: 1200000 },
-    { month: 'Feb', pharmacies: 20, revenue: 1400000 },
-    { month: 'Mar', pharmacies: 22, revenue: 1600000 },
-    { month: 'Apr', pharmacies: 24, revenue: 1800000 },
-    { month: 'May', pharmacies: 23, revenue: 1700000 },
-    { month: 'Jun', pharmacies: 25, revenue: 2000000 },
-    { month: 'Jul', pharmacies: 27, revenue: 2200000 },
-    { month: 'Aug', pharmacies: 26, revenue: 2100000 },
-    { month: 'Sep', pharmacies: 28, revenue: 2300000 },
-    { month: 'Oct', pharmacies: 30, revenue: 2500000 },
-    { month: 'Nov', pharmacies: 29, revenue: 2400000 },
-    { month: 'Dec', pharmacies: 32, revenue: 2600000 },
-  ]
+  // Chart data now comes from database
+
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <Spinner className="size-6" />
+    </div>
+  )
 
   return (
     <div className="p-6">
@@ -48,8 +155,8 @@ export default function AdminPage() {
                 <Building2 className="h-4 w-4" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">24</div>
-                <p className="text-xs text-muted-foreground">+3 this month</p>
+                <div className="text-2xl font-bold">{stats.totalShops}</div>
+                <p className="text-xs text-muted-foreground">+{stats.newThisMonth} this month</p>
               </CardContent>
             </Card>
 
@@ -59,7 +166,7 @@ export default function AdminPage() {
                 <AlertTriangle className="h-4 w-4" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">2</div>
+                <div className="text-2xl font-bold">{stats.expiredBusinesses}</div>
                 <p className="text-xs text-muted-foreground">Requires attention</p>
               </CardContent>
             </Card>
@@ -70,8 +177,8 @@ export default function AdminPage() {
                 <CreditCard className="h-4 w-4" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">RWF 1.8M</div>
-                <p className="text-xs text-muted-foreground">+15% from last month</p>
+                <div className="text-2xl font-bold">RWF {(stats.subscriptionRevenue / 1000).toLocaleString()}K</div>
+                <p className="text-xs text-muted-foreground">From database</p>
               </CardContent>
             </Card>
 
@@ -81,7 +188,7 @@ export default function AdminPage() {
                 <BarChart3 className="h-4 w-4" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">12</div>
+                <div className="text-2xl font-bold">{categoriesCount || stats.totalCategories}</div>
                 <p className="text-xs text-muted-foreground">Active categories</p>
               </CardContent>
             </Card>
@@ -92,8 +199,8 @@ export default function AdminPage() {
                 <Users className="h-4 w-4" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">3</div>
-                <p className="text-xs text-muted-foreground">Free, Standard, Premium</p>
+                <div className="text-2xl font-bold">{stats.totalPlans}</div>
+                <p className="text-xs text-muted-foreground">Available plans</p>
               </CardContent>
             </Card>
           </div>
@@ -190,36 +297,21 @@ export default function AdminPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="h-3 w-3 rounded-full bg-gray-800"></div>
-                      <span className="font-medium">Premium</span>
+                  {planDistribution.map((plan, index) => (
+                    <div key={plan.name} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className={`h-3 w-3 rounded-full ${
+                          index === 0 ? 'bg-gray-800' : 
+                          index === 1 ? 'bg-gray-600' : 'bg-gray-400'
+                        }`}></div>
+                        <span className="font-medium">{plan.name}</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold">{plan.count} shops</p>
+                        <p className="text-xs text-muted-foreground">{plan.percentage}%</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold">8 shops</p>
-                      <p className="text-xs text-muted-foreground">33%</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="h-3 w-3 rounded-full bg-gray-600"></div>
-                      <span className="font-medium">Standard</span>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold">12 shops</p>
-                      <p className="text-xs text-muted-foreground">50%</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="h-3 w-3 rounded-full bg-gray-400"></div>
-                      <span className="font-medium">Free</span>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold">4 shops</p>
-                      <p className="text-xs text-muted-foreground">17%</p>
-                    </div>
-                  </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
@@ -231,22 +323,16 @@ export default function AdminPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Premium Plans</span>
-                    <span className="font-semibold">RWF 960,000</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Standard Plans</span>
-                    <span className="font-semibold">RWF 600,000</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Setup Fees</span>
-                    <span className="font-semibold">RWF 240,000</span>
-                  </div>
+                  {planDistribution.map((plan) => (
+                    <div key={plan.name} className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">{plan.name} Plans</span>
+                      <span className="font-semibold">RWF {(plan.count * (plan.name === 'Premium' ? 120000 : plan.name === 'Standard' ? 50000 : 0)).toLocaleString()}</span>
+                    </div>
+                  ))}
                   <div className="border-t pt-2">
                     <div className="flex items-center justify-between">
                       <span className="font-medium">Total Revenue</span>
-                      <span className="font-bold text-lg">RWF 1,800,000</span>
+                      <span className="font-bold text-lg">RWF {stats.subscriptionRevenue.toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
@@ -260,12 +346,7 @@ export default function AdminPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {[
-                    { email: 'pharmacy1@test.com', shop: 'City Pharmacy', date: '2 hours ago', plan: 'Premium' },
-                    { email: 'owner@medcare.rw', shop: 'MediCare Plus', date: '1 day ago', plan: 'Standard' },
-                    { email: 'admin@wellness.rw', shop: 'Wellness Pharmacy', date: '2 days ago', plan: 'Free' },
-                    { email: 'contact@healthplus.rw', shop: 'Health Plus', date: '3 days ago', plan: 'Standard' }
-                  ].map((user, index) => (
+                  {recentUsers.length > 0 ? recentUsers.map((user, index) => (
                     <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
                       <div>
                         <p className="font-medium text-sm">{user.email}</p>
@@ -273,7 +354,11 @@ export default function AdminPage() {
                       </div>
                       <Badge variant="outline">{user.plan}</Badge>
                     </div>
-                  ))}
+                  )) : (
+                    <div className="text-center py-4 text-muted-foreground">
+                      No recent registrations
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

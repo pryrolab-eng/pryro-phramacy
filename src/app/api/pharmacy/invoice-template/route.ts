@@ -8,7 +8,7 @@ export async function GET() {
     const { data: pharmacy } = await supabase
       .from('pharmacies')
       .select('invoice_template')
-      .eq('id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+      .eq('id', 'userPharmacy.pharmacy_id')
       .single()
 
     const defaultTemplate = {
@@ -43,7 +43,7 @@ export async function PUT(request: NextRequest) {
     const { error } = await supabase
       .from('pharmacies')
       .update({ invoice_template: template })
-      .eq('id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+      .eq('id', 'userPharmacy.pharmacy_id')
 
     if (error) throw error
 

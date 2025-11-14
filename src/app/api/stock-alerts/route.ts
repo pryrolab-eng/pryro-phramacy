@@ -3,7 +3,23 @@ import { createClient } from '../../../../supabase/server'
 
 export async function GET() {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json({ all: [], lowStock: [], expiring: [] })
+    }
+
+    // Get user's pharmacy_id
+    const { data: userPharmacy } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!userPharmacy) {
+      return NextResponse.json({ all: [], lowStock: [], expiring: [] })
+    }
     
     const { data: inventory, error } = await supabase
       .from('inventory')
@@ -18,7 +34,7 @@ export async function GET() {
           category
         )
       `)
-      .eq('pharmacy_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+      .eq('pharmacy_id', userPharmacy.pharmacy_id)
 
     if (error) throw error
 
@@ -46,16 +62,7 @@ export async function GET() {
       expiring
     })
   } catch (error) {
-    const mockData = [
-      { id: '1', product: 'Paracetamol 500mg', current_stock: 5, min_stock: 20, category: 'Pain Relief', expires_in: 30 },
-      { id: '2', product: 'Amoxicillin 250mg', current_stock: 8, min_stock: 25, category: 'Antibiotics', expires_in: 15 },
-      { id: '3', product: 'Vitamin C Tablets', current_stock: 35, min_stock: 30, category: 'Vitamins', expires_in: 45 }
-    ]
-
-    return NextResponse.json({
-      all: mockData,
-      lowStock: mockData.filter(item => item.current_stock <= item.min_stock),
-      expiring: mockData.filter(item => item.expires_in <= 60)
-    })
+    console.error('Error fetching stock alerts:', error)
+    return NextResponse.json({ all: [], lowStock: [], expiring: [] })
   }
 }

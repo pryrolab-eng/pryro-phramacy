@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import { usePathname } from "next/navigation"
+import Link from "next/link"
 import {
   Shield,
   Store,
@@ -74,13 +76,21 @@ const superadminData = {
 }
 
 export function SuperadminSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  let pathname = '/superadmin'
+  try {
+    pathname = usePathname()
+  } catch (error) {
+    // Fallback when usePathname is not available
+    console.log('usePathname not available, using fallback')
+  }
+  
   return (
     <Sidebar variant="inset" {...props}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <a href="/superadmin">
+              <Link href="/superadmin">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-red-600 text-white">
                   <Shield className="size-4" />
                 </div>
@@ -88,7 +98,7 @@ export function SuperadminSidebar({ ...props }: React.ComponentProps<typeof Side
                   <span className="truncate font-semibold">Pryrox</span>
                   <span className="truncate text-xs">Super Admin</span>
                 </div>
-              </a>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -99,16 +109,19 @@ export function SuperadminSidebar({ ...props }: React.ComponentProps<typeof Side
           <SidebarGroupLabel>Administration</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {superadminData.navMain.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <a href={item.url}>
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </a>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {superadminData.navMain.map((item) => {
+                const isActive = pathname === item.url
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild isActive={isActive}>
+                      <Link href={item.url}>
+                        <item.icon />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -118,10 +131,10 @@ export function SuperadminSidebar({ ...props }: React.ComponentProps<typeof Side
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild>
-              <a href="/api/auth/signout">
+              <Link href="/api/auth/signout">
                 <LogOut />
                 <span>Sign Out</span>
-              </a>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

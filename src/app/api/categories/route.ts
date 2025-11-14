@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const { data: category, error } = await supabase
       .from('categories')
       .insert({
-        pharmacy_id: body.pharmacy_id || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',
         name: body.name,
         description: body.description,
         is_active: true

@@ -7,7 +7,7 @@ export async function GET() {
     const { data: settings, error } = await supabase
       .from('system_settings')
       .select('*')
-      .eq('pharmacy_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+      .eq('pharmacy_id', 'userPharmacy.pharmacy_id')
 
     if (error) throw error
     
@@ -38,7 +38,7 @@ export async function PUT(request: NextRequest) {
       await supabase
         .from('system_settings')
         .upsert({
-          pharmacy_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          pharmacy_id: 'userPharmacy.pharmacy_id',
           setting_key: key,
           setting_value: value
         })

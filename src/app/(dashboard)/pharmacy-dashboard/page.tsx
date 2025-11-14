@@ -3,15 +3,22 @@
 import { useState, useEffect } from 'react'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
 import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
+import { createClient } from '../../../../supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { SidebarTrigger } from "@/components/ui/sidebar"
+import { Spinner } from '@/components/ui/spinner'
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Package, DollarSign, Users, AlertTriangle, TrendingUp, ShoppingCart, Calendar, Clock, Pill } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Progress } from "@/components/ui/progress"
+import { Separator } from "@/components/ui/separator"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Package, DollarSign, Users, AlertTriangle, TrendingUp, ShoppingCart, Calendar, Clock, Pill, Activity, Eye, MoreHorizontal, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer, Area, AreaChart, BarChart, Bar, XAxis, CartesianGrid, LabelList, YAxis } from 'recharts'
 import { PharmacyRadialChart } from '@/components/pharmacy-radial-chart'
 import { PharmacyBarChart } from '@/components/pharmacy-bar-chart'
@@ -119,9 +126,22 @@ export default function PharmacyDashboard() {
       }
     }
     
+    const fetchSalesChart = async () => {
+      try {
+        const response = await fetch('/api/pharmacy/sales-chart')
+        if (response.ok) {
+          const data = await response.json()
+          setSalesChartData(data)
+        }
+      } catch (error) {
+        console.error('Error fetching sales chart:', error)
+      }
+    }
+    
     fetchStats()
     fetchRecentSales()
     fetchStockAlerts()
+    fetchSalesChart()
   }, [])
 
   const handleAddPharmacist = async () => {
@@ -132,16 +152,35 @@ export default function PharmacyDashboard() {
         name: newPharmacist.name
       }
       
+      // Get auth token from Supabase client
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session?.access_token) {
+        alert('Please login first')
+        return
+      }
+      
+      // Get current user's pharmacy_id from pharmacy_users table
+      const { data: currentUser } = await supabase
+        .from('pharmacy_users')
+        .select('pharmacy_id')
+        .eq('user_id', session.user.id)
+        .single()
+      
       const response = await fetch('/api/pharmacist', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           email: newPharmacist.email,
           password: newPharmacist.password,
           full_name: newPharmacist.name,
           phone: newPharmacist.phone,
           role: 'pharmacist',
-          pharmacy_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+          pharmacy_id: currentUser?.pharmacy_id
         })
       })
       
@@ -173,320 +212,391 @@ export default function PharmacyDashboard() {
     phone: '',
     password: ''
   })
+  const [loading, setLoading] = useState(false)
+  const [salesChartData, setSalesChartData] = useState([])
+
+  const SalesChart = () => (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Sales Performance</CardTitle>
+        <CardDescription>Monthly revenue trends</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ChartContainer config={{
+          revenue: { label: "Revenue", color: "hsl(var(--chart-1))" }
+        }}>
+          <AreaChart data={salesChartData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="month" />
+            <ChartTooltip content={<ChartTooltipContent />} />
+            <Area type="monotone" dataKey="revenue" stroke="hsl(var(--chart-1))" fill="hsl(var(--chart-1))" fillOpacity={0.2} />
+          </AreaChart>
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  )
+
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <Spinner className="size-6" />
+    </div>
+  )
 
   return (
-    <div className="p-6 space-y-6 bg-gray-100 min-h-screen ml-0">
-      <div className="flex justify-between items-center">
+    <div className="flex-1 space-y-6 p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <SidebarTrigger />
-          <div className="h-4 w-px bg-border" />
-          <div>
-            <h1 className="text-3xl font-bold">Pharmacy Dashboard</h1>
-            <p className="text-muted-foreground">Welcome back! Here's your pharmacy overview</p>
+          <Separator orientation="vertical" className="h-6" />
+          <div className="space-y-1">
+            <h1 className="text-xl font-semibold tracking-tight">Pharmacy Dashboard</h1>
+            <p className="text-xs text-muted-foreground">
+              Welcome back! Here's your pharmacy overview for today.
+            </p>
           </div>
         </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" onClick={() => window.print()}>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Calendar className="mr-2 h-4 w-4" />
-            Today's Report
+            Export Report
           </Button>
           <Dialog open={isAddingPharmacist} onOpenChange={setIsAddingPharmacist}>
             <DialogTrigger asChild>
-              <Button variant="outline">
+              <Button variant="outline" size="sm">
                 <Pill className="mr-2 h-4 w-4" />
                 Add Pharmacist
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>
                 <DialogTitle>Add New Pharmacist</DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
-                  <Label>Full Name</Label>
+                  <Label htmlFor="name">Full Name</Label>
                   <Input
+                    id="name"
                     value={newPharmacist.name}
                     onChange={(e) => setNewPharmacist({...newPharmacist, name: e.target.value})}
+                    placeholder="Enter full name"
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Email</Label>
+                  <Label htmlFor="email">Email</Label>
                   <Input
+                    id="email"
                     type="email"
                     value={newPharmacist.email}
                     onChange={(e) => setNewPharmacist({...newPharmacist, email: e.target.value})}
+                    placeholder="Enter email address"
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Phone</Label>
+                  <Label htmlFor="phone">Phone</Label>
                   <Input
+                    id="phone"
                     value={newPharmacist.phone}
                     onChange={(e) => setNewPharmacist({...newPharmacist, phone: e.target.value})}
+                    placeholder="Enter phone number"
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Password</Label>
+                  <Label htmlFor="password">Password</Label>
                   <Input
+                    id="password"
                     type="password"
                     value={newPharmacist.password}
                     onChange={(e) => setNewPharmacist({...newPharmacist, password: e.target.value})}
                     placeholder="Minimum 8 characters"
                   />
                 </div>
-                <Button onClick={handleAddPharmacist} disabled={!newPharmacist.name || !newPharmacist.email || !newPharmacist.password}>
+              </div>
+              <DialogFooter>
+                <Button 
+                  onClick={handleAddPharmacist} 
+                  disabled={!newPharmacist.name || !newPharmacist.email || !newPharmacist.password}
+                  className="w-full"
+                >
                   Add Pharmacist
                 </Button>
-              </div>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Button onClick={() => window.location.href = '/pos'}>
+          <Button onClick={() => window.location.href = '/pos'} size="sm">
             <ShoppingCart className="mr-2 h-4 w-4" />
             New Sale
           </Button>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
-        <Card className="shadow-lg">
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Today's Sales</CardTitle>
-            <DollarSign className="h-4 w-4" />
+            <div className="h-8 w-8 rounded-lg bg-green-100 flex items-center justify-center">
+              <DollarSign className="h-4 w-4 text-green-600" />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{localStats.todaySales.toLocaleString()} RWF</div>
-
-            <p className="text-xs text-muted-foreground">+12% from yesterday</p>
+            <div className="flex items-center text-xs text-muted-foreground">
+              <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
+              +12% from yesterday
+            </div>
           </CardContent>
         </Card>
 
-        <Card className="shadow-lg">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Products</CardTitle>
-            <Package className="h-4 w-4" />
+            <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
+              <Package className="h-4 w-4 text-blue-600" />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{localStats.totalProducts}</div>
-
             <p className="text-xs text-muted-foreground">{localStats.lowStockItems} low stock</p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-lg">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Customers</CardTitle>
-            <Users className="h-4 w-4" />
+            <div className="h-8 w-8 rounded-lg bg-purple-100 flex items-center justify-center">
+              <Users className="h-4 w-4 text-purple-600" />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{localStats.totalCustomers}</div>
-
             <p className="text-xs text-muted-foreground">{localStats.activeStaff} active staff</p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-lg">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Low Stock</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            <div className="h-8 w-8 rounded-lg bg-amber-100 flex items-center justify-center">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{lowStockItems.length}</div>
-
             <p className="text-xs text-muted-foreground">Items below threshold</p>
           </CardContent>
         </Card>
 
-        <Card className="shadow-lg">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
-            <Clock className="h-4 w-4 text-red-500" />
+            <div className="h-8 w-8 rounded-lg bg-red-100 flex items-center justify-center">
+              <Clock className="h-4 w-4 text-red-600" />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{expiringItems.length}</div>
-
             <p className="text-xs text-muted-foreground">Within 60 days</p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-3">
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <TrendingUp className="mr-2 h-5 w-5" />
-              Recent Sales
-            </CardTitle>
-            <CardDescription>Latest transactions today</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {recentSales.map((sale) => (
-                <div key={sale.id} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                      <DollarSign className="h-4 w-4 text-green-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium">{sale.customer}</p>
-                      <p className="text-sm text-muted-foreground">{sale.items} items • {sale.time}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold">{sale.amount.toLocaleString()} RWF</p>
-                    <Badge variant={sale.payment_method === 'Insurance' ? 'secondary' : 'outline'} className="text-xs">
-                      {sale.payment_method}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <AlertTriangle className="mr-2 h-5 w-5 text-amber-500" />
-              Low Stock Items
-            </CardTitle>
-            <CardDescription>Products below minimum threshold</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4 max-h-64 overflow-y-auto">
-              {lowStockItems.map((alert) => (
-                <div key={alert.id} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center">
-                      <Package className="h-4 w-4 text-amber-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium">{alert.product}</p>
-                      <p className="text-sm text-muted-foreground">{alert.category}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <Badge variant="destructive" className="mb-1">
-                      {alert.current_stock} / {alert.min_stock}
-                    </Badge>
-                    <p className="text-xs text-muted-foreground">Reorder needed</p>
-                  </div>
-                </div>
-              ))}
-              {lowStockItems.length === 0 && (
-                <p className="text-center text-muted-foreground py-4">All items adequately stocked</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Clock className="mr-2 h-5 w-5 text-red-500" />
-              Expiring Soon
-            </CardTitle>
-            <CardDescription>Products expiring within 60 days</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4 max-h-64 overflow-y-auto">
-              {expiringItems.map((alert) => (
-                <div key={alert.id} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                      <Clock className="h-4 w-4 text-red-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium">{alert.product}</p>
-                      <p className="text-sm text-muted-foreground">{alert.category}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <Badge variant={alert.expires_in <= 30 ? 'destructive' : 'secondary'} className="mb-1">
-                      {alert.expires_in} days
-                    </Badge>
-                    <p className="text-xs text-muted-foreground">Stock: {alert.current_stock}</p>
-                  </div>
-                </div>
-              ))}
-              {expiringItems.length === 0 && (
-                <p className="text-center text-muted-foreground py-4">No items expiring soon</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-3">
-        <Card className="shadow-lg md:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-lg">Monthly Performance</CardTitle>
-            <CardDescription>January - June 2024</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChartContainer config={{
-              revenue: { label: "Revenue", color: "#3b82f6" },
-              label: { color: "var(--background)" }
-            }}>
-              <BarChart
-                accessibilityLayer
-                data={[
-                  { month: "January", revenue: 186000 },
-                  { month: "February", revenue: 305000 },
-                  { month: "March", revenue: 237000 },
-                  { month: "April", revenue: 173000 },
-                  { month: "May", revenue: 209000 },
-                  { month: "June", revenue: 214000 }
-                ]}
-                layout="vertical"
-                margin={{ right: 16 }}
-              >
-                <CartesianGrid horizontal={false} />
-                <YAxis
-                  dataKey="month"
-                  type="category"
-                  tickLine={false}
-                  tickMargin={10}
-                  axisLine={false}
-                  tickFormatter={(value) => value.slice(0, 3)}
-                  hide
-                />
-                <XAxis dataKey="revenue" type="number" hide />
-                <ChartTooltip
-                  cursor={false}
-                  content={<ChartTooltipContent indicator="line" />}
-                />
-                <Bar
-                  dataKey="revenue"
-                  layout="vertical"
-                  fill="#3b82f6"
-                  radius={4}
-                >
-                  <LabelList
-                    dataKey="month"
-                    position="insideLeft"
-                    offset={8}
-                    className="fill-white"
-                    fontSize={12}
-                  />
-                  <LabelList
-                    dataKey="revenue"
-                    position="right"
-                    offset={8}
-                    className="fill-foreground"
-                    fontSize={12}
-                  />
-                </Bar>
-              </BarChart>
-            </ChartContainer>
-          </CardContent>
-        </Card>
+      {/* Main Content */}
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="sales">Sales</TabsTrigger>
+          <TabsTrigger value="inventory">Inventory</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+        </TabsList>
         
-        <PharmacyRadialChart />
-      </div>
-      
-      <div className="grid gap-6 md:grid-cols-2">
-        <PharmacyBarChart />
-        <PharmacyInventoryChart />
-      </div>
+        <TabsContent value="overview" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {/* Recent Sales */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Recent Sales</CardTitle>
+                <Button variant="ghost" size="sm">
+                  <Eye className="h-4 w-4" />
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[300px]">
+                  <div className="space-y-3">
+                    {recentSales.map((sale) => (
+                      <div key={sale.id} className="flex items-center justify-between p-3 rounded-lg border">
+                        <div className="flex items-center space-x-3">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback className="bg-green-100 text-green-600">
+                              {sale.customer.charAt(0)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="text-sm font-medium">{sale.customer}</p>
+                            <p className="text-xs text-muted-foreground">{sale.items} items • {sale.time}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold">{sale.amount.toLocaleString()} RWF</p>
+                          <Badge variant={sale.payment_method === 'Insurance' ? 'secondary' : 'outline'} className="text-xs">
+                            {sale.payment_method}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
+            {/* Low Stock Items */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Stock Alerts</CardTitle>
+                <Badge variant="destructive" className="text-xs">
+                  {lowStockItems.length}
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[300px]">
+                  <div className="space-y-3">
+                    {lowStockItems.map((alert) => (
+                      <div key={alert.id} className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50">
+                        <div className="flex items-center space-x-3">
+                          <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center">
+                            <Package className="h-4 w-4 text-amber-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">{alert.product}</p>
+                            <p className="text-xs text-muted-foreground">{alert.category}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs font-medium text-amber-700">
+                            {alert.current_stock} / {alert.min_stock}
+                          </div>
+                          <Progress value={(alert.current_stock / alert.min_stock) * 100} className="w-16 h-2 mt-1" />
+                        </div>
+                      </div>
+                    ))}
+                    {lowStockItems.length === 0 && (
+                      <div className="text-center py-8">
+                        <Package className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                        <p className="text-sm text-muted-foreground">All items adequately stocked</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
+            {/* Expiring Items */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
+                <Badge variant="outline" className="text-xs">
+                  {expiringItems.length}
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[300px]">
+                  <div className="space-y-3">
+                    {expiringItems.map((alert) => (
+                      <div key={alert.id} className="flex items-center justify-between p-3 rounded-lg border border-red-200 bg-red-50">
+                        <div className="flex items-center space-x-3">
+                          <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
+                            <Clock className="h-4 w-4 text-red-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">{alert.product}</p>
+                            <p className="text-xs text-muted-foreground">{alert.category}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <Badge variant={alert.expires_in <= 30 ? 'destructive' : 'secondary'} className="text-xs">
+                            {alert.expires_in} days
+                          </Badge>
+                          <p className="text-xs text-muted-foreground mt-1">Stock: {alert.current_stock}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {expiringItems.length === 0 && (
+                      <div className="text-center py-8">
+                        <Clock className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                        <p className="text-sm text-muted-foreground">No items expiring soon</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+        
+        <TabsContent value="sales" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <SalesChart />
+            <PharmacyRadialChart />
+          </div>
+        </TabsContent>
+        
+        <TabsContent value="inventory" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <PharmacyBarChart />
+            <PharmacyInventoryChart />
+          </div>
+        </TabsContent>
+        
+        <TabsContent value="analytics" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Monthly Performance</CardTitle>
+              <CardDescription>Revenue trends from database</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={{
+                revenue: { label: "Revenue", color: "hsl(var(--chart-1))" }
+              }}>
+                <BarChart
+                  data={salesChartData.map(item => ({ month: item.month, revenue: item.revenue }))}
+                  layout="vertical"
+                  margin={{ right: 16 }}
+                >
+                  <CartesianGrid horizontal={false} />
+                  <YAxis
+                    dataKey="month"
+                    type="category"
+                    tickLine={false}
+                    tickMargin={10}
+                    axisLine={false}
+                    hide
+                  />
+                  <XAxis dataKey="revenue" type="number" hide />
+                  <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
+                  <Bar dataKey="revenue" layout="vertical" fill="hsl(var(--chart-1))" radius={4}>
+                    <LabelList
+                      dataKey="month"
+                      position="insideLeft"
+                      offset={8}
+                      className="fill-white"
+                      fontSize={12}
+                    />
+                    <LabelList
+                      dataKey="revenue"
+                      position="right"
+                      offset={8}
+                      className="fill-foreground"
+                      fontSize={12}
+                    />
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+
     </div>
   )
 }

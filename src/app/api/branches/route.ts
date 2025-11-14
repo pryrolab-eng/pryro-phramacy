@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     const { data: branch, error } = await supabase
       .from('branches')
       .insert({
-        pharmacy_id: body.pharmacy_id || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',
         name: body.name,
         address: body.location,
         phone: body.phone,

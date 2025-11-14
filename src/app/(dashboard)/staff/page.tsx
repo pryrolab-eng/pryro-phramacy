@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { UserCog, Plus, Mail, Phone, Calendar } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
+import { Spinner } from '@/components/ui/spinner'
 
 interface StaffMember {
   id: string
@@ -33,11 +34,10 @@ export default function StaffManagePage() {
   })
   const [editingStaff, setEditingStaff] = useState<any>(null)
   const [isEditingStaff, setIsEditingStaff] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     fetchStaff()
-    const interval = setInterval(fetchStaff, 5000)
-    return () => clearInterval(interval)
   }, [])
 
   const fetchStaff = async () => {
@@ -60,6 +60,8 @@ export default function StaffManagePage() {
         { id: '1', name: 'Jane Pharmacist', email: 'pharmacist@test.com', phone: '+250788123457', role: 'pharmacist', status: 'active', joinDate: '2024-01-15' },
         { id: '2', name: 'Bob Cashier', email: 'cashier@test.com', phone: '+250788123458', role: 'cashier', status: 'active', joinDate: '2024-02-01' }
       ])
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -94,8 +96,7 @@ export default function StaffManagePage() {
         
         // Show login credentials that can be shared
         alert(`✅ Pharmacist Created Successfully!\n\n📧 SHARE THESE LOGIN CREDENTIALS:\n\nEmail: ${credentials.email}\nPassword: ${credentials.password}\n\n🔐 The pharmacist can now login at the sign-in page using these credentials.\n\n⚠️ Save these credentials to share with ${credentials.name}`)
-        
-        window.location.reload()
+
       } else {
         console.error('API Error:', result)
         alert(`❌ Failed to create pharmacist: ${result.error || 'Unknown error'}\n\nPlease check:\n- Email is unique (not already used)\n- Password is at least 4 characters\n- All required fields are filled`)
@@ -162,6 +163,32 @@ export default function StaffManagePage() {
     }
   }
 
+  const handleDeleteStaff = async (id: string, name: string) => {
+    if (confirm(`Are you sure you want to delete ${name}? This action cannot be undone.`)) {
+      try {
+        const response = await fetch(`/api/staff/${id}`, {
+          method: 'DELETE'
+        })
+        
+        if (response.ok) {
+          setStaff(staff.filter(member => member.id !== id))
+          alert('Staff member deleted successfully!')
+        } else {
+          alert('Failed to delete staff member')
+        }
+      } catch (error) {
+        console.error('Error deleting staff:', error)
+        alert('Error deleting staff member')
+      }
+    }
+  }
+
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <Spinner className="size-6" />
+    </div>
+  )
+
   return (
     <div className="p-6 space-y-6 bg-gray-100 min-h-screen">
       <div className="flex justify-between items-center">
@@ -169,8 +196,8 @@ export default function StaffManagePage() {
           <SidebarTrigger />
           <div className="h-4 w-px bg-border" />
           <div>
-            <h1 className="text-3xl font-bold">Staff Management</h1>
-            <p className="text-muted-foreground">Manage your pharmacy staff members</p>
+            <h1 className="text-xl font-bold">Staff Management</h1>
+            <p className="text-sm text-muted-foreground">Manage your pharmacy staff members</p>
           </div>
         </div>
         <Dialog open={isAddingStaff} onOpenChange={setIsAddingStaff}>
@@ -232,38 +259,44 @@ export default function StaffManagePage() {
         </Dialog>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {staff.map((member) => (
-          <Card key={member.id}>
-            <CardHeader>
+          <Card key={member.id} className="p-3">
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center">
-                  <UserCog className="mr-2 h-5 w-5" />
-                  {member.name}
-                </CardTitle>
-                <Badge variant={member.status === 'active' ? 'default' : 'secondary'}>
+                <div className="flex items-center">
+                  <UserCog className="mr-1 h-4 w-4" />
+                  <span className="font-medium text-sm truncate">{member.name}</span>
+                </div>
+                <Badge 
+                  variant={member.status === 'active' ? 'default' : 'secondary'} 
+                  className={`text-xs px-1 py-0 h-4 ${member.status === 'active' ? 'bg-blue-500 hover:bg-blue-600' : ''}`}
+                >
                   {member.status}
                 </Badge>
               </div>
-              <CardDescription className="capitalize">{member.role}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center text-sm">
-                <Mail className="mr-2 h-4 w-4 text-muted-foreground" />
-                {member.email}
+              <p className="text-xs text-muted-foreground capitalize">{member.role}</p>
+              
+              <div className="space-y-1">
+                <div className="flex items-center text-xs">
+                  <Mail className="mr-1 h-3 w-3 text-muted-foreground" />
+                  <span className="truncate">{member.email}</span>
+                </div>
+                <div className="flex items-center text-xs">
+                  <Phone className="mr-1 h-3 w-3 text-muted-foreground" />
+                  {member.phone}
+                </div>
+                <div className="flex items-center text-xs">
+                  <Calendar className="mr-1 h-3 w-3 text-muted-foreground" />
+                  {member.joinDate}
+                </div>
               </div>
-              <div className="flex items-center text-sm">
-                <Phone className="mr-2 h-4 w-4 text-muted-foreground" />
-                {member.phone}
-              </div>
-              <div className="flex items-center text-sm">
-                <Calendar className="mr-2 h-4 w-4 text-muted-foreground" />
-                Joined {member.joinDate}
-              </div>
-              <div className="flex space-x-2 pt-2">
+              
+              <div className="flex flex-wrap gap-1 pt-2">
                 <Button 
                   variant="outline" 
                   size="sm"
+                  className="text-xs h-7 px-2"
                   onClick={() => toggleStaffStatus(member.id)}
                 >
                   {member.status === 'active' ? 'Deactivate' : 'Activate'}
@@ -271,12 +304,21 @@ export default function StaffManagePage() {
                 <Button 
                   variant="outline" 
                   size="sm"
+                  className="text-xs h-7 px-2"
                   onClick={() => handleEditStaff(member)}
                 >
                   Edit
                 </Button>
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  className="text-xs h-7 px-2"
+                  onClick={() => handleDeleteStaff(member.id, member.name)}
+                >
+                  Delete
+                </Button>
               </div>
-            </CardContent>
+            </div>
           </Card>
         ))}
       </div>

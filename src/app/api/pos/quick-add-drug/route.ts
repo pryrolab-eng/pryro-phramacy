@@ -4,13 +4,30 @@ import { createClient } from '../../../../../supabase/server'
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Get user's pharmacy_id
+    const { data: userPharmacy } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!userPharmacy) {
+      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
+    }
+    
     const body = await request.json()
     
     // Add to medications table
     const { data: medication, error: medError } = await supabase
       .from('medications')
       .insert({
-        pharmacy_id: body.pharmacy_id || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: userPharmacy.pharmacy_id,
         name: body.name,
         category: body.category,
         manufacturer: body.manufacturer,
@@ -25,7 +42,7 @@ export async function POST(request: NextRequest) {
     const { data: inventory, error: invError } = await supabase
       .from('inventory')
       .insert({
-        pharmacy_id: body.pharmacy_id || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: userPharmacy.pharmacy_id,
         medication_id: medication.id,
         batch_number: body.batch_number,
         quantity_in_stock: body.initial_stock || 0,

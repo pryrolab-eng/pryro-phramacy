@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Bar, BarChart, XAxis } from "recharts"
 
 import {
@@ -16,15 +17,6 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 
-const chartData = [
-  { month: "Jan", inStock: 850, lowStock: 45 },
-  { month: "Feb", inStock: 920, lowStock: 32 },
-  { month: "Mar", inStock: 780, lowStock: 68 },
-  { month: "Apr", inStock: 1050, lowStock: 28 },
-  { month: "May", inStock: 980, lowStock: 41 },
-  { month: "Jun", inStock: 1120, lowStock: 23 },
-]
-
 const chartConfig = {
   inStock: {
     label: "In Stock",
@@ -37,6 +29,18 @@ const chartConfig = {
 } satisfies ChartConfig
 
 export function PharmacyInventoryChart() {
+  const [chartData, setChartData] = useState([])
+  
+  useEffect(() => {
+    fetch('/api/pharmacy/inventory-chart')
+      .then(res => res.json())
+      .then(data => setChartData(data))
+      .catch(() => setChartData([
+        { month: "Jan", inStock: 850, lowStock: 45 },
+        { month: "Feb", inStock: 920, lowStock: 32 }
+      ]))
+  }, [])
+  
   return (
     <Card>
       <CardHeader>

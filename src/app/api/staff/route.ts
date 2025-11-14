@@ -1,58 +1,62 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../supabase/server'
+import { createClient } from '@supabase/supabase-js'
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const { data: staff, error } = await supabase
-      .from('staff')
-      .select('*')
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+    
+    // Get pharmacy users with auth user details
+    const { data: pharmacyUsers, error } = await supabase
+      .from('pharmacy_users')
+      .select(`
+        id,
+        role,
+        is_active,
+        created_at,
+        user_id
+      `)
       .eq('is_active', true)
       .order('created_at', { ascending: false })
 
     if (error) throw error
     
-    // Format for frontend compatibility
-    const formattedStaff = staff?.map(s => ({
-      id: s.id,
-      name: `${s.first_name} ${s.last_name}`,
-      email: s.email,
-      phone: s.phone,
-      role: s.position,
-      status: s.is_active ? 'active' : 'inactive',
-      branch: s.department || 'Main Branch',
-      joinDate: s.hire_date
-    })) || []
+    // Get user details from auth.users for each pharmacy user
+    const formattedStaff = []
+    for (const user of pharmacyUsers || []) {
+      const { data: authUser } = await supabase.auth.admin.getUserById(user.user_id)
+      if (authUser.user) {
+        formattedStaff.push({
+          id: user.id,
+          name: authUser.user.user_metadata?.full_name || authUser.user.email?.split('@')[0] || 'Unknown',
+          email: authUser.user.email,
+          phone: authUser.user.user_metadata?.phone || 'N/A',
+          role: user.role,
+          status: user.is_active ? 'active' : 'inactive',
+          joinDate: new Date(user.created_at).toLocaleDateString()
+        })
+      }
+    }
 
     return NextResponse.json(formattedStaff)
   } catch (error) {
+    console.error('Error fetching staff:', error)
     return NextResponse.json({ error: 'Failed to fetch staff' }, { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
     const body = await request.json()
     
-    const { data: staffMember, error } = await supabase
-      .from('staff')
-      .insert({
-        pharmacy_id: body.pharmacy_id || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-        first_name: body.name.split(' ')[0],
-        last_name: body.name.split(' ').slice(1).join(' ') || '',
-        email: body.email,
-        phone: body.phone,
-        position: body.role,
-        department: body.branch || 'Main Branch',
-        hire_date: new Date().toISOString().split('T')[0],
-        is_active: true
-      })
-      .select()
-      .single()
-
-    if (error) throw error
-    return NextResponse.json({ success: true, staff: staffMember })
+    // This would create a new pharmacy user - but we're using /api/pharmacist for that
+    return NextResponse.json({ success: false, error: 'Use /api/pharmacist to create staff' }, { status: 400 })
   } catch (error) {
     return NextResponse.json({ success: false, error: 'Failed to create staff member' }, { status: 500 })
   }

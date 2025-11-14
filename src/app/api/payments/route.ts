@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     const { data: payment, error } = await supabase
       .from('sales')
       .insert({
-        pharmacy_id: body.pharmacy_id || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',
         total_amount: body.amount,
         payment_method: body.method,
         status: 'completed',

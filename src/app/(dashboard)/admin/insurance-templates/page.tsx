@@ -14,6 +14,38 @@ export default function InsuranceTemplatesPage() {
   const [draggedElement, setDraggedElement] = useState(null)
   const [selectedElement, setSelectedElement] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [insuranceForm, setInsuranceForm] = useState({
+    name: '',
+    coverage_percentage: 80,
+    contact_email: '',
+    contact_phone: '',
+    policy_number: ''
+  })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleAddInsurance = async () => {
+    if (!insuranceForm.name) return
+    
+    setIsSubmitting(true)
+    try {
+      const response = await fetch('/api/insurance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(insuranceForm)
+      })
+      
+      if (response.ok) {
+        alert('Insurance provider added successfully!')
+        setInsuranceForm({ name: '', coverage_percentage: 80, contact_email: '', contact_phone: '', policy_number: '' })
+      } else {
+        alert('Failed to add insurance provider')
+      }
+    } catch (error) {
+      alert('Failed to add insurance provider')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
   
   const componentTypes = [
     { type: 'text', label: 'Text', icon: Type, defaultProps: { text: 'Sample Text', fontSize: '16px' } },
@@ -354,6 +386,57 @@ export default function InsuranceTemplatesPage() {
 
           <div className="grid gap-6 grid-cols-4">
             <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Add Insurance Provider</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div>
+                    <Label>Insurance Name</Label>
+                    <Input
+                      value={insuranceForm.name}
+                      onChange={(e) => setInsuranceForm({...insuranceForm, name: e.target.value})}
+                      placeholder="e.g., RSSB, MMI"
+                    />
+                  </div>
+                  <div>
+                    <Label>Coverage Percentage</Label>
+                    <Input
+                      type="number"
+                      value={insuranceForm.coverage_percentage}
+                      onChange={(e) => setInsuranceForm({...insuranceForm, coverage_percentage: Number(e.target.value)})}
+                    />
+                  </div>
+                  <div>
+                    <Label>Contact Email</Label>
+                    <Input
+                      value={insuranceForm.contact_email}
+                      onChange={(e) => setInsuranceForm({...insuranceForm, contact_email: e.target.value})}
+                      placeholder="contact@insurance.com"
+                    />
+                  </div>
+                  <div>
+                    <Label>Contact Phone</Label>
+                    <Input
+                      value={insuranceForm.contact_phone}
+                      onChange={(e) => setInsuranceForm({...insuranceForm, contact_phone: e.target.value})}
+                      placeholder="+250 xxx xxx xxx"
+                    />
+                  </div>
+                  <div>
+                    <Label>Policy Number</Label>
+                    <Input
+                      value={insuranceForm.policy_number}
+                      onChange={(e) => setInsuranceForm({...insuranceForm, policy_number: e.target.value})}
+                      placeholder="Policy reference number"
+                    />
+                  </div>
+                  <Button onClick={handleAddInsurance} disabled={isSubmitting || !insuranceForm.name} className="w-full">
+                    {isSubmitting ? 'Adding...' : 'Add Insurance Provider'}
+                  </Button>
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader>
                   <CardTitle>Template Info</CardTitle>

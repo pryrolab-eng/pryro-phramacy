@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
     const { data: customer, error } = await supabase
       .from('customers')
       .insert({
-        pharmacy_id: body.pharmacy_id || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',
         name: body.name,
         phone: body.phone,
         insurance: body.insurance_number || 'None'

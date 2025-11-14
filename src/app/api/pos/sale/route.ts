@@ -4,6 +4,23 @@ import { createClient } from '../../../../../supabase/server'
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Get user's pharmacy_id
+    const { data: userPharmacy } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!userPharmacy) {
+      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
+    }
+    
     const body = await request.json()
     const { items, customerId, paymentMethod, total } = body
     
@@ -11,8 +28,8 @@ export async function POST(request: NextRequest) {
     const { data: sale, error: saleError } = await supabase
       .from('sales')
       .insert({
-        pharmacy_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-        cashier_id: 'current-pharmacist-id',
+        pharmacy_id: userPharmacy.pharmacy_id,
+        cashier_id: user.id,
         customer_name: customerId || 'Walk-in Customer',
         total_amount: parseFloat(total),
         payment_method: paymentMethod || 'cash',

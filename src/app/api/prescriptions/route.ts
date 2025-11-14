@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     const { data: prescription, error } = await supabase
       .from('prescriptions')
       .insert({
-        pharmacy_id: body.pharmacy_id || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',
         patient_name: body.patient,
         doctor_name: body.doctor,
         medications: body.medications,

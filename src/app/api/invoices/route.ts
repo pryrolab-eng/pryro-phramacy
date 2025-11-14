@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     const { data: invoice, error } = await supabase
       .from('sales')
       .insert({
-        pharmacy_id: body.pharmacy_id || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',
         customer_name: body.customer,
         total_amount: body.amount,
         receipt_number: receiptNumber,

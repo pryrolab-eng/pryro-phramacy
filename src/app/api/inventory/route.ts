@@ -1,9 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../supabase/server'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json([])
+    }
+
+    // Get user's pharmacy_id
+    const { data: userPharmacy } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!userPharmacy) {
+      return NextResponse.json([])
+    }
     
     const { data: inventory, error } = await supabase
       .from('inventory')
@@ -20,7 +36,7 @@ export async function GET() {
           category
         )
       `)
-      .eq('pharmacy_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+      .eq('pharmacy_id', userPharmacy.pharmacy_id)
 
     if (error) throw error
 
@@ -38,22 +54,37 @@ export async function GET() {
 
     return NextResponse.json(formattedInventory)
   } catch (error) {
-    return NextResponse.json([
-      { id: '1', name: 'Paracetamol 500mg', category: 'Pain Relief', stock: 100, minStock: 20, price: 100, expiryDate: '2025-12-31', batchNumber: 'PAR001' },
-      { id: '2', name: 'Amoxicillin 250mg', category: 'Antibiotics', stock: 5, minStock: 10, price: 400, expiryDate: '2025-06-30', batchNumber: 'AMX001' }
-    ])
+    console.error('Error fetching inventory:', error)
+    return NextResponse.json([])
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' })
+    }
+
+    // Get user's pharmacy_id
+    const { data: userPharmacy } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!userPharmacy) {
+      return NextResponse.json({ success: false, error: 'Pharmacy not found' })
+    }
+    
     const body = await request.json()
     
     const { data: inventory, error } = await supabase
       .from('inventory')
       .insert({
-        pharmacy_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: userPharmacy.pharmacy_id,
         medication_id: body.medication_id,
         batch_number: body.batch_number,
         quantity_in_stock: body.quantity,
@@ -69,6 +100,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, inventory })
   } catch (error) {
+    console.error('Error adding inventory:', error)
     return NextResponse.json({ success: false, error: 'Failed to add inventory item' })
   }
 }

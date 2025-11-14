@@ -8,7 +8,7 @@ export async function GET() {
     const { data: sales, error } = await supabase
       .from('sales')
       .select('*')
-      .eq('pharmacy_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+      .eq('pharmacy_id', 'userPharmacy.pharmacy_id')
       .order('created_at', { ascending: false })
       .limit(20)
 
@@ -24,10 +24,33 @@ export async function GET() {
       status: sale.status
     })) || []
 
+    // Calculate real stats
+    const today = new Date().toISOString().split('T')[0]
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    
+    const { data: todaySales } = await supabase
+      .from('sales')
+      .select('total_amount')
+      .eq('pharmacy_id', 'userPharmacy.pharmacy_id')
+      .gte('created_at', today)
+    
+    const { data: weekSales } = await supabase
+      .from('sales')
+      .select('total_amount')
+      .eq('pharmacy_id', 'userPharmacy.pharmacy_id')
+      .gte('created_at', weekAgo)
+    
+    const { data: monthSales } = await supabase
+      .from('sales')
+      .select('total_amount')
+      .eq('pharmacy_id', 'userPharmacy.pharmacy_id')
+      .gte('created_at', monthAgo)
+    
     const stats = {
-      todayTotal: 23500,
-      weekTotal: 156000,
-      monthTotal: 890000,
+      todayTotal: todaySales?.reduce((sum, sale) => sum + parseFloat(sale.total_amount), 0) || 0,
+      weekTotal: weekSales?.reduce((sum, sale) => sum + parseFloat(sale.total_amount), 0) || 0,
+      monthTotal: monthSales?.reduce((sum, sale) => sum + parseFloat(sale.total_amount), 0) || 0,
       totalSales: formattedSales.length
     }
 
@@ -51,7 +74,7 @@ export async function POST(request: NextRequest) {
     const { data: newSale, error: saleError } = await supabase
       .from('sales')
       .insert({
-        pharmacy_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: 'userPharmacy.pharmacy_id',
         customer_name: sale.customer_name || 'Walk-in Customer',
         subtotal: sale.subtotal,
         insurance_amount: sale.insurance_amount || 0,

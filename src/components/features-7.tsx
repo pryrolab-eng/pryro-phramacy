@@ -12,28 +12,15 @@ export default function FeaturesSection() {
                 <div className="mask-b-from-75% mask-l-from-75% mask-b-to-95% mask-l-to-95% relative -mx-4 pr-3 pt-3 md:-mx-12">
                     <div className="perspective-midrange">
                         <div className="rotate-x-6 -skew-2">
-                            <div className="aspect-88/36 relative">
-                                <Image
-                                    src="/mail-upper.png"
-                                    className="absolute inset-0 z-10"
-                                    alt="payments illustration dark"
-                                    width={2797}
-                                    height={1137}
-                                />
-                                <Image
-                                    src="/mail-back.png"
-                                    className="hidden dark:block"
-                                    alt="payments illustration dark"
-                                    width={2797}
-                                    height={1137}
-                                />
-                                <Image
-                                    src="/mail-back-light.png"
-                                    className="dark:hidden"
-                                    alt="payments illustration light"
-                                    width={2797}
-                                    height={1137}
-                                />
+                            <div className="aspect-88/36 relative bg-gradient-to-br from-purple-50 to-pink-100 dark:from-gray-800 dark:to-gray-900 rounded-lg flex items-center justify-center">
+                                <div className="text-center">
+                                    <div className="w-20 h-20 bg-purple-500 rounded-xl mx-auto mb-6 flex items-center justify-center">
+                                        <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                        </svg>
+                                    </div>
+                                    <p className="text-gray-600 dark:text-gray-400 text-lg">Analytics Dashboard</p>
+                                </div>
                             </div>
                         </div>
                     </div>

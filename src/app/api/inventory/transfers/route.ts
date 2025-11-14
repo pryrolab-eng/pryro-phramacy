@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     const { data: transfer, error } = await supabase
       .from('inventory_transfers')
       .insert({
-        pharmacy_id: body.pharmacy_id || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',
         medication_name: body.product,
         quantity: body.quantity,
         from_branch_id: body.from,

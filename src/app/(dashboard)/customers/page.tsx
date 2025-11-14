@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Users, Plus, Phone, Mail, Calendar } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer, AreaChart, Area } from 'recharts'
 import { SidebarTrigger } from '@/components/ui/sidebar'
+import { Spinner } from '@/components/ui/spinner'
 
 interface Customer {
   id: string
@@ -40,6 +41,7 @@ export default function CustomersPage() {
     allergies: '',
     insurance: ''
   })
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     fetchCustomers()
@@ -47,6 +49,7 @@ export default function CustomersPage() {
 
   const fetchCustomers = async () => {
     try {
+      setLoading(true)
       const response = await fetch('/api/customers')
       if (response.ok) {
         const data = await response.json()
@@ -59,6 +62,8 @@ export default function CustomersPage() {
         { id: '2', name: 'Jean Baptiste', phone: '+250788123457', email: 'jean@email.com', dateOfBirth: '1978-07-22', allergies: 'None', insurance: 'MMI', totalPurchases: 23000, lastVisit: '2024-11-28', status: 'active' }
       ])
       setStats({ totalCustomers: 156, activeCustomers: 142, newThisMonth: 12 })
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -88,6 +93,12 @@ export default function CustomersPage() {
     }
   }
 
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <Spinner className="size-6" />
+    </div>
+  )
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
@@ -95,8 +106,8 @@ export default function CustomersPage() {
           <SidebarTrigger />
           <div className="h-4 w-px bg-border" />
           <div>
-            <h1 className="text-3xl font-bold">Patient Management</h1>
-            <p className="text-muted-foreground">Manage patient records, prescriptions, and medical information</p>
+            <h1 className="text-xl font-bold">Patient Management</h1>
+            <p className="text-sm text-muted-foreground">Manage patient records, prescriptions, and medical information</p>
           </div>
         </div>
         <Dialog open={isAddingCustomer} onOpenChange={setIsAddingCustomer}>
@@ -224,7 +235,7 @@ export default function CustomersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Patient Records</CardTitle>
+          <CardTitle className="text-sm">Patient Records</CardTitle>
           <CardDescription>Manage patient information and medical history</CardDescription>
         </CardHeader>
         <CardContent>

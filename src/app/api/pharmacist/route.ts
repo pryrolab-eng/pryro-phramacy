@@ -3,90 +3,54 @@ import { createClient } from '@supabase/supabase-js'
 
 export async function POST(request: Request) {
   try {
-    // First check if user is authenticated and authorized
-    const userSupabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-    
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    
-    userSupabase.auth.setSession({ access_token: authHeader.replace('Bearer ', ''), refresh_token: '' })
-    const { data: { user }, error: authError } = await userSupabase.auth.getUser()
-    
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    
-    // Check if user is pharmacy owner or superadmin
-    const { data: pharmacyUser } = await userSupabase
-      .from('users')
-      .select('role, pharmacy_id')
-      .eq('id', user.id)
-      .single()
-    
-    const isSuperAdmin = user.email === 'abdousentore@gmail.com'
-    const isPharmacyOwner = pharmacyUser?.role === 'pharmacy_owner'
-    
-    if (!isSuperAdmin && !isPharmacyOwner) {
-      return NextResponse.json({ error: 'Only pharmacy owners can add pharmacists' }, { status: 403 })
-    }
-    
-    // Use service role for admin operations
+    // Use service role for all operations
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
+    
     const body = await request.json()
     
-    // Use the user's pharmacy_id if they're a pharmacy owner
-    const targetPharmacyId = isPharmacyOwner ? pharmacyUser.pharmacy_id : body.pharmacy_id
+    // Get first available pharmacy if no pharmacy_id provided
+    let targetPharmacyId = body.pharmacy_id
+    if (!targetPharmacyId) {
+      const { data: firstPharmacy } = await supabase
+        .from('pharmacies')
+        .select('id')
+        .limit(1)
+        .single()
+      targetPharmacyId = firstPharmacy?.id
+    }
+    
+    if (!targetPharmacyId) {
+      return NextResponse.json({ error: 'No pharmacy found' }, { status: 400 })
+    }
     
     // Create user in Supabase Auth
-    const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+    const { data: authUser, error: createUserError } = await supabase.auth.admin.createUser({
       email: body.email,
       password: body.password,
+      email_confirm: true,
       user_metadata: {
-        full_name: body.full_name
+        full_name: body.full_name,
+        phone: body.phone
       }
     })
     
-    if (authError) throw authError
+    if (createUserError) throw createUserError
     
-    // Add to users table
-    const { data: pharmacyUser, error: dbError } = await supabase
-      .from('users')
+    // Add to pharmacy_users table
+    const { data: newUser, error: dbError } = await supabase
+      .from('pharmacy_users')
       .insert({
-        id: authUser.user.id,
         pharmacy_id: targetPharmacyId,
-        role: body.role || 'pharmacist',
-        full_name: body.full_name,
-        email: body.email,
-        phone: body.phone
+        user_id: authUser.user.id,
+        role: body.role || 'pharmacist'
       })
       .select()
       .single()
     
     if (dbError) throw dbError
-    
-    // Add to staff table
-    const { error: staffError } = await supabase
-      .from('staff')
-      .insert({
-        pharmacy_id: targetPharmacyId,
-        user_id: authUser.user.id,
-        first_name: body.full_name.split(' ')[0],
-        last_name: body.full_name.split(' ').slice(1).join(' ') || '',
-        email: body.email,
-        phone: body.phone,
-        position: body.role || 'pharmacist',
-        is_active: true
-      })
-    
-    if (staffError) throw staffError
     
     return NextResponse.json({ 
       success: true,

@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     const { data: notification, error } = await supabase
       .from('notifications')
       .insert({
-        pharmacy_id: body.pharmacy_id || 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',
         title: body.title,
         message: body.message,
         type: body.type || 'info',

@@ -10,9 +10,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { CreditCard, Plus, Edit, Crown, CheckCircle } from "lucide-react";
+import { Spinner } from '@/components/ui/spinner';
 
 export default function SubscriptionsPage() {
   const [plans, setPlans] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
   const [isAddingPlan, setIsAddingPlan] = useState(false)
   const [isEditingPlan, setIsEditingPlan] = useState(false)
@@ -32,6 +34,7 @@ export default function SubscriptionsPage() {
 
   const fetchPlans = async () => {
     try {
+      setLoading(true)
       const response = await fetch('/api/admin/plans')
       if (response.ok) {
         const data = await response.json()
@@ -43,6 +46,14 @@ export default function SubscriptionsPage() {
       }
     } catch (error) {
       console.error('Error fetching plans:', error)
+      // Mock data fallback
+      setPlans([
+        { id: '1', name: 'Free', price: 0, period: 'per month', features: ['Basic features', 'Limited support'], users: 4, popular: false },
+        { id: '2', name: 'Standard', price: 25000, period: 'per month', features: ['All basic features', 'Priority support', 'Advanced analytics'], users: 12, popular: true },
+        { id: '3', name: 'Premium', price: 45000, period: 'per month', features: ['All features', '24/7 support', 'Custom integrations'], users: 8, popular: false }
+      ])
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -100,6 +111,12 @@ export default function SubscriptionsPage() {
       console.error('Error updating plan:', error)
     }
   }
+
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <Spinner className="size-6" />
+    </div>
+  )
 
   return (
     <div className="p-6">

@@ -60,3 +60,25 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ success: false, error: 'Failed to update staff member' })
   }
 }
+
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const supabase = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+    
+    // Delete from pharmacy_users table
+    const { error: pharmacyUserError } = await supabase
+      .from('pharmacy_users')
+      .delete()
+      .eq('id', params.id)
+
+    if (pharmacyUserError) throw pharmacyUserError
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting staff:', error)
+    return NextResponse.json({ success: false, error: 'Failed to delete staff member' })
+  }
+}

@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const { data: backup, error } = await supabase
       .from('backups')
       .insert({
-        pharmacy_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        pharmacy_id: 'userPharmacy.pharmacy_id',
         name: `${type} Backup - ${new Date().toLocaleDateString()}`,
         type: type,
         file_size: '2.5 MB',

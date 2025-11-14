@@ -1,13 +1,40 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
+interface InsuranceProvider {
+  id: string
+  name: string
+  coverage_percentage: number
+  is_active: boolean
+}
+
 export function InsurancePriceManager() {
   const [selectedInsurance, setSelectedInsurance] = useState('')
   const [file, setFile] = useState<File | null>(null)
+  const [insuranceProviders, setInsuranceProviders] = useState<InsuranceProvider[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchInsuranceProviders = async () => {
+      try {
+        const response = await fetch('/api/insurance')
+        if (response.ok) {
+          const providers: InsuranceProvider[] = await response.json()
+          setInsuranceProviders(providers)
+        }
+      } catch (error) {
+        console.error('Failed to fetch insurance providers:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchInsuranceProviders()
+  }, [])
 
   const handleFileUpload = async () => {
     if (!file || !selectedInsurance) return
@@ -38,14 +65,16 @@ export function InsurancePriceManager() {
     <div className="space-y-4 p-6">
       <h2 className="text-xl font-bold">Insurance Price Management</h2>
       
-      <Select value={selectedInsurance} onValueChange={setSelectedInsurance}>
+      <Select value={selectedInsurance} onValueChange={setSelectedInsurance} disabled={loading}>
         <SelectTrigger>
-          <SelectValue placeholder="Select Insurance" />
+          <SelectValue placeholder={loading ? "Loading..." : "Select Insurance"} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="MMI">MMI</SelectItem>
-          <SelectItem value="RSSB">RSSB</SelectItem>
-          <SelectItem value="Radiant">Radiant</SelectItem>
+          {insuranceProviders.map((provider) => (
+            <SelectItem key={provider.id} value={provider.name}>
+              {provider.name}
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
 

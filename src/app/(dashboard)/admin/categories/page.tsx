@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tag, Plus, Edit, Trash2 } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { Spinner } from '@/components/ui/spinner';
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState([
@@ -29,6 +30,12 @@ export default function CategoriesPage() {
     name: '',
     description: ''
   })
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setLoading(false), 600)
+    return () => clearTimeout(timer)
+  }, [])
 
   const handleAddCategory = async () => {
     try {
@@ -92,6 +99,12 @@ export default function CategoriesPage() {
     }
   }
 
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <Spinner className="size-6" />
+    </div>
+  )
+
   return (
     <div className="p-6">
         <div className="max-w-7xl mx-auto">
@@ -99,8 +112,7 @@ export default function CategoriesPage() {
             <div className="flex items-center gap-4 mb-2">
               <SidebarTrigger />
               <div className="h-4 w-px bg-border" />
-              <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
-                <Tag className="h-8 w-8 text-blue-600" />
+              <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                 Category Management
               </h1>
             </div>

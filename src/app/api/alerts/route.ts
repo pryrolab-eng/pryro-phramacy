@@ -14,7 +14,7 @@ export async function GET() {
         expiry_date,
         medications(name, category)
       `)
-      .eq('pharmacy_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+      .eq('pharmacy_id', 'userPharmacy.pharmacy_id')
       .lt('quantity_in_stock', supabase.raw('minimum_stock_level * 1.5'))
       .limit(10)
 

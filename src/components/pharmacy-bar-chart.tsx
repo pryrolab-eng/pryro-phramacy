@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Bar, BarChart, XAxis } from "recharts"
 
 import {
@@ -16,15 +17,6 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 
-const chartData = [
-  { date: "2024-07-15", prescription: 450, otc: 300 },
-  { date: "2024-07-16", prescription: 380, otc: 420 },
-  { date: "2024-07-17", prescription: 520, otc: 120 },
-  { date: "2024-07-18", prescription: 140, otc: 550 },
-  { date: "2024-07-19", prescription: 600, otc: 350 },
-  { date: "2024-07-20", prescription: 480, otc: 400 },
-]
-
 const chartConfig = {
   prescription: {
     label: "Prescription",
@@ -37,6 +29,18 @@ const chartConfig = {
 } satisfies ChartConfig
 
 export function PharmacyBarChart() {
+  const [chartData, setChartData] = useState([])
+  
+  useEffect(() => {
+    fetch('/api/pharmacy/weekly-sales')
+      .then(res => res.json())
+      .then(data => setChartData(data))
+      .catch(() => setChartData([
+        { date: "Mon", prescription: 450, otc: 300 },
+        { date: "Tue", prescription: 380, otc: 420 }
+      ]))
+  }, [])
+  
   return (
     <Card>
       <CardHeader>
@@ -53,11 +57,6 @@ export function PharmacyBarChart() {
               tickLine={false}
               tickMargin={10}
               axisLine={false}
-              tickFormatter={(value) => {
-                return new Date(value).toLocaleDateString("en-US", {
-                  weekday: "short",
-                })
-              }}
             />
             <Bar
               dataKey="prescription"

@@ -3,9 +3,18 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Receipt, DollarSign, TrendingUp, Calendar } from 'lucide-react'
-import { LineChart, Line, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, CartesianGrid, LabelList, XAxis } from 'recharts'
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
+import { Progress } from "@/components/ui/progress"
+import { Receipt, DollarSign, TrendingUp, Calendar, Search, Filter, Download, ArrowUpRight, ArrowDownRight, Users, ShoppingCart, CreditCard, Banknote } from 'lucide-react'
+import { LineChart, Line, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, CartesianGrid, LabelList, XAxis, YAxis, BarChart, Bar } from 'recharts'
 import { SidebarTrigger } from '@/components/ui/sidebar'
+import { Spinner } from '@/components/ui/spinner'
 import {
   ChartConfig,
   ChartContainer,
@@ -37,8 +46,8 @@ const hourlyChartConfig = {
   },
 } satisfies ChartConfig
 
-function WeeklySalesChart() {
-  const weeklyData = [
+function WeeklySalesChart({ data }) {
+  const weeklyData = data.length > 0 ? data : [
     { day: "Mon", sales: 120000 },
     { day: "Tue", sales: 135000 },
     { day: "Wed", sales: 142000 },
@@ -51,7 +60,7 @@ function WeeklySalesChart() {
   return (
     <Card className="shadow-lg">
       <CardHeader>
-        <CardTitle>Weekly Sales Trend</CardTitle>
+        <CardTitle className="text-sm">Weekly Sales Trend</CardTitle>
         <CardDescription>Daily sales performance over the past week</CardDescription>
       </CardHeader>
       <CardContent>
@@ -103,40 +112,22 @@ function WeeklySalesChart() {
   )
 }
 
-function HourlySalesChart() {
-  const generateHourlyData = () => {
-    const now = new Date()
-    const currentHour = now.getHours()
-    const data = []
-    
-    // Generate data for the last 8 hours up to current hour
-    for (let i = 7; i >= 0; i--) {
-      const hour = currentHour - i
-      const adjustedHour = hour < 0 ? hour + 24 : hour
-      const timeStr = adjustedHour === 0 ? '12AM' : 
-                     adjustedHour < 12 ? `${adjustedHour}AM` :
-                     adjustedHour === 12 ? '12PM' :
-                     `${adjustedHour - 12}PM`
-      
-      // Simulate sales data based on typical pharmacy hours
-      const baseSales = adjustedHour >= 8 && adjustedHour <= 20 ? 
-                       Math.random() * 15000 + 5000 : 
-                       Math.random() * 3000 + 1000
-      
-      data.push({
-        hour: timeStr,
-        sales: Math.round(baseSales)
-      })
-    }
-    return data
-  }
-  
-  const hourlyData = generateHourlyData()
+function HourlySalesChart({ data }) {
+  const hourlyData = data?.length > 0 ? data : [
+    { hour: '8AM', sales: 5000 },
+    { hour: '9AM', sales: 8000 },
+    { hour: '10AM', sales: 12000 },
+    { hour: '11AM', sales: 15000 },
+    { hour: '12PM', sales: 18000 },
+    { hour: '1PM', sales: 14000 },
+    { hour: '2PM', sales: 16000 },
+    { hour: '3PM', sales: 13000 }
+  ]
 
   return (
     <Card className="shadow-lg">
       <CardHeader>
-        <CardTitle>Today's Hourly Sales</CardTitle>
+        <CardTitle className="text-sm">Today's Hourly Sales</CardTitle>
         <CardDescription>Sales performance throughout the day</CardDescription>
       </CardHeader>
       <CardContent>
@@ -190,19 +181,49 @@ function HourlySalesChart() {
 
 export default function SalesPage() {
   const [sales, setSales] = useState<Sale[]>([])
+  const [filteredSales, setFilteredSales] = useState<Sale[]>([])
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedPeriod, setSelectedPeriod] = useState('today')
   const [stats, setStats] = useState({
     todayTotal: 0,
     weekTotal: 0,
     monthTotal: 0,
     totalSales: 0
   })
+  const [analyticsData, setAnalyticsData] = useState({
+    weeklySales: [],
+    paymentBreakdown: [],
+    hourlySales: [],
+    monthlyComparison: [],
+    customerDistribution: [],
+    topCategories: []
+  })
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     fetchSales()
+    fetchAnalytics()
   }, [])
+  
+  const fetchAnalytics = async () => {
+    try {
+      const response = await fetch('/api/sales/analytics')
+      if (response.ok) {
+        const data = await response.json()
+        setAnalyticsData(data)
+      }
+    } catch (error) {
+      console.error('Error fetching analytics:', error)
+    }
+  }
+
+  useEffect(() => {
+    filterSales()
+  }, [sales, searchTerm, selectedPeriod])
 
   const fetchSales = async () => {
     try {
+      setLoading(true)
       const response = await fetch('/api/sales')
       if (response.ok) {
         const data = await response.json()
@@ -210,249 +231,393 @@ export default function SalesPage() {
         setStats(data.stats)
       }
     } catch (error) {
-      setSales([
+      const mockSales = [
         { id: '1', customer: 'Marie Uwimana', amount: 15000, items: 3, date: '2024-12-01', paymentMethod: 'Cash', status: 'completed' },
-        { id: '2', customer: 'Jean Baptiste', amount: 8500, items: 2, date: '2024-12-01', paymentMethod: 'Mobile Money', status: 'completed' }
-      ])
-      setStats({ todayTotal: 23500, weekTotal: 156000, monthTotal: 890000, totalSales: 45 })
+        { id: '2', customer: 'Jean Baptiste', amount: 8500, items: 2, date: '2024-12-01', paymentMethod: 'Mobile Money', status: 'completed' },
+        { id: '3', customer: 'Grace Mukamana', amount: 25000, items: 5, date: '2024-12-01', paymentMethod: 'Insurance', status: 'completed' },
+        { id: '4', customer: 'Paul Nkurunziza', amount: 12000, items: 2, date: '2024-12-01', paymentMethod: 'Card', status: 'completed' },
+        { id: '5', customer: 'Alice Uwera', amount: 18500, items: 4, date: '2024-11-30', paymentMethod: 'Cash', status: 'completed' }
+      ]
+      setSales(mockSales)
+      setStats({ todayTotal: 70500, weekTotal: 456000, monthTotal: 1890000, totalSales: 156 })
+    } finally {
+      setLoading(false)
     }
   }
 
+  const filterSales = () => {
+    let filtered = sales
+    
+    if (searchTerm) {
+      filtered = filtered.filter(sale => 
+        sale.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        sale.paymentMethod.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+    
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
+    
+    if (selectedPeriod === 'today') {
+      filtered = filtered.filter(sale => new Date(sale.date) >= today)
+    } else if (selectedPeriod === 'week') {
+      filtered = filtered.filter(sale => new Date(sale.date) >= weekAgo)
+    } else if (selectedPeriod === 'month') {
+      filtered = filtered.filter(sale => new Date(sale.date) >= monthAgo)
+    }
+    
+    setFilteredSales(filtered)
+  }
+
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <Spinner className="size-6" />
+    </div>
+  )
+
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center gap-4">
-        <SidebarTrigger />
-        <div className="h-4 w-px bg-border" />
-        <div>
-          <h1 className="text-3xl font-bold">Sales Reports</h1>
-          <p className="text-muted-foreground">Track your sales performance and transactions</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <SidebarTrigger />
+          <Separator orientation="vertical" className="h-6" />
+          <div>
+            <h1 className="text-xl font-bold">Sales Dashboard</h1>
+            <p className="text-sm text-muted-foreground">Track your sales performance and transactions</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm">
+            <Download className="mr-2 h-4 w-4" />
+            Export
+          </Button>
+          <Button size="sm">
+            <Receipt className="mr-2 h-4 w-4" />
+            New Sale
+          </Button>
         </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="shadow-lg">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Today's Sales</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <div className="h-8 w-8 rounded-lg bg-green-100 flex items-center justify-center">
+              <DollarSign className="h-4 w-4 text-green-600" />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.todayTotal.toLocaleString()} RWF</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={[{v:12000},{v:15000},{v:18000},{v:16000},{v:20000},{v:23500}]}>
-                  <Line type="monotone" dataKey="v" stroke="#10b981" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
+            <div className="flex items-center text-xs text-muted-foreground mt-1">
+              <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
+              +15% from yesterday
             </div>
-            <p className="text-xs text-muted-foreground mt-1">+15% from yesterday</p>
+            <Progress value={75} className="mt-2" />
           </CardContent>
         </Card>
-        <Card className="shadow-lg">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">This Week</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
+              <TrendingUp className="h-4 w-4 text-blue-600" />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.weekTotal.toLocaleString()} RWF</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={[{v:120000},{v:135000},{v:142000},{v:138000},{v:150000},{v:148000},{v:156000}]}>
-                  <Line type="monotone" dataKey="v" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
+            <div className="flex items-center text-xs text-muted-foreground mt-1">
+              <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
+              +8% from last week
             </div>
-            <p className="text-xs text-muted-foreground mt-1">+8% from last week</p>
+            <Progress value={68} className="mt-2" />
           </CardContent>
         </Card>
-        <Card className="shadow-lg">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">This Month</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <div className="h-8 w-8 rounded-lg bg-purple-100 flex items-center justify-center">
+              <Calendar className="h-4 w-4 text-purple-600" />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.monthTotal.toLocaleString()} RWF</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={[{v:750000},{v:780000},{v:820000},{v:850000},{v:870000},{v:890000}]}>
-                  <Line type="monotone" dataKey="v" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
+            <div className="flex items-center text-xs text-muted-foreground mt-1">
+              <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
+              +12% from last month
             </div>
-            <p className="text-xs text-muted-foreground mt-1">+12% from last month</p>
+            <Progress value={82} className="mt-2" />
           </CardContent>
         </Card>
-        <Card className="shadow-lg">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
-            <Receipt className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
+            <div className="h-8 w-8 rounded-lg bg-orange-100 flex items-center justify-center">
+              <Receipt className="h-4 w-4 text-orange-600" />
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalSales}</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={[{v:35},{v:38},{v:40},{v:42},{v:44},{v:45}]}>
-                  <Line type="monotone" dataKey="v" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
+            <div className="flex items-center text-xs text-muted-foreground mt-1">
+              <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
+              +5% from yesterday
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Transactions count</p>
+            <Progress value={60} className="mt-2" />
           </CardContent>
         </Card>
       </div>
 
-      <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle>Recent Sales</CardTitle>
-          <CardDescription>Latest transactions and sales history</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {sales.map((sale) => (
-              <div key={sale.id} className="flex items-center justify-between p-4 border rounded-lg">
-                <div className="flex items-center space-x-4">
-                  <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                    <Receipt className="h-5 w-5 text-green-600" />
-                  </div>
-                  <div>
-                    <p className="font-medium">{sale.customer || 'Walk-in Customer'}</p>
-                    <p className="text-sm text-muted-foreground">{sale.items} items • {sale.date}</p>
-                  </div>
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="transactions">Transactions</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="overview" className="space-y-4">
+          <div className="grid gap-6 md:grid-cols-2">
+            <WeeklySalesChart data={analyticsData.weeklySales} />
+            <HourlySalesChart data={analyticsData.hourlySales} />
+          </div>
+          
+          <div className="grid gap-6 md:grid-cols-3">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Payment Methods</CardTitle>
+                <CardDescription>Sales breakdown by payment type</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {analyticsData.paymentBreakdown.map((payment, index) => {
+                    const icons = {
+                      cash: <Banknote className="h-4 w-4 text-green-600" />,
+                      mobile_money: <CreditCard className="h-4 w-4 text-blue-600" />,
+                      insurance: <Users className="h-4 w-4 text-purple-600" />,
+                      card: <CreditCard className="h-4 w-4 text-orange-600" />
+                    }
+                    const labels = {
+                      cash: 'Cash',
+                      mobile_money: 'Mobile Money',
+                      insurance: 'Insurance',
+                      card: 'Card'
+                    }
+                    return (
+                      <div key={index} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {icons[payment.method] || <CreditCard className="h-4 w-4" />}
+                          <span className="text-sm font-medium">{labels[payment.method] || payment.method}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Progress value={payment.percentage} className="w-20" />
+                          <span className="text-sm text-muted-foreground">{payment.percentage}%</span>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-                <div className="text-right space-y-1">
-                  <p className="font-semibold">{sale.amount.toLocaleString()} RWF</p>
-                  <div className="flex space-x-2">
-                    <Badge variant="outline">{sale.paymentMethod}</Badge>
-                    <Badge variant={sale.status === 'completed' ? 'default' : 'secondary'}>
-                      {sale.status}
-                    </Badge>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Top Categories</CardTitle>
+                <CardDescription>Best selling product categories</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {(analyticsData.topCategories?.length > 0 ? analyticsData.topCategories : [
+                    { name: 'Prescription', value: 40, color: 'bg-red-500' },
+                    { name: 'OTC Medicines', value: 25, color: 'bg-green-500' },
+                    { name: 'Supplements', value: 20, color: 'bg-blue-500' },
+                    { name: 'Personal Care', value: 15, color: 'bg-yellow-500' }
+                  ]).map((category, index) => (
+                    <div key={index} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-3 h-3 rounded-full ${category.color}`} />
+                        <span className="text-sm font-medium">{category.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Progress value={category.value} className="w-20" />
+                        <span className="text-sm text-muted-foreground">{category.value}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Recent Sales</CardTitle>
+                <CardDescription>Latest transactions</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[200px]">
+                  <div className="space-y-3">
+                    {sales.slice(0, 5).map((sale) => (
+                      <div key={sale.id} className="flex items-center justify-between p-2 rounded-lg border">
+                        <div>
+                          <p className="text-sm font-medium">{sale.customer}</p>
+                          <p className="text-xs text-muted-foreground">{sale.items} items</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold">{sale.amount.toLocaleString()} RWF</p>
+                          <Badge variant="outline" className="text-xs">{sale.paymentMethod}</Badge>
+                        </div>
+                      </div>
+                    ))}
                   </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+        
+        <TabsContent value="transactions" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm">Sales Transactions</CardTitle>
+                  <CardDescription>Detailed view of all sales transactions</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search transactions..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-8 w-64"
+                    />
+                  </div>
+                  <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="today">Today</SelectItem>
+                      <SelectItem value="week">This Week</SelectItem>
+                      <SelectItem value="month">This Month</SelectItem>
+                      <SelectItem value="all">All Time</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" size="sm">
+                    <Filter className="mr-2 h-4 w-4" />
+                    Filter
+                  </Button>
                 </div>
               </div>
-            ))}
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Items</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Payment Method</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredSales.map((sale) => (
+                    <TableRow key={sale.id}>
+                      <TableCell className="font-medium">{sale.customer}</TableCell>
+                      <TableCell>{sale.items}</TableCell>
+                      <TableCell className="font-semibold">{sale.amount.toLocaleString()} RWF</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{sale.paymentMethod}</Badge>
+                      </TableCell>
+                      <TableCell>{new Date(sale.date).toLocaleDateString()}</TableCell>
+                      <TableCell>
+                        <Badge variant={sale.status === 'completed' ? 'default' : 'secondary'}>
+                          {sale.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="analytics" className="space-y-4">
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Sales Performance</CardTitle>
+                <CardDescription>Monthly comparison</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ChartContainer config={{
+                  current: { label: "Current Month", color: "#3b82f6" },
+                  previous: { label: "Previous Month", color: "#60a5fa" }
+                }}>
+                  <BarChart data={analyticsData.monthlyComparison?.length > 0 ? analyticsData.monthlyComparison : [
+                    { week: "Week 1", current: 450000, previous: 380000 },
+                    { week: "Week 2", current: 520000, previous: 420000 },
+                    { week: "Week 3", current: 480000, previous: 460000 },
+                    { week: "Week 4", current: 580000, previous: 510000 }
+                  ]}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="week" />
+                    <YAxis />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar dataKey="current" fill="#3b82f6" radius={4} />
+                    <Bar dataKey="previous" fill="#60a5fa" radius={4} />
+                  </BarChart>
+                </ChartContainer>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Customer Distribution</CardTitle>
+                <CardDescription>Sales by customer type</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={analyticsData.customerDistribution?.length > 0 ? analyticsData.customerDistribution : [
+                          {name: 'Walk-in', value: 55, fill: '#8b5cf6'},
+                          {name: 'Regular', value: 30, fill: '#10b981'},
+                          {name: 'Insurance', value: 15, fill: '#3b82f6'}
+                        ]}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={40}
+                        outerRadius={80}
+                        dataKey="value"
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="grid grid-cols-1 gap-2 text-xs mt-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-purple-500 rounded" />
+                    <span>Walk-in Customers (55%)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-green-500 rounded" />
+                    <span>Regular Customers (30%)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-blue-500 rounded" />
+                    <span>Insurance Customers (15%)</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
+        </TabsContent>
+      </Tabs>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <WeeklySalesChart />
-        <HourlySalesChart />
-      </div>
 
-      <div className="grid gap-6 md:grid-cols-3">
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle>Payment Methods</CardTitle>
-            <CardDescription>Sales breakdown by payment type</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={[
-                      {name: 'Cash', value: 45},
-                      {name: 'Mobile Money', value: 30},
-                      {name: 'Insurance', value: 20},
-                      {name: 'Card', value: 5}
-                    ]}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={30}
-                    outerRadius={70}
-                    dataKey="value"
-                  >
-                    <Cell fill="#10b981" />
-                    <Cell fill="#3b82f6" />
-                    <Cell fill="#8b5cf6" />
-                    <Cell fill="#f59e0b" />
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="flex items-center gap-1"><div className="w-2 h-2 bg-green-500 rounded"></div>Cash 45%</div>
-              <div className="flex items-center gap-1"><div className="w-2 h-2 bg-blue-500 rounded"></div>Mobile 30%</div>
-              <div className="flex items-center gap-1"><div className="w-2 h-2 bg-purple-500 rounded"></div>Insurance 20%</div>
-              <div className="flex items-center gap-1"><div className="w-2 h-2 bg-yellow-500 rounded"></div>Card 5%</div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle>Top Categories</CardTitle>
-            <CardDescription>Best selling product categories</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={[
-                      {name: 'Prescription', value: 40},
-                      {name: 'OTC', value: 25},
-                      {name: 'Supplements', value: 20},
-                      {name: 'Personal Care', value: 15}
-                    ]}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={30}
-                    outerRadius={70}
-                    dataKey="value"
-                  >
-                    <Cell fill="#ef4444" />
-                    <Cell fill="#10b981" />
-                    <Cell fill="#3b82f6" />
-                    <Cell fill="#f59e0b" />
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="flex items-center gap-1"><div className="w-2 h-2 bg-red-500 rounded"></div>Prescription 40%</div>
-              <div className="flex items-center gap-1"><div className="w-2 h-2 bg-green-500 rounded"></div>OTC 25%</div>
-              <div className="flex items-center gap-1"><div className="w-2 h-2 bg-blue-500 rounded"></div>Supplements 20%</div>
-              <div className="flex items-center gap-1"><div className="w-2 h-2 bg-yellow-500 rounded"></div>Personal Care 15%</div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle>Customer Types</CardTitle>
-            <CardDescription>Sales distribution by customer type</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={[
-                      {name: 'Walk-in', value: 55},
-                      {name: 'Regular', value: 30},
-                      {name: 'Insurance', value: 15}
-                    ]}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={30}
-                    outerRadius={70}
-                    dataKey="value"
-                  >
-                    <Cell fill="#8b5cf6" />
-                    <Cell fill="#10b981" />
-                    <Cell fill="#3b82f6" />
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-1 gap-2 text-xs">
-              <div className="flex items-center gap-1"><div className="w-2 h-2 bg-purple-500 rounded"></div>Walk-in 55%</div>
-              <div className="flex items-center gap-1"><div className="w-2 h-2 bg-green-500 rounded"></div>Regular 30%</div>
-              <div className="flex items-center gap-1"><div className="w-2 h-2 bg-blue-500 rounded"></div>Insurance 15%</div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   )
 }

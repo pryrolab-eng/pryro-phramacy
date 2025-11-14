@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
+import { createClient } from '../../../../supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,6 +13,7 @@ import { ShoppingCart, Plus, Minus, CreditCard, Scan, AlertTriangle, User, Recei
 import { InsuranceSelector } from '@/components/insurance-selector'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { SidebarTrigger } from '@/components/ui/sidebar'
+import { Spinner } from '@/components/ui/spinner'
 
 interface Product {
   id: string
@@ -65,34 +67,72 @@ export default function POSPage() {
   const [returnsDialogOpen, setReturnsDialogOpen] = useState(false)
   const [quickActionsVisible, setQuickActionsVisible] = useState(true)
   const [aiSafetyOpen, setAiSafetyOpen] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetchProducts()
-    fetchFastMoving()
+    const loadData = async () => {
+      setLoading(true)
+      // Clear any existing data first
+      setProducts([])
+      setFastMoving([])
+      
+      await Promise.all([
+        fetchProducts(),
+        fetchFastMoving()
+      ])
+      setLoading(false)
+    }
+    loadData()
   }, [])
 
   const fetchProducts = async () => {
     try {
-      const response = await fetch('/api/pos/products')
-      if (response.ok) {
-        const data = await response.json()
-        setProducts(data)
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (user) {
+        const response = await fetch('/api/pos/products', {
+          headers: {
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+          }
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setProducts(data)
+          return
+        }
       }
     } catch (error) {
       console.error('Failed to fetch products:', error)
     }
+    // Empty fallback - no shared mock data
+    console.log('No products loaded - API may not be implemented')
+    setProducts([])
   }
 
   const fetchFastMoving = async () => {
     try {
-      const response = await fetch('/api/pos/products?fastMoving=true')
-      if (response.ok) {
-        const data = await response.json()
-        setFastMoving(data)
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (user) {
+        const response = await fetch('/api/pos/products?fastMoving=true', {
+          headers: {
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+          }
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setFastMoving(data)
+          return
+        }
       }
     } catch (error) {
       console.error('Failed to fetch fast moving products:', error)
     }
+    // Empty fallback - no shared mock data  
+    console.log('No fast moving products loaded - API may not be implemented')
+    setFastMoving([])
   }
 
   const categories = ['all', 'prescription', 'otc', 'supplements', 'medical_devices', 'personal_care']
@@ -257,14 +297,20 @@ export default function POSPage() {
     }
   }
 
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <Spinner className="size-6" />
+    </div>
+  )
+
   return (
     <div className="p-4 h-screen flex flex-col">
       <div className="mb-4 flex items-center gap-4">
         <SidebarTrigger />
         <div className="h-4 w-px bg-border" />
         <div>
-          <h1 className="text-2xl font-bold">Point of Sale</h1>
-          <p className="text-muted-foreground">Advanced pharmacy POS system</p>
+          <h1 className="text-xl font-bold">Point of Sale</h1>
+          <p className="text-sm text-muted-foreground">Advanced pharmacy POS system</p>
         </div>
       </div>
 
@@ -273,7 +319,7 @@ export default function POSPage() {
         <div className="col-span-4 space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Product Search</CardTitle>
+              <CardTitle className="text-sm">Product Search</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-2">
@@ -376,8 +422,8 @@ export default function POSPage() {
         <div className="col-span-4 space-y-4">
           <Card className="flex flex-col h-full">
             <CardHeader className="pb-3 flex-shrink-0">
-              <CardTitle className="flex items-center text-lg">
-                <ShoppingCart className="mr-2 h-5 w-5" />
+              <CardTitle className="flex items-center text-sm">
+                <ShoppingCart className="mr-2 h-4 w-4" />
                 Cart ({cart.length})
               </CardTitle>
             </CardHeader>
@@ -445,21 +491,21 @@ export default function POSPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">Batch: {item.batch}</span>
                         {item.daysToExpiry <= 30 && (
-                          <Badge variant="destructive" className="text-xs">
+                          <Badge variant="destructive" className="text-[8px]">
                             <AlertTriangle className="h-3 w-3 mr-1" />
-                            Expires in {item.daysToExpiry}d
+                            Exp {item.daysToExpiry}d
                           </Badge>
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground">{item.price} RWF each</p>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Button size="sm" variant="outline" onClick={() => updateQuantity(item.id, item.quantity - 1)}>
-                        <Minus className="h-3 w-3" />
+                    <div className="flex items-center space-x-1">
+                      <Button size="sm" variant="outline" className="h-4 w-4 p-0" onClick={() => updateQuantity(item.id, item.quantity - 1)}>
+                        <Minus className="h-1.5 w-1.5" />
                       </Button>
-                      <span className="w-8 text-center">{item.quantity}</span>
-                      <Button size="sm" variant="outline" onClick={() => updateQuantity(item.id, item.quantity + 1)}>
-                        <Plus className="h-3 w-3" />
+                      <span className="w-4 text-center text-[10px]">{item.quantity}</span>
+                      <Button size="sm" variant="outline" className="h-4 w-4 p-0" onClick={() => updateQuantity(item.id, item.quantity + 1)}>
+                        <Plus className="h-1.5 w-1.5" />
                       </Button>
                     </div>
                   </div>
@@ -474,11 +520,11 @@ export default function POSPage() {
                 </div>
                 {customer.insuranceType && (
                   <>
-                    <div className="flex justify-between text-green-600">
+                    <div className="flex justify-between text-green-600 text-xs">
                       <span>{customer.insuranceType} Covers:</span>
                       <span>{getInsuranceCoverage().toLocaleString()} RWF</span>
                     </div>
-                    <div className="flex justify-between font-bold text-blue-600">
+                    <div className="flex justify-between font-bold text-blue-600 text-xs">
                       <span>Patient Pays:</span>
                       <span>{getPatientAmount().toLocaleString()} RWF</span>
                     </div>
@@ -495,19 +541,19 @@ export default function POSPage() {
         {/* Right Panel - Payment */}
         <div className="col-span-4 space-y-4">
           {/* Small Buttons */}
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 -mt-11">
             <Button 
               variant="outline" 
               size="sm" 
-              className="w-12 h-8 text-xs bg-purple-50 hover:bg-purple-100 text-purple-700"
+              className="w-10 h-6 text-xs bg-purple-50 hover:bg-purple-100 text-purple-700"
               onClick={() => setAiSafetyOpen(true)}
             >
-              <Brain className="h-3 w-3" />
+              <Brain className="h-2 w-2" />
             </Button>
             <Button 
               variant="default" 
               size="sm" 
-              className="w-20 h-8 text-xs bg-gray-800 hover:bg-gray-700 text-white"
+              className="w-16 h-6 text-xs bg-gray-800 hover:bg-gray-700 text-white"
               onClick={() => setQuickAddDialog('drug')}
             >
               Add+
@@ -515,24 +561,24 @@ export default function POSPage() {
             <Button 
               variant="outline" 
               size="sm" 
-              className="w-20 h-8 text-xs relative"
+              className="w-16 h-6 text-xs relative"
               onClick={() => setAlertsOpen(true)}
             >
               <span>Alerts</span>
               <div className="flex items-center gap-1 ml-1">
                 {products.filter(p => p.stock <= 20).length > 0 && (
-                  <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" style={{animationDuration: '2s'}}></div>
+                  <div className="w-1 h-1 bg-red-500 rounded-full animate-ping" style={{animationDuration: '2s'}}></div>
                 )}
                 {products.filter(p => p.daysToExpiry <= 90).length > 0 && (
-                  <div className="w-2 h-2 bg-yellow-500 rounded-full animate-ping" style={{animationDuration: '2s'}}></div>
+                  <div className="w-1 h-1 bg-yellow-500 rounded-full animate-ping" style={{animationDuration: '2s'}}></div>
                 )}
               </div>
             </Button>
           </div>
           
-          <Card>
+          <Card className="-mt-2">
             <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Payment</CardTitle>
+              <CardTitle className="text-sm">Payment</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <Select value={paymentMethod} onValueChange={setPaymentMethod}>
@@ -598,7 +644,7 @@ export default function POSPage() {
           {/* Quick Actions */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center justify-between">
+              <CardTitle className="text-xs flex items-center justify-between">
                 Quick Actions
                 <Button 
                   size="icon" 
@@ -961,16 +1007,16 @@ export default function POSPage() {
               {quickAddDialog === 'category' && 'Add New Category'}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <form className="space-y-4">
             {quickAddDialog === 'drug' && (
               <div className="max-h-96 overflow-y-auto space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <Input placeholder="Product Code (SKU)" />
-                  <Input placeholder="Barcode" />
+                  <Input name="productCode" placeholder="Product Code (SKU)" />
+                  <Input name="barcode" placeholder="Barcode" />
                 </div>
-                <Input placeholder="Product Name (e.g., Paracetamol 500mg)" />
+                <Input name="productName" placeholder="Product Name (e.g., Paracetamol 500mg)" />
                 <div className="grid grid-cols-2 gap-4">
-                  <Select>
+                  <Select name="category">
                     <SelectTrigger>
                       <SelectValue placeholder="Category / Family" />
                     </SelectTrigger>
@@ -982,24 +1028,24 @@ export default function POSPage() {
                       <SelectItem value="prescription">Prescription</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Input placeholder="Classification Code (e.g., N02BE01)" />
+                  <Input name="classificationCode" placeholder="Classification Code (e.g., N02BE01)" />
                 </div>
-                <Input placeholder="Manufacturer / Supplier" />
+                <Input name="manufacturer" placeholder="Manufacturer / Supplier" />
                 <div className="grid grid-cols-2 gap-4">
-                  <Input placeholder="Purchase Price (RWF)" type="number" />
-                  <Input placeholder="Unit Price (RWF)" type="number" />
+                  <Input name="purchasePrice" placeholder="Purchase Price (RWF)" type="number" />
+                  <Input name="unitPrice" placeholder="Unit Price (RWF)" type="number" />
                 </div>
                 <div className="grid grid-cols-3 gap-4">
-                  <Input placeholder="Initial Stock" type="number" />
-                  <Input placeholder="Min Stock Alert" type="number" />
-                  <Input placeholder="Max Stock (optional)" type="number" />
+                  <Input name="initialStock" placeholder="Initial Stock" type="number" />
+                  <Input name="minStockAlert" placeholder="Min Stock Alert" type="number" />
+                  <Input name="maxStock" placeholder="Max Stock (optional)" type="number" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <Input placeholder="Batch Number" />
-                  <Input placeholder="Expiry Date" type="date" />
+                  <Input name="batchNumber" placeholder="Batch Number" />
+                  <Input name="expiryDate" placeholder="Expiry Date" type="date" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <Select>
+                  <Select name="vatRate">
                     <SelectTrigger>
                       <SelectValue placeholder="VAT Rate" />
                     </SelectTrigger>
@@ -1008,7 +1054,7 @@ export default function POSPage() {
                       <SelectItem value="B">Option B (0%)</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Select>
+                  <Select name="stockLocation">
                     <SelectTrigger>
                       <SelectValue placeholder="Stock Location" />
                     </SelectTrigger>
@@ -1021,29 +1067,29 @@ export default function POSPage() {
                   </Select>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <input type="checkbox" id="trackByBatch" />
+                  <input type="checkbox" id="trackByBatch" name="trackByBatch" />
                   <label htmlFor="trackByBatch" className="text-sm">Track by Batch?</label>
                 </div>
-                <Input placeholder="Notes / Special Instructions" />
+                <Input name="notes" placeholder="Notes / Special Instructions" />
               </div>
             )}
             {quickAddDialog === 'patient' && (
               <>
-                <Input placeholder="Patient name" />
-                <Input placeholder="Phone number" />
-                <Input placeholder="Insurance number (optional)" />
+                <Input name="patientName" placeholder="Patient name" />
+                <Input name="phoneNumber" placeholder="Phone number" />
+                <Input name="insuranceNumber" placeholder="Insurance number (optional)" />
               </>
             )}
             {quickAddDialog === 'insurance' && (
               <>
-                <Input placeholder="Insurance name" />
-                <Input placeholder="Coverage percentage" type="number" />
+                <Input name="insuranceName" placeholder="Insurance name" />
+                <Input name="coveragePercentage" placeholder="Coverage percentage" type="number" />
               </>
             )}
             {quickAddDialog === 'category' && (
               <>
-                <Input placeholder="Category name" />
-                <Input placeholder="Category description (optional)" />
+                <Input name="categoryName" placeholder="Category name" />
+                <Input name="categoryDescription" placeholder="Category description (optional)" />
               </>
             )}
             {quickAddDialog === 'rama-beneficiary' && (
@@ -1130,11 +1176,16 @@ export default function POSPage() {
                 </div>
               </div>
             )}
-          </div>
+          </form>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setQuickAddDialog(null)} className="flex-1">Cancel</Button>
             <Button onClick={async () => {
-              const formData = new FormData(document.querySelector('form'))
+              const form = document.querySelector('form')
+              if (!form) {
+                alert('Form not found')
+                return
+              }
+              const formData = new FormData(form)
               const data = Object.fromEntries(formData)
               
               let endpoint = ''
@@ -1234,9 +1285,34 @@ export default function POSPage() {
 
       {/* AI Safety Check Dialog */}
       {aiSafetyOpen && (
-        <div className="fixed bottom-8 right-8 left-8 w-96 bg-blue-50 shadow-lg border z-50 rounded-lg">
+        <div 
+          className="fixed bottom-8 right-8 w-96 bg-blue-50 shadow-lg border z-50 rounded-2xl"
+          style={{
+            transform: 'translate(0, 0)'
+          }}
+          onMouseDown={(e) => {
+            const dialog = e.currentTarget
+            const startX = e.clientX - dialog.offsetLeft
+            const startY = e.clientY - dialog.offsetTop
+            
+            const handleMouseMove = (e) => {
+              dialog.style.left = (e.clientX - startX) + 'px'
+              dialog.style.top = (e.clientY - startY) + 'px'
+              dialog.style.right = 'auto'
+              dialog.style.bottom = 'auto'
+            }
+            
+            const handleMouseUp = () => {
+              document.removeEventListener('mousemove', handleMouseMove)
+              document.removeEventListener('mouseup', handleMouseUp)
+            }
+            
+            document.addEventListener('mousemove', handleMouseMove)
+            document.addEventListener('mouseup', handleMouseUp)
+          }}
+        >
           <div className="p-4">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-3 cursor-move">
               <h3 className="font-medium flex items-center gap-2">
                 <Brain className="h-4 w-4 text-purple-600" />
                 AI Safety Check
@@ -1259,10 +1335,10 @@ export default function POSPage() {
               </div>
               
               <div className="grid grid-cols-2 gap-2">
-                <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={() => alert('Processing AI analysis...')}>
+                <Button size="sm" className="bg-purple-600 hover:bg-purple-700 rounded-xl" onClick={() => alert('Processing AI analysis...')}>
                   Process Analysis
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => alert('Getting doctor advice...')}>
+                <Button size="sm" variant="outline" className="rounded-xl" onClick={() => alert('Getting doctor advice...')}>
                   Get Advice
                 </Button>
               </div>

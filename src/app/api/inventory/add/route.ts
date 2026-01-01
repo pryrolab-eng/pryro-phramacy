@@ -22,6 +22,21 @@ export async function POST(request: NextRequest) {
     }
     
     const body = await request.json()
+    console.log('Received data:', body)
+    
+    // Map category to enum value
+    const categoryMap = {
+      'Pain Relief': 'otc',
+      'Antibiotics': 'prescription', 
+      'Vitamins': 'supplement',
+      'Prescription': 'prescription',
+      'OTC': 'otc',
+      'Controlled': 'controlled',
+      'Medical Device': 'medical_device',
+      'general': 'otc'
+    }
+    
+    const categoryEnum = categoryMap[body.category] || 'otc'
     
     // First create or find the medication
     let medicationId;
@@ -29,6 +44,7 @@ export async function POST(request: NextRequest) {
       .from('medications')
       .select('id')
       .eq('name', body.name)
+      .eq('pharmacy_id', userPharmacy.pharmacy_id)
       .single()
 
     if (existingMed) {
@@ -38,13 +54,18 @@ export async function POST(request: NextRequest) {
         .from('medications')
         .insert({
           name: body.name,
-          category: body.category || 'general',
-          generic_name: body.name
+          category: categoryEnum,
+          requires_prescription: categoryEnum === 'prescription',
+          is_active: true,
+          pharmacy_id: userPharmacy.pharmacy_id
         })
         .select('id')
         .single()
 
-      if (medError) throw medError
+      if (medError) {
+        console.error('Medication insert error:', medError)
+        throw medError
+      }
       medicationId = newMed.id
     }
 
@@ -54,21 +75,29 @@ export async function POST(request: NextRequest) {
       .insert({
         pharmacy_id: userPharmacy.pharmacy_id,
         medication_id: medicationId,
-        batch_number: body.batch_number,
-        quantity_in_stock: parseInt(body.quantity),
-        unit_cost: parseFloat(body.unit_cost),
-        selling_price: parseFloat(body.selling_price),
-        minimum_stock_level: parseInt(body.minimum_stock_level),
-        expiry_date: body.expiry_date
+        batch_number: body.batch_number || 'BATCH001',
+        quantity_in_stock: parseInt(body.quantity) || 0,
+        unit_cost: parseFloat(body.unit_cost) || 0,
+        selling_price: parseFloat(body.selling_price) || 0,
+        minimum_stock_level: parseInt(body.minimum_stock_level) || 0,
+        expiry_date: body.expiry_date || '2025-12-31'
       })
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      console.error('Inventory insert error:', error)
+      throw error
+    }
 
+    console.log('Successfully added inventory:', inventory)
     return NextResponse.json({ success: true, inventory })
   } catch (error) {
     console.error('Error adding inventory:', error)
-    return NextResponse.json({ success: false, error: 'Failed to add medication' })
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to add medication',
+      details: error.message 
+    })
   }
 }

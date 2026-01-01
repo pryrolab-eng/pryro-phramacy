@@ -186,6 +186,14 @@ export default function InventoryPage() {
 
   const handleAddProduct = async () => {
     try {
+      console.log('Adding product:', newProduct)
+      
+      // Validate required fields
+      if (!newProduct.name || !newProduct.category || !newProduct.stock || !newProduct.minStock) {
+        alert('❌ Please fill in all required fields')
+        return
+      }
+      
       // Save to database via API
       const response = await fetch('/api/inventory/add', {
         method: 'POST',
@@ -193,27 +201,30 @@ export default function InventoryPage() {
         body: JSON.stringify({
           name: newProduct.name,
           category: newProduct.category,
-          batch_number: newProduct.batchNumber,
-          quantity: newProduct.stock,
-          unit_cost: newProduct.purchasePrice,
-          selling_price: newProduct.price,
-          minimum_stock_level: newProduct.minStock,
-          expiry_date: newProduct.expiryDate
+          batch_number: newProduct.batchNumber || 'BATCH001',
+          quantity: parseInt(newProduct.stock) || 0,
+          unit_cost: parseFloat(newProduct.purchasePrice) || 0,
+          selling_price: parseFloat(newProduct.price) || 0,
+          minimum_stock_level: parseInt(newProduct.minStock) || 0,
+          expiry_date: newProduct.expiryDate || '2025-12-31'
         })
       })
       
-      if (response.ok) {
+      const result = await response.json()
+      console.log('API Response:', response.status, result)
+      
+      if (response.ok && result.success) {
         // Refresh inventory from database
         await fetchInventory()
         setIsAddingProduct(false)
         setNewProduct({ productCode: '', name: '', category: '', classificationCode: '', barcode: '', manufacturer: '', purchasePrice: '', price: '', stock: '', minStock: '', maxStock: '', batchNumber: '', expiryDate: '', trackByBatch: false, vatRate: 'A', stockLocation: 'main-store', notes: '' })
         alert('✅ Product saved to database successfully!')
       } else {
-        alert('❌ Failed to save product to database')
+        alert(`❌ Failed to save product: ${result.error || 'Unknown error'}`)
       }
     } catch (error) {
       console.error('Error saving product:', error)
-      alert('❌ Error saving product to database')
+      alert('❌ Error saving product to database: ' + error.message)
     }
   }
 
@@ -761,7 +772,16 @@ export default function InventoryPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button onClick={handleAddProduct} disabled={!newProduct.name || !newProduct.category || !newProduct.stock || !newProduct.minStock}>
+              <Button onClick={() => {
+                console.log('Form validation:', {
+                  name: newProduct.name,
+                  category: newProduct.category,
+                  stock: newProduct.stock,
+                  minStock: newProduct.minStock,
+                  valid: !!(newProduct.name && newProduct.category && newProduct.stock && newProduct.minStock)
+                })
+                handleAddProduct()
+              }} disabled={!newProduct.name || !newProduct.category || !newProduct.stock || !newProduct.minStock}>
                 Add Product
               </Button>
             </DialogFooter>

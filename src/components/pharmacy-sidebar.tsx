@@ -23,6 +23,7 @@ import {
   HelpCircle,
   Search,
   MoreVertical,
+  UserCheck,
 } from "lucide-react"
 
 import {
@@ -77,9 +78,14 @@ const pharmacyData = {
       icon: Users,
     },
     {
+      title: "Patients",
+      url: "/patients",
+      icon: UserPlus,
+    },
+    {
       title: "Staff",
       url: "/staff",
-      icon: UserPlus,
+      icon: UserCheck,
     },
     {
       title: "Reports",

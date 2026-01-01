@@ -3,23 +3,41 @@ import { createClient } from '../../../../../supabase/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
     const body = await request.json()
+    console.log('Quick add patient data:', body)
     
-    const { data: customer, error } = await supabase
-      .from('customers')
-      .insert({
-        pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',
-        name: body.name,
-        phone: body.phone,
-        insurance: body.insurance_number || 'None'
+    // Forward to customers API for consistency
+    const customerResponse = await fetch('http://localhost:3000/api/customers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patientName: body.patientName || body.name,
+        phoneNumber: body.phoneNumber || body.phone,
+        insuranceNumber: body.insuranceNumber || ''
       })
-      .select()
-      .single()
-
-    if (error) throw error
-    return NextResponse.json({ success: true, customer })
+    })
+    
+    if (customerResponse.ok) {
+      const result = await customerResponse.json()
+      return NextResponse.json({ 
+        success: true, 
+        customer: {
+          id: result.customer.id,
+          name: result.customer.name,
+          phone: result.customer.phone,
+          insurance_number: result.customer.insurance_number
+        },
+        message: result.message
+      })
+    } else {
+      throw new Error('Failed to add to customers')
+    }
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to add patient' }, { status: 500 })
+    console.error('Quick add patient error:', error)
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Failed to add patient',
+      details: error.message 
+    }, { status: 500 })
   }
 }

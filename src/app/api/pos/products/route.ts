@@ -21,13 +21,48 @@ export async function GET(request: NextRequest) {
       return NextResponse.json([])
     }
 
-    // Get products for this pharmacy only
-    const { data: products } = await supabase
+    // Get products with medication details for POS
+    const { data: products, error } = await supabase
       .from('inventory')
-      .select('*')
+      .select(`
+        id,
+        batch_number,
+        quantity_in_stock,
+        selling_price,
+        expiry_date,
+        medications (
+          name,
+          category
+        )
+      `)
       .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .gt('quantity_in_stock', 0)
 
-    return NextResponse.json(products || [])
+    if (error) {
+      console.error('Database error:', error)
+      return NextResponse.json([])
+    }
+
+    // Format for POS interface
+    const formattedProducts = products?.map(item => {
+      const today = new Date()
+      const expiryDate = new Date(item.expiry_date)
+      const daysToExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+      
+      return {
+        id: item.id,
+        name: item.medications?.name || 'Unknown Product',
+        price: item.selling_price,
+        stock: item.quantity_in_stock,
+        batch: item.batch_number,
+        expiryDate: item.expiry_date,
+        daysToExpiry,
+        category: item.medications?.category || 'general'
+      }
+    }) || []
+
+    console.log(`Found ${formattedProducts.length} products for POS`)
+    return NextResponse.json(formattedProducts)
   } catch (error) {
     console.error('Error fetching products:', error)
     return NextResponse.json([])

@@ -4,12 +4,41 @@ import { createClient } from '../../../../../supabase/server'
 export async function GET() {
   try {
     const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json({
+        weeklySales: [],
+        paymentBreakdown: [],
+        hourlySales: [],
+        monthlyComparison: [],
+        customerDistribution: [],
+        topCategories: []
+      })
+    }
+
+    const { data: userPharmacy } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!userPharmacy) {
+      return NextResponse.json({
+        weeklySales: [],
+        paymentBreakdown: [],
+        hourlySales: [],
+        monthlyComparison: [],
+        customerDistribution: [],
+        topCategories: []
+      })
+    }
     
     // Get last 7 days sales for weekly chart
     const { data: weeklyData } = await supabase
       .from('sales')
       .select('total_amount, created_at')
-      .eq('pharmacy_id', 'userPharmacy.pharmacy_id')
+      .eq('pharmacy_id', userPharmacy.pharmacy_id)
       .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
     
     const dailyTotals = {}
@@ -153,11 +182,32 @@ export async function GET() {
       .sort((a, b) => b.value - a.value)
       .slice(0, 4)
     
-    // Customer distribution (based on payment methods as proxy)
+    // Customer distribution (based on insurance usage)
+    const { data: allSales } = await supabase
+      .from('sales')
+      .select('customer_name, insurance_provider_id')
+      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .gte('created_at', monthAgo)
+    
+    let walkIn = 0
+    let regular = 0
+    let insurance = 0
+    
+    allSales?.forEach(sale => {
+      if (sale.insurance_provider_id) {
+        insurance++
+      } else if (sale.customer_name && sale.customer_name !== 'Walk-in Customer') {
+        regular++
+      } else {
+        walkIn++
+      }
+    })
+    
+    const total = walkIn + regular + insurance || 1
     const customerDistribution = [
-      { name: 'Walk-in', value: 55, fill: '#8b5cf6' },
-      { name: 'Regular', value: 30, fill: '#10b981' },
-      { name: 'Insurance', value: 15, fill: '#3b82f6' }
+      { name: 'Walk-in', value: Math.round((walkIn / total) * 100), fill: '#8b5cf6' },
+      { name: 'Regular', value: Math.round((regular / total) * 100), fill: '#10b981' },
+      { name: 'Insurance', value: Math.round((insurance / total) * 100), fill: '#3b82f6' }
     ]
     
     return NextResponse.json({

@@ -31,9 +31,9 @@ export default function CustomersPage() {
     { id: '2', name: 'Jean Baptiste', phone: '+250788123457', email: 'jean@email.com', dateOfBirth: '1978-07-22', allergies: 'None', insurance: 'MMI', totalPurchases: 23000, lastVisit: '2024-11-28', status: 'active' }
   ])
   const [stats, setStats] = useState({
-    totalCustomers: 156,
-    activeCustomers: 142,
-    newThisMonth: 12
+    totalCustomers: 0,
+    activeCustomers: 0,
+    newThisMonth: 0
   })
   const [isAddingCustomer, setIsAddingCustomer] = useState(false)
   const [newCustomer, setNewCustomer] = useState({
@@ -56,6 +56,7 @@ export default function CustomersPage() {
       const response = await fetch('/api/customers')
       if (response.ok) {
         const data = await response.json()
+        console.log('Fetched customers:', data)
         setCustomers(data)
         setStats({
           totalCustomers: data.length,
@@ -65,6 +66,7 @@ export default function CustomersPage() {
       }
       setLoading(false)
     } catch (error) {
+      console.error('Error fetching customers:', error)
       setLoading(false)
     }
   }
@@ -78,15 +80,20 @@ export default function CustomersPage() {
       })
       
       if (response.ok) {
+        const result = await response.json()
         const customer: Customer = {
-          id: Date.now().toString(),
-          ...newCustomer,
+          id: result.customer?.id || Date.now().toString(),
+          name: newCustomer.name,
+          phone: newCustomer.phone,
+          email: newCustomer.email || '',
+          dateOfBirth: newCustomer.dateOfBirth || '',
+          allergies: newCustomer.allergies || 'None',
+          insurance: newCustomer.insurance || '',
           totalPurchases: 0,
           lastVisit: new Date().toISOString().split('T')[0],
           status: 'active'
         }
-        setCustomers([...customers, customer])
-        setStats(prev => ({ ...prev, totalCustomers: prev.totalCustomers + 1, activeCustomers: prev.activeCustomers + 1 }))
+        await fetchCustomers() // Refresh the list
         setIsAddingCustomer(false)
         setNewCustomer({ name: '', phone: '', email: '', dateOfBirth: '', allergies: '', insurance: '' })
       }
@@ -194,7 +201,7 @@ export default function CustomersPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalCustomers || 156}</div>
+            <div className="text-2xl font-bold">{stats?.totalCustomers}</div>
             <div className="h-8 mt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={[{v:140},{v:145},{v:150},{v:152},{v:154},{v:stats?.totalCustomers || 156}]}>
@@ -210,7 +217,7 @@ export default function CustomersPage() {
             <Users className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.activeCustomers || 142}</div>
+            <div className="text-2xl font-bold">{stats?.activeCustomers}</div>
             <div className="h-8 mt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={[{v:135},{v:138},{v:140},{v:141},{v:142},{v:stats?.activeCustomers || 142}]}>
@@ -226,7 +233,7 @@ export default function CustomersPage() {
             <Calendar className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.newThisMonth || 12}</div>
+            <div className="text-2xl font-bold">{stats?.newThisMonth}</div>
             <div className="h-8 mt-2">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={[{v:8},{v:10},{v:11},{v:12},{v:11},{v:stats?.newThisMonth || 12}]}>

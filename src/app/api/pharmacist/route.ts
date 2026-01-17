@@ -11,19 +11,8 @@ export async function POST(request: Request) {
     
     const body = await request.json()
     
-    // Get first available pharmacy if no pharmacy_id provided
-    let targetPharmacyId = body.pharmacy_id
-    if (!targetPharmacyId) {
-      const { data: firstPharmacy } = await supabase
-        .from('pharmacies')
-        .select('id')
-        .limit(1)
-        .single()
-      targetPharmacyId = firstPharmacy?.id
-    }
-    
-    if (!targetPharmacyId) {
-      return NextResponse.json({ error: 'No pharmacy found' }, { status: 400 })
+    if (!body.pharmacy_id) {
+      return NextResponse.json({ error: 'pharmacy_id is required' }, { status: 400 })
     }
     
     // Create user in Supabase Auth
@@ -43,7 +32,7 @@ export async function POST(request: Request) {
     const { data: newUser, error: dbError } = await supabase
       .from('pharmacy_users')
       .insert({
-        pharmacy_id: targetPharmacyId,
+        pharmacy_id: body.pharmacy_id,
         user_id: authUser.user.id,
         role: body.role || 'pharmacist'
       })

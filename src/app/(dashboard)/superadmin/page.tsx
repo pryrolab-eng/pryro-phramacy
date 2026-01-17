@@ -234,29 +234,25 @@ export default function SuperAdminDashboard() {
         body: JSON.stringify(newInsurance)
       })
       
-      if (response.ok) {
-        const result = await response.json()
-        if (result.success) {
-          await fetchInsurance()
-          
-          // Broadcast insurance update
-          await fetch('/api/notifications/broadcast', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'insurance_added',
-              data: { insurance: newInsurance }
-            })
-          }).catch(() => {})
-          
-          setIsAddingInsurance(false)
-          setNewInsurance({ name: '', coverage_percentage: 80, contact_email: '', contact_phone: '', policy_number: '', invoice_template: 'default', template_html: '' })
-          alert('Insurance provider added successfully!')
-        } else {
-          alert('Failed to add insurance provider')
-        }
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        await fetchInsurance()
+        
+        await fetch('/api/notifications/broadcast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'insurance_added',
+            data: { insurance: result.insurance }
+          })
+        }).catch(() => {})
+        
+        setIsAddingInsurance(false)
+        setNewInsurance({ name: '', coverage_percentage: 80, contact_email: '', contact_phone: '', policy_number: '', invoice_template: 'default', template_html: '' })
+        alert('Insurance provider added successfully!')
       } else {
-        alert('Failed to add insurance provider')
+        alert(result.error || 'Failed to add insurance provider')
       }
     } catch (error) {
       console.error('Error adding insurance:', error)

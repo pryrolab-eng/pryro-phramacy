@@ -3,7 +3,22 @@ import { createClient } from '../../../../../supabase/server'
 
 export async function GET() {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: userPharmacy } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!userPharmacy) {
+      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
+    }
     
     // Get inventory alerts data for last 14 days
     const { data: inventoryData } = await supabase
@@ -15,7 +30,7 @@ export async function GET() {
         created_at,
         medications!inner(name, category, pharmacy_id)
       `)
-      .eq('medications.pharmacy_id', 'userPharmacy.pharmacy_id')
+      .eq('medications.pharmacy_id', userPharmacy.pharmacy_id)
       .gte('created_at', new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString())
       .order('created_at', { ascending: true })
     
@@ -46,12 +61,7 @@ export async function GET() {
     
     return NextResponse.json({ inventoryAlerts: dailyAlerts })
   } catch (error) {
-    return NextResponse.json({
-      inventoryAlerts: [
-        { date: "2024-04-01", lowStock: 12, expiring: 8, totalItems: 1250 },
-        { date: "2024-04-02", lowStock: 15, expiring: 6, totalItems: 1248 },
-        { date: "2024-04-03", lowStock: 18, expiring: 9, totalItems: 1245 }
-      ]
-    })
+    console.error('Inventory reports error:', error)
+    return NextResponse.json({ inventoryAlerts: [] })
   }
 }

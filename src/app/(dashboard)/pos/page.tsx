@@ -52,6 +52,7 @@ export default function POSPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [fastMoving, setFastMoving] = useState<Product[]>([])
   const [cart, setCart] = useState<CartItem[]>([])
+  const [categories, setCategories] = useState<string[]>(['all'])
   const [customer, setCustomer] = useState<Customer>({ name: '', phone: '', insuranceNumber: '', insuranceType: '', coveragePercent: 0 })
   const [customerSuggestions, setCustomerSuggestions] = useState<any[]>([])
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false)
@@ -69,6 +70,8 @@ export default function POSPage() {
   const [returnsDialogOpen, setReturnsDialogOpen] = useState(false)
   const [quickActionsVisible, setQuickActionsVisible] = useState(true)
   const [aiSafetyOpen, setAiSafetyOpen] = useState(false)
+  const [aiSafetyResult, setAiSafetyResult] = useState<any>(null)
+  const [aiSafetyLoading, setAiSafetyLoading] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -80,7 +83,8 @@ export default function POSPage() {
       
       await Promise.all([
         fetchProducts(),
-        fetchFastMoving()
+        fetchFastMoving(),
+        fetchCategories()
       ])
       setLoading(false)
     }
@@ -148,7 +152,23 @@ export default function POSPage() {
     setFastMoving([])
   }
 
-  const categories = ['all', 'prescription', 'otc', 'supplements', 'medical_devices', 'personal_care']
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch('/api/categories')
+      if (response.ok) {
+        const data = await response.json()
+        const categoryNames = ['all', ...data.map((c: any) => c.name.toLowerCase().replace(/\s+/g, '_'))]
+        setCategories(categoryNames)
+      } else {
+        // Fallback to default categories if API fails
+        setCategories(['all', 'prescription', 'otc', 'supplements'])
+      }
+    } catch (error) {
+      console.error('Failed to fetch categories:', error)
+      // Fallback to default categories
+      setCategories(['all', 'prescription', 'otc', 'supplements'])
+    }
+  }
   
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || p.barcode?.includes(searchTerm)
@@ -302,8 +322,23 @@ export default function POSPage() {
     }
     
     try {
-      // Generate receipt number
-      const receiptNumber = `RCP-${Date.now()}`
+      console.log('Processing sale...', saleData)
+      
+      // Save to database
+      const response = await fetch('/api/pos/sale', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(saleData)
+      })
+      
+      const result = await response.json()
+      console.log('Sale API response:', result)
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to save sale')
+      }
+      
+      const receiptNumber = result.receiptNumber || `RCP-${Date.now()}`
       
       // Print invoice
       printInvoice({
@@ -316,7 +351,7 @@ export default function POSPage() {
         paymentMethod
       })
       
-      // Show success message with details
+      // Show success message
       const message = `Sale Processed Successfully!\n\nReceipt: ${receiptNumber}\nCustomer: ${customer.name || 'Walk-in Customer'}\nItems: ${cart.length}\nTotal: ${getSubtotal().toLocaleString()} RWF\nPayment: ${paymentMethod.toUpperCase()}${customer.insuranceType ? `\nInsurance: ${customer.insuranceType}` : ''}\n\nInvoice has been printed!`
       
       alert(message)
@@ -332,16 +367,7 @@ export default function POSPage() {
       
     } catch (error) {
       console.error('Sale processing error:', error)
-      alert('Sale processed successfully!')
-      
-      // Clear form even on error
-      setCart([])
-      setCustomer({ name: '', phone: '', insuranceNumber: '', insuranceType: '', coveragePercent: 0 })
-      setCashAmount('')
-      setInsuranceAmount('')
-      setPaymentMethod('')
-      setPriceAdjustments({})
-      setInsurancePricing({})
+      alert(`Error: ${error.message}\n\nSale may not have been saved to database.`)
     }
   }
 
@@ -492,12 +518,11 @@ export default function POSPage() {
                       <SelectValue placeholder="Filter by category" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Categories</SelectItem>
-                      <SelectItem value="prescription">Prescription</SelectItem>
-                      <SelectItem value="otc">Over-the-Counter</SelectItem>
-                      <SelectItem value="supplements">Supplements</SelectItem>
-                      <SelectItem value="medical_devices">Medical Devices</SelectItem>
-                      <SelectItem value="personal_care">Personal Care</SelectItem>
+                      {categories.map((cat) => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat === 'all' ? 'All Categories' : cat.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <Button size="icon" variant="outline" onClick={() => setQuickAddDialog('category')}>
@@ -1422,19 +1447,17 @@ export default function POSPage() {
                     setQuickAddDialog(null)
                     form?.reset()
                     
-                    // Immediately add to customer suggestions for instant availability
-                    const newCustomer = {
-                      id: result.customer.id,
+                    // Automatically populate customer field
+                    setCustomer({
                       name: result.customer.name,
                       phone: result.customer.phone,
-                      insurance_number: result.customer.insurance_number
-                    }
-                    setCustomerSuggestions(prev => [newCustomer, ...prev.slice(0, 4)])
+                      insuranceNumber: result.customer.insurance_number || '',
+                      insuranceType: result.customer.insurance_number ? 'RSSB' : '',
+                      coveragePercent: result.customer.insurance_number ? 90 : 0
+                    })
                     
-                    // If user has typed in customer name field, refresh search
-                    if (customer.name.length >= 2) {
-                      setTimeout(() => searchCustomers(customer.name), 100)
-                    }
+                    // Add to suggestions for immediate search availability
+                    setCustomerSuggestions(prev => [result.customer, ...prev])
                   } else {
                     alert(result.error || 'Failed to add patient')
                   }
@@ -1468,6 +1491,14 @@ export default function POSPage() {
                   if (result.success) {
                     setQuickAddDialog(null)
                     form?.reset()
+                    // Refresh categories if category was added
+                    if (quickAddDialog === 'category') {
+                      await fetchCategories()
+                    }
+                    // Refresh page to reload insurance options
+                    if (quickAddDialog === 'insurance') {
+                      window.location.reload()
+                    }
                   }
                 } catch (error) {
                   alert('Added successfully!')
@@ -1603,21 +1634,78 @@ export default function POSPage() {
               </div>
               
               <div className="grid grid-cols-2 gap-2">
-                <Button size="sm" className="bg-purple-600 hover:bg-purple-700 rounded-xl" onClick={() => alert('Processing AI analysis...')}>
-                  Process Analysis
+                <Button 
+                  size="sm" 
+                  className="bg-purple-600 hover:bg-purple-700 rounded-xl" 
+                  onClick={async () => {
+                    setAiSafetyLoading(true)
+                    try {
+                      const response = await fetch('/api/ai-safety', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ items: cart })
+                      })
+                      const data = await response.json()
+                      if (data.success) {
+                        setAiSafetyResult(data.result)
+                      } else {
+                        alert('Analysis failed')
+                      }
+                    } catch (error) {
+                      alert('Analysis failed')
+                    }
+                    setAiSafetyLoading(false)
+                  }}
+                  disabled={aiSafetyLoading || cart.length === 0}
+                >
+                  {aiSafetyLoading ? 'Analyzing...' : 'Process Analysis'}
                 </Button>
-                <Button size="sm" variant="outline" className="rounded-xl" onClick={() => alert('Getting doctor advice...')}>
+                <Button size="sm" variant="outline" className="rounded-xl" onClick={() => {
+                  if (aiSafetyResult) {
+                    const advice = `Safety Analysis:\n\nInteractions: ${aiSafetyResult.interactions.length}\nWarnings: ${aiSafetyResult.warnings.length}\nSeverity: ${aiSafetyResult.severity.toUpperCase()}\n\nRecommendations:\n${aiSafetyResult.recommendations.join('\n')}`
+                    alert(advice)
+                  } else {
+                    alert('Run analysis first')
+                  }
+                }}>
                   Get Advice
                 </Button>
               </div>
               
-              <div className="p-3 bg-blue-50 rounded text-xs">
+              <div className={`p-3 rounded text-xs ${
+                aiSafetyResult?.severity === 'danger' ? 'bg-red-50' :
+                aiSafetyResult?.severity === 'caution' ? 'bg-yellow-50' :
+                'bg-blue-50'
+              }`}>
                 <h4 className="font-medium mb-1">AI Recommendations</h4>
-                <div className="space-y-1">
-                  <div>✓ No interactions detected</div>
-                  <div>⚠ Check allergies</div>
-                  <div>ℹ Normal dosage range</div>
-                </div>
+                {aiSafetyResult ? (
+                  <div className="space-y-2">
+                    {aiSafetyResult.interactions.length > 0 && (
+                      <div>
+                        <div className="font-medium text-red-600">Interactions:</div>
+                        {aiSafetyResult.interactions.map((int: string, i: number) => (
+                          <div key={i}>{int}</div>
+                        ))}
+                      </div>
+                    )}
+                    {aiSafetyResult.warnings.length > 0 && (
+                      <div>
+                        <div className="font-medium">Warnings:</div>
+                        {aiSafetyResult.warnings.map((warn: string, i: number) => (
+                          <div key={i}>{warn}</div>
+                        ))}
+                      </div>
+                    )}
+                    <div>
+                      <div className="font-medium">Recommendations:</div>
+                      {aiSafetyResult.recommendations.map((rec: string, i: number) => (
+                        <div key={i}>{rec}</div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-gray-600">Click "Process Analysis" to check safety</div>
+                )}
               </div>
             </div>
           </div>

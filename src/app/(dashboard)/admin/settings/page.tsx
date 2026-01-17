@@ -8,12 +8,16 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
-import { Settings, Save, Shield, Bell, Globe, Database, Users, Building2, BarChart3, Zap, Key, Monitor, AlertTriangle, FileText } from "lucide-react"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Settings, Save, Shield, Bell, Globe, Database, Users, Building2, BarChart3, Zap, Key, Monitor, AlertTriangle, FileText, Plus } from "lucide-react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Spinner } from '@/components/ui/spinner'
 
 export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true)
+  const [stockLocations, setStockLocations] = useState([])
+  const [isAddLocationOpen, setIsAddLocationOpen] = useState(false)
+  const [newLocation, setNewLocation] = useState({ name: '', description: '' })
   const [settings, setSettings] = useState({
     platformName: 'Pryrox',
     adminEmail: 'admin@pryrox.com',
@@ -34,9 +38,49 @@ export default function AdminSettingsPage() {
   })
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 600)
-    return () => clearTimeout(timer)
+    const loadData = async () => {
+      await fetchStockLocations()
+      const timer = setTimeout(() => setLoading(false), 600)
+      return () => clearTimeout(timer)
+    }
+    loadData()
   }, [])
+
+  const fetchStockLocations = async () => {
+    try {
+      const response = await fetch('/api/settings/locations')
+      if (response.ok) {
+        const data = await response.json()
+        setStockLocations(data)
+      }
+    } catch (error) {
+      console.error('Error fetching locations:', error)
+    }
+  }
+
+  const handleAddLocation = async () => {
+    try {
+      const response = await fetch('/api/settings/locations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newLocation)
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        await fetchStockLocations()
+        setIsAddLocationOpen(false)
+        setNewLocation({ name: '', description: '' })
+        alert('Location added successfully!')
+      } else {
+        alert(result.error || 'Failed to add location')
+      }
+    } catch (error) {
+      console.error('Error adding location:', error)
+      alert('Failed to add location')
+    }
+  }
 
   const handleSave = () => {
     alert('Settings saved successfully!')
@@ -331,6 +375,39 @@ export default function AdminSettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5" />
+                Stock Locations
+              </CardTitle>
+              <CardDescription>Manage warehouse and branch locations</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                {stockLocations.length > 0 ? (
+                  stockLocations.map((location: any) => (
+                    <div key={location.id} className="flex justify-between items-center p-3 border rounded-lg">
+                      <div>
+                        <p className="font-medium">{location.name}</p>
+                        <p className="text-sm text-muted-foreground">{location.description}</p>
+                      </div>
+                      <Badge className="bg-green-100 text-green-800">Active</Badge>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-muted-foreground py-4">
+                    No locations found. Add your first location.
+                  </div>
+                )}
+              </div>
+              <Button className="w-full" onClick={() => setIsAddLocationOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add New Location
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
                 Platform Analytics
               </CardTitle>
@@ -372,6 +449,40 @@ export default function AdminSettingsPage() {
           </Button>
         </div>
       </div>
+
+      {/* Add Location Dialog */}
+      <Dialog open={isAddLocationOpen} onOpenChange={setIsAddLocationOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Location</DialogTitle>
+            <DialogDescription>Create a new stock location</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-2">
+              <Label>Location Name</Label>
+              <Input
+                placeholder="e.g. Downtown Branch"
+                value={newLocation.name}
+                onChange={(e) => setNewLocation({...newLocation, name: e.target.value})}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Description</Label>
+              <Input
+                placeholder="e.g. City center location"
+                value={newLocation.description}
+                onChange={(e) => setNewLocation({...newLocation, description: e.target.value})}
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setIsAddLocationOpen(false)}>Cancel</Button>
+            <Button onClick={handleAddLocation} disabled={!newLocation.name}>
+              Add Location
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

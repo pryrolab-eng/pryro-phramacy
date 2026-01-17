@@ -26,9 +26,12 @@ export default function PatientsPage() {
     setLoading(true)
     try {
       const response = await fetch('/api/customers')
+      const data = await response.json()
+      console.log('API Response:', { status: response.status, data })
       if (response.ok) {
-        const data = await response.json()
-        setPatients(data.customers || [])
+        setPatients(Array.isArray(data) ? data : [])
+      } else {
+        console.error('API Error:', data)
       }
     } catch (error) {
       console.error('Error fetching patients:', error)

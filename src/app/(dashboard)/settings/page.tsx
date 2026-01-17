@@ -14,7 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Progress } from "@/components/ui/progress"
 import { Switch } from "@/components/ui/switch"
-import { Settings, CreditCard, Users, Building2, Check, Globe, DollarSign, ArrowUpRight, Shield, Bell, Download, Edit, Save, X, Zap, BarChart3, Database, Key, Webhook, Monitor, Palette, FileText, AlertTriangle, Clock } from 'lucide-react'
+import { Settings, CreditCard, Users, Building2, Check, Globe, DollarSign, ArrowUpRight, Shield, Bell, Download, Edit, Save, X, Zap, BarChart3, Database, Key, Webhook, Monitor, Palette, FileText, AlertTriangle, Clock, Plus } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
 import { ResponsiveContainer, LineChart, Line } from 'recharts'
@@ -39,6 +39,9 @@ export default function SettingsPage() {
   })
   const [isEditing, setIsEditing] = useState(false)
   const [isBillingOpen, setIsBillingOpen] = useState(false)
+  const [isAddLocationOpen, setIsAddLocationOpen] = useState(false)
+  const [stockLocations, setStockLocations] = useState([])
+  const [newLocation, setNewLocation] = useState({ name: '', description: '' })
   const [editInfo, setEditInfo] = useState({
     name: '',
     location: '',
@@ -65,7 +68,8 @@ export default function SettingsPage() {
       setLoading(true)
       await Promise.all([
         fetchPharmacyInfo(),
-        fetchPlans()
+        fetchPlans(),
+        fetchStockLocations()
       ])
       setLoading(false)
     }
@@ -171,6 +175,42 @@ export default function SettingsPage() {
   const handleUpgrade = (planName: string) => {
     setCurrentPlan(planName.toLowerCase())
     alert(`Upgraded to ${planName} plan!`)
+  }
+
+  const fetchStockLocations = async () => {
+    try {
+      const response = await fetch('/api/settings/locations')
+      if (response.ok) {
+        const data = await response.json()
+        setStockLocations(data)
+      }
+    } catch (error) {
+      console.error('Error fetching locations:', error)
+    }
+  }
+
+  const handleAddLocation = async () => {
+    try {
+      const response = await fetch('/api/settings/locations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newLocation)
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        await fetchStockLocations()
+        setIsAddLocationOpen(false)
+        setNewLocation({ name: '', description: '' })
+        alert('Location added successfully!')
+      } else {
+        alert(result.error || 'Failed to add location')
+      }
+    } catch (error) {
+      console.error('Error adding location:', error)
+      alert('Failed to add location')
+    }
   }
 
   if (loading) return (
@@ -873,6 +913,39 @@ export default function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center text-sm">
+                  <Building2 className="mr-2 h-4 w-4 text-blue-500" />
+                  Stock Locations
+                </CardTitle>
+                <CardDescription>Manage warehouse and branch locations</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  {stockLocations.length > 0 ? (
+                    stockLocations.map((location: any) => (
+                      <div key={location.id} className="flex justify-between items-center p-3 border rounded-lg">
+                        <div>
+                          <p className="font-medium">{location.name}</p>
+                          <p className="text-sm text-muted-foreground">{location.description}</p>
+                        </div>
+                        <Badge className="bg-green-100 text-green-800">Active</Badge>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center text-muted-foreground py-4">
+                      No locations found. Add your first location.
+                    </div>
+                  )}
+                </div>
+                <Button className="w-full" onClick={() => setIsAddLocationOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add New Location
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center text-sm">
                   <Palette className="mr-2 h-4 w-4 text-pink-500" />
                   White-label & Branding
                 </CardTitle>
@@ -899,7 +972,9 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
+          </div>
 
+          <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center text-sm">
@@ -985,6 +1060,39 @@ export default function SettingsPage() {
                 ))}
               </div>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isAddLocationOpen} onOpenChange={setIsAddLocationOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Location</DialogTitle>
+            <DialogDescription>Create a new stock location for your pharmacy</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-2">
+              <Label>Location Name</Label>
+              <Input
+                placeholder="e.g. Downtown Branch"
+                value={newLocation.name}
+                onChange={(e) => setNewLocation({...newLocation, name: e.target.value})}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Description</Label>
+              <Input
+                placeholder="e.g. City center location"
+                value={newLocation.description}
+                onChange={(e) => setNewLocation({...newLocation, description: e.target.value})}
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setIsAddLocationOpen(false)}>Cancel</Button>
+            <Button onClick={handleAddLocation} disabled={!newLocation.name}>
+              Add Location
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

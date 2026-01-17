@@ -3,14 +3,29 @@ import { createClient } from '../../../../../supabase/server'
 
 export async function GET() {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: userPharmacy } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!userPharmacy) {
+      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
+    }
     
     // Get daily sales for last 30 days
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
     const { data: salesData } = await supabase
       .from('sales')
       .select('total_amount, created_at')
-      .eq('pharmacy_id', 'userPharmacy.pharmacy_id')
+      .eq('pharmacy_id', userPharmacy.pharmacy_id)
       .gte('created_at', thirtyDaysAgo)
       .order('created_at', { ascending: true })
     
@@ -35,7 +50,7 @@ export async function GET() {
         quantity,
         sales!inner(pharmacy_id)
       `)
-      .eq('sales.pharmacy_id', 'userPharmacy.pharmacy_id')
+      .eq('sales.pharmacy_id', userPharmacy.pharmacy_id)
       .gte('sales.created_at', thirtyDaysAgo)
     
     const productTotals = {}
@@ -97,12 +112,15 @@ export async function GET() {
       activeCustomers: uniqueCustomers
     })
   } catch (error) {
+    console.error('Reports sales API error:', error)
     return NextResponse.json({
       dailySales: [],
       topProducts: [],
       paymentBreakdown: [],
       totalSales: 0,
-      totalOrders: 0
+      totalOrders: 0,
+      activeCustomers: 0,
+      error: error.message
     })
   }
 }

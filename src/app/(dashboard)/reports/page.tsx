@@ -26,9 +26,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Spinner } from '@/components/ui/spinner'
-import { TrendingUp, TrendingDown, DollarSign, Package, Users, ShoppingCart } from "lucide-react"
+import { TrendingUp, TrendingDown, DollarSign, Package, Users, ShoppingCart, RefreshCw, Download } from "lucide-react"
 
 const inventoryData = [
   { date: "2024-04-01", lowStock: 12, expiring: 8, totalItems: 1250 },
@@ -105,6 +107,11 @@ const inventoryConfig = {
 export default function ReportsPage() {
   const [timeRange, setTimeRange] = React.useState("30d")
   const [loading, setLoading] = React.useState(true)
+  const [error, setError] = React.useState<string | null>(null)
+  const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
+  const [startDate, setStartDate] = React.useState("")
+  const [endDate, setEndDate] = React.useState("")
+  const [reportType, setReportType] = React.useState("all")
   const [reportsData, setReportsData] = React.useState({
     dailySales: [],
     topProducts: [],
@@ -117,26 +124,44 @@ export default function ReportsPage() {
   
   React.useEffect(() => {
     fetchReportsData()
+    // Real-time updates every 30 seconds
+    const interval = setInterval(fetchReportsData, 30000)
+    return () => clearInterval(interval)
   }, [])
   
   const fetchReportsData = async () => {
     try {
+      setLoading(true)
+      setError(null)
       const [salesResponse, inventoryResponse] = await Promise.all([
         fetch('/api/reports/sales'),
         fetch('/api/reports/inventory')
       ])
       
+      console.log('Sales API Status:', salesResponse.status)
+      console.log('Inventory API Status:', inventoryResponse.status)
+      
       if (salesResponse.ok) {
         const salesData = await salesResponse.json()
+        console.log('Sales Data:', salesData)
         setReportsData(salesData)
+        setLastUpdated(new Date())
+      } else if (salesResponse.status === 401) {
+        setError('Please log in to view reports')
+      } else {
+        const error = await salesResponse.json()
+        console.error('Sales API Error:', error)
+        setError('Failed to load sales data')
       }
       
       if (inventoryResponse.ok) {
         const invData = await inventoryResponse.json()
+        console.log('Inventory Data:', invData)
         setInventoryData(invData.inventoryAlerts || [])
       }
     } catch (error) {
       console.error('Error fetching reports data:', error)
+      setError('Failed to load reports. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -160,24 +185,106 @@ export default function ReportsPage() {
   const totalOrders = reportsData.totalOrders
   const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0
 
+  const exportToPDF = () => {
+    window.print()
+  }
+
+  const applyFilters = () => {
+    fetchReportsData()
+  }
+
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen">
       <Spinner className="size-6" />
     </div>
   )
 
+  if (error) return (
+    <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+      <p className="text-red-500">{error}</p>
+      <Button onClick={fetchReportsData}>Retry</Button>
+    </div>
+  )
+
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center gap-4">
-        <SidebarTrigger />
-        <div className="h-4 w-px bg-border" />
-        <div>
-          <h1 className="text-xl font-bold">Reports & Analytics</h1>
-          <p className="text-sm text-muted-foreground">Track your pharmacy performance</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <SidebarTrigger className="no-print" />
+          <div className="h-4 w-px bg-border no-print" />
+          <div>
+            <h1 className="text-xl font-bold">Reports & Analytics</h1>
+            <p className="text-sm text-muted-foreground">
+              Track your pharmacy performance
+              {lastUpdated && (
+                <span className="ml-2 text-xs">
+                  • Last updated: {lastUpdated.toLocaleTimeString()}
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 no-print">
+          <Button onClick={exportToPDF} variant="outline" size="sm">
+            <Download className="h-4 w-4 mr-2" />
+            Export PDF
+          </Button>
+          <Button onClick={fetchReportsData} variant="outline" size="sm">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
         </div>
       </div>
 
+      {/* Filters */}
+      <Card className="no-print">
+        <CardHeader>
+          <CardTitle className="text-sm">Filter Reports</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="space-y-2">
+              <label className="text-xs font-medium">Report Type</label>
+              <Select value={reportType} onValueChange={setReportType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Reports</SelectItem>
+                  <SelectItem value="sales">Sales Only</SelectItem>
+                  <SelectItem value="inventory">Inventory Only</SelectItem>
+                  <SelectItem value="products">Top Products</SelectItem>
+                  <SelectItem value="payments">Payment Methods</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium">Start Date</label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium">End Date</label>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button onClick={applyFilters} className="w-full">
+                Apply Filters
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* KPI Cards */}
+      {(reportType === "all" || reportType === "sales") && (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -227,7 +334,7 @@ export default function ReportsPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{reportsData.activeCustomers || 1234}</div>
+            <div className="text-2xl font-bold">{reportsData.activeCustomers}</div>
             <div className="flex items-center text-xs text-muted-foreground">
               <TrendingUp className="h-3 w-3 mr-1 text-green-500" />
               +5.7% from last period
@@ -235,8 +342,10 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
       </div>
+      )}
 
       {/* Sales & Orders Chart */}
+      {(reportType === "all" || reportType === "sales") && (
       <Card>
         <CardHeader className="flex items-center gap-2 space-y-0 border-b py-5 sm:flex-row">
           <div className="grid flex-1 gap-1">
@@ -247,7 +356,7 @@ export default function ReportsPage() {
           </div>
           <Select value={timeRange} onValueChange={setTimeRange}>
             <SelectTrigger
-              className="w-[160px] rounded-lg sm:ml-auto"
+              className="w-[160px] rounded-lg sm:ml-auto no-print"
               aria-label="Select a value"
             >
               <SelectValue placeholder="Last 30 days" />
@@ -266,6 +375,14 @@ export default function ReportsPage() {
           </Select>
         </CardHeader>
         <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
+          {filteredData.length === 0 ? (
+            <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+              <div className="text-center">
+                <p className="text-sm">No sales data available</p>
+                <p className="text-xs mt-1">Make some sales to see analytics</p>
+              </div>
+            </div>
+          ) : (
           <ChartContainer
             config={chartConfig}
             className="aspect-auto h-[300px] w-full"
@@ -343,10 +460,13 @@ export default function ReportsPage() {
               <ChartLegend content={<ChartLegendContent />} />
             </AreaChart>
           </ChartContainer>
+          )}
         </CardContent>
       </Card>
+      )}
 
       {/* Inventory Alerts Chart */}
+      {(reportType === "all" || reportType === "inventory") && (
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Inventory Alerts</CardTitle>
@@ -355,15 +475,19 @@ export default function ReportsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {inventoryData.length === 0 ? (
+            <div className="flex items-center justify-center h-[250px] text-muted-foreground">
+              <div className="text-center">
+                <p className="text-sm">No inventory alerts</p>
+                <p className="text-xs mt-1">Add inventory items to track alerts</p>
+              </div>
+            </div>
+          ) : (
           <ChartContainer
             config={inventoryConfig}
             className="aspect-auto h-[250px] w-full"
           >
-            <LineChart data={inventoryData.length > 0 ? inventoryData : [
-              { date: "2024-04-01", lowStock: 12, expiring: 8, totalItems: 1250 },
-              { date: "2024-04-02", lowStock: 15, expiring: 6, totalItems: 1248 },
-              { date: "2024-04-03", lowStock: 18, expiring: 9, totalItems: 1245 }
-            ]}>
+            <LineChart data={inventoryData.length > 0 ? inventoryData : []}>
               <CartesianGrid vertical={false} />
               <XAxis
                 dataKey="date"
@@ -400,11 +524,15 @@ export default function ReportsPage() {
               <ChartLegend content={<ChartLegendContent />} />
             </LineChart>
           </ChartContainer>
+          )}
         </CardContent>
       </Card>
+      )}
 
       {/* Additional Reports */}
+      {(reportType === "all" || reportType === "products" || reportType === "payments") && (
       <div className="grid gap-6 md:grid-cols-2">
+        {(reportType === "all" || reportType === "products") && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Top Selling Products</CardTitle>
@@ -412,12 +540,7 @@ export default function ReportsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {(reportsData.topProducts.length > 0 ? reportsData.topProducts : [
-                { name: "Paracetamol 500mg", quantity: 2450, sales: 245000 },
-                { name: "Amoxicillin 250mg", quantity: 1890, sales: 378000 },
-                { name: "Vitamin C 1000mg", quantity: 1234, sales: 123400 },
-                { name: "Ibuprofen 400mg", quantity: 987, sales: 197400 },
-              ]).map((product, index) => (
+              {reportsData.topProducts.length > 0 ? reportsData.topProducts.map((product, index) => (
                 <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
                   <div>
                     <p className="font-medium">{product.name}</p>
@@ -425,11 +548,15 @@ export default function ReportsPage() {
                   </div>
                   <Badge variant="outline">{product.sales.toLocaleString()} RWF</Badge>
                 </div>
-              ))}
+              )) : (
+                <p className="text-sm text-muted-foreground text-center py-4">No sales data available</p>
+              )}
             </div>
           </CardContent>
         </Card>
+        )}
 
+        {(reportType === "all" || reportType === "payments") && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Payment Methods</CardTitle>
@@ -437,12 +564,7 @@ export default function ReportsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {(reportsData.paymentBreakdown.length > 0 ? reportsData.paymentBreakdown : [
-                { method: "Cash", percentage: 45, amount: 1125000 },
-                { method: "Mobile Money", percentage: 35, amount: 875000 },
-                { method: "Insurance", percentage: 15, amount: 375000 },
-                { method: "Card", percentage: 5, amount: 125000 },
-              ]).map((payment, index) => (
+              {reportsData.paymentBreakdown.length > 0 ? reportsData.paymentBreakdown.map((payment, index) => (
                 <div key={index} className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">{payment.method}</span>
@@ -455,11 +577,15 @@ export default function ReportsPage() {
                     ></div>
                   </div>
                 </div>
-              ))}
+              )) : (
+                <p className="text-sm text-muted-foreground text-center py-4">No payment data available</p>
+              )}
             </div>
           </CardContent>
         </Card>
+        )}
       </div>
+      )}
     </div>
   )
 }

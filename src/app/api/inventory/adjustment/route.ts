@@ -1,25 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '../../../../../supabase/server'
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { productId, quantity, reason, adjustmentType } = await request.json()
     
-    // Mock stock update
-    const products = JSON.parse(localStorage.getItem('products') || '[]')
-    const productIndex = products.findIndex(p => p.id === productId)
+    // Get current inventory item
+    const { data: inventory, error: fetchError } = await supabase
+      .from('inventory')
+      .select('quantity_in_stock')
+      .eq('id', productId)
+      .single()
     
-    if (productIndex === -1) throw new Error('Product not found')
+    if (fetchError || !inventory) {
+      return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 })
+    }
     
-    const product = products[productIndex]
+    // Calculate new stock
     const newStock = adjustmentType === 'increase' 
-      ? product.stock + quantity 
-      : Math.max(0, product.stock - quantity)
+      ? inventory.quantity_in_stock + quantity 
+      : Math.max(0, inventory.quantity_in_stock - quantity)
     
-    products[productIndex].stock = newStock
-    localStorage.setItem('products', JSON.stringify(products))
+    // Update inventory
+    const { error: updateError } = await supabase
+      .from('inventory')
+      .update({ quantity_in_stock: newStock })
+      .eq('id', productId)
+
+    if (updateError) {
+      throw updateError
+    }
 
     return NextResponse.json({ success: true, newStock })
   } catch (error) {
+    console.error('Adjustment error:', error)
     return NextResponse.json({ success: false, error: 'Adjustment failed' }, { status: 500 })
   }
 }

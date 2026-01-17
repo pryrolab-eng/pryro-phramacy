@@ -224,13 +224,19 @@ export default function SalesPage() {
   const fetchSales = async () => {
     try {
       setLoading(true)
+      console.log('Fetching sales from /api/sales...')
       const response = await fetch('/api/sales')
+      console.log('Sales API response status:', response.status)
       if (response.ok) {
         const data = await response.json()
+        console.log('Sales data received:', data)
         setSales(data.sales)
         setStats(data.stats)
+      } else {
+        console.error('Sales API failed:', response.status)
       }
     } catch (error) {
+      console.error('Error fetching sales:', error)
       const mockSales = [
         { id: '1', customer: 'Marie Uwimana', amount: 15000, items: 3, date: '2024-12-01', paymentMethod: 'Cash', status: 'completed' },
         { id: '2', customer: 'Jean Baptiste', amount: 8500, items: 2, date: '2024-12-01', paymentMethod: 'Mobile Money', status: 'completed' },

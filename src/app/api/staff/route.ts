@@ -1,15 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient as createServerClient } from '../../../../supabase/server'
 import { createClient } from '@supabase/supabase-js'
 
 export async function GET() {
   try {
-    const supabase = createClient(
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Get user's pharmacy_id
+    const { data: userPharmacy } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!userPharmacy) {
+      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
+    }
+
+    // Use service role to get staff details
+    const serviceSupabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
     
-    // Get pharmacy users with auth user details
-    const { data: pharmacyUsers, error } = await supabase
+    // Get pharmacy users ONLY for current pharmacy
+    const { data: pharmacyUsers, error } = await serviceSupabase
       .from('pharmacy_users')
       .select(`
         id,
@@ -18,6 +38,7 @@ export async function GET() {
         created_at,
         user_id
       `)
+      .eq('pharmacy_id', userPharmacy.pharmacy_id)
       .eq('is_active', true)
       .order('created_at', { ascending: false })
 
@@ -26,7 +47,7 @@ export async function GET() {
     // Get user details from auth.users for each pharmacy user
     const formattedStaff = []
     for (const user of pharmacyUsers || []) {
-      const { data: authUser } = await supabase.auth.admin.getUserById(user.user_id)
+      const { data: authUser } = await serviceSupabase.auth.admin.getUserById(user.user_id)
       if (authUser.user) {
         formattedStaff.push({
           id: user.id,

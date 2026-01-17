@@ -38,8 +38,7 @@ export async function POST(request: NextRequest) {
     
     const categoryEnum = categoryMap[body.category] || 'otc'
     
-    // First create or find the medication
-    let medicationId;
+    // Check if medication already exists
     const { data: existingMed } = await supabase
       .from('medications')
       .select('id')
@@ -47,9 +46,38 @@ export async function POST(request: NextRequest) {
       .eq('pharmacy_id', userPharmacy.pharmacy_id)
       .single()
 
+    let medicationId
+    
     if (existingMed) {
+      // Medication exists, check if inventory exists
       medicationId = existingMed.id
+      
+      const { data: existingInventory } = await supabase
+        .from('inventory')
+        .select('id, quantity_in_stock')
+        .eq('medication_id', medicationId)
+        .eq('pharmacy_id', userPharmacy.pharmacy_id)
+        .single()
+      
+      if (existingInventory) {
+        // Update existing inventory - add to quantity
+        const newQuantity = existingInventory.quantity_in_stock + parseInt(body.quantity || 0)
+        
+        const { error: updateError } = await supabase
+          .from('inventory')
+          .update({ quantity_in_stock: newQuantity })
+          .eq('id', existingInventory.id)
+        
+        if (updateError) throw updateError
+        
+        return NextResponse.json({ 
+          success: true, 
+          message: 'Quantity updated',
+          inventory: { id: existingInventory.id, quantity_in_stock: newQuantity }
+        })
+      }
     } else {
+      // Create new medication
       const { data: newMed, error: medError } = await supabase
         .from('medications')
         .insert({
@@ -69,7 +97,7 @@ export async function POST(request: NextRequest) {
       medicationId = newMed.id
     }
 
-    // Then create the inventory item
+    // Create new inventory item
     const { data: inventory, error } = await supabase
       .from('inventory')
       .insert({

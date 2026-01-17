@@ -20,6 +20,24 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Get user's pharmacy_id
+    const { data: userPharmacy } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .single()
+
+    if (!userPharmacy) {
+      return NextResponse.json({ success: false, error: 'Pharmacy not found' }, { status: 404 })
+    }
+
     const body = await request.json()
     
     const { data: supplier, error } = await supabase
@@ -29,7 +47,7 @@ export async function POST(request: NextRequest) {
         contact_person: body.contact,
         phone: body.phone,
         email: body.email,
-        pharmacy_id: body.pharmacy_id, // This should come from user session
+        pharmacy_id: userPharmacy.pharmacy_id,
         is_active: true
       })
       .select()
@@ -38,6 +56,7 @@ export async function POST(request: NextRequest) {
     if (error) throw error
     return NextResponse.json({ success: true, supplier })
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to create supplier' }, { status: 500 })
+    console.error('Error creating supplier:', error)
+    return NextResponse.json({ success: false, error: 'Failed to create supplier' }, { status: 500 })
   }
 }

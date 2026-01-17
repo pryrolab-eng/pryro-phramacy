@@ -22,6 +22,8 @@ export async function POST(request: NextRequest) {
     }
     
     const body = await request.json()
+    console.log('Quick add drug - pharmacy_id:', userPharmacy.pharmacy_id)
+    console.log('Quick add drug - body:', body)
     
     // Add to medications table
     const { data: medication, error: medError } = await supabase
@@ -36,7 +38,10 @@ export async function POST(request: NextRequest) {
       .select()
       .single()
 
-    if (medError) throw medError
+    if (medError) {
+      console.error('Medication insert error:', medError)
+      throw medError
+    }
 
     // Add to inventory table
     const { data: inventory, error: invError } = await supabase
@@ -54,9 +59,16 @@ export async function POST(request: NextRequest) {
       .select()
       .single()
 
-    if (invError) throw invError
+    if (invError) {
+      console.error('Inventory insert error:', invError)
+      throw invError
+    }
     return NextResponse.json({ success: true, medication, inventory })
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to add drug' }, { status: 500 })
+    console.error('Quick add drug error:', error)
+    return NextResponse.json({ 
+      error: 'Failed to add drug', 
+      details: error.message 
+    }, { status: 500 })
   }
 }

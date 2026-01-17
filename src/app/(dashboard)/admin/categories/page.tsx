@@ -14,14 +14,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Spinner } from '@/components/ui/spinner';
 
 export default function CategoriesPage() {
-  const [categories, setCategories] = useState([
-    { id: '1', name: "Prescription Medications", count: 245, status: "Active", description: "Medications requiring prescription" },
-    { id: '2', name: "Over-the-Counter", count: 189, status: "Active", description: "Non-prescription medications" },
-    { id: '3', name: "Supplements", count: 156, status: "Active", description: "Vitamins and dietary supplements" },
-    { id: '4', name: "Medical Devices", count: 78, status: "Active", description: "Medical equipment and devices" },
-    { id: '5', name: "Personal Care", count: 134, status: "Active", description: "Personal hygiene products" },
-    { id: '6', name: "Baby Care", count: 89, status: "Inactive", description: "Baby and infant care products" },
-  ])
+  const [categories, setCategories] = useState([])
 
   const [isAddingCategory, setIsAddingCategory] = useState(false)
   const [isEditingCategory, setIsEditingCategory] = useState(false)
@@ -33,9 +26,29 @@ export default function CategoriesPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 600)
-    return () => clearTimeout(timer)
+    fetchCategories()
   }, [])
+
+  const fetchCategories = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch('/api/categories')
+      if (response.ok) {
+        const data = await response.json()
+        setCategories(data.map(c => ({
+          id: c.id,
+          name: c.name,
+          description: c.description || '',
+          count: 0,
+          status: c.is_active ? 'Active' : 'Inactive'
+        })))
+      }
+      setLoading(false)
+    } catch (error) {
+      console.error('Error fetching categories:', error)
+      setLoading(false)
+    }
+  }
 
   const handleAddCategory = async () => {
     try {
@@ -46,14 +59,7 @@ export default function CategoriesPage() {
       })
       
       if (response.ok) {
-        const category = {
-          id: Date.now().toString(),
-          name: newCategory.name,
-          description: newCategory.description,
-          count: 0,
-          status: 'Active'
-        }
-        setCategories([...categories, category])
+        await fetchCategories()
         setIsAddingCategory(false)
         setNewCategory({ name: '', description: '' })
         alert('Category added successfully!')
@@ -72,7 +78,7 @@ export default function CategoriesPage() {
       })
       
       if (response.ok) {
-        setCategories(categories.map(c => c.id === selectedCategory.id ? selectedCategory : c))
+        await fetchCategories()
         setIsEditingCategory(false)
         setSelectedCategory(null)
         alert('Category updated successfully!')
@@ -90,7 +96,7 @@ export default function CategoriesPage() {
         })
         
         if (response.ok) {
-          setCategories(categories.filter(c => c.id !== id))
+          await fetchCategories()
           alert('Category deleted successfully!')
         }
       } catch (error) {

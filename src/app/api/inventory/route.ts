@@ -7,38 +7,51 @@ export async function GET(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     
     if (!user) {
+      console.log('No authenticated user')
       return NextResponse.json([])
     }
 
-    // Get user's pharmacy_id
-    const { data: userPharmacy } = await supabase
+    const { data: userPharmacy, error: pharmacyError } = await supabase
       .from('pharmacy_users')
       .select('pharmacy_id')
       .eq('user_id', user.id)
+      .eq('is_active', true)
+      .limit(1)
       .single()
 
-    if (!userPharmacy) {
+    if (pharmacyError || !userPharmacy) {
+      console.error('Pharmacy not found for user:', user.id, pharmacyError)
       return NextResponse.json([])
     }
+
+    console.log('Fetching inventory for pharmacy:', userPharmacy.pharmacy_id)
     
     const { data: inventory, error } = await supabase
       .from('inventory')
       .select(`
         id,
+        pharmacy_id,
         batch_number,
         quantity_in_stock,
         selling_price,
         minimum_stock_level,
         expiry_date,
         unit_cost,
-        medications (
+        medications!inner (
           name,
-          category
+          category,
+          pharmacy_id
         )
       `)
       .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('medications.pharmacy_id', userPharmacy.pharmacy_id)
 
-    if (error) throw error
+    if (error) {
+      console.error('Error fetching inventory:', error)
+      throw error
+    }
+
+    console.log(`Found ${inventory?.length || 0} inventory items for pharmacy ${userPharmacy.pharmacy_id}`)
 
     const formattedInventory = inventory?.map(item => ({
       id: item.id,
@@ -49,7 +62,8 @@ export async function GET(request: NextRequest) {
       price: item.selling_price,
       expiryDate: item.expiry_date,
       batchNumber: item.batch_number,
-      medications: item.medications
+      medications: item.medications,
+      pharmacy_id: item.pharmacy_id
     })) || []
 
     return NextResponse.json(formattedInventory)
@@ -68,18 +82,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' })
     }
 
-    // Get user's pharmacy_id
-    const { data: userPharmacy } = await supabase
+    const { data: userPharmacy, error: pharmacyError } = await supabase
       .from('pharmacy_users')
       .select('pharmacy_id')
       .eq('user_id', user.id)
+      .eq('is_active', true)
+      .limit(1)
       .single()
 
-    if (!userPharmacy) {
+    if (pharmacyError || !userPharmacy) {
+      console.error('Pharmacy not found for user:', user.id, pharmacyError)
       return NextResponse.json({ success: false, error: 'Pharmacy not found' })
     }
     
     const body = await request.json()
+    console.log('Creating inventory for pharmacy:', userPharmacy.pharmacy_id)
     
     const { data: inventory, error } = await supabase
       .from('inventory')
@@ -96,8 +113,12 @@ export async function POST(request: NextRequest) {
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      console.error('Error creating inventory:', error)
+      throw error
+    }
 
+    console.log('Successfully created inventory item:', inventory.id)
     return NextResponse.json({ success: true, inventory })
   } catch (error) {
     console.error('Error adding inventory:', error)

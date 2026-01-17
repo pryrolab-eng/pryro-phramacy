@@ -35,10 +35,30 @@ export default function StaffManagePage() {
   const [editingStaff, setEditingStaff] = useState<any>(null)
   const [isEditingStaff, setIsEditingStaff] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [userPharmacy, setUserPharmacy] = useState<any>(null)
 
   useEffect(() => {
+    fetchUserPharmacy()
     fetchStaff()
   }, [])
+
+  const fetchUserPharmacy = async () => {
+    try {
+      const { createClient } = await import('../../../../supabase/client')
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data } = await supabase
+          .from('pharmacy_users')
+          .select('pharmacy_id')
+          .eq('user_id', user.id)
+          .single()
+        setUserPharmacy(data)
+      }
+    } catch (error) {
+      console.error('Error fetching pharmacy:', error)
+    }
+  }
 
   const fetchStaff = async () => {
     try {
@@ -83,7 +103,7 @@ export default function StaffManagePage() {
           full_name: newStaff.name,
           phone: newStaff.phone,
           role: 'pharmacist',
-          pharmacy_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+          pharmacy_id: userPharmacy?.pharmacy_id
         })
       })
       
@@ -383,3 +403,5 @@ export default function StaffManagePage() {
     </div>
   )
 }
+
+

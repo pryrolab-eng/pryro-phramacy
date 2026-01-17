@@ -74,8 +74,10 @@ export default function InventoryPage() {
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
   const [adjustmentDialogOpen, setAdjustmentDialogOpen] = useState(false)
   const [purchaseDialogOpen, setPurchaseDialogOpen] = useState(false)
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false)
   const [adjustmentForm, setAdjustmentForm] = useState({ productId: '', quantity: '', reason: '', type: 'increase' })
   const [purchaseForm, setPurchaseForm] = useState({ productId: '', quantity: '', costPrice: '', supplier: '' })
+  const [transferForm, setTransferForm] = useState({ productId: '', quantity: '', fromLocation: 'main-store', toLocation: '' })
   const [suppliers, setSuppliers] = useState([])
   const [isAddingSupplier, setIsAddingSupplier] = useState(false)
   const [newSupplier, setNewSupplier] = useState({ name: '', contact: '', phone: '', email: '' })
@@ -83,6 +85,9 @@ export default function InventoryPage() {
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [selectedItems, setSelectedItems] = useState<string[]>([])
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [productToDelete, setProductToDelete] = useState<string | null>(null)
+  const [isEditingProduct, setIsEditingProduct] = useState(false)
+  const [editProduct, setEditProduct] = useState<any>(null)
   const [commandOpen, setCommandOpen] = useState(false)
   const [newProduct, setNewProduct] = useState({
     productCode: '',
@@ -149,14 +154,30 @@ export default function InventoryPage() {
         body: JSON.stringify(newSupplier)
       })
       
-      if (response.ok) {
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        toast({
+          title: "Success",
+          description: "Supplier added successfully"
+        })
         await fetchSuppliers()
         setIsAddingSupplier(false)
         setNewSupplier({ name: '', contact: '', phone: '', email: '' })
-        alert('Supplier added successfully!')
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to add supplier",
+          variant: "destructive"
+        })
       }
     } catch (error) {
       console.error('Error adding supplier:', error)
+      toast({
+        title: "Error",
+        description: "Failed to add supplier",
+        variant: "destructive"
+      })
     }
   }
 
@@ -309,23 +330,36 @@ export default function InventoryPage() {
     setValidationErrors(errors)
   }
 
-  const confirmImport = () => {
-    const importedItems: InventoryItem[] = previewData.map((row: any, index) => ({
-      id: `imported-${Date.now()}-${index}`,
-      name: row['Product Name'],
-      category: row['Category'],
-      stock: row['Stock'],
-      minStock: row['Min Stock'],
-      price: row['Price (RWF)'],
-      expiryDate: row['Expiry Date'],
-      batchNumber: row['Batch Number']
-    }))
-    
-    setInventory([...inventory, ...importedItems])
-    setPreviewData([])
-    setValidationErrors([])
-    setIsImportDialogOpen(false)
-    alert(`Successfully imported ${importedItems.length} products!`)
+  const confirmImport = async () => {
+    try {
+      // Save each product to database
+      for (const row of previewData) {
+        await fetch('/api/inventory/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: row['Product Name'],
+            category: row['Category'],
+            batch_number: row['Batch Number'],
+            quantity: row['Stock'],
+            unit_cost: 0,
+            selling_price: row['Price (RWF)'],
+            minimum_stock_level: row['Min Stock'],
+            expiry_date: row['Expiry Date']
+          })
+        })
+      }
+      
+      // Refresh inventory from database
+      await fetchInventory()
+      setPreviewData([])
+      setValidationErrors([])
+      setIsImportDialogOpen(false)
+      alert(`✅ Successfully imported ${previewData.length} products to database!`)
+    } catch (error) {
+      console.error('Import error:', error)
+      alert('❌ Failed to import products')
+    }
   }
 
   const downloadSample = () => {
@@ -397,35 +431,145 @@ export default function InventoryPage() {
   }
 
   const handleAdjustment = async () => {
-    await fetch('/api/inventory/adjustment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        productId: adjustmentForm.productId, 
-        quantity: parseInt(adjustmentForm.quantity), 
-        reason: adjustmentForm.reason, 
-        adjustmentType: adjustmentForm.type 
+    try {
+      const response = await fetch('/api/inventory/adjustment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          productId: adjustmentForm.productId, 
+          quantity: parseInt(adjustmentForm.quantity), 
+          reason: adjustmentForm.reason, 
+          adjustmentType: adjustmentForm.type 
+        })
       })
-    })
-    setAdjustmentDialogOpen(false)
-    setAdjustmentForm({ productId: '', quantity: '', reason: '', type: 'increase' })
-    fetchInventory()
+      
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        toast({
+          title: "Success",
+          description: "Stock adjusted successfully"
+        })
+        setAdjustmentDialogOpen(false)
+        setAdjustmentForm({ productId: '', quantity: '', reason: '', type: 'increase' })
+        await fetchInventory()
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to adjust stock",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error('Adjustment error:', error)
+      toast({
+        title: "Error",
+        description: "Failed to adjust stock",
+        variant: "destructive"
+      })
+    }
   }
 
   const handlePurchase = async () => {
-    await fetch('/api/inventory/purchase', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        productId: purchaseForm.productId, 
-        quantity: parseInt(purchaseForm.quantity), 
-        costPrice: parseFloat(purchaseForm.costPrice), 
-        supplier: purchaseForm.supplier 
+    try {
+      const response = await fetch('/api/inventory/purchase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          productId: purchaseForm.productId, 
+          quantity: parseInt(purchaseForm.quantity), 
+          costPrice: parseFloat(purchaseForm.costPrice), 
+          supplier: purchaseForm.supplier 
+        })
       })
-    })
-    setPurchaseDialogOpen(false)
-    setPurchaseForm({ productId: '', quantity: '', costPrice: '', supplier: '' })
-    fetchInventory()
+      
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        toast({
+          title: "Success",
+          description: "Stock purchased successfully"
+        })
+        setPurchaseDialogOpen(false)
+        setPurchaseForm({ productId: '', quantity: '', costPrice: '', supplier: '' })
+        await fetchInventory()
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to purchase stock",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error('Purchase error:', error)
+      toast({
+        title: "Error",
+        description: "Failed to purchase stock",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleTransfer = async () => {
+    try {
+      const product = inventory.find(p => p.id === transferForm.productId)
+      
+      if (!product) {
+        toast({
+          title: "Error",
+          description: "Product not found",
+          variant: "destructive"
+        })
+        return
+      }
+
+      // Check if enough stock
+      if (product.stock < parseInt(transferForm.quantity)) {
+        toast({
+          title: "Error",
+          description: `Insufficient stock. Available: ${product.stock}`,
+          variant: "destructive"
+        })
+        return
+      }
+
+      const response = await fetch('/api/inventory/transfers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          productId: transferForm.productId,
+          product: product.name,
+          quantity: parseInt(transferForm.quantity), 
+          from: transferForm.fromLocation, 
+          to: transferForm.toLocation 
+        })
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        toast({
+          title: "Success",
+          description: `Transferred ${transferForm.quantity} units. New stock: ${result.newStock}`
+        })
+        setTransferDialogOpen(false)
+        setTransferForm({ productId: '', quantity: '', fromLocation: 'main-store', toLocation: '' })
+        await fetchInventory()
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to transfer stock",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error('Transfer error:', error)
+      toast({
+        title: "Error",
+        description: "Failed to transfer stock",
+        variant: "destructive"
+      })
+    }
   }
 
   const printBulkBarcodes = () => {
@@ -472,6 +616,76 @@ export default function InventoryPage() {
       printWindow.document.write(htmlContent)
       printWindow.document.close()
       printWindow.print()
+    }
+  }
+
+  const handleDeleteProduct = async () => {
+    if (!productToDelete) return
+    
+    try {
+      const response = await fetch(`/api/inventory/${productToDelete}`, {
+        method: 'DELETE'
+      })
+      
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Product deleted successfully"
+        })
+        await fetchInventory()
+        setDeleteDialogOpen(false)
+        setProductToDelete(null)
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to delete product",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error('Delete error:', error)
+      toast({
+        title: "Error",
+        description: "Failed to delete product",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleEditProduct = async () => {
+    try {
+      const response = await fetch(`/api/inventory/${editProduct.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quantity: parseInt(editProduct.stock),
+          selling_price: parseFloat(editProduct.price),
+          minimum_stock_level: parseInt(editProduct.minStock)
+        })
+      })
+      
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Product updated successfully"
+        })
+        await fetchInventory()
+        setIsEditingProduct(false)
+        setEditProduct(null)
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to update product",
+          variant: "destructive"
+        })
+      }
+    } catch (error) {
+      console.error('Edit error:', error)
+      toast({
+        title: "Error",
+        description: "Failed to update product",
+        variant: "destructive"
+      })
     }
   }
 
@@ -1015,7 +1229,10 @@ export default function InventoryPage() {
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                  <DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => {
+                                    setEditProduct(item)
+                                    setIsEditingProduct(true)
+                                  }}>
                                     <Edit className="mr-2 h-4 w-4" />
                                     Edit
                                   </DropdownMenuItem>
@@ -1027,7 +1244,10 @@ export default function InventoryPage() {
                                     Generate Barcode
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
-                                  <DropdownMenuItem className="text-red-600">
+                                  <DropdownMenuItem className="text-red-600" onClick={() => {
+                                    setProductToDelete(item.id)
+                                    setDeleteDialogOpen(true)
+                                  }}>
                                     <Trash2 className="mr-2 h-4 w-4" />
                                     Delete
                                   </DropdownMenuItem>
@@ -1203,7 +1423,7 @@ export default function InventoryPage() {
                 <Button variant="outline" className="w-full" onClick={() => setPurchaseDialogOpen(true)}>
                   Purchase Stock
                 </Button>
-                <Button variant="outline" className="w-full" onClick={() => alert('Stock Transfer - Transfer inventory between branches')}>
+                <Button variant="outline" className="w-full" onClick={() => setTransferDialogOpen(true)}>
                   Stock Transfer
                 </Button>
               </CardContent>
@@ -1258,8 +1478,8 @@ export default function InventoryPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700">
+            <AlertDialogCancel onClick={() => setProductToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDeleteProduct}>
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -1548,6 +1768,120 @@ export default function InventoryPage() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Stock Transfer</DialogTitle>
+            <DialogDescription>Transfer inventory between locations</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Select Product</Label>
+              <Select value={transferForm.productId} onValueChange={(value) => setTransferForm({...transferForm, productId: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose product" />
+                </SelectTrigger>
+                <SelectContent>
+                  {inventory.map(item => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name} (Stock: {item.stock})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Transfer Quantity</Label>
+              <Input 
+                type="number" 
+                value={transferForm.quantity}
+                onChange={(e) => setTransferForm({...transferForm, quantity: e.target.value})}
+                placeholder="Enter quantity to transfer"
+              />
+            </div>
+            <div>
+              <Label>From Location</Label>
+              <Select value={transferForm.fromLocation} onValueChange={(value) => setTransferForm({...transferForm, fromLocation: value})}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="main-store">Main Store</SelectItem>
+                  <SelectItem value="branch">Branch</SelectItem>
+                  <SelectItem value="cold-storage">Cold Storage</SelectItem>
+                  <SelectItem value="warehouse">Warehouse</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>To Location</Label>
+              <Select value={transferForm.toLocation} onValueChange={(value) => setTransferForm({...transferForm, toLocation: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select destination" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="main-store">Main Store</SelectItem>
+                  <SelectItem value="branch">Branch</SelectItem>
+                  <SelectItem value="cold-storage">Cold Storage</SelectItem>
+                  <SelectItem value="warehouse">Warehouse</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTransferDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleTransfer} disabled={!transferForm.productId || !transferForm.quantity || !transferForm.toLocation}>
+              Transfer Stock
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditingProduct} onOpenChange={setIsEditingProduct}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Product</DialogTitle>
+            <DialogDescription>Update product details</DialogDescription>
+          </DialogHeader>
+          {editProduct && (
+            <div className="space-y-4">
+              <div>
+                <Label>Product Name</Label>
+                <Input value={editProduct.name} disabled />
+              </div>
+              <div>
+                <Label>Stock Quantity</Label>
+                <Input 
+                  type="number" 
+                  value={editProduct.stock}
+                  onChange={(e) => setEditProduct({...editProduct, stock: e.target.value})}
+                />
+              </div>
+              <div>
+                <Label>Selling Price (RWF)</Label>
+                <Input 
+                  type="number" 
+                  value={editProduct.price}
+                  onChange={(e) => setEditProduct({...editProduct, price: e.target.value})}
+                />
+              </div>
+              <div>
+                <Label>Minimum Stock Level</Label>
+                <Input 
+                  type="number" 
+                  value={editProduct.minStock}
+                  onChange={(e) => setEditProduct({...editProduct, minStock: e.target.value})}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditingProduct(false)}>Cancel</Button>
+            <Button onClick={handleEditProduct}>Save Changes</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -3,12 +3,27 @@ import { createClient } from '../../../../../supabase/server'
 
 export async function GET() {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: userPharmacy } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!userPharmacy) {
+      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
+    }
     
     const { data: pharmacy, error } = await supabase
       .from('pharmacies')
       .select('*')
-      .eq('id', 'userPharmacy.pharmacy_id')
+      .eq('id', userPharmacy.pharmacy_id)
       .single()
     
     if (error) throw error
@@ -39,7 +54,23 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: userPharmacy } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!userPharmacy) {
+      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
+    }
+
     const body = await request.json()
     
     const { error } = await supabase
@@ -51,7 +82,7 @@ export async function PUT(request: NextRequest) {
         city: body.location?.split(',')[0]?.trim(),
         province: body.location?.split(',')[1]?.trim()
       })
-      .eq('id', 'userPharmacy.pharmacy_id')
+      .eq('id', userPharmacy.pharmacy_id)
     
     if (error) throw error
     

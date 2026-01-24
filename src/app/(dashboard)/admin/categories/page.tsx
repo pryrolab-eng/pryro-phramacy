@@ -32,7 +32,7 @@ export default function CategoriesPage() {
   const fetchCategories = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/categories')
+      const response = await fetch('/api/admin/categories')
       if (response.ok) {
         const data = await response.json()
         setCategories(data.map(c => ({
@@ -52,7 +52,7 @@ export default function CategoriesPage() {
 
   const handleAddCategory = async () => {
     try {
-      const response = await fetch('/api/categories', {
+      const response = await fetch('/api/admin/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newCategory)
@@ -62,7 +62,7 @@ export default function CategoriesPage() {
         await fetchCategories()
         setIsAddingCategory(false)
         setNewCategory({ name: '', description: '' })
-        alert('Category added successfully!')
+        alert('Global category added successfully!')
       }
     } catch (error) {
       console.error('Error adding category:', error)
@@ -71,7 +71,7 @@ export default function CategoriesPage() {
 
   const handleEditCategory = async () => {
     try {
-      const response = await fetch(`/api/categories/${selectedCategory.id}`, {
+      const response = await fetch(`/api/admin/categories/${selectedCategory.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(selectedCategory)
@@ -81,7 +81,7 @@ export default function CategoriesPage() {
         await fetchCategories()
         setIsEditingCategory(false)
         setSelectedCategory(null)
-        alert('Category updated successfully!')
+        alert('Global category updated successfully!')
       }
     } catch (error) {
       console.error('Error updating category:', error)
@@ -89,15 +89,15 @@ export default function CategoriesPage() {
   }
 
   const handleDeleteCategory = async (id: string) => {
-    if (confirm('Are you sure you want to delete this category?')) {
+    if (confirm('Are you sure you want to delete this global category?')) {
       try {
-        const response = await fetch(`/api/categories/${id}`, {
+        const response = await fetch(`/api/admin/categories/${id}`, {
           method: 'DELETE'
         })
         
         if (response.ok) {
           await fetchCategories()
-          alert('Category deleted successfully!')
+          alert('Global category deleted successfully!')
         }
       } catch (error) {
         console.error('Error deleting category:', error)
@@ -122,7 +122,7 @@ export default function CategoriesPage() {
                 Category Management
               </h1>
             </div>
-            <p className="text-gray-600">Organize product and service categories</p>
+            <p className="text-gray-600">Manage global categories visible to all pharmacies</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">

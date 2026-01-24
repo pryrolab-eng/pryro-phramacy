@@ -4,6 +4,7 @@ import { encodedRedirect } from "@/utils/utils";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "../../supabase/server";
+import crypto from "crypto";
 
 export const signInAction = async (formData: FormData) => {
   const email = formData.get("email") as string;
@@ -64,6 +65,33 @@ export const signInAction = async (formData: FormData) => {
     } catch (setupError) {
       console.log('❌ USER SETUP ERROR:', setupError);
     }
+  }
+
+  // Check if 2FA is enabled
+  const { data: userData } = await supabase
+    .from('users')
+    .select('two_factor_enabled')
+    .eq('id', data.user.id)
+    .single();
+
+  if (userData?.two_factor_enabled) {
+    console.log('🔐 2FA REQUIRED');
+    // Create temporary session token
+    const sessionToken = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
+    console.log('Creating session, expires:', expiresAt.toISOString());
+    
+    await supabase.from('two_factor_sessions').insert({
+      user_id: data.user.id,
+      session_token: sessionToken,
+      verified: false,
+      expires_at: expiresAt.toISOString()
+    });
+    
+    // Sign out temporarily
+    await supabase.auth.signOut();
+    
+    return redirect(`/verify-2fa?session=${sessionToken}`);
   }
 
   console.log('➡️ REDIRECTING TO DASHBOARD');

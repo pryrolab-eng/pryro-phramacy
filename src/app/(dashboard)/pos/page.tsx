@@ -52,7 +52,7 @@ export default function POSPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [fastMoving, setFastMoving] = useState<Product[]>([])
   const [cart, setCart] = useState<CartItem[]>([])
-  const [categories, setCategories] = useState<string[]>(['all'])
+  const [categories, setCategories] = useState<any[]>([])
   const [customer, setCustomer] = useState<Customer>({ name: '', phone: '', insuranceNumber: '', insuranceType: '', coveragePercent: 0 })
   const [customerSuggestions, setCustomerSuggestions] = useState<any[]>([])
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false)
@@ -157,16 +157,10 @@ export default function POSPage() {
       const response = await fetch('/api/categories')
       if (response.ok) {
         const data = await response.json()
-        const categoryNames = ['all', ...data.map((c: any) => c.name.toLowerCase().replace(/\s+/g, '_'))]
-        setCategories(categoryNames)
-      } else {
-        // Fallback to default categories if API fails
-        setCategories(['all', 'prescription', 'otc', 'supplements'])
+        setCategories(data)
       }
     } catch (error) {
       console.error('Failed to fetch categories:', error)
-      // Fallback to default categories
-      setCategories(['all', 'prescription', 'otc', 'supplements'])
     }
   }
   
@@ -518,9 +512,10 @@ export default function POSPage() {
                       <SelectValue placeholder="Filter by category" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
                       {categories.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat === 'all' ? 'All Categories' : cat.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                        <SelectItem key={cat.id} value={cat.name}>
+                          {cat.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1264,11 +1259,9 @@ export default function POSPage() {
                       <SelectValue placeholder="Category / Family" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="antibiotics">Antibiotics</SelectItem>
-                      <SelectItem value="analgesics">Analgesics</SelectItem>
-                      <SelectItem value="otc">OTC</SelectItem>
-                      <SelectItem value="vitamins">Vitamins</SelectItem>
-                      <SelectItem value="prescription">Prescription</SelectItem>
+                      {categories.map(category => (
+                        <SelectItem key={category.id} value={category.name}>{category.name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <Input name="classificationCode" placeholder="Classification Code (e.g., N02BE01)" />

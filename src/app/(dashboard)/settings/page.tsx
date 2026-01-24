@@ -40,6 +40,78 @@ export default function SettingsPage() {
   const [isEditing, setIsEditing] = useState(false)
   const [isBillingOpen, setIsBillingOpen] = useState(false)
   const [isAddLocationOpen, setIsAddLocationOpen] = useState(false)
+  const [isAddApiKeyOpen, setIsAddApiKeyOpen] = useState(false)
+  const [isEditApiKeyOpen, setIsEditApiKeyOpen] = useState(false)
+  const [isIpWhitelistOpen, setIsIpWhitelistOpen] = useState(false)
+  const [ipWhitelist, setIpWhitelist] = useState<any[]>([])
+  const [newIp, setNewIp] = useState({ ip: '', description: '' })
+  const [ipWhitelistEnabled, setIpWhitelistEnabled] = useState(false)
+  const [is2FAEnabled, setIs2FAEnabled] = useState(false)
+  const [is2FASetupOpen, setIs2FASetupOpen] = useState(false)
+  const [qrCode, setQrCode] = useState('')
+  const [backupCodes, setBackupCodes] = useState<string[]>([])
+  const [verifyCode, setVerifyCode] = useState('')
+  const [setupStep, setSetupStep] = useState<'qr' | 'verify' | 'backup'>('qr')
+
+  const fetchIpWhitelist = async () => {
+    try {
+      const response = await fetch('/api/settings/security/ip-whitelist/manage')
+      if (response.ok) {
+        const data = await response.json()
+        setIpWhitelist(data.ips || [])
+      }
+    } catch (error) {
+      console.error('Error fetching IP whitelist:', error)
+    }
+  }
+
+  const fetchSecuritySettings = async () => {
+    try {
+      const response = await fetch('/api/settings/security')
+      if (response.ok) {
+        const data = await response.json()
+        setIpWhitelistEnabled(data.ip_whitelist_enabled || false)
+      }
+    } catch (error) {
+      console.error('Error fetching security settings:', error)
+    }
+  }
+
+  const fetch2FAStatus = async () => {
+    try {
+      const response = await fetch('/api/settings/security/2fa')
+      if (response.ok) {
+        const data = await response.json()
+        setIs2FAEnabled(data.enabled || false)
+      }
+    } catch (error) {
+      console.error('Error fetching 2FA status:', error)
+    }
+  }
+
+  const toggleIpWhitelist = async (enabled: boolean) => {
+    try {
+      const response = await fetch('/api/settings/security', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip_whitelist_enabled: enabled })
+      })
+      if (response.ok) {
+        setIpWhitelistEnabled(enabled)
+      }
+    } catch (error) {
+      console.error('Error updating IP whitelist setting:', error)
+    }
+  }
+
+  useEffect(() => {
+    if (isIpWhitelistOpen) {
+      fetchIpWhitelist()
+    }
+  }, [isIpWhitelistOpen])
+  const [selectedApiKey, setSelectedApiKey] = useState<any>(null)
+  const [newApiKey, setNewApiKey] = useState({ name: '', key: '' })
+  const [apiKeys, setApiKeys] = useState<any[]>([])
   const [stockLocations, setStockLocations] = useState([])
   const [newLocation, setNewLocation] = useState({ name: '', description: '' })
   const [editInfo, setEditInfo] = useState({
@@ -60,6 +132,23 @@ export default function SettingsPage() {
     ]
   })
 
+  const fetchBillingInfo = async () => {
+    try {
+      const response = await fetch('/api/invoices')
+      if (response.ok) {
+        const data = await response.json()
+        setBillingInfo({
+          nextBilling: data.nextBilling || '2024-01-15',
+          amount: data.amount || 0,
+          paymentMethod: data.paymentMethod || 'Not set',
+          invoices: data.invoices || []
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching billing info:', error)
+    }
+  }
+
   const [plans, setPlans] = useState<SubscriptionPlan[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -69,7 +158,11 @@ export default function SettingsPage() {
       await Promise.all([
         fetchPharmacyInfo(),
         fetchPlans(),
-        fetchStockLocations()
+        fetchStockLocations(),
+        fetchApiKeys(),
+        fetchSecuritySettings(),
+        fetch2FAStatus(),
+        fetchBillingInfo()
       ])
       setLoading(false)
     }
@@ -172,9 +265,27 @@ export default function SettingsPage() {
     }
   }
 
-  const handleUpgrade = (planName: string) => {
-    setCurrentPlan(planName.toLowerCase())
-    alert(`Upgraded to ${planName} plan!`)
+  const handleUpgrade = async (planName: string) => {
+    try {
+      const response = await fetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: planName })
+      })
+      
+      if (response.ok) {
+        setCurrentPlan(planName.toLowerCase())
+        await fetchPharmacyInfo()
+        await fetchBillingInfo()
+        alert(`Successfully upgraded to ${planName} plan!`)
+      } else {
+        const data = await response.json()
+        alert(data.error || 'Failed to upgrade plan')
+      }
+    } catch (error) {
+      console.error('Upgrade error:', error)
+      alert('Failed to upgrade plan')
+    }
   }
 
   const fetchStockLocations = async () => {
@@ -186,6 +297,18 @@ export default function SettingsPage() {
       }
     } catch (error) {
       console.error('Error fetching locations:', error)
+    }
+  }
+
+  const fetchApiKeys = async () => {
+    try {
+      const response = await fetch('/api/settings/api-keys')
+      if (response.ok) {
+        const data = await response.json()
+        setApiKeys(data)
+      }
+    } catch (error) {
+      console.error('Error fetching API keys:', error)
     }
   }
 
@@ -544,7 +667,25 @@ export default function SettingsPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant="outline">{invoice.status}</Badge>
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" onClick={() => {
+                          const html = `<!DOCTYPE html>
+<html>
+<head><title>Invoice ${invoice.id}</title></head>
+<body style="font-family: Arial; padding: 40px;">
+  <h1>INVOICE</h1>
+  <p><strong>Date:</strong> ${invoice.date}</p>
+  <p><strong>Amount:</strong> ${invoice.amount.toLocaleString()} RWF</p>
+  <p><strong>Status:</strong> ${invoice.status}</p>
+</body>
+</html>`
+                          const blob = new Blob([html], { type: 'text/html' })
+                          const url = URL.createObjectURL(blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = `invoice-${invoice.date}.html`
+                          a.click()
+                          URL.revokeObjectURL(url)
+                        }}>
                           <Download className="h-3 w-3" />
                         </Button>
                       </div>
@@ -617,28 +758,25 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-3">
-                  <div className="flex justify-between items-center p-3 border rounded-lg">
-                    <div>
-                      <p className="font-medium">Payment Gateway API</p>
-                      <p className="text-sm text-muted-foreground">••••••••••••3456</p>
+                  {apiKeys.map((api) => (
+                    <div key={api.id} className="flex justify-between items-center p-3 border rounded-lg">
+                      <div>
+                        <p className="font-medium">{api.name}</p>
+                        <p className="text-sm text-muted-foreground">{api.key_prefix}...</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Badge className={api.is_active ? 'bg-green-100 text-green-800' : ''}>
+                          {api.is_active ? 'Active' : 'Inactive'}
+                        </Badge>
+                        <Button variant="outline" size="sm" onClick={() => {
+                          setSelectedApiKey({...api, status: api.is_active ? 'Active' : 'Inactive', key: api.key_hash})
+                          setIsEditApiKeyOpen(true)
+                        }}>Edit</Button>
+                      </div>
                     </div>
-                    <div className="flex gap-2">
-                      <Badge className="bg-green-100 text-green-800">Active</Badge>
-                      <Button variant="outline" size="sm">Edit</Button>
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center p-3 border rounded-lg">
-                    <div>
-                      <p className="font-medium">Insurance Provider API</p>
-                      <p className="text-sm text-muted-foreground">••••••••••••7890</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Badge variant="outline">Inactive</Badge>
-                      <Button variant="outline" size="sm">Edit</Button>
-                    </div>
-                  </div>
+                  ))}
                 </div>
-                <Button className="w-full">
+                <Button className="w-full" onClick={() => setIsAddApiKeyOpen(true)}>
                   <Key className="mr-2 h-4 w-4" />
                   Add New API Key
                 </Button>
@@ -771,7 +909,23 @@ export default function SettingsPage() {
                     <p className="font-medium">Two-Factor Authentication</p>
                     <p className="text-sm text-muted-foreground">Add an extra layer of security</p>
                   </div>
-                  <Switch />
+                  <Switch checked={is2FAEnabled} onCheckedChange={async (checked) => {
+                    if (checked) {
+                      setIs2FASetupOpen(true)
+                    } else {
+                      if (confirm('Disable 2FA? This will make your account less secure.')) {
+                        const response = await fetch('/api/settings/security/2fa', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ enabled: false })
+                        })
+                        if (response.ok) {
+                          setIs2FAEnabled(false)
+                          alert('2FA disabled')
+                        }
+                      }
+                    }
+                  }} />
                 </div>
                 <div className="flex items-center justify-between">
                   <div>
@@ -785,9 +939,9 @@ export default function SettingsPage() {
                     <p className="font-medium">IP Whitelisting</p>
                     <p className="text-sm text-muted-foreground">Restrict access by IP address</p>
                   </div>
-                  <Switch />
+                  <Switch checked={ipWhitelistEnabled} onCheckedChange={toggleIpWhitelist} />
                 </div>
-                <Button variant="outline" className="w-full">
+                <Button variant="outline" className="w-full" onClick={() => setIsIpWhitelistOpen(true)}>
                   Manage IP Whitelist
                 </Button>
               </CardContent>
@@ -1054,7 +1208,25 @@ export default function SettingsPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge className="bg-green-100 text-green-800">{invoice.status}</Badge>
-                      <Button variant="outline" size="sm">Download</Button>
+                      <Button variant="outline" size="sm" onClick={() => {
+                        const html = `<!DOCTYPE html>
+<html>
+<head><title>Invoice ${invoice.id}</title></head>
+<body style="font-family: Arial; padding: 40px;">
+  <h1>INVOICE</h1>
+  <p><strong>Date:</strong> ${invoice.date}</p>
+  <p><strong>Amount:</strong> ${invoice.amount.toLocaleString()} RWF</p>
+  <p><strong>Status:</strong> ${invoice.status}</p>
+</body>
+</html>`
+                        const blob = new Blob([html], { type: 'text/html' })
+                        const url = URL.createObjectURL(blob)
+                        const a = document.createElement('a')
+                        a.href = url
+                        a.download = `invoice-${invoice.date}.html`
+                        a.click()
+                        URL.revokeObjectURL(url)
+                      }}>Download</Button>
                     </div>
                   </div>
                 ))}
@@ -1093,6 +1265,315 @@ export default function SettingsPage() {
             <Button onClick={handleAddLocation} disabled={!newLocation.name}>
               Add Location
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isAddApiKeyOpen} onOpenChange={setIsAddApiKeyOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New API Key</DialogTitle>
+            <DialogDescription>Add a new API integration key</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-2">
+              <Label>API Name</Label>
+              <Input
+                placeholder="e.g. Payment Gateway"
+                value={newApiKey.name}
+                onChange={(e) => setNewApiKey({...newApiKey, name: e.target.value})}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>API Key</Label>
+              <Input
+                placeholder="Enter API key"
+                value={newApiKey.key}
+                onChange={(e) => setNewApiKey({...newApiKey, key: e.target.value})}
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => {
+              setIsAddApiKeyOpen(false)
+              setNewApiKey({ name: '', key: '' })
+            }}>Cancel</Button>
+            <Button onClick={async () => {
+              if (newApiKey.name && newApiKey.key) {
+                try {
+                  const response = await fetch('/api/settings/api-keys', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newApiKey)
+                  })
+                  const result = await response.json()
+                  if (response.ok && result.success) {
+                    await fetchApiKeys()
+                    setIsAddApiKeyOpen(false)
+                    setNewApiKey({ name: '', key: '' })
+                    alert('API Key added successfully!')
+                  } else {
+                    console.error('API Error:', result)
+                    alert(result.error || 'Failed to add API key. Please check console for details.')
+                  }
+                } catch (error) {
+                  console.error('Error adding API key:', error)
+                  alert('Network error: Failed to add API key. Please try again.')
+                }
+              }
+            }} disabled={!newApiKey.name || !newApiKey.key}>
+              Add API Key
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditApiKeyOpen} onOpenChange={setIsEditApiKeyOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit API Key</DialogTitle>
+            <DialogDescription>Update API integration settings</DialogDescription>
+          </DialogHeader>
+          {selectedApiKey && (
+            <div className="space-y-4">
+              <div className="grid gap-2">
+                <Label>API Name</Label>
+                <Input
+                  value={selectedApiKey.name}
+                  onChange={(e) => setSelectedApiKey({...selectedApiKey, name: e.target.value})}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>API Key</Label>
+                <Input
+                  value={selectedApiKey.key}
+                  onChange={(e) => setSelectedApiKey({...selectedApiKey, key: e.target.value})}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Status</Label>
+                <Select value={selectedApiKey.status} onValueChange={(value) => setSelectedApiKey({...selectedApiKey, status: value})}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="Inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setIsEditApiKeyOpen(false)}>Cancel</Button>
+            <Button onClick={async () => {
+              try {
+                const response = await fetch('/api/settings/api-keys', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(selectedApiKey)
+                })
+                const result = await response.json()
+                if (response.ok && result.success) {
+                  await fetchApiKeys()
+                  setIsEditApiKeyOpen(false)
+                  alert('API Key updated successfully!')
+                } else {
+                  alert(result.error || 'Failed to update API key')
+                }
+              } catch (error) {
+                console.error('Error updating API key:', error)
+                alert('Failed to update API key')
+              }
+            }}>
+              Save Changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isIpWhitelistOpen} onOpenChange={setIsIpWhitelistOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Manage IP Whitelist</DialogTitle>
+            <DialogDescription>Add or remove IP addresses allowed to access your system</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                placeholder="IP Address (e.g. 192.168.1.100)"
+                value={newIp.ip}
+                onChange={(e) => setNewIp({...newIp, ip: e.target.value})}
+              />
+              <Input
+                placeholder="Description"
+                value={newIp.description}
+                onChange={(e) => setNewIp({...newIp, description: e.target.value})}
+              />
+            </div>
+            <Button onClick={async () => {
+              if (newIp.ip) {
+                try {
+                  const response = await fetch('/api/settings/security/ip-whitelist/manage', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newIp)
+                  })
+                  const result = await response.json()
+                  if (response.ok && result.success) {
+                    setNewIp({ ip: '', description: '' })
+                    await fetchIpWhitelist()
+                    alert('IP added successfully!')
+                  } else {
+                    alert(result.error || 'Failed to add IP')
+                  }
+                } catch (error) {
+                  console.error('Error adding IP:', error)
+                  alert('Failed to add IP')
+                }
+              }
+            }} disabled={!newIp.ip}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add IP Address
+            </Button>
+            <div className="border rounded-lg p-4 max-h-64 overflow-y-auto">
+              {ipWhitelist.length > 0 ? (
+                <div className="space-y-2">
+                  {ipWhitelist.map((ip: any) => (
+                    <div key={ip.id} className="flex justify-between items-center p-2 border rounded">
+                      <div>
+                        <p className="font-medium">{ip.ip_address}</p>
+                        <p className="text-xs text-muted-foreground">{ip.description}</p>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={async () => {
+                        try {
+                          const response = await fetch('/api/settings/security/ip-whitelist/manage', {
+                            method: 'DELETE',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: ip.id })
+                          })
+                          if (response.ok) {
+                            await fetchIpWhitelist()
+                            alert('IP removed successfully!')
+                          }
+                        } catch (error) {
+                          console.error('Error removing IP:', error)
+                        }
+                      }}>
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center">No whitelisted IPs yet</p>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={is2FASetupOpen} onOpenChange={setIs2FASetupOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Setup Two-Factor Authentication</DialogTitle>
+            <DialogDescription>
+              {setupStep === 'qr' && 'Scan the QR code with your authenticator app'}
+              {setupStep === 'verify' && 'Enter the code from your authenticator app'}
+              {setupStep === 'backup' && 'Save these backup codes in a safe place'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {setupStep === 'qr' && (
+              <>
+                {qrCode ? (
+                  <div className="flex flex-col items-center space-y-4">
+                    <img src={qrCode} alt="QR Code" className="w-64 h-64" />
+                    <p className="text-xs text-muted-foreground text-center">
+                      Scan this with Google Authenticator, Authy, or similar app
+                    </p>
+                    <Button onClick={() => setSetupStep('verify')} className="w-full">
+                      Next
+                    </Button>
+                  </div>
+                ) : (
+                  <Button onClick={async () => {
+                    try {
+                      const response = await fetch('/api/settings/security/2fa/setup', { method: 'POST' })
+                      const data = await response.json()
+                      if (response.ok) {
+                        setQrCode(data.qrCode)
+                        setBackupCodes(data.backupCodes)
+                      } else {
+                        alert(data.error || 'Failed to generate QR code')
+                      }
+                    } catch (err) {
+                      alert('Failed to generate QR code')
+                    }
+                  }} className="w-full">
+                    Generate QR Code
+                  </Button>
+                )}
+              </>
+            )}
+            {setupStep === 'verify' && (
+              <>
+                <div className="space-y-2">
+                  <Label>Enter 6-digit code</Label>
+                  <Input
+                    placeholder="000000"
+                    value={verifyCode}
+                    onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    maxLength={6}
+                    autoFocus
+                  />
+                </div>
+                <Button onClick={async () => {
+                  try {
+                    const response = await fetch('/api/settings/security/2fa/verify', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ token: verifyCode })
+                    })
+                    if (response.ok) {
+                      setSetupStep('backup')
+                    } else {
+                      const data = await response.json()
+                      alert(data.error || 'Invalid code')
+                    }
+                  } catch (err) {
+                    alert('Verification failed')
+                  }
+                }} disabled={verifyCode.length !== 6} className="w-full">
+                  Verify
+                </Button>
+              </>
+            )}
+            {setupStep === 'backup' && (
+              <>
+                <div className="bg-yellow-50 border border-yellow-200 rounded p-4">
+                  <p className="text-sm font-medium mb-2">Backup Codes</p>
+                  <div className="grid grid-cols-2 gap-2 font-mono text-xs">
+                    {backupCodes.map((code, i) => (
+                      <div key={i} className="bg-white p-2 rounded">{code}</div>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Save these codes. Each can be used once if you lose access to your authenticator.
+                </p>
+                <Button onClick={() => {
+                  setIs2FAEnabled(true)
+                  setIs2FASetupOpen(false)
+                  setSetupStep('qr')
+                  setQrCode('')
+                  setVerifyCode('')
+                  alert('2FA enabled successfully!')
+                }} className="w-full">
+                  Done
+                </Button>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>

@@ -68,7 +68,7 @@ export default function InventoryPage() {
   const [barcodeType, setBarcodeType] = useState('name')
   const [quickAddCategoryOpen, setQuickAddCategoryOpen] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
-  const [categories, setCategories] = useState(['Pain Relief', 'Antibiotics', 'Vitamins', 'Prescription'])
+  const [categories, setCategories] = useState<any[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [bulkMode, setBulkMode] = useState(false)
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
@@ -120,7 +120,20 @@ export default function InventoryPage() {
     fetchInventory()
     fetchSuppliers()
     fetchAnalytics()
+    fetchCategories()
   }, [])
+  
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch('/api/categories')
+      if (response.ok) {
+        const data = await response.json()
+        setCategories(data)
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error)
+    }
+  }
   
   const fetchAnalytics = async () => {
     try {
@@ -840,13 +853,8 @@ export default function InventoryPage() {
                         <SelectValue placeholder="Select category" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="antibiotics">Antibiotics</SelectItem>
-                        <SelectItem value="analgesics">Analgesics</SelectItem>
-                        <SelectItem value="otc">OTC</SelectItem>
-                        <SelectItem value="vitamins">Vitamins</SelectItem>
-                        <SelectItem value="prescription">Prescription</SelectItem>
                         {categories.map(category => (
-                          <SelectItem key={category} value={category}>{category}</SelectItem>
+                          <SelectItem key={category.id} value={category.name}>{category.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1019,12 +1027,39 @@ export default function InventoryPage() {
               <Button variant="outline" onClick={() => { setQuickAddCategoryOpen(false); setNewCategoryName('') }}>
                 Cancel
               </Button>
-              <Button onClick={() => {
+              <Button onClick={async () => {
                 if (newCategoryName.trim()) {
-                  setCategories([...categories, newCategoryName.trim()])
-                  setNewProduct({...newProduct, category: newCategoryName.trim()})
-                  setQuickAddCategoryOpen(false)
-                  setNewCategoryName('')
+                  try {
+                    const response = await fetch('/api/categories', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ name: newCategoryName.trim() })
+                    })
+                    const result = await response.json()
+                    if (response.ok && result.success) {
+                      await fetchCategories()
+                      setNewProduct({...newProduct, category: newCategoryName.trim()})
+                      setQuickAddCategoryOpen(false)
+                      setNewCategoryName('')
+                      toast({
+                        title: "Success",
+                        description: "Category added successfully"
+                      })
+                    } else {
+                      toast({
+                        title: "Error",
+                        description: result.error || "Failed to add category",
+                        variant: "destructive"
+                      })
+                    }
+                  } catch (error) {
+                    console.error('Error adding category:', error)
+                    toast({
+                      title: "Error",
+                      description: "Failed to add category",
+                      variant: "destructive"
+                    })
+                  }
                 }
               }} disabled={!newCategoryName.trim()}>
                 Add Category
@@ -1145,10 +1180,9 @@ export default function InventoryPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Categories</SelectItem>
-                      <SelectItem value="Pain Relief">Pain Relief</SelectItem>
-                      <SelectItem value="Antibiotics">Antibiotics</SelectItem>
-                      <SelectItem value="Vitamins">Vitamins</SelectItem>
-                      <SelectItem value="Prescription">Prescription</SelectItem>
+                      {categories.map(category => (
+                        <SelectItem key={category.id} value={category.name}>{category.name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

@@ -39,16 +39,8 @@ export async function GET() {
       language: 'en'
     })
   } catch (error) {
-    return NextResponse.json({
-      name: 'Pryrox Pharmacy',
-      license: 'PH-2024-001',
-      location: 'Kigali, Rwanda',
-      phone: '+250788123456',
-      email: 'info@pryrox.com',
-      subscription: 'standard',
-      currency: 'RWF',
-      language: 'en'
-    })
+    console.error('Settings fetch error:', error)
+    return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 })
   }
 }
 
@@ -73,6 +65,10 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json()
     
+    if (!body.name || !body.phone || !body.email) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+    
     const { error } = await supabase
       .from('pharmacies')
       .update({
@@ -88,6 +84,7 @@ export async function PUT(request: NextRequest) {
     
     return NextResponse.json({ success: true })
   } catch (error) {
-    return NextResponse.json({ success: false, error: 'Failed to update pharmacy info' })
+    console.error('Settings update error:', error)
+    return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 })
   }
 }

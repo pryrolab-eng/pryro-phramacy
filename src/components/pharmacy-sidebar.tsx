@@ -124,6 +124,8 @@ const pharmacyData = {
 
 export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [userName, setUserName] = React.useState('Pharmacy Owner')
+  const [subscriptionPlan, setSubscriptionPlan] = React.useState('standard')
+  const [daysLeft, setDaysLeft] = React.useState(15)
   
   let pathname = '/pharmacy-dashboard'
   try {
@@ -134,28 +136,54 @@ export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sideba
   }
   
   React.useEffect(() => {
-    const fetchUserName = async () => {
+    const fetchUserData = async () => {
       try {
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
         
         if (user) {
-          // Try to get full name from user metadata or profile
+          // Get user name
           const fullName = user.user_metadata?.full_name || user.user_metadata?.name
           if (fullName) {
             setUserName(fullName)
           } else {
-            // Fallback to email username
             const emailName = user.email?.split('@')[0]
             setUserName(emailName || 'Pharmacy Owner')
           }
+          
+          // Get subscription info from pharmacy_users and pharmacies
+          const { data: userPharmacy } = await supabase
+            .from('pharmacy_users')
+            .select('pharmacy_id')
+            .eq('user_id', user.id)
+            .single()
+          
+          if (userPharmacy) {
+            const { data: pharmacy } = await supabase
+              .from('pharmacies')
+              .select('subscription_plan, subscription_expires_at')
+              .eq('id', userPharmacy.pharmacy_id)
+              .single()
+            
+            if (pharmacy) {
+              setSubscriptionPlan(pharmacy.subscription_plan || 'trial')
+              
+              if (pharmacy.subscription_expires_at) {
+                const expiryDate = new Date(pharmacy.subscription_expires_at)
+                const today = new Date()
+                const diffTime = expiryDate.getTime() - today.getTime()
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+                setDaysLeft(diffDays > 0 ? diffDays : 0)
+              }
+            }
+          }
         }
       } catch (error) {
-        console.error('Error fetching user name:', error)
+        console.error('Error fetching user data:', error)
       }
     }
     
-    fetchUserName()
+    fetchUserData()
   }, [])
   
   return (
@@ -205,12 +233,12 @@ export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sideba
         <div className="mx-2 mb-2 p-2 bg-white border border-gray-200 rounded-xl shadow-sm">
           <div className="flex items-center gap-2 mb-1">
             <Zap className="h-3 w-3 text-blue-500" />
-            <span className="text-xs font-medium text-gray-700">Standard</span>
-            <span className="text-xs text-gray-400">15d</span>
+            <span className="text-xs font-medium text-gray-700 capitalize">{subscriptionPlan}</span>
+            <span className="text-xs text-gray-400">{daysLeft}d</span>
           </div>
-          <Link href="/subscriptions" className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700 font-medium">
+          <Link href="/settings" className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700 font-medium">
             <Crown className="h-3 w-3" />
-            Upgrade to Premium
+            {subscriptionPlan === 'premium' ? 'Manage Plan' : 'Upgrade to Premium'}
           </Link>
         </div>
         

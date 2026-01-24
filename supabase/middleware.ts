@@ -56,7 +56,7 @@ export const updateSession = async (request: NextRequest) => {
       "/admin"
     ];
     
-    const authPaths = ["/sign-in", "/sign-up", "/forgot-password", "/auth/success", "/auth/callback", "/auth-success"];
+    const authPaths = ["/sign-in", "/sign-up", "/forgot-password", "/auth/success", "/auth/callback", "/auth-success", "/verify-2fa"];
     
     const isProtectedPath = protectedPaths.some(path => 
       request.nextUrl.pathname.startsWith(path)

@@ -4,25 +4,52 @@ import { createClient } from '../../../../supabase/server'
 export async function GET() {
   try {
     const supabase = await createClient()
-    const { data: sales, error } = await supabase
-      .from('sales')
-      .select('id, customer_name, total_amount, status, receipt_number, created_at')
-      .order('created_at', { ascending: false })
-
-    if (error) throw error
+    const { data: { user } } = await supabase.auth.getUser()
     
-    // Format as invoices for frontend
-    const invoices = sales?.map(s => ({
-      id: s.receipt_number || `INV-${s.id.slice(0, 8)}`,
-      customer: s.customer_name || 'Walk-in Customer',
-      amount: s.total_amount,
-      status: s.status === 'completed' ? 'paid' : 'pending',
-      date: s.created_at
-    })) || []
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
-    return NextResponse.json(invoices)
+    const { data: userPharmacy } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!userPharmacy) {
+      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
+    }
+
+    const { data: invoices } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    const { data: paymentMethod } = await supabase
+      .from('payment_methods')
+      .select('*')
+      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('is_default', true)
+      .single()
+
+    const nextInvoice = invoices?.find(inv => inv.status === 'pending')
+
+    return NextResponse.json({
+      nextBilling: nextInvoice?.due_date || null,
+      amount: nextInvoice?.amount || 0,
+      paymentMethod: paymentMethod?.method_type || 'Not set',
+      invoices: invoices?.map(inv => ({
+        id: inv.id,
+        date: inv.created_at.split('T')[0],
+        amount: inv.amount,
+        status: inv.status === 'paid' ? 'Paid' : 'Pending'
+      })) || []
+    })
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch invoices' }, { status: 500 })
+    console.error('Billing fetch error:', error)
+    return NextResponse.json({ error: 'Failed to fetch billing' }, { status: 500 })
   }
 }
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../supabase/server'
+import { createClient, createServiceClient } from '../../../../supabase/server'
 
 export async function GET(request: NextRequest) {
   try {
@@ -89,6 +89,12 @@ export async function POST(request: NextRequest) {
     const isSuperAdmin = user.email === 'abdousentore@gmail.com'
     console.log('🔍 isSuperAdmin:', isSuperAdmin)
     
+    // Use service role for superadmin to bypass RLS
+    const dbClient = isSuperAdmin 
+      ? createServiceClient()
+      : supabase
+    console.log('🔍 Using service role:', isSuperAdmin)
+    
     let pharmacyId = null
     
     if (!isSuperAdmin) {
@@ -146,7 +152,7 @@ export async function POST(request: NextRequest) {
       is_active: true
     }
     
-    const { data: newInsurance, error } = await supabase
+    const { data: newInsurance, error } = await dbClient
       .from('insurance_providers')
       .insert(insuranceData)
       .select()

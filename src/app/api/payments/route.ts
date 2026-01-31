@@ -36,11 +36,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { plan } = body
+    const { plan, useKPay = false } = body
 
     const { data: userPharmacy } = await supabase
       .from('pharmacy_users')
-      .select('pharmacy_id')
+      .select('pharmacy_id, role')
       .eq('user_id', user.id)
       .single()
 
@@ -48,37 +48,76 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
     }
 
+    // Only pharmacy owners and admins can manage subscriptions
+    if (!['pharmacy_owner', 'admin'].includes(userPharmacy.role)) {
+      return NextResponse.json({ error: 'Only pharmacy owners can manage subscriptions' }, { status: 403 })
+    }
+
     const planPrices: Record<string, number> = {
-      'free': 0,
+      'trial': 0,
       'standard': 50000,
       'premium': 120000
     }
 
-    const amount = planPrices[plan?.toLowerCase()] || 0
+    const planMap: Record<string, string> = {
+      'free': 'trial',
+      'standard': 'standard',
+      'premium': 'premium'
+    }
 
-    const { error: updateError } = await supabase
-      .from('pharmacies')
-      .update({
-        subscription_plan: plan.toLowerCase(),
-        subscription_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-      })
-      .eq('id', userPharmacy.pharmacy_id)
+    const dbPlan = planMap[plan?.toLowerCase()] || 'trial'
+    const amount = planPrices[dbPlan] || 0
 
-    if (updateError) throw updateError
+    // If amount is 0 or not using KPay, process immediately
+    if (amount === 0 || !useKPay) {
+      const { error: updateError } = await supabase
+        .from('pharmacies')
+        .update({
+          subscription_plan: dbPlan,
+          subscription_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        })
+        .eq('id', userPharmacy.pharmacy_id)
 
-    const { error: invoiceError } = await supabase
-      .from('invoices')
+      if (updateError) throw updateError
+
+      const { error: invoiceError } = await supabase
+        .from('invoices')
+        .insert({
+          pharmacy_id: userPharmacy.pharmacy_id,
+          amount,
+          status: amount === 0 ? 'paid' : 'pending',
+          due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          plan_name: plan
+        })
+
+      if (invoiceError) throw invoiceError
+
+      return NextResponse.json({ success: true, plan })
+    }
+
+    // Create subscription record for KPay payment
+    const { data: subscription, error: subError } = await supabase
+      .from('subscriptions')
       .insert({
         pharmacy_id: userPharmacy.pharmacy_id,
+        plan: dbPlan,
         amount,
-        status: amount === 0 ? 'paid' : 'pending',
-        due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        plan_name: plan
+        is_active: false,
+        end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
       })
+      .select()
+      .single()
 
-    if (invoiceError) throw invoiceError
+    if (subError) throw subError
 
-    return NextResponse.json({ success: true, plan })
+    // Return subscription ID for KPay payment
+    return NextResponse.json({ 
+      success: true, 
+      plan,
+      requiresPayment: true,
+      subscriptionId: subscription.id,
+      amount
+    })
   } catch (error) {
     console.error('Payment error:', error)
     return NextResponse.json({ error: 'Payment failed' }, { status: 500 })

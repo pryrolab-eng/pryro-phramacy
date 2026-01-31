@@ -1,9 +1,8 @@
--- Check all RLS policies on insurance_providers
+-- Check existing RLS policies on subscriptions
 SELECT 
     policyname,
     cmd,
-    qual as using_clause,
+    qual,
     with_check
-FROM pg_policies 
-WHERE tablename = 'insurance_providers'
-ORDER BY cmd, policyname;
+FROM pg_policies
+WHERE tablename = 'subscriptions';

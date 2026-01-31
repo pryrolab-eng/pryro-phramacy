@@ -266,25 +266,177 @@ export default function SettingsPage() {
   }
 
   const handleUpgrade = async (planName: string) => {
+    const plan = plans.find(p => p.name === planName)
+    if (!plan) {
+      alert('Plan not found. Please refresh the page and try again.')
+      return
+    }
+
+    // Add loading state
+    const upgradeButton = document.querySelector(`button[data-plan="${planName}"]`)
+    if (upgradeButton) {
+      upgradeButton.textContent = 'Processing...'
+      upgradeButton.disabled = true
+    }
+
     try {
-      const response = await fetch('/api/payments', {
+      if (plan.price === 0) {
+        // Free plan
+        const response = await fetch('/api/subscriptions/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ planId: plan.id || planName })
+        })
+        
+        if (response.ok) {
+          setCurrentPlan(planName.toLowerCase())
+          await fetchPharmacyInfo()
+          await fetchBillingInfo()
+          alert(`Successfully switched to ${planName} plan!`)
+        } else if (response.status === 401) {
+          alert('Please log in to upgrade your plan.')
+          window.location.href = '/login'
+        } else {
+          const error = await response.json()
+          alert(error.error || 'Failed to switch plan. Please try again.')
+        }
+        return
+      }
+
+      // Paid plan - use KPay
+      const paymentMethod = prompt('Choose payment method:\n1. Mobile Money (MTN/Airtel)\n2. Card (Visa/Mastercard)\n\nEnter 1 or 2:')
+      if (!paymentMethod || !['1', '2'].includes(paymentMethod)) {
+        alert('Invalid payment method selected.')
+        return
+      }
+
+      const phone = prompt('Enter your phone number (e.g. 0788123456):')
+      if (!phone) {
+        alert('Phone number is required for payment.')
+        return
+      }
+
+      // Validate phone number
+      const phoneValidation = await fetch('/api/test-validation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: planName })
+        body: JSON.stringify({ phoneNumber: phone })
       })
+      const phoneResult = await phoneValidation.json()
       
-      if (response.ok) {
-        setCurrentPlan(planName.toLowerCase())
-        await fetchPharmacyInfo()
-        await fetchBillingInfo()
-        alert(`Successfully upgraded to ${planName} plan!`)
+      if (!phoneResult.phone?.isValid) {
+        alert('Please enter a valid Rwanda phone number (e.g. 0788123456)')
+        return
+      }
+
+      const email = prompt('Enter your email:') || pharmacyInfo.email
+      if (!email) {
+        alert('Email is required for payment confirmation.')
+        return
+      }
+
+      // Create subscription
+      const subResponse = await fetch('/api/subscriptions/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: plan.id || planName })
+      })
+
+      if (subResponse.status === 401) {
+        alert('Please log in to upgrade your plan.')
+        window.location.href = '/login'
+        return
+      }
+
+      const subData = await subResponse.json()
+      if (!subResponse.ok) {
+        alert(subData.error || 'Failed to create subscription. Please try again.')
+        return
+      }
+
+      // Initiate KPay payment
+      const paymentResponse = await fetch('/api/kpay/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: plan.price,
+          subscriptionId: subData.subscription?.id,
+          paymentMethod: paymentMethod === '1' ? 'momo' : 'cc',
+          bankId: phoneResult.phone.kpayBankId || (paymentMethod === '1' ? '63510' : '000'),
+          customerName: pharmacyInfo.name || 'Pharmacy Customer',
+          customerPhone: phoneResult.phone.formatted,
+          customerEmail: email,
+          details: `${planName} plan subscription - Monthly payment`
+        })
+      })
+
+      if (paymentResponse.status === 401) {
+        alert('Please log in to process payment.')
+        window.location.href = '/login'
+        return
+      }
+
+      const paymentData = await paymentResponse.json()
+
+      if (!paymentResponse.ok) {
+        alert(paymentData.error || 'Payment initiation failed. Please try again.')
+        return
+      }
+
+      if (paymentData.success) {
+        if (paymentData.transaction?.checkoutUrl) {
+          // Card payment - redirect to checkout
+          if (confirm('You will be redirected to complete payment. Continue?')) {
+            window.location.href = paymentData.transaction.checkoutUrl
+          }
+        } else {
+          // Mobile money - show instructions
+          alert(`Payment initiated successfully!\n\nCheck your phone (${phoneResult.phone.formatted}) for a payment prompt.\nEnter your PIN to complete the payment.\n\nTransaction ID: ${paymentData.transaction?.tid || 'N/A'}\n\nCarrier: ${phoneResult.phone.carrier}`)
+          
+          // Poll for status
+          let pollCount = 0
+          const maxPolls = 60 // 5 minutes
+          
+          const checkStatus = setInterval(async () => {
+            pollCount++
+            try {
+              const statusResponse = await fetch(`/api/kpay/status?transactionId=${paymentData.transaction?.id}`)
+              const statusData = await statusResponse.json()
+              
+              if (statusData.transaction?.status === 'completed') {
+                clearInterval(checkStatus)
+                setCurrentPlan(planName.toLowerCase())
+                await fetchPharmacyInfo()
+                await fetchBillingInfo()
+                alert(`🎉 Payment successful! You have been upgraded to the ${planName} plan.`)
+              } else if (statusData.transaction?.status === 'failed') {
+                clearInterval(checkStatus)
+                alert('❌ Payment failed. Please try again or contact support.')
+              } else if (pollCount >= maxPolls) {
+                clearInterval(checkStatus)
+                alert('⏰ Payment status check timed out. Please check your payment status manually or contact support.')
+              }
+            } catch (error) {
+              console.error('Status check error:', error)
+              if (pollCount >= maxPolls) {
+                clearInterval(checkStatus)
+                alert('Unable to verify payment status. Please contact support.')
+              }
+            }
+          }, 5000)
+        }
       } else {
-        const data = await response.json()
-        alert(data.error || 'Failed to upgrade plan')
+        alert(paymentData.kpayResponse?.statusdesc || 'Payment failed. Please try again.')
       }
     } catch (error) {
       console.error('Upgrade error:', error)
-      alert('Failed to upgrade plan')
+      alert('An error occurred while processing your upgrade. Please try again or contact support.')
+    } finally {
+      // Reset button state
+      if (upgradeButton) {
+        upgradeButton.textContent = plan.price > (plans.find(p => p.current)?.price || 0) ? 'Upgrade' : 'Downgrade'
+        upgradeButton.disabled = false
+      }
     }
   }
 
@@ -1612,6 +1764,7 @@ export default function SettingsPage() {
                     onClick={() => handleUpgrade(plan.name)}
                     variant={plan.name === 'Premium' ? 'default' : 'outline'}
                     className="w-full"
+                    data-plan={plan.name}
                   >
                     <ArrowUpRight className="mr-2 h-4 w-4" />
                     {plan.price > (plans.find(p => p.current)?.price || 0) ? 'Upgrade' : 'Downgrade'}

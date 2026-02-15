@@ -18,6 +18,12 @@ export default function AdminSettingsPage() {
   const [stockLocations, setStockLocations] = useState([])
   const [isAddLocationOpen, setIsAddLocationOpen] = useState(false)
   const [newLocation, setNewLocation] = useState({ name: '', description: '' })
+  const [analytics, setAnalytics] = useState({
+    active_pharmacies: 0,
+    total_users: 0,
+    total_pharmacies: 0,
+    new_users_30d: 0
+  })
   const [settings, setSettings] = useState({
     platformName: 'Pryrox',
     adminEmail: 'admin@pryrox.com',
@@ -34,14 +40,16 @@ export default function AdminSettingsPage() {
     dataRetentionDays: 2555,
     enableAuditLogs: true,
     ssoEnabled: false,
-    encryptionEnabled: true
+    encryptionEnabled: true,
+    // Add your new settings here
+    customSetting: '',
+    featureFlag: false
   })
 
   useEffect(() => {
     const loadData = async () => {
-      await fetchStockLocations()
-      const timer = setTimeout(() => setLoading(false), 600)
-      return () => clearTimeout(timer)
+      await Promise.all([fetchStockLocations(), fetchSystemSettings()])
+      setLoading(false)
     }
     loadData()
   }, [])
@@ -55,6 +63,23 @@ export default function AdminSettingsPage() {
       }
     } catch (error) {
       console.error('Error fetching locations:', error)
+    }
+  }
+
+  const fetchSystemSettings = async () => {
+    try {
+      const response = await fetch('/api/admin/system-settings')
+      if (response.ok) {
+        const data = await response.json()
+        if (data.settings) {
+          setSettings(prev => ({ ...prev, ...data.settings }))
+        }
+        if (data.analytics) {
+          setAnalytics(data.analytics)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching system settings:', error)
     }
   }
 
@@ -82,8 +107,36 @@ export default function AdminSettingsPage() {
     }
   }
 
-  const handleSave = () => {
-    alert('Settings saved successfully!')
+  const handleSave = async () => {
+    try {
+      // Add validation
+      if (settings.maxPharmacies < 1) {
+        alert('Maximum pharmacies must be at least 1')
+        return
+      }
+      
+      if (settings.apiRateLimit < 100) {
+        alert('API rate limit must be at least 100 requests/hour')
+        return
+      }
+      
+      const response = await fetch('/api/admin/system-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      })
+      
+      const result = await response.json()
+      
+      if (response.ok) {
+        alert('Settings saved successfully!')
+      } else {
+        alert(result.error || 'Failed to save settings')
+      }
+    } catch (error) {
+      console.error('Error saving settings:', error)
+      alert('Failed to save settings')
+    }
   }
 
   if (loading) return (
@@ -416,11 +469,11 @@ export default function AdminSettingsPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="text-center p-3 border rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600">47</div>
+                  <div className="text-2xl font-bold text-blue-600">{analytics.active_pharmacies}</div>
                   <div className="text-sm text-muted-foreground">Active Pharmacies</div>
                 </div>
                 <div className="text-center p-3 border rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">234</div>
+                  <div className="text-2xl font-bold text-green-600">{analytics.total_users}</div>
                   <div className="text-sm text-muted-foreground">Total Users</div>
                 </div>
               </div>
@@ -437,6 +490,36 @@ export default function AdminSettingsPage() {
                 <BarChart3 className="mr-2 h-4 w-4" />
                 View Detailed Analytics
               </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Key className="h-5 w-5" />
+                Custom Settings
+              </CardTitle>
+              <CardDescription>Additional configuration options</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-2">
+                <Label>Custom Setting</Label>
+                <Input
+                  placeholder="Enter custom value"
+                  value={settings.customSetting}
+                  onChange={(e) => setSettings({...settings, customSetting: e.target.value})}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Feature Flag</p>
+                  <p className="text-sm text-muted-foreground">Enable experimental features</p>
+                </div>
+                <Switch
+                  checked={settings.featureFlag}
+                  onCheckedChange={(checked) => setSettings({...settings, featureFlag: checked})}
+                />
+              </div>
             </CardContent>
           </Card>
 

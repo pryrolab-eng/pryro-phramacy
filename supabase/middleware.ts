@@ -36,6 +36,12 @@ export const updateSession = async (request: NextRequest) => {
     // https://supabase.com/docs/guides/auth/server-side/nextjs
     const { data: { user }, error } = await supabase.auth.getUser();
     
+    // Clear invalid refresh tokens
+    if (error?.message?.includes('refresh_token_not_found') || error?.message?.includes('Invalid Refresh Token')) {
+      await supabase.auth.signOut();
+      response.cookies.delete('sb-' + process.env.NEXT_PUBLIC_SUPABASE_URL!.split('//')[1].split('.')[0] + '-auth-token');
+    }
+    
     console.log('👤 USER:', user?.email || 'No user');
     console.log('❌ ERROR:', error?.message || 'No error');
 

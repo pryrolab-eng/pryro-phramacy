@@ -1,20 +1,122 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-
+import { createClient } from '../../../../../supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BarChart3, Download, TrendingUp, Users, Building2, CreditCard, DollarSign, Package } from "lucide-react";
 import { Spinner } from '@/components/ui/spinner';
 
+interface RevenueData {
+  month: string
+  revenue: number
+  pharmacies: number
+}
+
+interface PlanBreakdown {
+  plan_name: string
+  subscribers: number
+  revenue: number
+}
+
 export default function ReportsPage() {
   const [loading, setLoading] = useState(true)
+  const [totalRevenue, setTotalRevenue] = useState(0)
+  const [activePharmacies, setActivePharmacies] = useState(0)
+  const [totalUsers, setTotalUsers] = useState(0)
+  const [revenueData, setRevenueData] = useState<RevenueData[]>([])
+  const [planBreakdown, setPlanBreakdown] = useState<PlanBreakdown[]>([])
+  const supabase = createClient()
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 700)
-    return () => clearTimeout(timer)
+    fetchData()
   }, [])
+
+  async function fetchData() {
+    try {
+      // Get total revenue from payments
+      const { data: payments } = await supabase
+        .from('payments')
+        .select('amount')
+        .eq('status', 'completed')
+      
+      const revenue = payments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0
+      setTotalRevenue(revenue)
+
+      // Get active pharmacies count
+      const { count: pharmacyCount } = await supabase
+        .from('pharmacies')
+        .select('*', { count: 'exact', head: true })
+      
+      setActivePharmacies(pharmacyCount || 0)
+
+      // Get total users count
+      const { count: userCount } = await supabase
+        .from('pharmacy_users')
+        .select('*', { count: 'exact', head: true })
+      
+      setTotalUsers(userCount || 0)
+
+      // Get monthly revenue data
+      const { data: monthlyPayments } = await supabase
+        .from('payments')
+        .select('amount, created_at')
+        .eq('status', 'completed')
+        .order('created_at', { ascending: true })
+
+      // Group by month
+      const monthlyData: { [key: string]: { revenue: number, pharmacies: Set<string> } } = {}
+      monthlyPayments?.forEach(p => {
+        const month = new Date(p.created_at).toLocaleString('en', { month: 'short' })
+        if (!monthlyData[month]) {
+          monthlyData[month] = { revenue: 0, pharmacies: new Set() }
+        }
+        monthlyData[month].revenue += Number(p.amount)
+      })
+
+      const chartData = Object.entries(monthlyData).map(([month, data]) => ({
+        month,
+        revenue: data.revenue,
+        pharmacies: data.pharmacies.size
+      }))
+      setRevenueData(chartData)
+
+      // Get plan breakdown from subscriptions
+      const { data: subscriptions } = await supabase
+        .from('subscriptions')
+        .select('plan_name, pharmacy_id')
+        .eq('status', 'active')
+
+      const planData: { [key: string]: { count: number, revenue: number } } = {}
+      subscriptions?.forEach(s => {
+        if (!planData[s.plan_name]) {
+          planData[s.plan_name] = { count: 0, revenue: 0 }
+        }
+        planData[s.plan_name].count++
+      })
+
+      // Get plan prices
+      const { data: plans } = await supabase
+        .from('subscription_plans')
+        .select('name, price')
+
+      const breakdown = Object.entries(planData).map(([plan_name, data]) => {
+        const plan = plans?.find(p => p.name === plan_name)
+        return {
+          plan_name,
+          subscribers: data.count,
+          revenue: data.count * Number(plan?.price || 0)
+        }
+      })
+      setPlanBreakdown(breakdown)
+
+    } catch (error) {
+      console.error('Error fetching data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const reports = [
     { name: "Revenue Report", description: "Monthly subscription revenue breakdown", lastGenerated: "2 hours ago", type: "Financial" },
@@ -24,17 +126,14 @@ export default function ReportsPage() {
   ];
 
   const metrics = [
-    { title: "Total Revenue", value: "RWF 1.8M", change: "+15%", icon: DollarSign, trend: "up" },
-    { title: "Active Pharmacies", value: "24", change: "+3", icon: Building2, trend: "up" },
-    { title: "Total Users", value: "156", change: "+12", icon: Users, trend: "up" },
+    { title: "Total Revenue", value: `RWF ${(totalRevenue / 1000000).toFixed(1)}M`, change: "+15%", icon: DollarSign, trend: "up" },
+    { title: "Active Pharmacies", value: activePharmacies.toString(), change: "+3", icon: Building2, trend: "up" },
+    { title: "Total Users", value: totalUsers.toString(), change: "+12", icon: Users, trend: "up" },
     { title: "Conversion Rate", value: "78%", change: "+5%", icon: TrendingUp, trend: "up" },
   ];
 
-  const chartData = [
-    { month: 'Jan', revenue: 800000, pharmacies: 18 },
-    { month: 'Feb', revenue: 1200000, pharmacies: 20 },
-    { month: 'Mar', revenue: 1500000, pharmacies: 22 },
-    { month: 'Apr', revenue: 1800000, pharmacies: 24 },
+  const chartData = revenueData.length > 0 ? revenueData : [
+    { month: 'Jan', revenue: 0, pharmacies: 0 },
   ];
 
   if (loading) return (
@@ -81,14 +180,10 @@ export default function ReportsPage() {
             </CardHeader>
             <CardContent>
               <div className="h-80 space-y-6">
-                {[
-                  { month: 'Jan', revenue: 800000, pharmacies: 18, width: 40 },
-                  { month: 'Feb', revenue: 1200000, pharmacies: 20, width: 60 },
-                  { month: 'Mar', revenue: 1500000, pharmacies: 22, width: 75 },
-                  { month: 'Apr', revenue: 1800000, pharmacies: 24, width: 90 },
-                  { month: 'May', revenue: 1600000, pharmacies: 23, width: 80 },
-                  { month: 'Jun', revenue: 2000000, pharmacies: 25, width: 100 },
-                ].map((data, index) => (
+                {revenueData.map((data, index) => {
+                  const maxRevenue = Math.max(...revenueData.map(d => d.revenue), 1)
+                  const width = (data.revenue / maxRevenue) * 100
+                  return (
                   <div key={index} className="flex items-center space-x-4">
                     <div className="w-12 text-sm font-medium">{data.month}</div>
                     <div className="flex-1 flex items-center space-x-4">
@@ -96,7 +191,7 @@ export default function ReportsPage() {
                         <div className="w-full bg-gray-200 rounded h-1 flex items-center">
                           <div 
                             className="bg-gray-800 h-1 rounded transition-all duration-500"
-                            style={{ width: `${data.width}%` }}
+                            style={{ width: `${width}%` }}
                           >
                           </div>
                         </div>
@@ -110,7 +205,8 @@ export default function ReportsPage() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </CardContent>
           </Card>
@@ -153,36 +249,23 @@ export default function ReportsPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div>
-                      <p className="font-medium">Premium Plans</p>
-                      <p className="text-sm text-muted-foreground">8 subscribers</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold">RWF 960,000</p>
-                      <p className="text-xs text-muted-foreground">53% of total</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div>
-                      <p className="font-medium">Standard Plans</p>
-                      <p className="text-sm text-muted-foreground">12 subscribers</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold">RWF 600,000</p>
-                      <p className="text-xs text-muted-foreground">33% of total</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div>
-                      <p className="font-medium">Setup Fees</p>
-                      <p className="text-sm text-muted-foreground">New registrations</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold">RWF 240,000</p>
-                      <p className="text-xs text-muted-foreground">14% of total</p>
-                    </div>
-                  </div>
+                  {planBreakdown.length > 0 ? planBreakdown.map((plan, index) => {
+                    const percentage = totalRevenue > 0 ? ((plan.revenue / totalRevenue) * 100).toFixed(0) : 0
+                    return (
+                      <div key={index} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div>
+                          <p className="font-medium">{plan.plan_name}</p>
+                          <p className="text-sm text-muted-foreground">{plan.subscribers} subscribers</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold">RWF {plan.revenue.toLocaleString()}</p>
+                          <p className="text-xs text-muted-foreground">{percentage}% of total</p>
+                        </div>
+                      </div>
+                    )
+                  }) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">No subscription data available</p>
+                  )}
                 </div>
               </CardContent>
             </Card>

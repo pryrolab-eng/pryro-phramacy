@@ -13,20 +13,21 @@ export async function GET() {
 
     // Check if user is superadmin
     const { data: userData, error: userError } = await supabase
-      .from('users')
+      .from('pharmacy_users')
       .select('role')
-      .eq('id', user.id)
+      .eq('user_id', user.id)
       .single()
 
     if (userError || userData?.role !== 'superadmin') {
-      return NextResponse.json({ error: 'Forbidden: Admin access required' }, { status: 403 })
+      return NextResponse.json({ error: 'Forbidden: Super admin access required' }, { status: 403 })
     }
 
     // Fetch all settings
     const { data: settings, error } = await supabase
       .from('system_settings')
       .select('*')
-      .order('category', { ascending: true })
+      .is('pharmacy_id', null)
+      .order('setting_key', { ascending: true })
 
     if (error) {
       console.error('Database error:', error)
@@ -41,18 +42,27 @@ export async function GET() {
     })
 
     // Fetch analytics
-    const { data: analytics } = await supabase
-      .from('admin_analytics')
-      .select('*')
-      .single()
+    const { data: pharmacies } = await supabase
+      .from('pharmacies')
+      .select('id, is_active')
+    
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, created_at')
+    
+    const activePharmacies = pharmacies?.filter(p => p.is_active).length || 0
+    const totalUsers = users?.length || 0
+    const newUsers30d = users?.filter(u => 
+      new Date(u.created_at) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    ).length || 0
 
     return NextResponse.json({ 
       settings: systemSettings,
-      analytics: analytics || {
-        active_pharmacies: 0,
-        total_users: 0,
-        total_pharmacies: 0,
-        new_users_30d: 0
+      analytics: {
+        active_pharmacies: activePharmacies,
+        total_users: totalUsers,
+        total_pharmacies: pharmacies?.length || 0,
+        new_users_30d: newUsers30d
       }
     })
   } catch (error: any) {
@@ -76,13 +86,13 @@ export async function PUT(request: NextRequest) {
 
     // Check if user is superadmin
     const { data: userData, error: userError } = await supabase
-      .from('users')
+      .from('pharmacy_users')
       .select('role')
-      .eq('id', user.id)
+      .eq('user_id', user.id)
       .single()
 
     if (userError || userData?.role !== 'superadmin') {
-      return NextResponse.json({ error: 'Forbidden: Admin access required' }, { status: 403 })
+      return NextResponse.json({ error: 'Forbidden: Super admin access required' }, { status: 403 })
     }
 
     const updates = await request.json()
@@ -91,22 +101,36 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
     }
     
-    // Update each setting
-    const updatePromises = Object.entries(updates).map(([key, value]) => 
-      supabase
+    // Update or insert each setting
+    const results = []
+    for (const [key, value] of Object.entries(updates)) {
+      const { data: existing } = await supabase
         .from('system_settings')
-        .update({ setting_value: value })
+        .select('id')
         .eq('setting_key', key)
-    )
+        .is('pharmacy_id', null)
+        .maybeSingle()
+      
+      if (existing) {
+        const result = await supabase
+          .from('system_settings')
+          .update({ setting_value: value, updated_at: new Date().toISOString() })
+          .eq('id', existing.id)
+        results.push(result)
+      } else {
+        const result = await supabase
+          .from('system_settings')
+          .insert({ setting_key: key, setting_value: value, pharmacy_id: null })
+        results.push(result)
+      }
+    }
 
-    const results = await Promise.all(updatePromises)
-    
     // Check for errors
     const errors = results.filter(r => r.error)
     if (errors.length > 0) {
-      console.error('Update errors:', errors)
+      console.error('Upsert errors:', errors)
       return NextResponse.json({ 
-        error: 'Some settings failed to update',
+        error: 'Some settings failed to save',
         details: errors 
       }, { status: 500 })
     }

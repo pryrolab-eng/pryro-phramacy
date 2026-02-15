@@ -52,6 +52,20 @@ export default function SettingsPage() {
   const [backupCodes, setBackupCodes] = useState<string[]>([])
   const [verifyCode, setVerifyCode] = useState('')
   const [setupStep, setSetupStep] = useState<'qr' | 'verify' | 'backup'>('qr')
+  const [isUpgradeDialogOpen, setIsUpgradeDialogOpen] = useState(false)
+  const [selectedUpgradePlan, setSelectedUpgradePlan] = useState<any>(null)
+  const [upgradePaymentData, setUpgradePaymentData] = useState({
+    paymentMethod: '1',
+    phone: '',
+    email: ''
+  })
+  const [branding, setBranding] = useState({
+    logoUrl: '',
+    primaryColor: '#3b82f6',
+    customDomain: ''
+  })
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
 
   const fetchIpWhitelist = async () => {
     try {
@@ -123,13 +137,10 @@ export default function SettingsPage() {
     language: 'en'
   })
   const [billingInfo, setBillingInfo] = useState({
-    nextBilling: '2024-01-15',
-    amount: 25000,
-    paymentMethod: 'Mobile Money',
-    invoices: [
-      { id: '1', date: '2023-12-15', amount: 25000, status: 'Paid' },
-      { id: '2', date: '2023-11-15', amount: 25000, status: 'Paid' }
-    ]
+    nextBilling: '',
+    amount: 0,
+    paymentMethod: 'Not set',
+    invoices: [] as Array<{id: string, date: string, amount: number, status: string}>
   })
 
   const fetchBillingInfo = async () => {
@@ -138,14 +149,73 @@ export default function SettingsPage() {
       if (response.ok) {
         const data = await response.json()
         setBillingInfo({
-          nextBilling: data.nextBilling || '2024-01-15',
+          nextBilling: data.nextBilling || new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
           amount: data.amount || 0,
           paymentMethod: data.paymentMethod || 'Not set',
           invoices: data.invoices || []
         })
+      } else {
+        console.error('Failed to fetch billing info')
       }
     } catch (error) {
       console.error('Error fetching billing info:', error)
+    }
+  }
+
+  const fetchBranding = async () => {
+    try {
+      const response = await fetch('/api/pharmacy/branding')
+      if (response.ok) {
+        const data = await response.json()
+        setBranding(data)
+      }
+    } catch (error) {
+      console.error('Error fetching branding:', error)
+    }
+  }
+
+  const handleLogoUpload = async (file: File) => {
+    setUploadingLogo(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const response = await fetch('/api/pharmacy/branding/upload', {
+        method: 'POST',
+        body: formData
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setBranding({...branding, logoUrl: data.url})
+        alert('Logo uploaded successfully!')
+      } else {
+        alert('Failed to upload logo')
+      }
+    } catch (error) {
+      console.error('Error uploading logo:', error)
+      alert('Failed to upload logo')
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
+
+  const handleSaveBranding = async () => {
+    try {
+      const response = await fetch('/api/pharmacy/branding', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(branding)
+      })
+      
+      if (response.ok) {
+        alert('Branding updated successfully!')
+      } else {
+        alert('Failed to update branding')
+      }
+    } catch (error) {
+      console.error('Error updating branding:', error)
+      alert('Failed to update branding')
     }
   }
 
@@ -162,7 +232,8 @@ export default function SettingsPage() {
         fetchApiKeys(),
         fetchSecuritySettings(),
         fetch2FAStatus(),
-        fetchBillingInfo()
+        fetchBillingInfo(),
+        fetchBranding()
       ])
       setLoading(false)
     }
@@ -180,14 +251,22 @@ export default function SettingsPage() {
           current: currentPlan === plan.name.toLowerCase(),
           features: plan.features
         })))
+      } else {
+        console.error('Failed to fetch plans, using defaults')
+        // Fallback to default plans
+        setPlans([
+          { name: 'Free', price: 0, current: currentPlan === 'free', features: ['Basic POS', 'Up to 3 users', 'Email support'] },
+          { name: 'Standard', price: 50000, current: currentPlan === 'standard', features: ['Full POS', 'Up to 10 users', 'Insurance integration', 'Priority support'] },
+          { name: 'Premium', price: 120000, current: currentPlan === 'premium', features: ['Everything in Standard', 'Unlimited users', 'Advanced analytics', '24/7 support'] }
+        ])
       }
     } catch (error) {
       console.error('Error fetching plans:', error)
-      // Mock data for demo
+      // Fallback to default plans
       setPlans([
-        { name: 'Basic', price: 15000, current: currentPlan === 'basic', features: ['Up to 100 products', 'Basic reporting', 'Email support'] },
-        { name: 'Standard', price: 25000, current: currentPlan === 'standard', features: ['Up to 500 products', 'Advanced reporting', 'Priority support', 'Insurance integration'] },
-        { name: 'Premium', price: 45000, current: currentPlan === 'premium', features: ['Unlimited products', 'Real-time analytics', '24/7 support', 'Multi-branch', 'API access'] }
+        { name: 'Free', price: 0, current: currentPlan === 'free', features: ['Basic POS', 'Up to 3 users', 'Email support'] },
+        { name: 'Standard', price: 50000, current: currentPlan === 'standard', features: ['Full POS', 'Up to 10 users', 'Insurance integration', 'Priority support'] },
+        { name: 'Premium', price: 120000, current: currentPlan === 'premium', features: ['Everything in Standard', 'Unlimited users', 'Advanced analytics', '24/7 support'] }
       ])
     }
   }
@@ -272,20 +351,13 @@ export default function SettingsPage() {
       return
     }
 
-    // Add loading state
-    const upgradeButton = document.querySelector(`button[data-plan="${planName}"]`)
-    if (upgradeButton) {
-      upgradeButton.textContent = 'Processing...'
-      upgradeButton.disabled = true
-    }
-
-    try {
-      if (plan.price === 0) {
-        // Free plan
-        const response = await fetch('/api/subscriptions/status', {
+    if (plan.price === 0) {
+      // Free plan - no payment needed
+      try {
+        const response = await fetch('/api/subscriptions/upgrade', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId: plan.id || planName })
+          body: JSON.stringify({ planId: plan.name })
         })
         
         if (response.ok) {
@@ -300,21 +372,35 @@ export default function SettingsPage() {
           const error = await response.json()
           alert(error.error || 'Failed to switch plan. Please try again.')
         }
-        return
+      } catch (error) {
+        console.error('Error:', error)
+        alert('An error occurred. Please try again.')
       }
+      return
+    }
 
-      // Paid plan - use KPay
-      const paymentMethod = prompt('Choose payment method:\n1. Mobile Money (MTN/Airtel)\n2. Card (Visa/Mastercard)\n\nEnter 1 or 2:')
-      if (!paymentMethod || !['1', '2'].includes(paymentMethod)) {
-        alert('Invalid payment method selected.')
-        return
-      }
+    // Paid plan - open dialog
+    setSelectedUpgradePlan(plan)
+    setUpgradePaymentData({
+      paymentMethod: '1',
+      phone: pharmacyInfo.phone || '',
+      email: pharmacyInfo.email || ''
+    })
+    setIsUpgradeDialogOpen(true)
+  }
 
-      const phone = prompt('Enter your phone number (e.g. 0788123456):')
-      if (!phone) {
-        alert('Phone number is required for payment.')
-        return
-      }
+  const processUpgradePayment = async () => {
+    if (!selectedUpgradePlan) return
+
+    const plan = selectedUpgradePlan
+    const { paymentMethod, phone, email } = upgradePaymentData
+
+    if (!phone || !email) {
+      alert('Please fill in all required fields.')
+      return
+    }
+
+    try {
 
       // Validate phone number
       const phoneValidation = await fetch('/api/test-validation', {
@@ -329,17 +415,11 @@ export default function SettingsPage() {
         return
       }
 
-      const email = prompt('Enter your email:') || pharmacyInfo.email
-      if (!email) {
-        alert('Email is required for payment confirmation.')
-        return
-      }
-
       // Create subscription
-      const subResponse = await fetch('/api/subscriptions/status', {
+      const subResponse = await fetch('/api/subscriptions/upgrade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId: plan.id || planName })
+        body: JSON.stringify({ planId: plan.name })
       })
 
       if (subResponse.status === 401) {
@@ -366,7 +446,7 @@ export default function SettingsPage() {
           customerName: pharmacyInfo.name || 'Pharmacy Customer',
           customerPhone: phoneResult.phone.formatted,
           customerEmail: email,
-          details: `${planName} plan subscription - Monthly payment`
+          details: `${plan.name} plan subscription - Monthly payment`
         })
       })
 
@@ -405,10 +485,10 @@ export default function SettingsPage() {
               
               if (statusData.transaction?.status === 'completed') {
                 clearInterval(checkStatus)
-                setCurrentPlan(planName.toLowerCase())
+                setCurrentPlan(plan.name.toLowerCase())
                 await fetchPharmacyInfo()
                 await fetchBillingInfo()
-                alert(`🎉 Payment successful! You have been upgraded to the ${planName} plan.`)
+                alert(`🎉 Payment successful! You have been upgraded to the ${plan.name} plan.`)
               } else if (statusData.transaction?.status === 'failed') {
                 clearInterval(checkStatus)
                 alert('❌ Payment failed. Please try again or contact support.')
@@ -428,15 +508,11 @@ export default function SettingsPage() {
       } else {
         alert(paymentData.kpayResponse?.statusdesc || 'Payment failed. Please try again.')
       }
+      
+      setIsUpgradeDialogOpen(false)
     } catch (error) {
       console.error('Upgrade error:', error)
       alert('An error occurred while processing your upgrade. Please try again or contact support.')
-    } finally {
-      // Reset button state
-      if (upgradeButton) {
-        upgradeButton.textContent = plan.price > (plans.find(p => p.current)?.price || 0) ? 'Upgrade' : 'Downgrade'
-        upgradeButton.disabled = false
-      }
     }
   }
 
@@ -1260,22 +1336,55 @@ export default function SettingsPage() {
               <CardContent className="space-y-4">
                 <div className="grid gap-2">
                   <Label>Company Logo</Label>
+                  {branding.logoUrl && (
+                    <div className="mb-2">
+                      <img src={branding.logoUrl} alt="Logo" className="h-16 w-auto border rounded" />
+                    </div>
+                  )}
                   <div className="flex gap-2">
-                    <Input type="file" accept="image/*" className="flex-1" />
-                    <Button variant="outline">Upload</Button>
+                    <Input 
+                      type="file" 
+                      accept="image/*" 
+                      className="flex-1" 
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          setLogoFile(file)
+                          handleLogoUpload(file)
+                        }
+                      }}
+                      disabled={uploadingLogo}
+                    />
                   </div>
                 </div>
                 <div className="grid gap-2">
                   <Label>Primary Color</Label>
                   <div className="flex gap-2">
-                    <Input type="color" value="#3b82f6" className="w-16" />
-                    <Input value="#3b82f6" className="flex-1" />
+                    <Input 
+                      type="color" 
+                      value={branding.primaryColor} 
+                      onChange={(e) => setBranding({...branding, primaryColor: e.target.value})}
+                      className="w-16" 
+                    />
+                    <Input 
+                      value={branding.primaryColor} 
+                      onChange={(e) => setBranding({...branding, primaryColor: e.target.value})}
+                      className="flex-1" 
+                    />
                   </div>
                 </div>
                 <div className="grid gap-2">
                   <Label>Custom Domain</Label>
-                  <Input placeholder="pharmacy.yourdomain.com" />
+                  <Input 
+                    placeholder="pharmacy.yourdomain.com" 
+                    value={branding.customDomain}
+                    onChange={(e) => setBranding({...branding, customDomain: e.target.value})}
+                  />
                 </div>
+                <Button onClick={handleSaveBranding} className="w-full">
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Branding
+                </Button>
               </CardContent>
             </Card>
           </div>
@@ -1726,6 +1835,83 @@ export default function SettingsPage() {
                 </Button>
               </>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isUpgradeDialogOpen} onOpenChange={setIsUpgradeDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Upgrade to {selectedUpgradePlan?.name} Plan</DialogTitle>
+            <DialogDescription>
+              Complete payment to upgrade your subscription
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex justify-between items-center">
+                <span className="font-medium">Plan:</span>
+                <span className="text-lg font-bold">{selectedUpgradePlan?.name}</span>
+              </div>
+              <div className="flex justify-between items-center mt-2">
+                <span className="font-medium">Amount:</span>
+                <span className="text-2xl font-bold text-blue-600">
+                  {selectedUpgradePlan?.price.toLocaleString()} RWF
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">Billed monthly</p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid gap-2">
+                <Label>Payment Method</Label>
+                <Select 
+                  value={upgradePaymentData.paymentMethod} 
+                  onValueChange={(value) => setUpgradePaymentData({...upgradePaymentData, paymentMethod: value})}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">Mobile Money (MTN/Airtel)</SelectItem>
+                    <SelectItem value="2">Card (Visa/Mastercard)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Phone Number</Label>
+                <Input
+                  placeholder="0788123456"
+                  value={upgradePaymentData.phone}
+                  onChange={(e) => setUpgradePaymentData({...upgradePaymentData, phone: e.target.value})}
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  placeholder="your@email.com"
+                  value={upgradePaymentData.email}
+                  onChange={(e) => setUpgradePaymentData({...upgradePaymentData, email: e.target.value})}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setIsUpgradeDialogOpen(false)} className="flex-1">
+                Cancel
+              </Button>
+              <Button 
+                onClick={processUpgradePayment} 
+                disabled={!upgradePaymentData.phone || !upgradePaymentData.email}
+                className="flex-1"
+              >
+                <CreditCard className="mr-2 h-4 w-4" />
+                Pay Now
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

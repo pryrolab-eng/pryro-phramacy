@@ -45,7 +45,7 @@ export default async function DashboardLayout({
 
   // Determine which sidebar to show based on user role
   const getSidebar = () => {
-    if (user.email === 'abdousentore@gmail.com') {
+    if (userProfile?.role === 'superadmin') {
       return <SuperadminSidebar />
     }
     

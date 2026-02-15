@@ -13,27 +13,41 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { planId, paymentTransactionId } = body
 
-    const { data: userPharmacy } = await supabase
+    console.log('Upgrade request:', { planId, userId: user.id })
+
+    const { data: userPharmacy, error: pharmacyError } = await supabase
       .from('pharmacy_users')
       .select('pharmacy_id')
       .eq('user_id', user.id)
       .single()
 
+    if (pharmacyError) {
+      console.error('Pharmacy lookup error:', pharmacyError)
+      return NextResponse.json({ error: `Pharmacy error: ${pharmacyError.message}` }, { status: 403 })
+    }
+
     if (!userPharmacy) {
       return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
     }
 
-    // Get plan details
-    const { data: plan } = await supabase
+    // Get plan details (case-insensitive)
+    const { data: plan, error: planError } = await supabase
       .from('subscription_plans')
       .select('*')
-      .eq('id', planId)
+      .ilike('name', planId)
       .eq('is_active', true)
       .single()
 
-    if (!plan) {
-      return NextResponse.json({ error: 'Plan not found' }, { status: 404 })
+    if (planError) {
+      console.error('Plan lookup error:', planError)
+      return NextResponse.json({ error: `Plan error: ${planError.message}` }, { status: 404 })
     }
+
+    if (!plan) {
+      return NextResponse.json({ error: `Plan "${planId}" not found` }, { status: 404 })
+    }
+
+    console.log('Found plan:', plan)
 
     // Deactivate existing subscriptions
     await supabase
@@ -45,9 +59,9 @@ export async function POST(request: NextRequest) {
     const now = new Date()
     const expiresAt = new Date(now)
     
-    if (plan.period === 'per month') {
+    if (plan.period === 'per month' || plan.period === 'monthly') {
       expiresAt.setMonth(expiresAt.getMonth() + 1)
-    } else if (plan.period === 'per year') {
+    } else if (plan.period === 'per year' || plan.period === 'yearly') {
       expiresAt.setFullYear(expiresAt.getFullYear() + 1)
     } else {
       expiresAt.setFullYear(expiresAt.getFullYear() + 100)
@@ -67,7 +81,8 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (subscriptionError) {
-      return NextResponse.json({ error: 'Failed to create subscription' }, { status: 500 })
+      console.error('Subscription creation error:', subscriptionError)
+      return NextResponse.json({ error: `Subscription error: ${subscriptionError.message}` }, { status: 500 })
     }
 
     // Link payment transaction if provided
@@ -92,6 +107,7 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('Upgrade route error:', error)
+    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
   }
 }

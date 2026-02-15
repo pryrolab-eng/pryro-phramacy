@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
       pmethod: paymentMethod as 'momo' | 'cc' | 'bank' | 'spenn' | 'smartcash',
       bankid: bankId || (paymentMethod === 'momo' ? PhoneNumberValidator.getKPayBankId(customerPhone) : 
                         paymentMethod === 'cc' ? CardValidator.getKPayBankId() : '000'),
-      returnUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment-success?refid=${refid}`
+      logourl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/logo.png`
     }
 
     const { data: transaction, error: transactionError } = await supabase

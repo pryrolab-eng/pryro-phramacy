@@ -126,6 +126,8 @@ export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sideba
   const [userName, setUserName] = React.useState('Pharmacy Owner')
   const [subscriptionPlan, setSubscriptionPlan] = React.useState('standard')
   const [daysLeft, setDaysLeft] = React.useState(15)
+  const [isExpired, setIsExpired] = React.useState(false)
+  const [isExpiringSoon, setIsExpiringSoon] = React.useState(false)
   
   let pathname = '/pharmacy-dashboard'
   try {
@@ -173,7 +175,18 @@ export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sideba
                 const today = new Date()
                 const diffTime = expiryDate.getTime() - today.getTime()
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-                setDaysLeft(diffDays > 0 ? diffDays : 0)
+                const days = diffDays > 0 ? diffDays : 0
+                setDaysLeft(days)
+                setIsExpired(days === 0)
+                setIsExpiringSoon(days > 0 && days <= 7)
+                
+                // If expired, update pharmacy status
+                if (days === 0 && pharmacy.status !== 'suspended') {
+                  await supabase
+                    .from('pharmacies')
+                    .update({ status: 'suspended' })
+                    .eq('id', userPharmacy.pharmacy_id)
+                }
               }
             }
           }
@@ -230,17 +243,40 @@ export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sideba
       </SidebarContent>
       
       <SidebarFooter>
-        <div className="mx-2 mb-2 p-2 bg-white border border-gray-200 rounded-xl shadow-sm">
-          <div className="flex items-center gap-2 mb-1">
-            <Zap className="h-3 w-3 text-blue-500" />
-            <span className="text-xs font-medium text-gray-700 capitalize">{subscriptionPlan}</span>
-            <span className="text-xs text-gray-400">{daysLeft}d</span>
+        {isExpired ? (
+          <div className="mx-2 mb-2 p-2 bg-red-50 border border-red-500 rounded-lg">
+            <div className="mb-1">
+              <span className="text-[10px] font-bold text-red-700">Expired</span>
+            </div>
+            <Link href="/settings" className="flex items-center justify-center gap-1 text-[10px] bg-red-600 text-white hover:bg-red-700 font-medium py-1 px-2 rounded">
+              Renew
+            </Link>
           </div>
-          <Link href="/settings" className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700 font-medium">
-            <Crown className="h-3 w-3" />
-            {subscriptionPlan === 'premium' ? 'Manage Plan' : 'Upgrade to Premium'}
-          </Link>
-        </div>
+        ) : isExpiringSoon ? (
+          <div className="mx-2 mb-2 p-2 bg-white border border-gray-200 rounded-xl shadow-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <Zap className="h-3 w-3 text-blue-500" />
+              <span className="text-xs font-medium text-gray-700 capitalize">{subscriptionPlan}</span>
+              <Badge variant="secondary" className="text-[10px] h-4 px-1">{daysLeft}d</Badge>
+            </div>
+            <Link href="/settings" className="flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 font-medium">
+              <Crown className="h-3 w-3" />
+              Renew Subscription
+            </Link>
+          </div>
+        ) : (
+          <div className="mx-2 mb-2 p-2 bg-white border border-gray-200 rounded-xl shadow-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <Zap className="h-3 w-3 text-blue-500" />
+              <span className="text-xs font-medium text-gray-700 capitalize">{subscriptionPlan}</span>
+              <Badge variant="secondary" className="text-[10px] h-4 px-1">{daysLeft}d</Badge>
+            </div>
+            <Link href="/settings" className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700 font-medium">
+              <Crown className="h-3 w-3" />
+              {subscriptionPlan === 'premium' ? 'Manage Plan' : 'Upgrade to Premium'}
+            </Link>
+          </div>
+        )}
         
         <Card className="mx-2 mb-2">
           <CardContent className="p-3">

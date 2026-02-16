@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
 import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
+import { createClient } from '../../../../supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"

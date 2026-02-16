@@ -17,6 +17,7 @@ import {
   HelpCircle,
   Search,
   MoreVertical,
+  AlertCircle,
 } from "lucide-react"
 
 import {
@@ -101,6 +102,9 @@ const pharmacistData = {
 
 export function PharmacistSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [userName, setUserName] = React.useState('Pharmacist')
+  const [daysLeft, setDaysLeft] = React.useState<number | null>(null)
+  const [isExpired, setIsExpired] = React.useState(false)
+  const [subscriptionPlan, setSubscriptionPlan] = React.useState('standard')
   
   let pathname = '/pharmacist-dashboard'
   try {
@@ -125,6 +129,35 @@ export function PharmacistSidebar({ ...props }: React.ComponentProps<typeof Side
             // Fallback to email username
             const emailName = user.email?.split('@')[0]
             setUserName(emailName || 'Pharmacist')
+          }
+          
+          // Get pharmacy subscription info
+          const { data: userPharmacy } = await supabase
+            .from('pharmacy_users')
+            .select('pharmacy_id')
+            .eq('user_id', user.id)
+            .single()
+          
+          if (userPharmacy) {
+            const { data: pharmacy } = await supabase
+              .from('pharmacies')
+              .select('subscription_plan, subscription_expires_at, status')
+              .eq('id', userPharmacy.pharmacy_id)
+              .single()
+            
+            if (pharmacy) {
+              setSubscriptionPlan(pharmacy.subscription_plan || 'trial')
+              
+              if (pharmacy.subscription_expires_at) {
+                const expiryDate = new Date(pharmacy.subscription_expires_at)
+                const today = new Date()
+                const diffTime = expiryDate.getTime() - today.getTime()
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+                const days = diffDays > 0 ? diffDays : 0
+                setDaysLeft(days)
+                setIsExpired(days === 0 || pharmacy.status === 'suspended')
+              }
+            }
           }
         }
       } catch (error) {
@@ -179,6 +212,12 @@ export function PharmacistSidebar({ ...props }: React.ComponentProps<typeof Side
       </SidebarContent>
       
       <SidebarFooter>
+        {isExpired && (
+          <div className="mx-2 mb-2 p-2 bg-red-50 border border-red-500 rounded-lg">
+            <span className="text-[10px] font-bold text-red-700">Suspended</span>
+          </div>
+        )}
+        
         <Card className="mx-2 mb-2">
           <CardContent className="p-3">
             <div className="flex items-center justify-between">

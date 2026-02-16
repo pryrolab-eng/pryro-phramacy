@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
 import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
 import { createClient } from '../../../../supabase/client'
@@ -55,6 +56,7 @@ interface StockAlert {
 }
 
 export default function PharmacyDashboard() {
+  const router = useRouter()
   const { inventory, sales, alerts, stats, setInventory, addSale, setAlerts, setStats } = usePharmacyStore()
   const [localStats, setLocalStats] = useState<PharmacyStats>({
     totalProducts: 1250,

@@ -632,59 +632,6 @@ export default function SuperAdminDashboard() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Test User Credentials</CardTitle>
-            <CardDescription>Use these accounts to test different roles</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="p-4 border rounded-lg bg-blue-50">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-medium text-blue-900">Super Admin</p>
-                  <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center">
-                    <Crown className="h-3 w-3 text-white" />
-                  </div>
-                </div>
-                <p className="text-sm text-blue-700">Email: abdousentore@gmail.com</p>
-                <p className="text-sm text-blue-700">Password: admin123</p>
-              </div>
-              
-              <div className="p-4 border rounded-lg bg-green-50">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-medium text-green-900">Pharmacy Owner</p>
-                  <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center">
-                    <Building2 className="h-3 w-3 text-white" />
-                  </div>
-                </div>
-                <p className="text-sm text-green-700">Email: pharmacy@test.com</p>
-                <p className="text-sm text-green-700">Password: pharmacy123</p>
-              </div>
-              
-              <div className="p-4 border rounded-lg bg-purple-50">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-medium text-purple-900">Pharmacist</p>
-                  <div className="w-6 h-6 bg-purple-600 rounded-full flex items-center justify-center">
-                    <Pill className="h-3 w-3 text-white" />
-                  </div>
-                </div>
-                <p className="text-sm text-purple-700">Email: pharmacist@test.com</p>
-                <p className="text-sm text-purple-700">Password: pharmacist123</p>
-              </div>
-              
-              <div className="p-4 border rounded-lg bg-orange-50">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-medium text-orange-900">Cashier</p>
-                  <div className="w-6 h-6 bg-orange-600 rounded-full flex items-center justify-center">
-                    <Users className="h-3 w-3 text-white" />
-                  </div>
-                </div>
-                <p className="text-sm text-orange-700">Email: cashier@test.com</p>
-                <p className="text-sm text-orange-700">Password: cashier123</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   )

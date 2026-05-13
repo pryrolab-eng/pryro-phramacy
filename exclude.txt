@@ -1,4 +1,0 @@
-node_modules_backup\
-.git\
-node_modules\
-.next\

@@ -52,3 +52,5 @@ node_modules/
 .github/
 # Node modules backup
 node_modules_backup/
+.kiro/
+.vscode/

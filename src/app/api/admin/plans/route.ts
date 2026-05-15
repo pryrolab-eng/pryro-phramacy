@@ -25,7 +25,7 @@ export async function GET() {
     const { data: plans, error: plansError } = await db
       .from('subscription_plans')
       .select('*')
-      .eq('is_active', true)
+      .order('is_active', { ascending: false })
       .order('price', { ascending: true })
 
     if (plansError) throw plansError

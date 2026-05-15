@@ -1,27 +1,67 @@
-import { createClient } from "../../../../supabase/server";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import type { EmailOtpType } from "@supabase/supabase-js";
+import { createRouteHandlerClient } from "../../../../supabase/route-handler";
 
-export async function GET(request: Request) {
+function redirectWithError(
+  requestUrl: URL,
+  path: string,
+  message: string,
+  withCookies: (r: NextResponse) => NextResponse
+) {
+  const url = new URL(path, requestUrl.origin);
+  url.searchParams.set("error", message);
+  return withCookies(NextResponse.redirect(url));
+}
+
+export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
-  const redirect_to = requestUrl.searchParams.get("redirect_to");
-  
-  console.log('🔄 AUTH CALLBACK:', { code: !!code, redirect_to });
+  const token_hash = requestUrl.searchParams.get("token_hash");
+  const type = requestUrl.searchParams.get("type");
+  const redirect_to =
+    requestUrl.searchParams.get("next") ||
+    requestUrl.searchParams.get("redirect_to");
 
-  if (code) {
-    const supabase = await createClient();
-    await supabase.auth.exchangeCodeForSession(code);
+  const { supabase, withCookies } = createRouteHandlerClient(request);
+
+  if (token_hash && type) {
+    const { error } = await supabase.auth.verifyOtp({
+      token_hash,
+      type: type as EmailOtpType,
+    });
+    if (error) {
+      const isRecovery = type === "recovery" || redirect_to?.includes("reset-password");
+      return redirectWithError(
+        requestUrl,
+        isRecovery ? "/forgot-password" : "/sign-in",
+        error.message,
+        withCookies
+      );
+    }
+  } else if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) {
+      const isRecovery = redirect_to?.includes("reset-password");
+      const message = isRecovery
+        ? "This reset link is invalid or was opened in a different browser. Request a new link and open it in the same browser where you requested it."
+        : error.message;
+      return redirectWithError(
+        requestUrl,
+        isRecovery ? "/forgot-password" : "/sign-in",
+        message,
+        withCookies
+      );
+    }
   }
-  
-  // For direct redirects (from sign-in action), just redirect
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  
-  console.log('👤 CALLBACK USER:', user?.email || 'No user');
 
-  // After OAuth, send everyone through onboarding first; middleware completes users go to /dashboard.
-  const redirectTo = redirect_to || "/onboarding";
-  console.log('➡️ CALLBACK REDIRECTING TO:', redirectTo);
-  
-  return NextResponse.redirect(new URL(redirectTo, requestUrl.origin));
-} 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const redirectTo =
+    redirect_to || (user ? "/onboarding" : "/sign-in");
+
+  return withCookies(
+    NextResponse.redirect(new URL(redirectTo, requestUrl.origin))
+  );
+}

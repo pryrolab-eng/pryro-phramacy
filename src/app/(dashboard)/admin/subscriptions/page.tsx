@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { CreditCard, Plus, Edit, Crown, CheckCircle } from "lucide-react";
 import { Spinner } from '@/components/ui/spinner';
 import { adminPlansQueryKey, useAdminPlans } from '@/hooks'
@@ -24,6 +25,7 @@ type PlanCard = {
   users: number
   popular: boolean
   is_popular?: boolean
+  is_active: boolean
 }
 
 export default function SubscriptionsPage() {
@@ -49,6 +51,7 @@ export default function SubscriptionsPage() {
         users: Number(row.active_subscriber_count ?? 0),
         popular: !!row.is_popular,
         is_popular: !!row.is_popular,
+        is_active: row.is_active !== false,
       }
     })
   }, [plansQuery.data])
@@ -92,6 +95,23 @@ export default function SubscriptionsPage() {
     }
   }
 
+  const handleTogglePlanActive = async (plan: PlanCard, nextActive: boolean) => {
+    if (!nextActive && plan.users > 0) {
+      const ok = window.confirm(
+        `"${plan.name}" has ${plan.users} active subscriber(s). Deactivating hides it from new signups; existing subscriptions are unchanged. Continue?`
+      );
+      if (!ok) return;
+    }
+
+    try {
+      await updateAdminPlan(plan.id, { is_active: nextActive });
+      await queryClient.invalidateQueries({ queryKey: adminPlansQueryKey });
+    } catch (error) {
+      console.error('Error updating plan status:', error);
+      alert(error instanceof Error ? error.message : 'Failed to update plan status');
+    }
+  };
+
   const handleEditPlan = async () => {
     if (!selectedPlan) return
     try {
@@ -101,6 +121,7 @@ export default function SubscriptionsPage() {
         period: selectedPlan.period,
         features: selectedPlan.features,
         is_popular: selectedPlan.popular,
+        is_active: selectedPlan.is_active,
       })
       await queryClient.invalidateQueries({ queryKey: adminPlansQueryKey })
       setIsEditingPlan(false)
@@ -163,9 +184,12 @@ export default function SubscriptionsPage() {
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
             {plans.map((plan) => (
-              <Card key={plan.id} className={`relative ${plan.popular ? 'border-2 border-gray-800' : ''}`}>
+              <Card
+                key={plan.id}
+                className={`relative ${plan.popular ? 'border-2 border-gray-800' : ''} ${!plan.is_active ? 'opacity-60' : ''}`}
+              >
                 {plan.popular && (
                   <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
                     <Badge className="bg-gray-800 text-white px-3 py-1">
@@ -175,6 +199,11 @@ export default function SubscriptionsPage() {
                   </div>
                 )}
                 <CardHeader className="text-center">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <Badge variant={plan.is_active ? 'default' : 'secondary'}>
+                      {plan.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </div>
                   <CardTitle className="text-2xl">{plan.name}</CardTitle>
                   <div className="text-3xl font-bold">
                     RWF {plan.price.toLocaleString()}
@@ -191,11 +220,27 @@ export default function SubscriptionsPage() {
                       </li>
                     ))}
                   </ul>
-                  <div className="space-y-2">
-                    <Button className="w-full" variant="outline" onClick={() => {
-                      setSelectedPlan(plan)
-                      setIsEditingPlan(true)
-                    }}>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                      <Label htmlFor={`active-${plan.id}`} className="text-sm cursor-pointer">
+                        Offer to new pharmacies
+                      </Label>
+                      <Switch
+                        id={`active-${plan.id}`}
+                        checked={plan.is_active}
+                        onCheckedChange={(checked) =>
+                          void handleTogglePlanActive(plan, checked)
+                        }
+                      />
+                    </div>
+                    <Button
+                      className="w-full"
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedPlan(plan)
+                        setIsEditingPlan(true)
+                      }}
+                    >
                       <Edit className="h-4 w-4 mr-2" />
                       Edit Plan
                     </Button>
@@ -285,6 +330,18 @@ export default function SubscriptionsPage() {
                     <Textarea
                       value={selectedPlan.features.join(', ')}
                       onChange={(e) => setSelectedPlan({...selectedPlan, features: e.target.value.split(',').map(f => f.trim())})}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                    <Label htmlFor="edit-plan-active" className="cursor-pointer">
+                      Active (visible in onboarding and upgrades)
+                    </Label>
+                    <Switch
+                      id="edit-plan-active"
+                      checked={selectedPlan.is_active}
+                      onCheckedChange={(checked) =>
+                        setSelectedPlan({ ...selectedPlan, is_active: checked })
+                      }
                     />
                   </div>
                   <Button onClick={handleEditPlan}>Save Changes</Button>

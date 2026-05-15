@@ -4,12 +4,14 @@ import { Database } from './database.types'
 type Tables = Database['public']['Tables']
 type Views = Database['public']['Views']
 
-const supabase = createClient()
+function supabase() {
+  return createClient()
+}
 
 // Dashboard API
 export const dashboardApi = {
   async getStats(pharmacyId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('pharmacy_dashboard_stats')
       .select('*')
       .eq('pharmacy_id', pharmacyId)
@@ -20,7 +22,7 @@ export const dashboardApi = {
   },
 
   async getInventoryAlerts(pharmacyId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('inventory_alerts')
       .select('*')
       .eq('pharmacy_id', pharmacyId)
@@ -31,7 +33,7 @@ export const dashboardApi = {
   },
 
   async getRecentSales(pharmacyId: string, limit = 5) {
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('sales')
       .select(`
         *,
@@ -53,7 +55,7 @@ export const dashboardApi = {
 // Inventory API
 export const inventoryApi = {
   async getAll(pharmacyId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('inventory')
       .select(`
         *,
@@ -68,7 +70,7 @@ export const inventoryApi = {
   },
 
   async create(inventory: Tables['inventory']['Insert']) {
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('inventory')
       .insert(inventory)
       .select()
@@ -79,7 +81,7 @@ export const inventoryApi = {
   },
 
   async update(id: string, updates: Tables['inventory']['Update']) {
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('inventory')
       .update(updates)
       .eq('id', id)
@@ -134,7 +136,7 @@ export const salesApi = {
   },
 
   async getAll(pharmacyId: string, limit = 50) {
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('sales')
       .select(`
         *,
@@ -157,7 +159,7 @@ export const salesApi = {
 // Customers API
 export const customersApi = {
   async getAll(pharmacyId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('customers')
       .select('*')
       .eq('pharmacy_id', pharmacyId)
@@ -168,7 +170,7 @@ export const customersApi = {
   },
 
   async create(customer: Tables['customers']['Insert']) {
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('customers')
       .insert(customer)
       .select()
@@ -179,7 +181,7 @@ export const customersApi = {
   },
 
   async update(id: string, updates: Tables['customers']['Update']) {
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('customers')
       .update(updates)
       .eq('id', id)
@@ -197,7 +199,7 @@ export const pharmacyApi = {
     const { data: user } = await supabase.auth.getUser()
     if (!user.user) throw new Error('Not authenticated')
 
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('pharmacy_users')
       .select(`
         pharmacy_id,
@@ -213,7 +215,7 @@ export const pharmacyApi = {
   },
 
   async getSettings(pharmacyId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('pharmacy_settings')
       .select('*')
       .eq('pharmacy_id', pharmacyId)
@@ -230,7 +232,7 @@ export const pharmacyApi = {
   },
 
   async updateSetting(pharmacyId: string, key: string, value: any) {
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('pharmacy_settings')
       .upsert({
         pharmacy_id: pharmacyId,
@@ -248,7 +250,7 @@ export const pharmacyApi = {
 // Notifications API
 export const notificationsApi = {
   async getAll(pharmacyId: string) {
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('notifications')
       .select('*')
       .eq('pharmacy_id', pharmacyId)

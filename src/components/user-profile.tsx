@@ -6,7 +6,6 @@ import { createClient } from '../../supabase/client'
 import { useRouter } from 'next/navigation'
 
 export default function UserProfile() {
-    const supabase = createClient()
     const router = useRouter()
 
     return (
@@ -18,7 +17,7 @@ export default function UserProfile() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={async () => {
-                    await supabase.auth.signOut()
+                    await createClient().auth.signOut()
                     router.refresh()
                 }}>
                     Sign out

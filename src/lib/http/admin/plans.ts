@@ -9,6 +9,7 @@ export type AdminSubscriptionPlanRow = Record<string, unknown> & {
   period?: string;
   features?: unknown;
   is_popular?: boolean;
+  is_active?: boolean;
   /** Active rows in `subscriptions` whose `plan` matches this catalog name (case-insensitive). */
   active_subscriber_count?: number;
 };

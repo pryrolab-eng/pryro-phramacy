@@ -13,7 +13,6 @@ import { UserCircle, Home } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 export default function DashboardNavbar() {
-  const supabase = createClient()
   const router = useRouter()
 
   return (
@@ -40,7 +39,7 @@ export default function DashboardNavbar() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={async () => {
-                await supabase.auth.signOut()
+                await createClient().auth.signOut()
                 router.refresh()
               }}>
                 Sign out

@@ -28,7 +28,27 @@ async function postAuthLandingPath(
     .eq("is_active", true)
     .limit(1);
 
-  const pharmacyId = memberships?.[0]?.pharmacy_id;
+  let pharmacyId = memberships?.[0]?.pharmacy_id;
+  if (!pharmacyId) {
+    const { data: owned } = await supabase
+      .from("pharmacies")
+      .select("id")
+      .eq("owner_id", user.id)
+      .limit(1)
+      .maybeSingle();
+    if (owned?.id) {
+      await supabase.from("pharmacy_users").upsert(
+        {
+          pharmacy_id: owned.id,
+          user_id: user.id,
+          role: "pharmacy_owner",
+          is_active: true,
+        },
+        { onConflict: "pharmacy_id,user_id" }
+      );
+      pharmacyId = owned.id;
+    }
+  }
   if (!pharmacyId) {
     return "/onboarding";
   }
@@ -79,11 +99,17 @@ export const updateSession = async (request: NextRequest) => {
 
     // This will refresh session if expired - required for Server Components
     // https://supabase.com/docs/guides/auth/server-side/nextjs
+    const pathname = request.nextUrl.pathname;
+    const isResetPasswordPath = pathname.startsWith("/dashboard/reset-password");
+    const isAuthCallbackPath = pathname.startsWith("/auth/callback");
+
     const { data: { user }, error } = await supabase.auth.getUser();
-    
+
     if (
-      error?.message?.includes("refresh_token_not_found") ||
-      error?.message?.includes("Invalid Refresh Token")
+      !isResetPasswordPath &&
+      !isAuthCallbackPath &&
+      (error?.message?.includes("refresh_token_not_found") ||
+        error?.message?.includes("Invalid Refresh Token"))
     ) {
       await supabase.auth.signOut();
       for (const { name } of request.cookies.getAll()) {
@@ -115,14 +141,12 @@ export const updateSession = async (request: NextRequest) => {
     ];
     
     const authPaths = ["/sign-in", "/sign-up", "/forgot-password", "/auth/success", "/auth/callback", "/auth-success", "/verify-2fa"];
-    
-    const pathname = request.nextUrl.pathname;
 
     const isProtectedPath = protectedPaths.some((path) =>
       pathname.startsWith(path)
     );
 
-    if (isProtectedPath && (!user || error)) {
+    if (isProtectedPath && (!user || error) && !isResetPasswordPath) {
       console.log("➡️ REDIRECTING unauthenticated user to /sign-in");
       return NextResponse.redirect(new URL("/sign-in", request.url));
     }

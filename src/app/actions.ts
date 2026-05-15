@@ -4,6 +4,10 @@ import { encodedRedirect } from "@/utils/utils";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "../../supabase/server";
+import {
+  sendPasswordRecoveryEmail,
+  sendSignupConfirmationEmail,
+} from "@/lib/email/auth-emails";
 import crypto from "crypto";
 
 export const signInAction = async (formData: FormData) => {
@@ -122,30 +126,30 @@ export const signUpAction = async (formData: FormData) => {
     return encodedRedirect("error", "/sign-up", "Password must be at least 6 characters.");
   }
 
-  const supabase = createClient();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
-
-  const { data, error } = await supabase.auth.signUp({
+  const result = await sendSignupConfirmationEmail({
     email,
     password,
-    options: {
-      data: { full_name },
-      emailRedirectTo: appUrl ? `${appUrl}/auth/callback` : undefined,
-    },
+    fullName: full_name,
+    redirectTo: "/onboarding",
   });
 
-  if (error) {
-    return encodedRedirect("error", "/sign-up", error.message);
+  if (!result.ok) {
+    return encodedRedirect("error", "/sign-up", result.error);
   }
 
-  if (data.session) {
+  if (result.sessionCreated) {
     redirect("/onboarding");
   }
+
+  const viaFallback =
+    result.provider === "nodemailer"
+      ? " (sent via backup email service)"
+      : "";
 
   return encodedRedirect(
     "success",
     "/sign-in",
-    "Check your email to confirm your account, then sign in."
+    `Check your email to confirm your account, then sign in.${viaFallback}`
   );
 };
 
@@ -158,37 +162,26 @@ export const signOutAction = async () => {
 
 export const forgotPasswordAction = async (formData: FormData) => {
   const email = (formData.get("email") as string)?.trim();
-  const siteUrl = (formData.get("site_url") as string)?.replace(/\/$/, "") ?? "";
   if (!email) {
     return encodedRedirect("error", "/forgot-password", "Email is required.");
   }
 
-  const appUrl =
-    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || siteUrl;
-  if (!appUrl) {
-    return encodedRedirect(
-      "error",
-      "/forgot-password",
-      "App URL is not configured. Set NEXT_PUBLIC_APP_URL or reload the page and try again.",
-    );
+  const result = await sendPasswordRecoveryEmail(
+    email,
+    "/dashboard/reset-password"
+  );
+
+  if (!result.ok) {
+    return encodedRedirect("error", "/forgot-password", result.error);
   }
 
-  const supabase = createClient();
-  const callback = new URL("/auth/callback", appUrl);
-  callback.searchParams.set("redirect_to", "/dashboard/reset-password");
-
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: callback.toString(),
-  });
-
-  if (error) {
-    return encodedRedirect("error", "/forgot-password", error.message);
-  }
+  const viaFallback =
+    result.provider === "nodemailer" ? " (sent via backup email service)" : "";
 
   return encodedRedirect(
     "success",
     "/forgot-password",
-    "Check your email for a password reset link.",
+    `Check your email for a password reset link.${viaFallback}`
   );
 };
 

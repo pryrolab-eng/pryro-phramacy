@@ -191,11 +191,12 @@ export default function PharmacyManagementPage() {
                           />
                         </div>
                         <div className="grid gap-2">
-                          <Label>Email</Label>
+                          <Label>Pharmacy contact email</Label>
                           <Input
                             type="email"
                             value={newPharmacy.email}
                             onChange={(e) => setNewPharmacy({...newPharmacy, email: e.target.value})}
+                            placeholder="contact@pharmacy.rw (optional)"
                           />
                         </div>
                       </div>
@@ -209,15 +210,16 @@ export default function PharmacyManagementPage() {
                           />
                         </div>
                         <div className="grid gap-2">
-                          <Label>Owner Email</Label>
+                          <Label>Owner login email</Label>
                           <Input
                             type="email"
                             value={newPharmacy.owner_email}
                             onChange={(e) => setNewPharmacy({...newPharmacy, owner_email: e.target.value})}
+                            placeholder="Used to sign in to Pryrox"
                           />
                         </div>
                         <div className="grid gap-2">
-                          <Label>Owner Password</Label>
+                          <Label>Owner login password</Label>
                           <PasswordInput
                             value={newPharmacy.owner_password}
                             onChange={(e) => setNewPharmacy({...newPharmacy, owner_password: e.target.value})}

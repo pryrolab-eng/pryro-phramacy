@@ -1,59 +1,80 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../supabase/server'
+import { NextRequest } from 'next/server'
+import { createRouteHandlerClient } from '../../../../../supabase/route-handler'
+import { createServiceClient } from '../../../../../supabase/service'
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export async function POST(request: NextRequest) {
+  const { supabase, json } = createRouteHandlerClient(request)
+
   try {
-    const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const body = await request.json()
     const { planId, paymentTransactionId } = body
 
-    console.log('Upgrade request:', { planId, userId: user.id })
+    if (!planId || typeof planId !== 'string') {
+      return json({ error: 'Plan is required' }, { status: 400 })
+    }
 
-    const { data: userPharmacy, error: pharmacyError } = await supabase
+    const admin = createServiceClient()
+
+    const { data: userPharmacy, error: pharmacyError } = await admin
       .from('pharmacy_users')
       .select('pharmacy_id')
       .eq('user_id', user.id)
-      .single()
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle()
 
     if (pharmacyError) {
       console.error('Pharmacy lookup error:', pharmacyError)
-      return NextResponse.json({ error: `Pharmacy error: ${pharmacyError.message}` }, { status: 403 })
+      return json({ error: `Pharmacy error: ${pharmacyError.message}` }, { status: 403 })
     }
 
-    if (!userPharmacy) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
+    if (!userPharmacy?.pharmacy_id) {
+      return json({ error: 'Pharmacy not found' }, { status: 403 })
     }
 
-    // Get plan details (case-insensitive)
-    const { data: plan, error: planError } = await supabase
+    const pharmacyId = userPharmacy.pharmacy_id
+
+    // Catalog read via service role (RLS often blocks subscription_plans for tenants)
+    let planQuery = admin
       .from('subscription_plans')
       .select('*')
-      .ilike('name', planId)
       .eq('is_active', true)
-      .single()
+
+    if (UUID_RE.test(planId)) {
+      planQuery = planQuery.eq('id', planId)
+    } else {
+      planQuery = planQuery.ilike('name', planId)
+    }
+
+    const { data: plan, error: planError } = await planQuery.maybeSingle()
 
     if (planError) {
       console.error('Plan lookup error:', planError)
-      return NextResponse.json({ error: `Plan error: ${planError.message}` }, { status: 404 })
+      return json({ error: `Plan error: ${planError.message}` }, { status: 404 })
     }
 
     if (!plan) {
-      return NextResponse.json({ error: `Plan "${planId}" not found` }, { status: 404 })
+      return json(
+        { error: `Plan "${planId}" not found or is not available` },
+        { status: 404 }
+      )
     }
 
-    console.log('Found plan:', plan)
+    const planPrice = Number(plan.price ?? 0)
 
-    // Deactivate existing subscriptions
-    await supabase
+    await admin
       .from('subscriptions')
       .update({ is_active: false })
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
 
     // Calculate expiry date
     const now = new Date()
@@ -74,62 +95,61 @@ export async function POST(request: NextRequest) {
       return 'trial' as const
     })()
 
-    // Create new subscription
-    const { data: subscription, error: subscriptionError } = await supabase
+    const { data: subscription, error: subscriptionError } = await admin
       .from('subscriptions')
       .insert({
-        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_id: pharmacyId,
         plan_id: plan.id,
         plan: planEnum,
-        is_active: plan.price === 0, // Free plans are active immediately
+        is_active: planPrice === 0,
         expires_at: expiresAt.toISOString(),
-        payment_method: 'kpay'
+        payment_method: planPrice === 0 ? 'free' : 'kpay',
       })
       .select()
       .single()
 
     if (subscriptionError) {
       console.error('Subscription creation error:', subscriptionError)
-      return NextResponse.json({ error: `Subscription error: ${subscriptionError.message}` }, { status: 500 })
+      return json({ error: `Subscription error: ${subscriptionError.message}` }, { status: 500 })
     }
 
-    await supabase
+    await admin
       .from('pharmacies')
       .update({
         subscription_plan: planEnum,
         subscription_expires_at: expiresAt.toISOString(),
         status:
-          plan.price === 0 && subscription.is_active
+          planPrice === 0 && subscription.is_active
             ? planEnum === 'trial'
               ? 'trial'
               : 'active'
             : 'trial',
       })
-      .eq('id', userPharmacy.pharmacy_id)
+      .eq('id', pharmacyId)
 
-    // Link payment transaction if provided
     if (paymentTransactionId) {
-      await supabase
+      await admin
         .from('payment_transactions')
         .update({ subscription_id: subscription.id })
         .eq('id', paymentTransactionId)
     }
 
-    return NextResponse.json({
+    return json({
       success: true,
       subscription: {
         id: subscription.id,
         planId: plan.id,
         planName: plan.name,
-        amount: plan.price,
-        requiresPayment: plan.price > 0,
+        amount: planPrice,
+        requiresPayment: planPrice > 0,
         isActive: subscription.is_active,
         expiresAt: subscription.expires_at
       }
     })
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Upgrade route error:', error)
-    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'Internal server error'
+    return json({ error: message }, { status: 500 })
   }
 }

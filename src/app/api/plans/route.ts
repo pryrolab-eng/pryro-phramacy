@@ -1,47 +1,45 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '../../../../supabase/server'
+import { NextResponse } from "next/server";
+import { createServiceClient } from "../../../../supabase/service";
+import { fallbackPlansForDisplay } from "@/lib/subscription/default-plans";
+import { ensureDefaultSubscriptionPlans } from "@/lib/subscription/ensure-default-plans";
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    
-    const { data: plans, error } = await supabase
-      .from('subscription_plans')
-      .select('*')
-      .eq('is_active', true)
-      .order('price', { ascending: true })
-    
-    if (error) throw error
-    
-    return NextResponse.json(plans || [])
-  } catch (error) {
-    console.error('Error fetching plans:', error)
-    // Fallback to hardcoded plans
-    return NextResponse.json([
-      {
-        id: '1',
-        name: 'Free',
-        price: 0,
-        period: 'forever',
-        features: ['Basic POS', 'Up to 3 users', 'Email support', 'Basic reports'],
-        popular: false
-      },
-      {
-        id: '2',
-        name: 'Standard',
-        price: 50000,
-        period: 'per month',
-        features: ['Full POS', 'Up to 10 users', 'Insurance integration', 'Phone support', 'Advanced reports'],
-        popular: true
-      },
-      {
-        id: '3',
-        name: 'Premium',
-        price: 120000,
-        period: 'per month',
-        features: ['Everything in Standard', 'Unlimited users', 'Advanced analytics', 'Priority support', 'Custom integrations'],
-        popular: false
+    const admin = createServiceClient();
+
+    let { data: plans, error } = await admin
+      .from("subscription_plans")
+      .select("*")
+      .eq("is_active", true)
+      .order("price", { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    if (!plans?.length) {
+      await ensureDefaultSubscriptionPlans(admin);
+      const refetch = await admin
+        .from("subscription_plans")
+        .select("*")
+        .eq("is_active", true)
+        .order("price", { ascending: true });
+      if (refetch.error) {
+        throw refetch.error;
       }
-    ])
+      plans = refetch.data;
+    }
+
+    if (!plans?.length) {
+      console.warn(
+        "GET /api/plans: catalog still empty after seed attempt; using display fallback"
+      );
+      return NextResponse.json(fallbackPlansForDisplay());
+    }
+
+    return NextResponse.json(plans);
+  } catch (error) {
+    console.error("Error fetching plans:", error);
+    return NextResponse.json(fallbackPlansForDisplay());
   }
 }

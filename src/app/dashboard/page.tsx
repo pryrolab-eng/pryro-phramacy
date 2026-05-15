@@ -60,27 +60,60 @@ export default async function Dashboard() {
   }
   
   if (!userPharmacy) {
-    console.log('❌ DASHBOARD: No pharmacy access found');
-    // For test users, try to create pharmacy access
-    if (user.email?.includes('@test.com')) {
-      console.log('🧪 DASHBOARD: Creating pharmacy access for test user');
-      const role = user.email.includes('pharmacy') ? 'pharmacy_owner' : 
-                   user.email.includes('pharmacist') ? 'pharmacist' : 'cashier';
-      
-      const { error: createError } = await supabase.from('pharmacy_users').upsert({
-        pharmacy_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    const { data: ownedPharmacy } = await supabase
+      .from("pharmacies")
+      .select("id")
+      .eq("owner_id", user.id)
+      .limit(1)
+      .maybeSingle();
+
+    if (ownedPharmacy?.id) {
+      const { error: repairError } = await supabase.from("pharmacy_users").upsert(
+        {
+          pharmacy_id: ownedPharmacy.id,
+          user_id: user.id,
+          role: "pharmacy_owner",
+          is_active: true,
+        },
+        { onConflict: "pharmacy_id,user_id" }
+      );
+
+      if (!repairError) {
+        console.log(
+          "✅ DASHBOARD: Repaired missing pharmacy_users for owner",
+          ownedPharmacy.id
+        );
+        redirect("/pharmacy-dashboard");
+      }
+      console.log("⚠️ DASHBOARD: pharmacy_users repair failed:", repairError.message);
+    }
+
+    console.log("❌ DASHBOARD: No pharmacy — sending to onboarding");
+
+    if (user.email?.includes("@test.com")) {
+      const role = user.email.includes("pharmacy")
+        ? "pharmacy_owner"
+        : user.email.includes("pharmacist")
+          ? "pharmacist"
+          : "cashier";
+
+      const { error: createError } = await supabase.from("pharmacy_users").upsert({
+        pharmacy_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         user_id: user.id,
-        role: role,
-        branch_id: null,
-        is_active: true
+        role,
+        is_active: true,
       });
-      
+
       if (!createError) {
-        console.log('✅ DASHBOARD: Created pharmacy access, redirecting');
-        redirect(role === 'pharmacist' ? "/pharmacist-dashboard" : "/pharmacy-dashboard");
+        redirect(
+          role === "pharmacist"
+            ? "/pharmacist-dashboard"
+            : "/pharmacy-dashboard"
+        );
       }
     }
-    redirect("/sign-in?error=no-pharmacy-access");
+
+    redirect("/onboarding");
   }
   
   // Redirect based on role

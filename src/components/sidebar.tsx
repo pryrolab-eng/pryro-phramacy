@@ -108,7 +108,6 @@ function SubscriptionPlanCard() {
 
 export default function Sidebar() {
   const pathname = usePathname()
-  const supabase = createClient()
   const router = useRouter()
   const [userRole, setUserRole] = useState<string>('')
   const [userName, setUserName] = useState<string>('User')
@@ -124,6 +123,7 @@ export default function Sidebar() {
     }
     
     const getUserRole = async () => {
+      const supabase = createClient()
       try {
         const { data: { user } } = await supabase.auth.getUser()
         let role = 'pharmacy_owner'
@@ -188,7 +188,7 @@ export default function Sidebar() {
 
   const handleSignOut = async () => {
     sessionStorage.removeItem('userRole')
-    await supabase.auth.signOut()
+    await createClient().auth.signOut()
     router.push('/sign-in')
   }
 

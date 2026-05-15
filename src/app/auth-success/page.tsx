@@ -6,10 +6,10 @@ import { useRouter } from 'next/navigation'
 
 export default function AuthSuccess() {
   const router = useRouter()
-  const supabase = createClient()
 
   useEffect(() => {
     const handleRedirect = async () => {
+      const supabase = createClient()
       try {
         console.log('🔍 CLIENT: Starting auth check...')
         
@@ -73,7 +73,7 @@ export default function AuthSuccess() {
     }
 
     handleRedirect()
-  }, [router, supabase])
+  }, [router])
 
   return (
     <div className="flex items-center justify-center min-h-screen">

@@ -91,5 +91,6 @@ DROP POLICY IF EXISTS "Superadmin can view all pharmacies" ON pharmacies;
 CREATE POLICY "Superadmin can view all pharmacies" ON pharmacies
     FOR SELECT USING (is_superadmin());
 
-DROP POLICY IF EXISTS "Superadmin can manage all pharmacies" ON pharmacies
+DROP POLICY IF EXISTS "Superadmin can manage all pharmacies" ON pharmacies;
+CREATE POLICY "Superadmin can manage all pharmacies" ON pharmacies
     FOR ALL USING (is_superadmin());

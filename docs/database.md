@@ -1447,7 +1447,7 @@ The following PostgreSQL enum types are defined in the schema:
 |---|---|
 | `pharmacy_dashboard_stats` | Aggregates today's sales count, revenue, low-stock items, expiring items, and active staff per pharmacy. |
 | `inventory_alerts` | Lists inventory items that are low-stock, expiring within 30 days, or already expired. |
-| `user_roles_view` | Joins `users`, `pharmacy_users`, and `pharmacies` for easy role lookup. |
+| `user_roles_view` | **View** (not a physical table). Joins `public.users`, `public.pharmacy_users`, and `public.pharmacies` for a flat “who / where / which role” report in SQL or Studio. `effective_role` treats `users.is_platform_admin` as platform `admin`. Authorization in the app uses base tables and RLS, not this view. |
 
 ---
 

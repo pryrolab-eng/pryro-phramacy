@@ -11,7 +11,7 @@ export async function GET() {
     const { data: categories, error } = await supabase
       .from('categories')
       .select('*')
-      .eq('is_global', true)
+      .is('pharmacy_id', null)
       .eq('is_active', true)
       .order('name', { ascending: true })
 
@@ -39,7 +39,6 @@ export async function POST(request: NextRequest) {
       .insert({
         name: body.name || body.categoryName,
         description: body.description || body.categoryDescription || '',
-        is_global: true,
         pharmacy_id: null,
         is_active: true
       })

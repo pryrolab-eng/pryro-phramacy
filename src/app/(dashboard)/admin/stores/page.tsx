@@ -1,19 +1,29 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Building2, Search, Plus, Eye, Edit, Trash2 } from "lucide-react";
 import { Spinner } from '@/components/ui/spinner';
+import { adminPharmaciesQueryKey, useAdminPharmacies, useInsuranceProviders } from '@/hooks'
+import {
+  createAdminPharmacy,
+  deleteAdminPharmacy,
+  updateAdminPharmacy,
+} from '@/lib/http/admin/pharmacies'
 
 export default function PharmacyManagementPage() {
-  const [pharmacies, setPharmacies] = useState<any[]>([])
+  const queryClient = useQueryClient()
+  const pharmaciesQuery = useAdminPharmacies()
+  const insuranceQuery = useInsuranceProviders()
   const [isAddingPharmacy, setIsAddingPharmacy] = useState(false)
   const [isViewingPharmacy, setIsViewingPharmacy] = useState(false)
   const [isEditingPharmacy, setIsEditingPharmacy] = useState(false)
@@ -30,32 +40,6 @@ export default function PharmacyManagementPage() {
     subscription_plan: 'free',
     insurance_providers: []
   })
-  const [insurance, setInsurance] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true)
-      await Promise.all([
-        fetchPharmacies(),
-        fetchInsurance()
-      ])
-      setLoading(false)
-    }
-    loadData()
-  }, [])
-
-  const fetchInsurance = async () => {
-    try {
-      const response = await fetch('/api/insurance')
-      if (response.ok) {
-        const data = await response.json()
-        setInsurance(data)
-      }
-    } catch (error) {
-      console.error('Error fetching insurance:', error)
-    }
-  }
 
   const handleInsuranceChange = (insuranceId: string, checked: boolean) => {
     if (checked) {
@@ -71,86 +55,53 @@ export default function PharmacyManagementPage() {
     }
   }
 
-  const fetchPharmacies = async () => {
-    try {
-      const response = await fetch('/api/admin/pharmacies')
-      if (response.ok) {
-        const data = await response.json()
-        setPharmacies(data)
-      }
-    } catch (error) {
-      console.error('Error fetching pharmacies:', error)
-      // Mock data fallback
-      setPharmacies([
-        { id: '1', name: 'City Pharmacy', license_number: 'PH-001', address: 'Kigali, Rwanda', phone: '+250788123456', email: 'city@pharmacy.rw', subscription_plan: 'standard', status: 'active', created_at: '2024-01-15' },
-        { id: '2', name: 'Health Plus', license_number: 'PH-002', address: 'Butare, Rwanda', phone: '+250788123457', email: 'health@plus.rw', subscription_plan: 'premium', status: 'active', created_at: '2024-02-01' }
-      ])
-    }
-  }
+  const pharmacies = pharmaciesQuery.data ?? []
+  const insurance = insuranceQuery.data ?? []
+  const loading = pharmaciesQuery.isPending || insuranceQuery.isPending
 
   const handleAddPharmacy = async () => {
     try {
-      const response = await fetch('/api/admin/pharmacies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPharmacy)
+      await createAdminPharmacy(newPharmacy as Record<string, unknown>)
+      await queryClient.invalidateQueries({ queryKey: adminPharmaciesQueryKey })
+      setIsAddingPharmacy(false)
+      setNewPharmacy({
+        name: '', address: '', phone: '', email: '', license_number: '',
+        owner_name: '', owner_email: '', owner_password: '', subscription_plan: 'free',
+        insurance_providers: []
       })
-      
-      const result = await response.json()
-      
-      if (response.ok && result.success) {
-        // Force refresh the pharmacy list
-        await fetchPharmacies()
-        // Trigger page refresh to ensure UI updates
-        window.location.reload()
-        setIsAddingPharmacy(false)
-        setNewPharmacy({
-          name: '', address: '', phone: '', email: '', license_number: '',
-          owner_name: '', owner_email: '', owner_password: '', subscription_plan: 'free',
-          insurance_providers: []
-        })
-        alert('Pharmacy added successfully!')
-      } else {
-        alert(result.error || 'Failed to add pharmacy')
-      }
+      alert('Pharmacy added successfully!')
     } catch (error) {
       console.error('Error adding pharmacy:', error)
-      alert('Error adding pharmacy. Please try again.')
+      alert(error instanceof Error ? error.message : 'Error adding pharmacy. Please try again.')
     }
   }
 
   const handleEditPharmacy = async () => {
+    if (!selectedPharmacy?.id) return
     try {
-      const response = await fetch(`/api/admin/pharmacies/${selectedPharmacy.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(selectedPharmacy)
-      })
-      
-      if (response.ok) {
-        await fetchPharmacies()
-        setIsEditingPharmacy(false)
-        setSelectedPharmacy(null)
-        alert('Pharmacy updated successfully!')
-      }
+      await updateAdminPharmacy(
+        selectedPharmacy.id,
+        selectedPharmacy as Record<string, unknown>,
+      )
+      await queryClient.invalidateQueries({ queryKey: adminPharmaciesQueryKey })
+      setIsEditingPharmacy(false)
+      setSelectedPharmacy(null)
+      alert('Pharmacy updated successfully!')
     } catch (error) {
       console.error('Error updating pharmacy:', error)
+      alert(error instanceof Error ? error.message : 'Failed to update pharmacy')
     }
   }
 
   const handleDeletePharmacy = async (id: string) => {
     if (confirm('Are you sure you want to delete this pharmacy?')) {
       try {
-        const response = await fetch(`/api/admin/pharmacies/${id}`, {
-          method: 'DELETE'
-        })
-        
-        if (response.ok) {
-          await fetchPharmacies()
-          alert('Pharmacy deleted successfully!')
-        }
+        await deleteAdminPharmacy(id)
+        await queryClient.invalidateQueries({ queryKey: adminPharmaciesQueryKey })
+        alert('Pharmacy deleted successfully!')
       } catch (error) {
         console.error('Error deleting pharmacy:', error)
+        alert(error instanceof Error ? error.message : 'Failed to delete pharmacy')
       }
     }
   }
@@ -267,8 +218,7 @@ export default function PharmacyManagementPage() {
                         </div>
                         <div className="grid gap-2">
                           <Label>Owner Password</Label>
-                          <Input
-                            type="password"
+                          <PasswordInput
                             value={newPharmacy.owner_password}
                             onChange={(e) => setNewPharmacy({...newPharmacy, owner_password: e.target.value})}
                           />
@@ -500,8 +450,7 @@ export default function PharmacyManagementPage() {
                   </div>
                   <div className="grid gap-2">
                     <Label>New Password (optional)</Label>
-                    <Input
-                      type="password"
+                    <PasswordInput
                       placeholder="Leave blank to keep current password"
                       value={selectedPharmacy.new_password || ''}
                       onChange={(e) => setSelectedPharmacy({...selectedPharmacy, new_password: e.target.value})}

@@ -117,10 +117,14 @@ CREATE INDEX IF NOT EXISTS idx_alerts_pharmacy_id ON alerts(pharmacy_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_type ON alerts(type);
 CREATE INDEX IF NOT EXISTS idx_alerts_is_resolved ON alerts(is_resolved);
 
--- Create triggers for updated_at columns
+-- Create triggers for updated_at columns (idempotent)
+DROP TRIGGER IF EXISTS update_customers_updated_at ON customers;
 CREATE TRIGGER update_customers_updated_at BEFORE UPDATE ON customers FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_categories_updated_at ON categories;
 CREATE TRIGGER update_categories_updated_at BEFORE UPDATE ON categories FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_branches_updated_at ON branches;
 CREATE TRIGGER update_branches_updated_at BEFORE UPDATE ON branches FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS update_staff_updated_at ON staff;
 CREATE TRIGGER update_staff_updated_at BEFORE UPDATE ON staff FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Sample data will be inserted via APIs when pharmacies are created

@@ -39,6 +39,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@supabase/ssr": "^0.1.0",
     "@supabase/supabase-js": "^2.58.0",
+    "@tanstack/react-query": "^5.100.10",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
@@ -73,6 +74,7 @@
     "zustand": "^4.5.7"
   },
   "devDependencies": {
+    "@tanstack/react-query-devtools": "^5.100.10",
     "@types/qrcode": "^1.5.6"
   }
 }

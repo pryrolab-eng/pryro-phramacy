@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,14 +12,55 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { CreditCard, Plus, Edit, Crown, CheckCircle } from "lucide-react";
 import { Spinner } from '@/components/ui/spinner';
+import { adminPlansQueryKey, useAdminPlans } from '@/hooks'
+import { createAdminPlan, updateAdminPlan, type AdminSubscriptionPlanRow } from '@/lib/http/admin/plans'
+
+type PlanCard = {
+  id: string
+  name: string
+  price: number
+  period: string
+  features: string[]
+  users: number
+  popular: boolean
+  is_popular?: boolean
+}
 
 export default function SubscriptionsPage() {
-  const [plans, setPlans] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+  const plansQuery = useAdminPlans()
+
+  const plans = useMemo((): PlanCard[] => {
+    return (plansQuery.data ?? []).map((plan) => {
+      const row = plan as AdminSubscriptionPlanRow
+      const rawFeatures = row.features
+      let features: string[] = []
+      if (Array.isArray(rawFeatures)) {
+        features = rawFeatures.map((f) => String(f))
+      } else if (typeof rawFeatures === 'string') {
+        features = rawFeatures.split(',').map((f) => f.trim()).filter(Boolean)
+      }
+      return {
+        id: row.id,
+        name: row.name,
+        price: Number(row.price ?? 0),
+        period: (row.period as string) || 'per month',
+        features,
+        users: Number(row.active_subscriber_count ?? 0),
+        popular: !!row.is_popular,
+        is_popular: !!row.is_popular,
+      }
+    })
+  }, [plansQuery.data])
+
+  const maxSubscribers = useMemo(
+    () => Math.max(...plans.map((p) => p.users), 1),
+    [plans],
+  )
 
   const [isAddingPlan, setIsAddingPlan] = useState(false)
   const [isEditingPlan, setIsEditingPlan] = useState(false)
-  const [selectedPlan, setSelectedPlan] = useState<any>(null)
+  const [selectedPlan, setSelectedPlan] = useState<PlanCard | null>(null)
   const [newPlan, setNewPlan] = useState({
     name: '',
     price: '',
@@ -26,93 +68,51 @@ export default function SubscriptionsPage() {
     features: ''
   })
 
-  const chartData = plans.map(plan => ({
+  const chartData = plans.map((plan) => ({
     plan: plan.name,
-    subscribers: plan.users || 0,
-    width: Math.max(20, (plan.users || 0) * 5)
+    subscribers: plan.users,
+    width: Math.max(6, Math.round((plan.users / maxSubscribers) * 100)),
   }))
-
-  const fetchPlans = async () => {
-    try {
-      setLoading(true)
-      const response = await fetch('/api/admin/plans')
-      if (response.ok) {
-        const data = await response.json()
-        setPlans(data.map((plan: any) => ({
-          ...plan,
-          users: 0, // TODO: Get actual subscriber count
-          popular: plan.is_popular
-        })))
-      }
-    } catch (error) {
-      console.error('Error fetching plans:', error)
-      // Mock data fallback
-      setPlans([
-        { id: '1', name: 'Free', price: 0, period: 'per month', features: ['Basic features', 'Limited support'], users: 4, popular: false },
-        { id: '2', name: 'Standard', price: 25000, period: 'per month', features: ['All basic features', 'Priority support', 'Advanced analytics'], users: 12, popular: true },
-        { id: '3', name: 'Premium', price: 45000, period: 'per month', features: ['All features', '24/7 support', 'Custom integrations'], users: 8, popular: false }
-      ])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchPlans()
-  }, [])
 
   const handleAddPlan = async () => {
     try {
-      const response = await fetch('/api/admin/plans', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...newPlan,
-          price: parseInt(newPlan.price),
-          features: newPlan.features.split(',').map(f => f.trim())
-        })
+      await createAdminPlan({
+        name: newPlan.name,
+        price: parseInt(newPlan.price, 10),
+        period: newPlan.period,
+        features: newPlan.features.split(',').map(f => f.trim()).filter(Boolean),
       })
-      
-      const result = await response.json()
-      
-      if (response.ok) {
-        await fetchPlans()
-        setIsAddingPlan(false)
-        setNewPlan({ name: '', price: '', period: 'per month', features: '' })
-        alert('Plan added successfully!')
-      } else {
-        console.error('API Error:', result)
-        alert(`Error: ${result.error || 'Failed to add plan'}`)
-      }
+      await queryClient.invalidateQueries({ queryKey: adminPlansQueryKey })
+      setIsAddingPlan(false)
+      setNewPlan({ name: '', price: '', period: 'per month', features: '' })
+      alert('Plan added successfully!')
     } catch (error) {
       console.error('Error adding plan:', error)
-      alert('Network error occurred')
+      alert(error instanceof Error ? error.message : 'Failed to add plan')
     }
   }
 
   const handleEditPlan = async () => {
+    if (!selectedPlan) return
     try {
-      const response = await fetch(`/api/admin/plans/${selectedPlan.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...selectedPlan,
-          is_popular: selectedPlan.popular
-        })
+      await updateAdminPlan(selectedPlan.id, {
+        name: selectedPlan.name,
+        price: selectedPlan.price,
+        period: selectedPlan.period,
+        features: selectedPlan.features,
+        is_popular: selectedPlan.popular,
       })
-      
-      if (response.ok) {
-        await fetchPlans()
-        setIsEditingPlan(false)
-        setSelectedPlan(null)
-        alert('Plan updated successfully!')
-      }
+      await queryClient.invalidateQueries({ queryKey: adminPlansQueryKey })
+      setIsEditingPlan(false)
+      setSelectedPlan(null)
+      alert('Plan updated successfully!')
     } catch (error) {
       console.error('Error updating plan:', error)
+      alert(error instanceof Error ? error.message : 'Failed to update plan')
     }
   }
 
-  if (loading) return (
+  if (plansQuery.isPending) return (
     <div className="flex items-center justify-center min-h-screen">
       <Spinner className="size-6" />
     </div>
@@ -129,12 +129,19 @@ export default function SubscriptionsPage() {
               Subscription Plans
             </h1>
             <p className="text-gray-600">Manage pricing and subscription plans</p>
+            {plansQuery.isError ? (
+              <p className="text-sm text-destructive mt-2" role="alert">
+                {plansQuery.error instanceof Error ? plansQuery.error.message : 'Could not load plans.'}
+              </p>
+            ) : null}
           </div>
 
           <Card className="mb-8">
             <CardHeader>
               <CardTitle>Subscription Analytics</CardTitle>
-              <CardDescription>Current subscribers by plan</CardDescription>
+              <CardDescription>
+                Active rows in the subscriptions table (is_active), grouped by plan name.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -157,8 +164,8 @@ export default function SubscriptionsPage() {
           </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-            {plans.map((plan, index) => (
-              <Card key={index} className={`relative ${plan.popular ? 'border-2 border-gray-800' : ''}`}>
+            {plans.map((plan) => (
+              <Card key={plan.id} className={`relative ${plan.popular ? 'border-2 border-gray-800' : ''}`}>
                 {plan.popular && (
                   <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
                     <Badge className="bg-gray-800 text-white px-3 py-1">

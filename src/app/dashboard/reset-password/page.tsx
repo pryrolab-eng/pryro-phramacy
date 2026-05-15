@@ -4,6 +4,7 @@ import Navbar from "@/components/navbar";
 import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 
 export default async function ResetPassword(props: {
   searchParams: Promise<Message>;
@@ -35,9 +36,8 @@ export default async function ResetPassword(props: {
                 <Label htmlFor="password" className="text-sm font-medium">
                   New password
                 </Label>
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   name="password"
                   placeholder="New password"
                   required
@@ -49,9 +49,8 @@ export default async function ResetPassword(props: {
                 <Label htmlFor="confirmPassword" className="text-sm font-medium">
                   Confirm password
                 </Label>
-                <Input
+                <PasswordInput
                   id="confirmPassword"
-                  type="password"
                   name="confirmPassword"
                   placeholder="Confirm password"
                   required

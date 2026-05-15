@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,103 +10,94 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tag, Plus, Edit, Trash2 } from "lucide-react";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { Plus, Edit, Trash2 } from "lucide-react";
+import { AdminPageHeader } from '@/components/admin/admin-page-header';
 import { Spinner } from '@/components/ui/spinner';
+import {
+  adminCategoriesQueryKey,
+  useAdminCategories,
+} from '@/hooks'
+import {
+  createAdminCategory,
+  deleteAdminCategory,
+  updateAdminCategory,
+} from '@/lib/http/admin/categories'
+
+interface CategoryRow {
+  id: string
+  name: string
+  description: string
+  count: number
+  status: 'Active' | 'Inactive'
+}
 
 export default function CategoriesPage() {
-  const [categories, setCategories] = useState([])
+  const queryClient = useQueryClient()
+  const categoriesQuery = useAdminCategories()
+
+  const categories = useMemo((): CategoryRow[] => {
+    return (categoriesQuery.data ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      description: (c.description as string) || '',
+      count: 0,
+      status: c.is_active ? 'Active' : 'Inactive',
+    }))
+  }, [categoriesQuery.data])
 
   const [isAddingCategory, setIsAddingCategory] = useState(false)
   const [isEditingCategory, setIsEditingCategory] = useState(false)
-  const [selectedCategory, setSelectedCategory] = useState<any>(null)
+  const [selectedCategory, setSelectedCategory] = useState<CategoryRow | null>(null)
   const [newCategory, setNewCategory] = useState({
     name: '',
     description: ''
   })
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    fetchCategories()
-  }, [])
-
-  const fetchCategories = async () => {
-    try {
-      setLoading(true)
-      const response = await fetch('/api/admin/categories')
-      if (response.ok) {
-        const data = await response.json()
-        setCategories(data.map(c => ({
-          id: c.id,
-          name: c.name,
-          description: c.description || '',
-          count: 0,
-          status: c.is_active ? 'Active' : 'Inactive'
-        })))
-      }
-      setLoading(false)
-    } catch (error) {
-      console.error('Error fetching categories:', error)
-      setLoading(false)
-    }
-  }
 
   const handleAddCategory = async () => {
     try {
-      const response = await fetch('/api/admin/categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCategory)
-      })
-      
-      if (response.ok) {
-        await fetchCategories()
-        setIsAddingCategory(false)
-        setNewCategory({ name: '', description: '' })
-        alert('Global category added successfully!')
-      }
+      await createAdminCategory(newCategory)
+      await queryClient.invalidateQueries({ queryKey: adminCategoriesQueryKey })
+      setIsAddingCategory(false)
+      setNewCategory({ name: '', description: '' })
+      alert('Global category added successfully!')
     } catch (error) {
       console.error('Error adding category:', error)
+      alert(error instanceof Error ? error.message : 'Failed to add category')
     }
   }
 
   const handleEditCategory = async () => {
+    if (!selectedCategory) return
     try {
-      const response = await fetch(`/api/admin/categories/${selectedCategory.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(selectedCategory)
+      await updateAdminCategory(selectedCategory.id, {
+        name: selectedCategory.name,
+        description: selectedCategory.description,
+        status: selectedCategory.status,
       })
-      
-      if (response.ok) {
-        await fetchCategories()
-        setIsEditingCategory(false)
-        setSelectedCategory(null)
-        alert('Global category updated successfully!')
-      }
+      await queryClient.invalidateQueries({ queryKey: adminCategoriesQueryKey })
+      setIsEditingCategory(false)
+      setSelectedCategory(null)
+      alert('Global category updated successfully!')
     } catch (error) {
       console.error('Error updating category:', error)
+      alert(error instanceof Error ? error.message : 'Failed to update category')
     }
   }
 
   const handleDeleteCategory = async (id: string) => {
     if (confirm('Are you sure you want to delete this global category?')) {
       try {
-        const response = await fetch(`/api/admin/categories/${id}`, {
-          method: 'DELETE'
-        })
-        
-        if (response.ok) {
-          await fetchCategories()
-          alert('Global category deleted successfully!')
-        }
+        await deleteAdminCategory(id)
+        await queryClient.invalidateQueries({ queryKey: adminCategoriesQueryKey })
+        alert('Global category deleted successfully!')
       } catch (error) {
         console.error('Error deleting category:', error)
+        alert(error instanceof Error ? error.message : 'Failed to delete category')
       }
     }
   }
 
-  if (loading) return (
+  if (categoriesQuery.isPending) return (
     <div className="flex items-center justify-center min-h-screen">
       <Spinner className="size-6" />
     </div>
@@ -114,16 +106,21 @@ export default function CategoriesPage() {
   return (
     <div className="p-6">
         <div className="max-w-7xl mx-auto">
-          <div className="mb-8">
-            <div className="flex items-center gap-4 mb-2">
-              <SidebarTrigger />
-              <div className="h-4 w-px bg-border" />
-              <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                Category Management
-              </h1>
-            </div>
-            <p className="text-gray-600">Manage global categories visible to all pharmacies</p>
-          </div>
+          <AdminPageHeader
+            title={<h1 className="text-3xl font-bold">Category Management</h1>}
+            description={
+              <>
+                Manage global categories visible to all pharmacies
+                {categoriesQuery.isError ? (
+                  <p className="text-sm text-destructive mt-2" role="alert">
+                    {categoriesQuery.error instanceof Error
+                      ? categoriesQuery.error.message
+                      : 'Could not load categories.'}
+                  </p>
+                ) : null}
+              </>
+            }
+          />
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <Card>
@@ -233,7 +230,6 @@ export default function CategoriesPage() {
             </CardContent>
           </Card>
 
-          {/* Edit Dialog */}
           <Dialog open={isEditingCategory} onOpenChange={setIsEditingCategory}>
             <DialogContent>
               <DialogHeader>

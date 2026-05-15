@@ -16,7 +16,8 @@ CREATE INDEX IF NOT EXISTS idx_system_settings_key ON public.system_settings(set
 -- Enable RLS
 ALTER TABLE public.system_settings ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies
+-- RLS Policies (idempotent)
+DROP POLICY IF EXISTS "Users can view their pharmacy settings" ON public.system_settings;
 CREATE POLICY "Users can view their pharmacy settings"
   ON public.system_settings FOR SELECT
   USING (
@@ -25,6 +26,7 @@ CREATE POLICY "Users can view their pharmacy settings"
     )
   );
 
+DROP POLICY IF EXISTS "Users can insert their pharmacy settings" ON public.system_settings;
 CREATE POLICY "Users can insert their pharmacy settings"
   ON public.system_settings FOR INSERT
   WITH CHECK (
@@ -33,6 +35,7 @@ CREATE POLICY "Users can insert their pharmacy settings"
     )
   );
 
+DROP POLICY IF EXISTS "Users can update their pharmacy settings" ON public.system_settings;
 CREATE POLICY "Users can update their pharmacy settings"
   ON public.system_settings FOR UPDATE
   USING (

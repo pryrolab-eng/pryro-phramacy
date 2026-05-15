@@ -29,8 +29,7 @@ import { useState, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 
 const superAdminNavigation = [
-  { name: 'Dashboard', href: '/superadmin', icon: LayoutDashboard },
-  { name: 'Admin Panel', href: '/admin', icon: Settings },
+  { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
   { name: 'Pharmacy List', href: '/admin/stores', icon: Building2 },
   { name: 'Categories', href: '/admin/categories', icon: Tag },
   { name: 'Template Designer', href: '/admin/insurance-templates', icon: FileText },

@@ -23,29 +23,49 @@ export default function AuthSuccess() {
         console.log('👤 CLIENT USER:', user?.email || 'No user')
         console.log('❌ CLIENT USER ERROR:', userError?.message || 'None')
         
-        // Check auth state
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        void supabase.auth.onAuthStateChange((event, session) => {
           console.log('🔄 AUTH STATE CHANGE:', event, session?.user?.email || 'No user')
         })
         
         if (user && session) {
           sessionStorage.removeItem('userRole')
-          
-          if (user.email === 'abdousentore@gmail.com') {
-            console.log('👑 CLIENT: Redirecting to superadmin')
-            router.push('/superadmin')
-          } else {
-            console.log('🏥 CLIENT: Redirecting to dashboard')
-            router.push('/dashboard')
+
+          const { data: profile } = await supabase
+            .from('users')
+            .select('is_platform_admin')
+            .eq('id', user.id)
+            .maybeSingle()
+
+          if (profile?.is_platform_admin) {
+            console.log('👑 CLIENT: Redirecting to platform dashboard')
+            router.push('/admin')
+            return
           }
+
+          const { data: memberships } = await supabase
+            .from('pharmacy_users')
+            .select('pharmacy_id')
+            .eq('user_id', user.id)
+            .eq('is_active', true)
+            .limit(1)
+          const pharmacyId = memberships?.[0]?.pharmacy_id
+          if (!pharmacyId) {
+            router.push('/onboarding')
+            return
+          }
+          const { data: activeSub } = await supabase
+            .from('subscriptions')
+            .select('id')
+            .eq('pharmacy_id', pharmacyId)
+            .eq('is_active', true)
+            .limit(1)
+            .maybeSingle()
+          router.push(activeSub ? '/dashboard' : '/onboarding')
+          return
         } else {
           console.log('❌ CLIENT: No valid session, redirecting to sign-in')
           router.push('/sign-in')
         }
-        
-        // Cleanup subscription
-        return () => subscription?.unsubscribe()
-        
       } catch (error) {
         console.error('🚨 CLIENT AUTH ERROR:', error)
         router.push('/sign-in')

@@ -1,11 +1,16 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useMemo, useState, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useUsers, staffUsersQueryKey } from '@/hooks'
+import { createPharmacist } from '@/lib/http/pharmacist'
+import { deleteStaffMember, updateStaffMember, type StaffUser } from '@/lib/http/staff'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { PasswordInput } from "@/components/ui/password-input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { UserCog, Plus, Mail, Phone, Calendar } from 'lucide-react'
@@ -23,7 +28,16 @@ interface StaffMember {
 }
 
 export default function StaffManagePage() {
-  const [staff, setStaff] = useState<StaffMember[]>([])
+  const queryClient = useQueryClient()
+  const usersQuery = useUsers()
+
+  const staff = useMemo((): StaffMember[] => {
+    return (usersQuery.data ?? []).map((u) => ({
+      ...u,
+      status: u.status === 'inactive' ? 'inactive' : 'active',
+    }))
+  }, [usersQuery.data])
+
   const [isAddingStaff, setIsAddingStaff] = useState(false)
   const [newStaff, setNewStaff] = useState({
     name: '',
@@ -34,96 +48,59 @@ export default function StaffManagePage() {
   })
   const [editingStaff, setEditingStaff] = useState<any>(null)
   const [isEditingStaff, setIsEditingStaff] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [pharmacyLoading, setPharmacyLoading] = useState(true)
   const [userPharmacy, setUserPharmacy] = useState<any>(null)
 
   useEffect(() => {
-    fetchUserPharmacy()
-    fetchStaff()
+    void (async () => {
+      try {
+        const { createClient } = await import('../../../../supabase/client')
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const { data } = await supabase
+            .from('pharmacy_users')
+            .select('pharmacy_id')
+            .eq('user_id', user.id)
+            .single()
+          setUserPharmacy(data)
+        }
+      } catch (error) {
+        console.error('Error fetching pharmacy:', error)
+      } finally {
+        setPharmacyLoading(false)
+      }
+    })()
   }, [])
 
-  const fetchUserPharmacy = async () => {
-    try {
-      const { createClient } = await import('../../../../supabase/client')
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { data } = await supabase
-          .from('pharmacy_users')
-          .select('pharmacy_id')
-          .eq('user_id', user.id)
-          .single()
-        setUserPharmacy(data)
-      }
-    } catch (error) {
-      console.error('Error fetching pharmacy:', error)
-    }
-  }
-
-  const fetchStaff = async () => {
-    try {
-      const response = await fetch('/api/staff')
-      if (response.ok) {
-        const data = await response.json()
-        setStaff(data)
-      } else {
-        // Fallback with mock data including pharmacists from dashboard
-        setStaff([
-          { id: '1', name: 'Jane Pharmacist', email: 'pharmacist@test.com', phone: '+250788123457', role: 'pharmacist', status: 'active', joinDate: '2024-01-15' },
-          { id: '2', name: 'Bob Cashier', email: 'cashier@test.com', phone: '+250788123458', role: 'cashier', status: 'active', joinDate: '2024-02-01' }
-        ])
-      }
-    } catch (error) {
-      console.error('Error fetching staff:', error)
-      // Show existing staff including those added from pharmacy dashboard
-      setStaff([
-        { id: '1', name: 'Jane Pharmacist', email: 'pharmacist@test.com', phone: '+250788123457', role: 'pharmacist', status: 'active', joinDate: '2024-01-15' },
-        { id: '2', name: 'Bob Cashier', email: 'cashier@test.com', phone: '+250788123458', role: 'cashier', status: 'active', joinDate: '2024-02-01' }
-      ])
-    } finally {
-      setLoading(false)
-    }
-  }
+  const loading = usersQuery.isPending || pharmacyLoading
 
   const handleAddStaff = async () => {
     try {
-      // Store credentials before clearing form
       const credentials = {
         email: newStaff.email,
         password: newStaff.password,
         name: newStaff.name
       }
-      
-      const response = await fetch('/api/pharmacist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: newStaff.email,
-          password: newStaff.password,
-          full_name: newStaff.name,
-          phone: newStaff.phone,
-          role: 'pharmacist',
-          pharmacy_id: userPharmacy?.pharmacy_id
-        })
-      })
-      
-      const result = await response.json()
-      
-      if (response.ok) {
-        await fetchStaff()
-        setIsAddingStaff(false)
-        setNewStaff({ name: '', email: '', phone: '', role: 'pharmacist', password: '' })
-        
-        // Show login credentials that can be shared
-        alert(`✅ Pharmacist Created Successfully!\n\n📧 SHARE THESE LOGIN CREDENTIALS:\n\nEmail: ${credentials.email}\nPassword: ${credentials.password}\n\n🔐 The pharmacist can now login at the sign-in page using these credentials.\n\n⚠️ Save these credentials to share with ${credentials.name}`)
 
-      } else {
-        console.error('API Error:', result)
-        alert(`❌ Failed to create pharmacist: ${result.error || 'Unknown error'}\n\nPlease check:\n- Email is unique (not already used)\n- Password is at least 4 characters\n- All required fields are filled`)
-      }
+      await createPharmacist({
+        email: newStaff.email,
+        password: newStaff.password,
+        full_name: newStaff.name,
+        phone: newStaff.phone,
+        role: 'pharmacist',
+        pharmacy_id: userPharmacy?.pharmacy_id
+      })
+
+      await queryClient.invalidateQueries({ queryKey: staffUsersQueryKey })
+      setIsAddingStaff(false)
+      setNewStaff({ name: '', email: '', phone: '', role: 'pharmacist', password: '' })
+
+      alert(`✅ Pharmacist Created Successfully!\n\n📧 SHARE THESE LOGIN CREDENTIALS:\n\nEmail: ${credentials.email}\nPassword: ${credentials.password}\n\n🔐 The pharmacist can now login at the sign-in page using these credentials.\n\n⚠️ Save these credentials to share with ${credentials.name}`)
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
       console.error('Error adding pharmacist:', error)
-      alert('❌ Error creating pharmacist. Please try again.')
+      alert(`❌ Failed to create pharmacist: ${message}\n\nPlease check:\n- Email is unique (not already used)\n- Password is at least 4 characters\n- All required fields are filled`)
     }
   }
 
@@ -131,13 +108,14 @@ export default function StaffManagePage() {
     try {
       const member = staff.find(s => s.id === id)
       const newStatus = member?.status === 'active' ? 'inactive' : 'active'
-      
-      setStaff(staff.map(member => 
-        member.id === id 
-          ? { ...member, status: newStatus }
-          : member
-      ))
-      
+
+      queryClient.setQueryData<StaffUser[]>(staffUsersQueryKey, (old) => {
+        if (!old) return old
+        return old.map((u) =>
+          u.id === id ? { ...u, status: newStatus } : u
+        )
+      })
+
       alert(`Staff member ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully!`)
     } catch (error) {
       console.error('Error updating staff status:', error)
@@ -157,48 +135,37 @@ export default function StaffManagePage() {
   }
 
   const saveEditStaff = async () => {
+    if (!editingStaff?.id) return
     try {
-      const response = await fetch(`/api/staff/${editingStaff.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingStaff)
+      await updateStaffMember(editingStaff.id, {
+        name: editingStaff.name,
+        email: editingStaff.email,
+        phone: editingStaff.phone,
+        role: editingStaff.role,
+        password: editingStaff.password?.trim() || undefined,
       })
-      
-      if (response.ok) {
-        setStaff(staff.map(member => 
-          member.id === editingStaff.id 
-            ? { ...member, ...editingStaff }
-            : member
-        ))
-        
-        setIsEditingStaff(false)
-        setEditingStaff(null)
-        alert('Staff member updated successfully!')
-      } else {
-        alert('Failed to update staff member')
-      }
+
+      await queryClient.invalidateQueries({ queryKey: staffUsersQueryKey })
+      setIsEditingStaff(false)
+      setEditingStaff(null)
+      alert('Staff member updated successfully!')
     } catch (error) {
       console.error('Error updating staff:', error)
-      alert('Error updating staff member')
+      const message = error instanceof Error ? error.message : 'Error updating staff member'
+      alert(message)
     }
   }
 
   const handleDeleteStaff = async (id: string, name: string) => {
     if (confirm(`Are you sure you want to delete ${name}? This action cannot be undone.`)) {
       try {
-        const response = await fetch(`/api/staff/${id}`, {
-          method: 'DELETE'
-        })
-        
-        if (response.ok) {
-          setStaff(staff.filter(member => member.id !== id))
-          alert('Staff member deleted successfully!')
-        } else {
-          alert('Failed to delete staff member')
-        }
+        await deleteStaffMember(id)
+        await queryClient.invalidateQueries({ queryKey: staffUsersQueryKey })
+        alert('Staff member deleted successfully!')
       } catch (error) {
         console.error('Error deleting staff:', error)
-        alert('Error deleting staff member')
+        const message = error instanceof Error ? error.message : 'Error deleting staff member'
+        alert(message)
       }
     }
   }
@@ -218,6 +185,11 @@ export default function StaffManagePage() {
           <div>
             <h1 className="text-xl font-bold">Staff Management</h1>
             <p className="text-sm text-muted-foreground">Manage your pharmacy staff members</p>
+            {usersQuery.isError ? (
+              <p className="text-sm text-destructive mt-1" role="alert">
+                {usersQuery.error instanceof Error ? usersQuery.error.message : 'Could not load staff.'}
+              </p>
+            ) : null}
           </div>
         </div>
         <Dialog open={isAddingStaff} onOpenChange={setIsAddingStaff}>
@@ -260,9 +232,8 @@ export default function StaffManagePage() {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="staff_password">Password</Label>
-                <Input
+                <PasswordInput
                   id="staff_password"
-                  type="password"
                   value={newStaff.password}
                   onChange={(e) => setNewStaff({...newStaff, password: e.target.value})}
                   placeholder="Any password (1+ characters)"
@@ -387,8 +358,7 @@ export default function StaffManagePage() {
             </div>
             <div className="grid gap-2">
               <Label>New Password (optional)</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 value={editingStaff?.password || ''}
                 onChange={(e) => setEditingStaff({...editingStaff, password: e.target.value})}
                 placeholder="Leave blank to keep current password"

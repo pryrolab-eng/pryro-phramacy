@@ -17,7 +17,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         is_active: body.status === 'Active'
       })
       .eq('id', params.id)
-      .eq('is_global', true)
+      .is('pharmacy_id', null)
       .select()
       .single()
     
@@ -44,7 +44,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       .from('categories')
       .delete()
       .eq('id', params.id)
-      .eq('is_global', true)
+      .is('pharmacy_id', null)
     
     if (error) {
       console.error('Delete error:', error)

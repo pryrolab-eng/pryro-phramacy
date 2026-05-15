@@ -17,11 +17,13 @@ export async function GET() {
     
     if (!userPharmacy) return NextResponse.json([])
     
-    // Fetch both global categories and pharmacy-specific categories
+    // Global rows: pharmacy_id is null. Pharmacy-specific: pharmacy_id matches.
     const { data: categories, error } = await supabase
       .from('categories')
       .select('*')
-      .or(`is_global.eq.true,pharmacy_id.eq.${userPharmacy.pharmacy_id}`)
+      .or(
+        `pharmacy_id.is.null,pharmacy_id.eq.${userPharmacy.pharmacy_id}`,
+      )
       .eq('is_active', true)
       .order('name', { ascending: true })
 
@@ -60,7 +62,6 @@ export async function POST(request: NextRequest) {
         pharmacy_id: userPharmacy.pharmacy_id,
         name: body.name || body.categoryName,
         description: body.description || body.categoryDescription || '',
-        is_global: false,
         is_active: true
       })
       .select()

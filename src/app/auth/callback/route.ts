@@ -19,8 +19,8 @@ export async function GET(request: Request) {
   
   console.log('👤 CALLBACK USER:', user?.email || 'No user');
 
-  // URL to redirect to after sign in process completes
-  const redirectTo = redirect_to || "/dashboard";
+  // After OAuth, send everyone through onboarding first; middleware completes users go to /dashboard.
+  const redirectTo = redirect_to || "/onboarding";
   console.log('➡️ CALLBACK REDIRECTING TO:', redirectTo);
   
   return NextResponse.redirect(new URL(redirectTo, requestUrl.origin));

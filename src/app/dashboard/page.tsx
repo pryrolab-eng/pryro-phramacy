@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "../../../supabase/server";
+import { selectPrimaryMembership } from "@/utils/select-pharmacy-membership";
 
 export default async function Dashboard() {
   console.log('🏠 DASHBOARD PAGE ACCESSED');
@@ -18,24 +19,45 @@ export default async function Dashboard() {
     redirect("/sign-in");
   }
 
-  if (user.email === 'abdousentore@gmail.com') {
-    console.log('➡️ DASHBOARD: Superadmin detected, redirecting');
-    redirect("/superadmin");
+  const [profileRes, memberRes] = await Promise.all([
+    supabase
+      .from("users")
+      .select("is_platform_admin")
+      .eq("id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("pharmacy_users")
+      .select("pharmacy_id, role")
+      .eq("user_id", user.id)
+      .eq("is_active", true),
+  ]);
+
+  const publicProfile = profileRes.data;
+  const membershipRows = memberRes.data;
+  const usersError = profileRes.error;
+  const pharmacyError = memberRes.error;
+
+  if (usersError) {
+    console.log("⚠️ DASHBOARD public.users CHECK:", usersError.message);
   }
-  
-  // Check user's pharmacy access and role
-  const { data: userPharmacy, error: pharmacyError } = await supabase
-    .from('pharmacy_users')
-    .select('pharmacy_id, role')
-    .eq('user_id', user.id)
-    .eq('is_active', true)
-    .single();
-  
-  console.log('🏥 PHARMACY ACCESS CHECK:', {
+
+  const userPharmacy = selectPrimaryMembership(membershipRows ?? undefined);
+
+  console.log("🏥 PHARMACY ACCESS CHECK:", {
+    rowCount: membershipRows?.length ?? 0,
     hasAccess: !!userPharmacy,
     role: userPharmacy?.role,
-    error: pharmacyError?.message
+    error: pharmacyError?.message,
   });
+
+  const isPlatformAdmin =
+    publicProfile?.is_platform_admin === true ||
+    userPharmacy?.role === 'superadmin' ||
+    userPharmacy?.role === 'admin';
+  if (isPlatformAdmin) {
+    console.log('➡️ DASHBOARD: Platform admin, redirecting to /admin');
+    redirect('/admin');
+  }
   
   if (!userPharmacy) {
     console.log('❌ DASHBOARD: No pharmacy access found');

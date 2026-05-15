@@ -1,18 +1,33 @@
 'use client'
 
 import { useState } from 'react'
+import type { CSSProperties, DragEvent, MouseEvent as ReactMouseEvent } from 'react'
+import type { LucideIcon } from 'lucide-react'
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { FileText, Eye, Type, Image, Calendar, DollarSign, User, Hash, Minus } from 'lucide-react'
+import { FileText, Type, Image, Calendar, DollarSign, User, Hash, Minus } from 'lucide-react'
+import { createInsuranceProvider } from '@/lib/http/insurance'
+
+type ComponentDef = {
+  type: string
+  label: string
+  icon: LucideIcon
+  defaultProps: Record<string, unknown>
+}
+
+type CanvasElement = Record<string, unknown> & {
+  id: number | string
+  type: string
+}
 
 export default function InsuranceTemplatesPage() {
   const [template, setTemplate] = useState({ name: '' })
-  const [elements, setElements] = useState([])
-  const [draggedElement, setDraggedElement] = useState(null)
-  const [selectedElement, setSelectedElement] = useState(null)
+  const [elements, setElements] = useState<CanvasElement[]>([])
+  const [draggedElement, setDraggedElement] = useState<ComponentDef | null>(null)
+  const [selectedElement, setSelectedElement] = useState<CanvasElement | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [insuranceForm, setInsuranceForm] = useState({
     name: '',
@@ -28,26 +43,17 @@ export default function InsuranceTemplatesPage() {
     
     setIsSubmitting(true)
     try {
-      const response = await fetch('/api/insurance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(insuranceForm)
-      })
-      
-      if (response.ok) {
-        alert('Insurance provider added successfully!')
-        setInsuranceForm({ name: '', coverage_percentage: 80, contact_email: '', contact_phone: '', policy_number: '' })
-      } else {
-        alert('Failed to add insurance provider')
-      }
+      await createInsuranceProvider(insuranceForm)
+      alert('Insurance provider added successfully!')
+      setInsuranceForm({ name: '', coverage_percentage: 80, contact_email: '', contact_phone: '', policy_number: '' })
     } catch (error) {
-      alert('Failed to add insurance provider')
+      alert(error instanceof Error ? error.message : 'Failed to add insurance provider')
     } finally {
       setIsSubmitting(false)
     }
   }
   
-  const componentTypes = [
+  const componentTypes: ComponentDef[] = [
     { type: 'text', label: 'Text', icon: Type, defaultProps: { text: 'Sample Text', fontSize: '16px' } },
     { type: 'title', label: 'Title', icon: Type, defaultProps: { text: 'Invoice Title', fontSize: '24px', fontWeight: 'bold' } },
     { type: 'variable', label: 'Variable', icon: Hash, defaultProps: { variable: 'insurance_name', label: 'Insurance Name' } },
@@ -58,15 +64,15 @@ export default function InsuranceTemplatesPage() {
     { type: 'line', label: 'Line', icon: Minus, defaultProps: { width: 300, height: 2, backgroundColor: '#000' } }
   ]
 
-  const handleDragStart = (e, componentType) => {
+  const handleDragStart = (e: DragEvent, componentType: ComponentDef) => {
     setDraggedElement(componentType)
   }
 
-  const handleDrop = (e) => {
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     if (draggedElement) {
-      const newElement = {
-        id: Date.now() + Math.random(), // Ensure unique IDs
+      const newElement: CanvasElement = {
+        id: Date.now() + Math.random(),
         ...draggedElement,
         ...draggedElement.defaultProps,
         x: e.nativeEvent.offsetX,
@@ -77,19 +83,19 @@ export default function InsuranceTemplatesPage() {
     }
   }
 
-  const handleElementDrag = (elementId, newX, newY) => {
+  const handleElementDrag = (elementId: number | string, newX: number, newY: number) => {
     setElements(elements.map(el => 
       el.id === elementId ? { ...el, x: newX, y: newY } : el
     ))
   }
 
-  const handleElementResize = (elementId, newWidth, newHeight) => {
+  const handleElementResize = (elementId: number | string, newWidth: number, newHeight: number) => {
     setElements(elements.map(el => 
       el.id === elementId ? { ...el, width: newWidth, height: newHeight } : el
     ))
   }
 
-  const updateElementProperty = (property, value) => {
+  const updateElementProperty = (property: string, value: unknown) => {
     if (selectedElement) {
       setElements(elements.map(el => 
         el.id === selectedElement.id ? { ...el, [property]: value } : el
@@ -98,8 +104,8 @@ export default function InsuranceTemplatesPage() {
     }
   }
 
-  const loadTemplate = (templateType) => {
-    let templateElements = []
+  const loadTemplate = (templateType: 'basic' | 'professional' | 'detailed') => {
+    let templateElements: CanvasElement[] = []
     
     if (templateType === 'basic') {
       templateElements = [
@@ -167,8 +173,8 @@ export default function InsuranceTemplatesPage() {
     setSelectedElement(null)
   }
 
-  const renderElement = (element) => {
-    const sampleData = {
+  const renderElement = (element: CanvasElement) => {
+    const sampleData: Record<string, string> = {
       insurance_name: 'RSSB Insurance',
       policy_number: 'POL-2024-001', 
       patient_name: 'John Doe',
@@ -178,27 +184,29 @@ export default function InsuranceTemplatesPage() {
     }
 
     const isSelected = selectedElement?.id === element.id
-    const style = {
+    const x = Number(element.x ?? 0)
+    const y = Number(element.y ?? 0)
+    const style: CSSProperties = {
       position: 'absolute',
-      left: element.x,
-      top: element.y,
-      width: element.width || 'auto',
-      height: element.height || 'auto',
-      fontSize: element.fontSize,
-      fontWeight: element.fontWeight,
+      left: x,
+      top: y,
+      width: element.width !== undefined ? Number(element.width) : 'auto',
+      height: element.height !== undefined ? Number(element.height) : 'auto',
+      fontSize: element.fontSize as CSSProperties['fontSize'],
+      fontWeight: element.fontWeight as CSSProperties['fontWeight'],
       border: isSelected ? '2px solid #3b82f6' : '1px solid #e5e7eb',
       cursor: 'move',
       padding: '4px',
       backgroundColor: 'white'
     }
 
-    const handleMouseDown = (e) => {
+    const handleMouseDown = (e: ReactMouseEvent) => {
       e.preventDefault()
       setSelectedElement(element)
-      const startX = e.clientX - element.x
-      const startY = e.clientY - element.y
+      const startX = e.clientX - x
+      const startY = e.clientY - y
       
-      const handleMouseMove = (moveEvent) => {
+      const handleMouseMove = (moveEvent: globalThis.MouseEvent) => {
         const newX = Math.max(0, moveEvent.clientX - startX)
         const newY = Math.max(0, moveEvent.clientY - startY)
         handleElementDrag(element.id, newX, newY)
@@ -214,12 +222,15 @@ export default function InsuranceTemplatesPage() {
     }
 
     let content = ''
+    const varKey = typeof element.variable === 'string' ? element.variable : ''
+    const sampleVal =
+      varKey && varKey in sampleData ? sampleData[varKey] : ''
     if (element.type === 'variable' || element.type === 'date' || element.type === 'amount' || element.type === 'patient') {
-      content = `${element.label}: ${sampleData[element.variable]}${element.suffix || ''}`
+      content = `${String(element.label ?? '')}: ${sampleVal}${String(element.suffix ?? '')}`
     } else if (element.type === 'image') {
       return (
-        <div key={element.id} style={style} onMouseDown={handleMouseDown}>
-          <img src={element.src} alt={element.alt} style={{ width: '100%', height: '100%' }} />
+        <div key={String(element.id)} style={style} onMouseDown={handleMouseDown}>
+          <img src={String(element.src ?? '')} alt={String(element.alt ?? '')} style={{ width: '100%', height: '100%' }} />
           {isSelected && (
             <div 
               className="absolute -bottom-1 -right-1 w-3 h-3 bg-blue-500 cursor-se-resize rounded-full"
@@ -227,10 +238,10 @@ export default function InsuranceTemplatesPage() {
                 e.stopPropagation()
                 const startX = e.clientX
                 const startY = e.clientY
-                const startWidth = element.width
-                const startHeight = element.height
+                const startWidth = Number(element.width ?? 0)
+                const startHeight = Number(element.height ?? 0)
                 
-                const handleMouseMove = (moveEvent) => {
+                const handleMouseMove = (moveEvent: globalThis.MouseEvent) => {
                   const newWidth = Math.max(20, startWidth + (moveEvent.clientX - startX))
                   const newHeight = Math.max(20, startHeight + (moveEvent.clientY - startY))
                   handleElementResize(element.id, newWidth, newHeight)
@@ -250,14 +261,14 @@ export default function InsuranceTemplatesPage() {
       )
     } else if (element.type === 'line') {
       return (
-        <div key={element.id} style={{...style, backgroundColor: element.backgroundColor}} onMouseDown={handleMouseDown} />
+        <div key={String(element.id)} style={{...style, backgroundColor: String(element.backgroundColor ?? '#000')}} onMouseDown={handleMouseDown} />
       )
     } else {
-      content = element.text
+      content = String(element.text ?? '')
     }
     
     return (
-      <div key={element.id} style={style} onMouseDown={handleMouseDown}>
+      <div key={String(element.id)} style={style} onMouseDown={handleMouseDown}>
         {content}
         {isSelected && (
           <div 
@@ -266,10 +277,10 @@ export default function InsuranceTemplatesPage() {
               e.stopPropagation()
               const startX = e.clientX
               const startY = e.clientY
-              const startWidth = element.width || 100
-              const startHeight = element.height || 30
+              const startWidth = Number(element.width ?? 100)
+              const startHeight = Number(element.height ?? 30)
               
-              const handleMouseMove = (moveEvent) => {
+              const handleMouseMove = (moveEvent: globalThis.MouseEvent) => {
                 const newWidth = Math.max(20, startWidth + (moveEvent.clientX - startX))
                 const newHeight = Math.max(20, startHeight + (moveEvent.clientY - startY))
                 handleElementResize(element.id, newWidth, newHeight)
@@ -532,7 +543,7 @@ export default function InsuranceTemplatesPage() {
                     <div>
                       <Label>Text</Label>
                       <Input
-                        value={selectedElement.text || selectedElement.label || ''}
+                        value={String(selectedElement.text ?? selectedElement.label ?? '')}
                         onChange={(e) => updateElementProperty(selectedElement.text ? 'text' : 'label', e.target.value)}
                       />
                     </div>
@@ -542,7 +553,7 @@ export default function InsuranceTemplatesPage() {
                       <div>
                         <Label>Image URL</Label>
                         <Input
-                          value={selectedElement.src || ''}
+                          value={String(selectedElement.src ?? '')}
                           onChange={(e) => updateElementProperty('src', e.target.value)}
                           placeholder="https://example.com/image.jpg"
                         />
@@ -585,7 +596,7 @@ export default function InsuranceTemplatesPage() {
                     <Label>Font Size</Label>
                     <Input
                       type="number"
-                      value={selectedElement.fontSize || 16}
+                      value={Number(selectedElement.fontSize ?? 16)}
                       onChange={(e) => updateElementProperty('fontSize', Number(e.target.value))}
                     />
                   </div>
@@ -594,7 +605,7 @@ export default function InsuranceTemplatesPage() {
                       <Label>Width</Label>
                       <Input
                         type="number"
-                        value={selectedElement.width}
+                        value={Number(selectedElement.width ?? 0)}
                         onChange={(e) => updateElementProperty('width', Number(e.target.value))}
                       />
                     </div>
@@ -602,7 +613,7 @@ export default function InsuranceTemplatesPage() {
                       <Label>Height</Label>
                       <Input
                         type="number"
-                        value={selectedElement.height}
+                        value={Number(selectedElement.height ?? 0)}
                         onChange={(e) => updateElementProperty('height', Number(e.target.value))}
                       />
                     </div>

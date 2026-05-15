@@ -12,6 +12,16 @@ export default function PaymentSuccessPage() {
   const [status, setStatus] = useState<'checking' | 'success' | 'failed'>('checking')
   const [message, setMessage] = useState('Verifying your payment...')
 
+  const goNext = () => {
+    const fromOb =
+      typeof window !== 'undefined' &&
+      sessionStorage.getItem('pryrox_payment_return') === 'onboarding'
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('pryrox_payment_return')
+    }
+    router.push(fromOb ? '/dashboard' : '/settings')
+  }
+
   useEffect(() => {
     const tid = searchParams.get('tid')
     const refid = searchParams.get('refid')
@@ -63,8 +73,8 @@ export default function PaymentSuccessPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {status === 'success' && (
-            <Button onClick={() => router.push('/settings')} className="w-full">
-              Go to Settings
+            <Button onClick={goNext} className="w-full">
+              Continue
             </Button>
           )}
           {status === 'failed' && (

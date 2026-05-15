@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '../../../../supabase/server'
+import { resolveIsAppPlatformAdmin } from '@/lib/platform-admin'
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,9 +23,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(providers || [])
     }
     
-    // Check if user is superadmin
-    const isSuperAdmin = user.email === 'abdousentore@gmail.com'
-    
+    const isSuperAdmin = await resolveIsAppPlatformAdmin(supabase, user.id, null)
+
     if (isSuperAdmin) {
       // Superadmin sees all insurance providers
       const { data: providers, error } = await supabase
@@ -85,8 +85,7 @@ export async function POST(request: NextRequest) {
       }, { status: 401 })
     }
     
-    // Check if user is superadmin
-    const isSuperAdmin = user.email === 'abdousentore@gmail.com'
+    const isSuperAdmin = await resolveIsAppPlatformAdmin(supabase, user.id, null)
     console.log('🔍 isSuperAdmin:', isSuperAdmin)
     
     // Use service role for superadmin to bypass RLS

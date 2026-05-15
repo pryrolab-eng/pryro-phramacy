@@ -716,6 +716,39 @@ export type Database = {
           },
         ]
       }
+      platform_admin_reports: {
+        Row: {
+          category: string | null
+          created_at: string | null
+          description: string | null
+          generated_at: string
+          id: string
+          name: string
+          storage_bucket: string
+          storage_object_path: string
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string | null
+          description?: string | null
+          generated_at?: string
+          id?: string
+          name: string
+          storage_bucket?: string
+          storage_object_path: string
+        }
+        Update: {
+          category?: string | null
+          created_at?: string | null
+          description?: string | null
+          generated_at?: string
+          id?: string
+          name?: string
+          storage_bucket?: string
+          storage_object_path?: string
+        }
+        Relationships: []
+      }
       users: {
         Row: {
           avatar_url: string | null
@@ -724,6 +757,7 @@ export type Database = {
           full_name: string | null
           id: string
           image: string | null
+          is_platform_admin: boolean
           name: string | null
           token_identifier: string
           updated_at: string | null
@@ -736,6 +770,7 @@ export type Database = {
           full_name?: string | null
           id: string
           image?: string | null
+          is_platform_admin?: boolean
           name?: string | null
           token_identifier: string
           updated_at?: string | null
@@ -748,6 +783,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           image?: string | null
+          is_platform_admin?: boolean
           name?: string | null
           token_identifier?: string
           updated_at?: string | null

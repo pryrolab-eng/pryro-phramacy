@@ -1,146 +1,144 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { createClient } from '../../../../../supabase/client'
+import { type FormEvent, useMemo, useRef, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { BarChart3, Download, TrendingUp, Users, Building2, CreditCard, DollarSign, Package } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { BarChart3, Download, FileStack, TrendingUp, Users, Building2, DollarSign, Upload } from "lucide-react";
 import { Spinner } from '@/components/ui/spinner';
-
-interface RevenueData {
-  month: string
-  revenue: number
-  pharmacies: number
-}
-
-interface PlanBreakdown {
-  plan_name: string
-  subscribers: number
-  revenue: number
-}
+import { useAdminReportsSummary, useUploadPlatformAdminReportMutation } from '@/hooks';
 
 export default function ReportsPage() {
-  const [loading, setLoading] = useState(true)
-  const [totalRevenue, setTotalRevenue] = useState(0)
-  const [activePharmacies, setActivePharmacies] = useState(0)
-  const [totalUsers, setTotalUsers] = useState(0)
-  const [revenueData, setRevenueData] = useState<RevenueData[]>([])
-  const [planBreakdown, setPlanBreakdown] = useState<PlanBreakdown[]>([])
-  const supabase = createClient()
+  const reportsQuery = useAdminReportsSummary()
+  const uploadMutation = useUploadPlatformAdminReportMutation()
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [reportName, setReportName] = useState('')
+  const [reportDescription, setReportDescription] = useState('')
+  const [reportCategory, setReportCategory] = useState('')
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetchData()
-  }, [])
+  const totalRevenue = reportsQuery.data?.totalRevenue ?? 0
+  const activePharmacies = reportsQuery.data?.activePharmacies ?? 0
+  const totalUsers = reportsQuery.data?.totalUsers ?? 0
+  const revenueData = reportsQuery.data?.revenueData ?? []
+  const planBreakdown = reportsQuery.data?.planBreakdown ?? []
+  const exportableReports = reportsQuery.data?.exportableReports ?? []
 
-  async function fetchData() {
-    try {
-      // Get total revenue from payments
-      const { data: payments } = await supabase
-        .from('payments')
-        .select('amount')
-        .eq('status', 'completed')
-      
-      const revenue = payments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0
-      setTotalRevenue(revenue)
+  const metrics = useMemo(
+    () => [
+      {
+        title: "Total Revenue",
+        value: `RWF ${(totalRevenue / 1000000).toFixed(1)}M`,
+        caption:
+          totalRevenue > 0
+            ? "Sum of completed payments (all time)"
+            : "No completed payments in the database yet",
+        icon: DollarSign,
+      },
+      {
+        title: "Active Pharmacies",
+        value: activePharmacies.toString(),
+        caption: "Pharmacies with status active or trial",
+        icon: Building2,
+      },
+      {
+        title: "Total Users",
+        value: totalUsers.toString(),
+        caption: "Total users in the database",
+        icon: Users,
+      },
+      {
+        title: "Conversion Rate",
+        value: "—",
+        caption: "Not tracked yet (needs funnel data)",
+        icon: TrendingUp,
+      },
+    ],
+    [totalRevenue, activePharmacies, totalUsers],
+  );
 
-      // Get active pharmacies count
-      const { count: pharmacyCount } = await supabase
-        .from('pharmacies')
-        .select('*', { count: 'exact', head: true })
-      
-      setActivePharmacies(pharmacyCount || 0)
+  const planRevenueTotal = useMemo(
+    () => planBreakdown.reduce((sum, p) => sum + p.revenue, 0),
+    [planBreakdown],
+  )
+  const subscriberTotal = useMemo(
+    () => planBreakdown.reduce((sum, p) => sum + p.subscribers, 0),
+    [planBreakdown],
+  )
 
-      // Get total users count
-      const { count: userCount } = await supabase
-        .from('pharmacy_users')
-        .select('*', { count: 'exact', head: true })
-      
-      setTotalUsers(userCount || 0)
-
-      // Get monthly revenue data
-      const { data: monthlyPayments } = await supabase
-        .from('payments')
-        .select('amount, created_at')
-        .eq('status', 'completed')
-        .order('created_at', { ascending: true })
-
-      // Group by month
-      const monthlyData: { [key: string]: { revenue: number, pharmacies: Set<string> } } = {}
-      monthlyPayments?.forEach(p => {
-        const month = new Date(p.created_at).toLocaleString('en', { month: 'short' })
-        if (!monthlyData[month]) {
-          monthlyData[month] = { revenue: 0, pharmacies: new Set() }
-        }
-        monthlyData[month].revenue += Number(p.amount)
-      })
-
-      const chartData = Object.entries(monthlyData).map(([month, data]) => ({
-        month,
-        revenue: data.revenue,
-        pharmacies: data.pharmacies.size
-      }))
-      setRevenueData(chartData)
-
-      // Get plan breakdown from subscriptions
-      const { data: subscriptions } = await supabase
-        .from('subscriptions')
-        .select('plan_name, pharmacy_id')
-        .eq('status', 'active')
-
-      const planData: { [key: string]: { count: number, revenue: number } } = {}
-      subscriptions?.forEach(s => {
-        if (!planData[s.plan_name]) {
-          planData[s.plan_name] = { count: 0, revenue: 0 }
-        }
-        planData[s.plan_name].count++
-      })
-
-      // Get plan prices
-      const { data: plans } = await supabase
-        .from('subscription_plans')
-        .select('name, price')
-
-      const breakdown = Object.entries(planData).map(([plan_name, data]) => {
-        const plan = plans?.find(p => p.name === plan_name)
-        return {
-          plan_name,
-          subscribers: data.count,
-          revenue: data.count * Number(plan?.price || 0)
-        }
-      })
-      setPlanBreakdown(breakdown)
-
-    } catch (error) {
-      console.error('Error fetching data:', error)
-    } finally {
-      setLoading(false)
+  /** Payment-backed months when available; otherwise one bar from active subscription MRR. */
+  const revenueChartSeries = useMemo(() => {
+    if (revenueData.length > 0) {
+      return revenueData.map((d) => ({ ...d, source: "payments" as const }))
     }
+    if (planRevenueTotal > 0) {
+      return [
+        {
+          month: "Current",
+          revenue: planRevenueTotal,
+          pharmacies: subscriberTotal,
+          source: "subscriptions" as const,
+        },
+      ]
+    }
+    return []
+  }, [revenueData, planRevenueTotal, subscriberTotal])
+
+  const breakdownDenominator = useMemo(() => {
+    const fromPlans = planBreakdown.reduce((s, p) => s + p.revenue, 0)
+    if (fromPlans > 0) return fromPlans
+    if (totalRevenue > 0) return totalRevenue
+    return 1
+  }, [planBreakdown, totalRevenue])
+
+  const handleUploadReport = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setUploadError(null)
+    const file = fileRef.current?.files?.[0]
+    if (!file) {
+      setUploadError('Choose a file to upload.')
+      return
+    }
+    uploadMutation.mutate(
+      {
+        file,
+        name: reportName.trim() || undefined,
+        description: reportDescription.trim() || undefined,
+        category: reportCategory.trim() || undefined,
+      },
+      {
+        onSuccess: () => {
+          setReportName('')
+          setReportDescription('')
+          setReportCategory('')
+          if (fileRef.current) fileRef.current.value = ''
+        },
+        onError: (err) => {
+          setUploadError(err instanceof Error ? err.message : 'Upload failed')
+        },
+      },
+    )
   }
 
-  const reports = [
-    { name: "Revenue Report", description: "Monthly subscription revenue breakdown", lastGenerated: "2 hours ago", type: "Financial" },
-    { name: "User Activity", description: "User engagement and activity metrics", lastGenerated: "1 day ago", type: "Analytics" },
-    { name: "Pharmacy Performance", description: "Individual pharmacy performance metrics", lastGenerated: "3 hours ago", type: "Business" },
-    { name: "Subscription Analytics", description: "Plan conversion and churn analysis", lastGenerated: "1 week ago", type: "Subscription" },
-  ];
-
-  const metrics = [
-    { title: "Total Revenue", value: `RWF ${(totalRevenue / 1000000).toFixed(1)}M`, change: "+15%", icon: DollarSign, trend: "up" },
-    { title: "Active Pharmacies", value: activePharmacies.toString(), change: "+3", icon: Building2, trend: "up" },
-    { title: "Total Users", value: totalUsers.toString(), change: "+12", icon: Users, trend: "up" },
-    { title: "Conversion Rate", value: "78%", change: "+5%", icon: TrendingUp, trend: "up" },
-  ];
-
-  const chartData = revenueData.length > 0 ? revenueData : [
-    { month: 'Jan', revenue: 0, pharmacies: 0 },
-  ];
-
-  if (loading) return (
+  if (reportsQuery.isPending) return (
     <div className="flex items-center justify-center min-h-screen">
       <Spinner className="size-6" />
     </div>
   )
+
+  if (reportsQuery.isError) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto">
+        <p className="text-destructive" role="alert">
+          {reportsQuery.error instanceof Error
+            ? reportsQuery.error.message
+            : 'Could not load reports.'}
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6">
@@ -156,18 +154,17 @@ export default function ReportsPage() {
           </div>
 
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
-            {metrics.map((metric, index) => (
-              <Card key={index}>
+            {metrics.map((metric) => (
+              <Card key={metric.title}>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">{metric.title}</CardTitle>
                   <metric.icon className="h-4 w-4" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{metric.value}</div>
-                  <div className="flex items-center text-sm mt-1">
-                    <span className="font-medium">{metric.change}</span>
-                    <span className="text-muted-foreground ml-1">from last month</span>
-                  </div>
+                  <p className="text-xs text-muted-foreground mt-1 leading-snug">
+                    {metric.caption}
+                  </p>
                 </CardContent>
               </Card>
             ))}
@@ -179,34 +176,54 @@ export default function ReportsPage() {
               <CardDescription>Monthly revenue and pharmacy growth over the past year</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-80 space-y-6">
-                {revenueData.map((data, index) => {
-                  const maxRevenue = Math.max(...revenueData.map(d => d.revenue), 1)
-                  const width = (data.revenue / maxRevenue) * 100
-                  return (
-                  <div key={index} className="flex items-center space-x-4">
-                    <div className="w-12 text-sm font-medium">{data.month}</div>
-                    <div className="flex-1 flex items-center space-x-4">
-                      <div className="flex-1">
-                        <div className="w-full bg-gray-200 rounded h-1 flex items-center">
-                          <div 
-                            className="bg-gray-800 h-1 rounded transition-all duration-500"
-                            style={{ width: `${width}%` }}
-                          >
+              <div className="min-h-48 space-y-6">
+                {revenueData.length === 0 ? (
+                  <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground">
+                      No revenue history to chart yet
+                    </p>
+
+                  </div>
+                ) : (
+                  revenueData.map((data, index) => {
+                    const maxRevenue = Math.max(
+                      ...revenueData.map((d) => d.revenue),
+                      1,
+                    );
+                    const width = (data.revenue / maxRevenue) * 100;
+                    return (
+                      <div
+                        key={`${data.month}-${index}`}
+                        className="flex items-center space-x-4"
+                      >
+                        <div className="w-28 shrink-0 text-sm font-medium">
+                          {data.month}
+                        </div>
+                        <div className="flex flex-1 items-center space-x-4">
+                          <div className="flex-1">
+                            <div className="flex h-1 w-full items-center rounded bg-gray-200">
+                              <div
+                                className="h-1 rounded bg-gray-800 transition-all duration-500"
+                                style={{ width: `${width}%` }}
+                              />
+                            </div>
+                          </div>
+                          <div className="w-16 text-xs font-medium">
+                            {(data.revenue / 1000000).toFixed(1)}M
+                          </div>
+                          <div className="w-20 text-right">
+                            <div className="text-sm font-semibold">
+                              {data.pharmacies}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              pharmacies
+                            </div>
                           </div>
                         </div>
                       </div>
-                      <div className="w-16 text-xs font-medium">
-                        {(data.revenue / 1000000).toFixed(1)}M
-                      </div>
-                      <div className="w-20 text-right">
-                        <div className="text-sm font-semibold">{data.pharmacies}</div>
-                        <div className="text-xs text-muted-foreground">pharmacies</div>
-                      </div>
-                    </div>
-                  </div>
-                  )
-                })}
+                    );
+                  })
+                )}
               </div>
             </CardContent>
           </Card>
@@ -215,44 +232,73 @@ export default function ReportsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Revenue Chart</CardTitle>
-                <CardDescription>Monthly revenue growth trend</CardDescription>
+                <CardDescription>
+                  {revenueData.length > 0
+                    ? "Completed payments aggregated by calendar month."
+                    : planRevenueTotal > 0
+                      ? "No payment history yet — bar shows estimated recurring revenue from active subscription plans."
+                      : "Add completed payments or active subscriptions to see revenue here."}
+                </CardDescription>
               </CardHeader>
               <CardContent>
+                {revenueChartSeries.length === 0 ? (
+                  <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground">Nothing to chart yet</p>
+                    <p className="mt-2">
+                      This chart uses payment rows by month, or your current subscription mix when
+                      payments are empty.
+                    </p>
+                  </div>
+                ) : (
                 <div className="space-y-4">
-                  {chartData.map((data, index) => (
-                    <div key={index} className="flex items-center justify-between">
+                  {revenueChartSeries.map((data, index) => {
+                    const maxRev = Math.max(
+                      ...revenueChartSeries.map((d) => d.revenue),
+                      1,
+                    )
+                    const barPct = (data.revenue / maxRev) * 100
+                    return (
+                    <div key={`${data.month}-chart-${index}`} className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
-                        <div className="w-12 text-sm font-medium">{data.month}</div>
+                        <div className="w-20 shrink-0 text-sm font-medium">{data.month}</div>
                         <div className="flex-1">
                           <div className="w-full bg-gray-200 rounded h-2">
                             <div 
                               className="bg-gray-800 h-2 rounded transition-all duration-300"
-                              style={{ width: `${(data.revenue / 2000000) * 100}%` }}
+                              style={{ width: `${barPct}%` }}
                             ></div>
                           </div>
                         </div>
                       </div>
                       <div className="text-right">
                         <div className="text-sm font-semibold">{(data.revenue / 1000000).toFixed(1)}M</div>
-                        <div className="text-xs text-muted-foreground">{data.pharmacies} pharmacies</div>
+                        <div className="text-xs text-muted-foreground">
+                          {data.source === "payments"
+                            ? `${data.pharmacies} pharmacies`
+                            : `${data.pharmacies} active subscriptions`}
+                        </div>
                       </div>
                     </div>
-                  ))}
+                  )
+                  })}
                 </div>
+                )}
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
                 <CardTitle>Revenue Breakdown</CardTitle>
-                <CardDescription>Monthly revenue by subscription plan</CardDescription>
+                <CardDescription>
+                  Estimated recurring revenue by plan (active subscriptions × plan price).
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {planBreakdown.length > 0 ? planBreakdown.map((plan, index) => {
-                    const percentage = totalRevenue > 0 ? ((plan.revenue / totalRevenue) * 100).toFixed(0) : 0
+                  {planBreakdown.length > 0 ? planBreakdown.map((plan) => {
+                    const percentage = ((plan.revenue / breakdownDenominator) * 100).toFixed(0)
                     return (
-                      <div key={index} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div key={plan.plan_name} className="flex items-center justify-between p-4 border rounded-lg">
                         <div>
                           <p className="font-medium">{plan.plan_name}</p>
                           <p className="text-sm text-muted-foreground">{plan.subscribers} subscribers</p>
@@ -274,27 +320,127 @@ export default function ReportsPage() {
           <Card>
             <CardHeader>
               <CardTitle>Available Reports</CardTitle>
-              <CardDescription>Generate and download business reports</CardDescription>
+              <CardDescription>
+                Upload a file to store it for admins, or download a previously stored export.
+                Signed links expire after one hour.
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {reports.map((report, index) => (
-                  <div key={index} className="p-4 border rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-medium">{report.name}</h3>
-                      <Badge variant="outline">{report.type}</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-3">{report.description}</p>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-muted-foreground">Last generated: {report.lastGenerated}</p>
-                      <Button size="sm">
-                        <Download className="h-4 w-4 mr-2" />
-                        Generate
-                      </Button>
-                    </div>
+            <CardContent className="space-y-6">
+              <form
+                onSubmit={handleUploadReport}
+                className="space-y-3 rounded-lg border bg-muted/15 p-4"
+              >
+                <p className="text-sm font-medium">Add export</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="report-file">File</Label>
+                    <Input
+                      id="report-file"
+                      ref={fileRef}
+                      type="file"
+                      required
+                      className="cursor-pointer"
+                    />
                   </div>
-                ))}
-              </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="report-name">Display name (optional)</Label>
+                    <Input
+                      id="report-name"
+                      value={reportName}
+                      onChange={(ev) => setReportName(ev.target.value)}
+                      placeholder="Defaults to file name"
+                    />
+                  </div>
+                  <div className="grid gap-2 sm:col-span-2">
+                    <Label htmlFor="report-desc">Description (optional)</Label>
+                    <Input
+                      id="report-desc"
+                      value={reportDescription}
+                      onChange={(ev) => setReportDescription(ev.target.value)}
+                      placeholder="Short summary"
+                    />
+                  </div>
+                  <div className="grid gap-2 sm:col-span-2">
+                    <Label htmlFor="report-cat">Category (optional)</Label>
+                    <Input
+                      id="report-cat"
+                      value={reportCategory}
+                      onChange={(ev) => setReportCategory(ev.target.value)}
+                      placeholder="e.g. Financial"
+                    />
+                  </div>
+                </div>
+                {uploadError ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    {uploadError}
+                  </p>
+                ) : null}
+                <Button type="submit" disabled={uploadMutation.isPending}>
+                  {uploadMutation.isPending ? (
+                    <>
+                      <Spinner className="mr-2 h-4 w-4" />
+                      Uploading…
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Upload
+                    </>
+                  )}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Max 25 MB. Apply latest Supabase migrations so the{" "}
+                  <code className="rounded bg-muted px-1">platform_admin_reports</code> table and{" "}
+                  <code className="rounded bg-muted px-1">platform-reports</code> bucket exist.
+                </p>
+              </form>
+
+              {exportableReports.length > 0 ? (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {exportableReports.map((report) => (
+                    <div key={report.id} className="rounded-lg border p-4">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <h3 className="font-medium">{report.name}</h3>
+                        {report.category ? (
+                          <Badge variant="outline">{report.category}</Badge>
+                        ) : null}
+                      </div>
+                      {report.description ? (
+                        <p className="mb-3 text-sm text-muted-foreground">{report.description}</p>
+                      ) : null}
+                      <div className="flex items-center justify-between gap-2">
+                        {report.lastGenerated ? (
+                          <p className="text-xs text-muted-foreground">
+                            Last generated: {report.lastGenerated}
+                          </p>
+                        ) : (
+                          <span />
+                        )}
+                        {report.downloadUrl ? (
+                          <Button size="sm" asChild>
+                            <a href={report.downloadUrl} rel="noopener noreferrer">
+                              <Download className="mr-2 h-4 w-4" />
+                              Download
+                            </a>
+                          </Button>
+                        ) : (
+                          <Button size="sm" disabled title="No file URL yet">
+                            Download
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div
+                  className="flex min-h-[12rem] items-center justify-center rounded-lg border border-dashed bg-muted/20 text-muted-foreground"
+                  role="status"
+                  aria-label="No downloadable reports yet"
+                >
+                  <FileStack className="h-14 w-14 stroke-[1.1]" aria-hidden />
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

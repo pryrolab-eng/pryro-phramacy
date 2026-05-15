@@ -67,12 +67,20 @@ export async function POST(request: NextRequest) {
       expiresAt.setFullYear(expiresAt.getFullYear() + 100)
     }
 
+    const planEnum = (() => {
+      const n = (plan.name || '').toLowerCase()
+      if (n.includes('premium')) return 'premium' as const
+      if (n.includes('standard')) return 'standard' as const
+      return 'trial' as const
+    })()
+
     // Create new subscription
     const { data: subscription, error: subscriptionError } = await supabase
       .from('subscriptions')
       .insert({
         pharmacy_id: userPharmacy.pharmacy_id,
         plan_id: plan.id,
+        plan: planEnum,
         is_active: plan.price === 0, // Free plans are active immediately
         expires_at: expiresAt.toISOString(),
         payment_method: 'kpay'
@@ -84,6 +92,20 @@ export async function POST(request: NextRequest) {
       console.error('Subscription creation error:', subscriptionError)
       return NextResponse.json({ error: `Subscription error: ${subscriptionError.message}` }, { status: 500 })
     }
+
+    await supabase
+      .from('pharmacies')
+      .update({
+        subscription_plan: planEnum,
+        subscription_expires_at: expiresAt.toISOString(),
+        status:
+          plan.price === 0 && subscription.is_active
+            ? planEnum === 'trial'
+              ? 'trial'
+              : 'active'
+            : 'trial',
+      })
+      .eq('id', userPharmacy.pharmacy_id)
 
     // Link payment transaction if provided
     if (paymentTransactionId) {

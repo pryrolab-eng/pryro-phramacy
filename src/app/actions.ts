@@ -1,7 +1,7 @@
 "use server";
 
 import { encodedRedirect } from "@/utils/utils";
-import { headers } from "next/headers";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "../../supabase/server";
 import crypto from "crypto";
@@ -9,6 +9,18 @@ import crypto from "crypto";
 export const signInAction = async (formData: FormData) => {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
+
+  const cookieStore = cookies();
+  for (const { name } of cookieStore.getAll()) {
+    if (name.startsWith("sb-") && name.includes("auth-token")) {
+      try {
+        cookieStore.set(name, "", { path: "/", maxAge: 0 });
+      } catch {
+        /* ignore if cookie is not writable in this context */
+      }
+    }
+  }
+
   const supabase = createClient();
 
   console.log('🔐 LOGIN ATTEMPT:', email);
@@ -98,9 +110,137 @@ export const signInAction = async (formData: FormData) => {
   redirect("/dashboard");
 };
 
+export const signUpAction = async (formData: FormData) => {
+  const email = (formData.get("email") as string)?.trim();
+  const password = formData.get("password") as string;
+  const full_name = ((formData.get("full_name") as string) || "").trim();
+
+  if (!email || !password) {
+    return encodedRedirect("error", "/sign-up", "Email and password are required.");
+  }
+  if (password.length < 6) {
+    return encodedRedirect("error", "/sign-up", "Password must be at least 6 characters.");
+  }
+
+  const supabase = createClient();
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { full_name },
+      emailRedirectTo: appUrl ? `${appUrl}/auth/callback` : undefined,
+    },
+  });
+
+  if (error) {
+    return encodedRedirect("error", "/sign-up", error.message);
+  }
+
+  if (data.session) {
+    redirect("/onboarding");
+  }
+
+  return encodedRedirect(
+    "success",
+    "/sign-in",
+    "Check your email to confirm your account, then sign in."
+  );
+};
+
 export const signOutAction = async () => {
   const supabase = createClient();
   console.log('🚪 SIGNING OUT');
   await supabase.auth.signOut();
   return redirect("/sign-in");
+};
+
+export const forgotPasswordAction = async (formData: FormData) => {
+  const email = (formData.get("email") as string)?.trim();
+  const siteUrl = (formData.get("site_url") as string)?.replace(/\/$/, "") ?? "";
+  if (!email) {
+    return encodedRedirect("error", "/forgot-password", "Email is required.");
+  }
+
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || siteUrl;
+  if (!appUrl) {
+    return encodedRedirect(
+      "error",
+      "/forgot-password",
+      "App URL is not configured. Set NEXT_PUBLIC_APP_URL or reload the page and try again.",
+    );
+  }
+
+  const supabase = createClient();
+  const callback = new URL("/auth/callback", appUrl);
+  callback.searchParams.set("redirect_to", "/dashboard/reset-password");
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: callback.toString(),
+  });
+
+  if (error) {
+    return encodedRedirect("error", "/forgot-password", error.message);
+  }
+
+  return encodedRedirect(
+    "success",
+    "/forgot-password",
+    "Check your email for a password reset link.",
+  );
+};
+
+export const resetPasswordAction = async (formData: FormData) => {
+  const password = formData.get("password") as string;
+  const confirmPassword = formData.get("confirmPassword") as string;
+
+  if (!password || !confirmPassword) {
+    return encodedRedirect(
+      "error",
+      "/dashboard/reset-password",
+      "Password fields are required.",
+    );
+  }
+  if (password !== confirmPassword) {
+    return encodedRedirect(
+      "error",
+      "/dashboard/reset-password",
+      "Passwords do not match.",
+    );
+  }
+  if (password.length < 6) {
+    return encodedRedirect(
+      "error",
+      "/dashboard/reset-password",
+      "Password must be at least 6 characters.",
+    );
+  }
+
+  const supabase = createClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return encodedRedirect(
+      "error",
+      "/dashboard/reset-password",
+      "Your reset link expired or is invalid. Request a new one from Forgot password.",
+    );
+  }
+
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) {
+    return encodedRedirect("error", "/dashboard/reset-password", error.message);
+  }
+
+  await supabase.auth.signOut();
+  return encodedRedirect(
+    "success",
+    "/sign-in",
+    "Your password was updated. Sign in with your new password.",
+  );
 };

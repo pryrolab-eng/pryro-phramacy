@@ -1,21 +1,29 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Settings, Save, Shield, Bell, Globe, Database, Users, Building2, BarChart3, Zap, Key, Monitor, AlertTriangle, FileText, Plus } from "lucide-react"
-import { SidebarTrigger } from "@/components/ui/sidebar"
+import { Settings, Save, Shield, Globe, Database, Users, BarChart3, Zap, Monitor, AlertTriangle, FileText, CheckCircle2, XCircle, Building2, Plus } from "lucide-react"
+import { AdminPageHeader } from '@/components/admin/admin-page-header'
 import { Spinner } from '@/components/ui/spinner'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { adminSystemSettingsQueryKey, useAdminSystemSettings, useCreateStockLocationMutation, useStockLocations } from '@/hooks'
+import { updateAdminSystemSettings } from '@/lib/http/admin/system-settings'
 
 export default function AdminSettingsPage() {
-  const [loading, setLoading] = useState(true)
-  const [stockLocations, setStockLocations] = useState([])
+  const queryClient = useQueryClient()
+  const settingsQuery = useAdminSystemSettings()
+  const locationsQuery = useStockLocations()
+  const createLocationMutation = useCreateStockLocationMutation()
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const [isAddLocationOpen, setIsAddLocationOpen] = useState(false)
   const [newLocation, setNewLocation] = useState({ name: '', description: '' })
   const [analytics, setAnalytics] = useState({
@@ -24,6 +32,7 @@ export default function AdminSettingsPage() {
     total_pharmacies: 0,
     new_users_30d: 0
   })
+  
   const [settings, setSettings] = useState({
     platformName: 'Pryrox',
     adminEmail: 'admin@pryrox.com',
@@ -40,106 +49,61 @@ export default function AdminSettingsPage() {
     dataRetentionDays: 2555,
     enableAuditLogs: true,
     ssoEnabled: false,
-    encryptionEnabled: true,
-    // Add your new settings here
-    customSetting: '',
-    featureFlag: false
+    encryptionEnabled: true
   })
 
   useEffect(() => {
-    const loadData = async () => {
-      await Promise.all([fetchStockLocations(), fetchSystemSettings()])
-      setLoading(false)
+    const payload = settingsQuery.data
+    if (!payload) return
+    if (payload.settings) {
+      setSettings((prev) => ({ ...prev, ...payload.settings }))
     }
-    loadData()
-  }, [])
+    if (payload.analytics) {
+      setAnalytics(payload.analytics)
+    }
+  }, [settingsQuery.data])
 
-  const fetchStockLocations = async () => {
-    try {
-      const response = await fetch('/api/settings/locations')
-      if (response.ok) {
-        const data = await response.json()
-        setStockLocations(data)
-      }
-    } catch (error) {
-      console.error('Error fetching locations:', error)
-    }
-  }
+  const stockLocations = locationsQuery.data ?? []
 
-  const fetchSystemSettings = async () => {
-    try {
-      const response = await fetch('/api/admin/system-settings')
-      if (response.ok) {
-        const data = await response.json()
-        if (data.settings) {
-          setSettings(prev => ({ ...prev, ...data.settings }))
-        }
-        if (data.analytics) {
-          setAnalytics(data.analytics)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching system settings:', error)
-    }
-  }
-
-  const handleAddLocation = async () => {
-    try {
-      const response = await fetch('/api/settings/locations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newLocation)
-      })
-      
-      const result = await response.json()
-      
-      if (response.ok && result.success) {
-        await fetchStockLocations()
-        setIsAddLocationOpen(false)
-        setNewLocation({ name: '', description: '' })
-        alert('Location added successfully!')
-      } else {
-        alert(result.error || 'Failed to add location')
-      }
-    } catch (error) {
-      console.error('Error adding location:', error)
-      alert('Failed to add location')
-    }
-  }
+  const pageLoading =
+    locationsQuery.isPending || settingsQuery.isPending
 
   const handleSave = async () => {
     try {
-      // Add validation
-      if (settings.maxPharmacies < 1) {
-        alert('Maximum pharmacies must be at least 1')
-        return
-      }
+      setSaving(true)
+      setError(null)
+      setSuccess(null)
       
-      if (settings.apiRateLimit < 100) {
-        alert('API rate limit must be at least 100 requests/hour')
-        return
-      }
-      
-      const response = await fetch('/api/admin/system-settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
-      })
-      
-      const result = await response.json()
-      
-      if (response.ok) {
-        alert('Settings saved successfully!')
-      } else {
-        alert(result.error || 'Failed to save settings')
-      }
-    } catch (error) {
-      console.error('Error saving settings:', error)
-      alert('Failed to save settings')
+      await updateAdminSystemSettings(settings as Record<string, unknown>)
+      await queryClient.invalidateQueries({ queryKey: adminSystemSettingsQueryKey })
+      setSuccess('Settings saved successfully!')
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err: any) {
+      setError(err.message || 'Failed to save settings')
+      console.error('Error saving settings:', err)
+    } finally {
+      setSaving(false)
     }
   }
 
-  if (loading) return (
+  const handleAddLocation = () => {
+    createLocationMutation.mutate(
+      { name: newLocation.name, description: newLocation.description },
+      {
+        onSuccess: () => {
+          setIsAddLocationOpen(false)
+          setNewLocation({ name: '', description: '' })
+          alert('Location added successfully!')
+        },
+        onError: (err) => {
+          console.error('Error adding location:', err)
+          alert(err instanceof Error ? err.message : 'Failed to add location')
+        },
+      },
+    )
+  }
+
+  if (pageLoading) return (
     <div className="flex items-center justify-center min-h-screen">
       <Spinner className="size-6" />
     </div>
@@ -147,18 +111,31 @@ export default function AdminSettingsPage() {
 
   return (
     <div className="p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-8">
-          <div className="flex items-center gap-4 mb-2">
-            <SidebarTrigger />
-            <div className="h-4 w-px bg-border" />
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
+      <div className="max-w-6xl mx-auto">
+        <AdminPageHeader
+          title={
+            <h1 className="text-3xl font-bold flex items-center gap-2">
               <Settings className="h-8 w-8 text-blue-600" />
               Admin Settings
             </h1>
+          }
+          description="Configure platform settings and preferences"
+        />
+
+        {/* Status Messages */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-800">
+            <XCircle className="h-5 w-5" />
+            <span>{error}</span>
           </div>
-          <p className="text-gray-600">Configure platform settings and preferences</p>
-        </div>
+        )}
+        
+        {success && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-800">
+            <CheckCircle2 className="h-5 w-5" />
+            <span>{success}</span>
+          </div>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
@@ -436,7 +413,7 @@ export default function AdminSettingsPage() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 {stockLocations.length > 0 ? (
-                  stockLocations.map((location: any) => (
+                  stockLocations.map((location) => (
                     <div key={location.id} className="flex justify-between items-center p-3 border rounded-lg">
                       <div>
                         <p className="font-medium">{location.name}</p>
@@ -464,7 +441,9 @@ export default function AdminSettingsPage() {
                 <BarChart3 className="h-5 w-5" />
                 Platform Analytics
               </CardTitle>
-              <CardDescription>Usage statistics and insights</CardDescription>
+              <CardDescription>
+                Platform-wide totals from your database (updated each time you open this page).
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -477,58 +456,47 @@ export default function AdminSettingsPage() {
                   <div className="text-sm text-muted-foreground">Total Users</div>
                 </div>
               </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>API Usage</span>
-                  <span>78%</span>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="text-center p-3 border rounded-lg">
+                  <div className="text-2xl font-bold text-purple-600">{analytics.total_pharmacies}</div>
+                  <div className="text-sm text-muted-foreground">Total Pharmacies</div>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div className="bg-green-600 h-2 rounded-full" style={{width: '78%'}}></div>
+                <div className="text-center p-3 border rounded-lg">
+                  <div className="text-2xl font-bold text-orange-600">{analytics.new_users_30d}</div>
+                  <div className="text-sm text-muted-foreground">New Users (30d)</div>
                 </div>
               </div>
-              <Button variant="outline" className="w-full">
-                <BarChart3 className="mr-2 h-4 w-4" />
-                View Detailed Analytics
+              <Button variant="outline" className="w-full" asChild>
+                <Link
+                  href="/admin/reports"
+                  className="inline-flex w-full items-center justify-center gap-2"
+                >
+                  <BarChart3 className="h-4 w-4 shrink-0" />
+                  View Detailed Analytics
+                </Link>
               </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Key className="h-5 w-5" />
-                Custom Settings
-              </CardTitle>
-              <CardDescription>Additional configuration options</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-2">
-                <Label>Custom Setting</Label>
-                <Input
-                  placeholder="Enter custom value"
-                  value={settings.customSetting}
-                  onChange={(e) => setSettings({...settings, customSetting: e.target.value})}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Feature Flag</p>
-                  <p className="text-sm text-muted-foreground">Enable experimental features</p>
-                </div>
-                <Switch
-                  checked={settings.featureFlag}
-                  onCheckedChange={(checked) => setSettings({...settings, featureFlag: checked})}
-                />
-              </div>
             </CardContent>
           </Card>
 
         </div>
         
         <div className="flex justify-end pt-6">
-          <Button onClick={handleSave} className="w-32">
-            <Save className="mr-2 h-4 w-4" />
-            Save Settings
+          <Button
+            size="lg"
+            onClick={handleSave}
+            disabled={saving || createLocationMutation.isPending}
+          >
+            {saving || createLocationMutation.isPending ? (
+              <>
+                <Spinner className="h-4 w-4" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4" />
+                Save Settings
+              </>
+            )}
           </Button>
         </div>
       </div>
@@ -560,8 +528,11 @@ export default function AdminSettingsPage() {
           </div>
           <div className="flex gap-2 justify-end">
             <Button variant="outline" onClick={() => setIsAddLocationOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddLocation} disabled={!newLocation.name}>
-              Add Location
+            <Button
+              onClick={handleAddLocation}
+              disabled={!newLocation.name || createLocationMutation.isPending}
+            >
+              {createLocationMutation.isPending ? 'Adding…' : 'Add Location'}
             </Button>
           </div>
         </DialogContent>

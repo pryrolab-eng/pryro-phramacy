@@ -39,13 +39,8 @@ const superadminData = {
   navMain: [
     {
       title: "Dashboard",
-      url: "/superadmin",
-      icon: BarChart3,
-    },
-    {
-      title: "Admin Panel",
       url: "/admin",
-      icon: Shield,
+      icon: BarChart3,
     },
     {
       title: "Pharmacy List",
@@ -76,7 +71,7 @@ const superadminData = {
 }
 
 export function SuperadminSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  let pathname = '/superadmin'
+  let pathname = '/admin'
   try {
     pathname = usePathname()
   } catch (error) {
@@ -90,7 +85,7 @@ export function SuperadminSidebar({ ...props }: React.ComponentProps<typeof Side
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <Link href="/superadmin">
+              <Link href="/admin">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-red-600 text-white">
                   <Shield className="size-4" />
                 </div>
@@ -110,7 +105,10 @@ export function SuperadminSidebar({ ...props }: React.ComponentProps<typeof Side
           <SidebarGroupContent>
             <SidebarMenu>
               {superadminData.navMain.map((item) => {
-                const isActive = pathname === item.url
+                const isActive =
+                  item.url === '/admin'
+                    ? pathname === '/admin' || pathname === '/superadmin'
+                    : pathname === item.url || pathname.startsWith(`${item.url}/`)
                 return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton asChild isActive={isActive}>

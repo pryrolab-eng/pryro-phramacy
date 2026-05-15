@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient } from '../../../../../supabase/server'
+import { resolveIsAppPlatformAdmin } from '@/lib/platform-admin'
+
+/** Pharmacies that count as "active" for platform analytics (operating, not suspended/inactive). */
+function isOperatingPharmacyStatus(status: string | null | undefined): boolean {
+  return status === 'active' || status === 'trial'
+}
 
 export async function GET() {
   try {
@@ -11,14 +18,8 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if user is superadmin
-    const { data: userData, error: userError } = await supabase
-      .from('pharmacy_users')
-      .select('role')
-      .eq('user_id', user.id)
-      .single()
-
-    if (userError || userData?.role !== 'superadmin') {
+    const allowed = await resolveIsAppPlatformAdmin(supabase, user.id, null)
+    if (!allowed) {
       return NextResponse.json({ error: 'Forbidden: Super admin access required' }, { status: 403 })
     }
 
@@ -41,29 +42,53 @@ export async function GET() {
       systemSettings[setting.setting_key] = setting.setting_value
     })
 
-    // Fetch analytics
-    const { data: pharmacies } = await supabase
-      .from('pharmacies')
-      .select('id, is_active')
-    
-    const { data: users } = await supabase
-      .from('users')
-      .select('id, created_at')
-    
-    const activePharmacies = pharmacies?.filter(p => p.is_active).length || 0
-    const totalUsers = users?.length || 0
-    const newUsers30d = users?.filter(u => 
-      new Date(u.created_at) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    ).length || 0
+    // Platform-wide counts (RLS would hide other tenants on the user-scoped client).
+    // Pharmacies use `status`, not `is_active` (invalid column previously broke this query).
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    let analytics = {
+      active_pharmacies: 0,
+      total_users: 0,
+      total_pharmacies: 0,
+      new_users_30d: 0,
+    }
 
-    return NextResponse.json({ 
-      settings: systemSettings,
-      analytics: {
-        active_pharmacies: activePharmacies,
-        total_users: totalUsers,
-        total_pharmacies: pharmacies?.length || 0,
-        new_users_30d: newUsers30d
+    if (url && serviceKey) {
+      const adminDb = createServiceClient(url, serviceKey)
+      const { data: pharmacies, error: pharmaciesError } = await adminDb
+        .from('pharmacies')
+        .select('id, status')
+
+      const { data: users, error: usersError } = await adminDb
+        .from('users')
+        .select('id, created_at')
+
+      if (pharmaciesError) console.error('Analytics pharmacies query:', pharmaciesError)
+      if (usersError) console.error('Analytics users query:', usersError)
+
+      const pharmacyRows = pharmacies ?? []
+      const userRows = users ?? []
+      const cutoffMs = Date.now() - 30 * 24 * 60 * 60 * 1000
+
+      analytics = {
+        active_pharmacies: pharmacyRows.filter((p) =>
+          isOperatingPharmacyStatus(p.status),
+        ).length,
+        total_pharmacies: pharmacyRows.length,
+        total_users: userRows.length,
+        new_users_30d: userRows.filter(
+          (u) => u.created_at && new Date(u.created_at).getTime() > cutoffMs,
+        ).length,
       }
+    } else {
+      console.error(
+        'SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_URL missing; analytics not computed',
+      )
+    }
+
+    return NextResponse.json({
+      settings: systemSettings,
+      analytics,
     })
   } catch (error: any) {
     console.error('Failed to fetch settings:', error)
@@ -84,14 +109,8 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if user is superadmin
-    const { data: userData, error: userError } = await supabase
-      .from('pharmacy_users')
-      .select('role')
-      .eq('user_id', user.id)
-      .single()
-
-    if (userError || userData?.role !== 'superadmin') {
+    const allowed = await resolveIsAppPlatformAdmin(supabase, user.id, null)
+    if (!allowed) {
       return NextResponse.json({ error: 'Forbidden: Super admin access required' }, { status: 403 })
     }
 

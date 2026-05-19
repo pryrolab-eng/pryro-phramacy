@@ -18,7 +18,12 @@ export type ExportableReport = {
 };
 
 export type AdminReportsSummary = {
+  /** Sum of completed payments (payments + payment_transactions tables). */
   totalRevenue: number;
+  /** Active subscriptions × catalog plan price (not cash collected). */
+  estimatedMrr: number;
+  completedPaymentCount: number;
+  pendingPaymentCount: number;
   activePharmacies: number;
   totalUsers: number;
   revenueData: { month: string; revenue: number; pharmacies: number }[];

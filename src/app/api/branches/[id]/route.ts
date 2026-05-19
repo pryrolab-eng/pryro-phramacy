@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const body = await request.json()
-    return NextResponse.json({ success: true, branch: { id: params.id, ...body } })
+    return NextResponse.json({ success: true, branch: { id, ...body } })
   } catch (error) {
     return NextResponse.json({ error: 'Failed to update branch' }, { status: 500 })
   }
 }
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  await params
   try {
     const mockInventory = [
       { id: '1', name: 'Paracetamol 500mg', stock: 100, price: 500 },

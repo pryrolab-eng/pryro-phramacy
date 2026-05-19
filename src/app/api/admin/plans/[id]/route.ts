@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "../../../../../../supabase/server";
 import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
+import { syncPlanToPolarAndSave } from "@/lib/polar/sync-plan-db";
 
 async function requirePlatformAdmin() {
   const supabase = await createClient();
@@ -28,8 +29,9 @@ async function requirePlatformAdmin() {
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const auth = await requirePlatformAdmin();
     if ("error" in auth && auth.error) {
@@ -40,12 +42,20 @@ export async function PUT(
     const updates: Record<string, unknown> = {};
 
     if (body.name !== undefined) updates.name = body.name;
-    if (body.price !== undefined) updates.price = body.price;
+    if (body.price !== undefined) {
+      const price = Number(body.price);
+      if (!Number.isFinite(price) || price < 0) {
+        return NextResponse.json(
+          { success: false, error: "Invalid price" },
+          { status: 400 }
+        );
+      }
+      updates.price = price;
+    }
     if (body.period !== undefined) updates.period = body.period;
     if (body.features !== undefined) updates.features = body.features;
     if (body.is_popular !== undefined) updates.is_popular = body.is_popular;
     if (body.is_active !== undefined) updates.is_active = body.is_active;
-
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(
         { success: false, error: "No fields to update" },
@@ -56,12 +66,22 @@ export async function PUT(
     const { data: plan, error } = await auth.db
       .from("subscription_plans")
       .update(updates)
-      .eq("id", params.id)
-      .select()
+      .eq("id", id)
+      .select("*")
       .single();
 
     if (error) throw error;
-    return NextResponse.json({ success: true, plan });
+
+    const synced = await syncPlanToPolarAndSave(auth.db, {
+      ...plan,
+      features: plan.features ?? updates.features,
+    } as Parameters<typeof syncPlanToPolarAndSave>[1]);
+
+    return NextResponse.json({
+      success: true,
+      plan: synced.plan,
+      polarSync: synced.polarSync,
+    });
   } catch (error) {
     console.error("PUT /api/admin/plans/[id]", error);
     return NextResponse.json(

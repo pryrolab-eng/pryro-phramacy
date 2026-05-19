@@ -26,12 +26,13 @@ export async function GET(request: NextRequest) {
     const isSuperAdmin = await resolveIsAppPlatformAdmin(supabase, user.id, null)
 
     if (isSuperAdmin) {
-      // Superadmin sees all insurance providers
-      const { data: providers, error } = await supabase
+      // Service role avoids RLS policies that still reference auth.users on some DBs
+      const admin = createServiceClient()
+      const { data: providers, error } = await admin
         .from('insurance_providers')
         .select('*')
         .order('created_at', { ascending: false })
-      
+
       if (error) {
         console.error('Error fetching all insurance:', error)
         return NextResponse.json([])

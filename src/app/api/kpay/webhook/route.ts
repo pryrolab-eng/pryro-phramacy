@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { recordSubscriptionPayment } from '@/lib/billing/record-subscription-payment'
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,6 +42,7 @@ export async function POST(request: NextRequest) {
 
     if (statusid === '01') {
       updateData.status = 'completed'
+      updateData.completed_at = new Date().toISOString()
     } else if (statusid === '02') {
       updateData.status = 'failed'
     } else {
@@ -58,6 +60,8 @@ export async function POST(request: NextRequest) {
         .from('subscriptions')
         .update({ is_active: true })
         .eq('id', transaction.subscription_id)
+
+      await recordSubscriptionPayment(supabase, transaction.id as string)
     }
 
     return NextResponse.json({ tid, refid, reply: 'OK' })

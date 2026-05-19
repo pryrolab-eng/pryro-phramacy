@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
         plan: planEnum,
         is_active: planPrice === 0,
         expires_at: expiresAt.toISOString(),
-        payment_method: planPrice === 0 ? 'free' : 'kpay',
+        payment_method: planPrice === 0 ? 'free' : 'pending',
       })
       .select()
       .single()

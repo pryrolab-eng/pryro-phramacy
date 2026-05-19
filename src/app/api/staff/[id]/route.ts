@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const supabase = await createClient()
     const body = await request.json()
@@ -15,7 +16,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         full_name: body.name,
         phone: body.phone
       })
-      .eq('id', params.id)
+      .eq('id', id)
 
     if (userError) throw userError
 
@@ -25,7 +26,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       .update({
         role: body.role
       })
-      .eq('user_id', params.id)
+      .eq('user_id', id)
 
     if (roleError) throw roleError
 
@@ -44,7 +45,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       )
       
       const { error: passwordError } = await adminSupabase.auth.admin.updateUserById(
-        params.id,
+        id,
         { password: body.password }
       )
       
@@ -61,7 +62,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const supabase = createServiceClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -72,7 +74,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     const { error: pharmacyUserError } = await supabase
       .from('pharmacy_users')
       .delete()
-      .eq('id', params.id)
+      .eq('id', id)
 
     if (pharmacyUserError) throw pharmacyUserError
 

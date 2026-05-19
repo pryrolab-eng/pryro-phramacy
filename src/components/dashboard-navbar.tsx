@@ -39,7 +39,7 @@ export default function DashboardNavbar() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={async () => {
-                await createClient().auth.signOut()
+                (await createClient()).auth.signOut()
                 router.refresh()
               }}>
                 Sign out

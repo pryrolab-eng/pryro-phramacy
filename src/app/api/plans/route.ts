@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { createServiceClient } from "../../../../supabase/service";
 import { fallbackPlansForDisplay } from "@/lib/subscription/default-plans";
 import { ensureDefaultSubscriptionPlans } from "@/lib/subscription/ensure-default-plans";
+import { normalizeSubscriptionPlanRow } from "@/lib/subscription/normalize-plan";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
@@ -37,9 +40,21 @@ export async function GET() {
       return NextResponse.json(fallbackPlansForDisplay());
     }
 
-    return NextResponse.json(plans);
+    const normalized = (plans ?? []).map((row) =>
+      normalizeSubscriptionPlanRow(row as Record<string, unknown>)
+    );
+
+    return NextResponse.json(normalized, {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+      },
+    });
   } catch (error) {
     console.error("Error fetching plans:", error);
-    return NextResponse.json(fallbackPlansForDisplay());
+    return NextResponse.json(fallbackPlansForDisplay(), {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+      },
+    });
   }
 }

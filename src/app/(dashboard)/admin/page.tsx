@@ -1,11 +1,13 @@
 ﻿'use client'
 
 import { useMemo } from 'react'
+import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Building2, CreditCard, BarChart3, AlertTriangle, MapPin, Shield, Users } from "lucide-react";
+import { Building2, CreditCard, BarChart3, AlertTriangle, MapPin, Shield, Users, Receipt } from "lucide-react";
+import { Button } from '@/components/ui/button'
 import { AdminPageHeader } from '@/components/admin/admin-page-header';
 import { Spinner } from '@/components/ui/spinner';
 import {
@@ -365,12 +367,16 @@ export default function AdminPage() {
                       RWF {stats.subscriptionRevenue.toLocaleString()}
                     </span>
                   </div>
-                  {paymentRevenue > 0 ? (
-                    <div className="flex items-center justify-between text-sm text-muted-foreground">
-                      <span>Completed payments (all time)</span>
-                      <span>RWF {paymentRevenue.toLocaleString()}</span>
-                    </div>
-                  ) : null}
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <span>Completed payments (all time)</span>
+                    <span>RWF {paymentRevenue.toLocaleString()}</span>
+                  </div>
+                  <Button variant="outline" size="sm" className="w-full mt-2" asChild>
+                    <Link href="/admin/billing">
+                      <Receipt className="h-4 w-4 mr-2" />
+                      View transactions &amp; sync invoices
+                    </Link>
+                  </Button>
                 </div>
               </div>
             </CardContent>

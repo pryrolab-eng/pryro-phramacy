@@ -16,7 +16,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Check, ChevronRight, Loader2 } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Check, ChevronRight, CreditCard, Loader2, Smartphone } from "lucide-react";
+import {
+  createPendingSubscription,
+  pollKpayTransaction,
+  startKpaySubscriptionCheckout,
+  startPolarSubscriptionCheckout,
+} from "@/lib/subscription/checkout-client";
 
 type PlanRow = {
   id: string;
@@ -70,6 +77,8 @@ export default function OnboardingForm() {
   const [selectedPlan, setSelectedPlan] = useState<PlanRow | null>(null);
   const [paymentPhone, setPaymentPhone] = useState("");
   const [paymentEmail, setPaymentEmail] = useState("");
+  const [polarEnabled, setPolarEnabled] = useState(false);
+  const [paymentChannel, setPaymentChannel] = useState<"kpay" | "polar">("kpay");
 
   const progress = step === 1 ? 15 : step === 2 ? 50 : 100;
 
@@ -169,6 +178,15 @@ export default function OnboardingForm() {
     }
   }, [step, plans.length, loadPlans, initializing]);
 
+  useEffect(() => {
+    fetch("/api/polar/config")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.enabled) setPolarEnabled(true);
+      })
+      .catch(() => {});
+  }, []);
+
   const goToStep = (next: OnboardingStep) => {
     setStep(next);
     sessionStorage.setItem(ONBOARDING_STEP_KEY, String(next));
@@ -239,15 +257,38 @@ export default function OnboardingForm() {
     }
   };
 
-  const payWithMobileMoney = async () => {
+  const payForPlan = async () => {
     if (!selectedPlan) return;
-    if (!paymentPhone.trim() || !paymentEmail.trim()) {
-      setError("Enter phone and email for payment.");
+    if (!paymentEmail.trim()) {
+      setError("Enter an email for your receipt.");
       return;
     }
+    if (paymentChannel === "kpay" && !paymentPhone.trim()) {
+      setError("Enter your MTN / Airtel number for Mobile Money.");
+      return;
+    }
+
     setError(null);
     setLoading(true);
     try {
+      const subscription = await createPendingSubscription(
+        selectedPlan.id || selectedPlan.name
+      );
+
+      if (paymentChannel === "polar") {
+        const polar = await startPolarSubscriptionCheckout({
+          planId: selectedPlan.id || selectedPlan.name,
+          subscriptionId: subscription.id,
+          customerEmail: paymentEmail,
+          customerName: pharmacy.name || "Pharmacy owner",
+          customerPhone: paymentPhone,
+          returnContext: "onboarding",
+        });
+        sessionStorage.setItem("pryrox_payment_return", "onboarding");
+        window.location.href = polar.checkoutUrl;
+        return;
+      }
+
       const phoneValidation = await fetch("/api/test-validation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -259,36 +300,14 @@ export default function OnboardingForm() {
         return;
       }
 
-      const subResponse = await fetch("/api/subscriptions/upgrade", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId: selectedPlan.name }),
+      const paymentData = await startKpaySubscriptionCheckout({
+        plan: selectedPlan,
+        subscriptionId: subscription.id,
+        customerName: pharmacy.name || "Pharmacy owner",
+        customerPhone: phoneResult.phone.formatted,
+        customerEmail: paymentEmail,
+        bankId: phoneResult.phone.kpayBankId,
       });
-      const subData = await subResponse.json();
-      if (!subResponse.ok) {
-        setError(subData.error || "Could not create subscription.");
-        return;
-      }
-
-      const paymentResponse = await fetch("/api/kpay/initiate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount: selectedPlan.price,
-          subscriptionId: subData.subscription?.id,
-          paymentMethod: "momo",
-          bankId: phoneResult.phone.kpayBankId || "63510",
-          customerName: pharmacy.name || "Pharmacy owner",
-          customerPhone: phoneResult.phone.formatted,
-          customerEmail: paymentEmail,
-          details: `${selectedPlan.name} — subscription`,
-        }),
-      });
-      const paymentData = await paymentResponse.json();
-      if (!paymentResponse.ok) {
-        setError(paymentData.error || "Payment could not be started.");
-        return;
-      }
 
       if (paymentData.success && paymentData.transaction?.checkoutUrl) {
         sessionStorage.setItem("pryrox_payment_return", "onboarding");
@@ -296,43 +315,23 @@ export default function OnboardingForm() {
         return;
       }
 
-      if (paymentData.success) {
-        let pollCount = 0;
-        const maxPolls = 60;
-        const interval = setInterval(async () => {
-          pollCount++;
-          try {
-            const statusResponse = await fetch(
-              `/api/kpay/status?transactionId=${paymentData.transaction?.id}`
-            );
-            const statusData = await statusResponse.json();
-            if (statusData.transaction?.status === "completed") {
-              clearInterval(interval);
-              sessionStorage.removeItem(ONBOARDING_STEP_KEY);
-              router.push("/dashboard");
-              router.refresh();
-            } else if (
-              statusData.transaction?.status === "failed" ||
-              pollCount >= maxPolls
-            ) {
-              clearInterval(interval);
-              setError(
-                pollCount >= maxPolls
-                  ? "Payment is taking longer than expected. Check again from Settings."
-                  : "Payment failed. You can retry from Settings."
-              );
-            }
-          } catch {
-            if (pollCount >= maxPolls) clearInterval(interval);
-          }
-        }, 5000);
+      if (paymentData.success && paymentData.transaction?.id) {
+        pollKpayTransaction(
+          paymentData.transaction.id,
+          () => {
+            sessionStorage.removeItem(ONBOARDING_STEP_KEY);
+            finishOnboarding();
+          },
+          (msg) => setError(msg)
+        );
       } else {
         setError(
-          paymentData.kpayResponse?.statusdesc || "Payment could not be started."
+          paymentData.kpayResponse?.statusdesc ||
+            "Payment could not be started."
         );
       }
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setLoading(false);
     }
@@ -617,7 +616,7 @@ export default function OnboardingForm() {
               <CardDescription>
                 {selectedPlan.price === 0
                   ? "Start on this plan at no charge. You can upgrade anytime."
-                  : "Pay with Mobile Money (Rwanda). Card checkout opens in a secure window when available."}
+                  : "Pay with Mobile Money (Rwanda) or card via Polar checkout."}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -631,6 +630,27 @@ export default function OnboardingForm() {
 
               {selectedPlan.price === 0 ? null : (
                 <div className="space-y-4 max-w-md">
+                  {polarEnabled ? (
+                    <RadioGroup
+                      value={paymentChannel}
+                      onValueChange={(v) =>
+                        setPaymentChannel(v as "kpay" | "polar")
+                      }
+                      className="grid gap-2"
+                    >
+                      <Label className="flex items-center gap-3 rounded-md border p-3 cursor-pointer">
+                        <RadioGroupItem value="kpay" id="pay-kpay" />
+                        <Smartphone className="h-4 w-4" />
+                        <span className="text-sm">Mobile Money (KPay)</span>
+                      </Label>
+                      <Label className="flex items-center gap-3 rounded-md border p-3 cursor-pointer">
+                        <RadioGroupItem value="polar" id="pay-polar" />
+                        <CreditCard className="h-4 w-4" />
+                        <span className="text-sm">Card / international (Polar)</span>
+                      </Label>
+                    </RadioGroup>
+                  ) : null}
+                  {paymentChannel === "kpay" ? (
                   <div className="space-y-2">
                     <Label htmlFor="pay-phone">MTN / Airtel number</Label>
                     <Input
@@ -641,6 +661,7 @@ export default function OnboardingForm() {
                       placeholder="0788123456"
                     />
                   </div>
+                  ) : null}
                   <div className="space-y-2">
                     <Label htmlFor="pay-email">Email for receipt</Label>
                     <Input
@@ -678,11 +699,13 @@ export default function OnboardingForm() {
                 ) : (
                   <Button
                     type="button"
-                    onClick={() => void payWithMobileMoney()}
+                    onClick={() => void payForPlan()}
                     disabled={loading}
                   >
                     {loading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : paymentChannel === "polar" ? (
+                      "Pay with card"
                     ) : (
                       "Pay with Mobile Money"
                     )}

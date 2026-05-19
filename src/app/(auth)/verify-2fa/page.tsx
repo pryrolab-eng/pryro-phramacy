@@ -41,7 +41,7 @@ export default function Verify2FAPage() {
         
         if (completeResponse.ok && completeData.token) {
           // Verify the token to create session
-          const { createClient } = await import('@/../../supabase/client')
+          const { createClient } = await import('../../../../supabase/client')
           const supabase = createClient()
           
           const { error: verifyError } = await supabase.auth.verifyOtp({

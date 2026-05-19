@@ -14,7 +14,7 @@ export const signInAction = async (formData: FormData) => {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   for (const { name } of cookieStore.getAll()) {
     if (name.startsWith("sb-") && name.includes("auth-token")) {
       try {
@@ -25,7 +25,7 @@ export const signInAction = async (formData: FormData) => {
     }
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
 
   console.log('🔐 LOGIN ATTEMPT:', email);
 
@@ -154,7 +154,7 @@ export const signUpAction = async (formData: FormData) => {
 };
 
 export const signOutAction = async () => {
-  const supabase = createClient();
+  const supabase = await createClient();
   console.log('🚪 SIGNING OUT');
   await supabase.auth.signOut();
   return redirect("/sign-in");
@@ -211,7 +211,7 @@ export const resetPasswordAction = async (formData: FormData) => {
     );
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
     error: userError,

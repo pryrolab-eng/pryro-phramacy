@@ -22,12 +22,18 @@ export async function getAdminPlans(): Promise<AdminSubscriptionPlanRow[]> {
   return data as AdminSubscriptionPlanRow[];
 }
 
+export type PolarSyncNote = {
+  action?: string;
+  error?: string;
+};
+
 export async function createAdminPlan(
   body: Record<string, unknown>,
-): Promise<{ plan: AdminSubscriptionPlanRow }> {
+): Promise<{ plan: AdminSubscriptionPlanRow; polarSync?: PolarSyncNote }> {
   const data = await fetchJson<{
     success: boolean;
     plan?: AdminSubscriptionPlanRow;
+    polarSync?: PolarSyncNote;
     error?: string;
   }>("/api/admin/plans", {
     method: "POST",
@@ -36,7 +42,30 @@ export async function createAdminPlan(
   });
   ensureApiSuccess(data, "Failed to add plan");
   if (!data.plan) throw new Error("Invalid plan response");
-  return { plan: data.plan };
+  return { plan: data.plan, polarSync: data.polarSync };
+}
+
+export async function syncAllPlansToPolar(): Promise<{
+  synced: number;
+  failed: number;
+  skipped: number;
+  results: unknown[];
+}> {
+  const data = await fetchJson<{
+    success: boolean;
+    synced?: number;
+    failed?: number;
+    skipped?: number;
+    results?: unknown[];
+    error?: string;
+  }>("/api/admin/plans/sync-polar", { method: "POST" });
+  ensureApiSuccess(data, "Failed to sync plans to Polar");
+  return {
+    synced: data.synced ?? 0,
+    failed: data.failed ?? 0,
+    skipped: data.skipped ?? 0,
+    results: data.results ?? [],
+  };
 }
 
 export async function updateAdminPlan(

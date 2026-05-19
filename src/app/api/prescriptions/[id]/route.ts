@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient()
     const body = await request.json()
@@ -17,7 +17,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         insurance_provider: body.insurance,
         notes: body.notes
       })
-      .eq('id', params.id)
+      .eq('id', id)
       .select()
       .single()
 
@@ -28,14 +28,15 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const supabase = await createClient()
     
     const { error } = await supabase
       .from('prescriptions')
       .delete()
-      .eq('id', params.id)
+      .eq('id', id)
 
     if (error) throw error
     return NextResponse.json({ success: true })

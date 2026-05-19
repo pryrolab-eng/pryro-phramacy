@@ -15,7 +15,8 @@ export default function PaymentSuccessPage() {
   const goNext = () => {
     const fromOb =
       typeof window !== 'undefined' &&
-      sessionStorage.getItem('pryrox_payment_return') === 'onboarding'
+      (sessionStorage.getItem('pryrox_payment_return') === 'onboarding' ||
+        searchParams.get('return') === 'onboarding')
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem('pryrox_payment_return')
     }
@@ -23,18 +24,44 @@ export default function PaymentSuccessPage() {
   }
 
   useEffect(() => {
+    const provider = searchParams.get('provider')
+    const checkoutId = searchParams.get('checkout_id')
     const tid = searchParams.get('tid')
     const refid = searchParams.get('refid')
 
-    if (!tid && !refid) {
-      setStatus('failed')
-      setMessage('Invalid payment reference')
-      return
-    }
-
     const checkPayment = async () => {
       try {
-        const response = await fetch(`/api/kpay/status?${tid ? `tid=${tid}` : `refid=${refid}`}`)
+        if (provider === 'polar' && checkoutId) {
+          const response = await fetch(
+            `/api/polar/status?checkoutId=${encodeURIComponent(checkoutId)}`,
+            { credentials: 'include' }
+          )
+          const data = await response.json()
+          if (data.status === 'completed') {
+            setStatus('success')
+            setMessage('Payment completed successfully!')
+          } else if (data.status === 'failed') {
+            setStatus('failed')
+            setMessage('Payment failed. Please try again.')
+          } else {
+            setStatus('failed')
+            setMessage(
+              'Payment is still processing. Check Settings in a few minutes.'
+            )
+          }
+          return
+        }
+
+        if (!tid && !refid) {
+          setStatus('failed')
+          setMessage('Invalid payment reference')
+          return
+        }
+
+        const response = await fetch(
+          `/api/kpay/status?${tid ? `tid=${tid}` : `refid=${refid}`}`,
+          { credentials: 'include' }
+        )
         const data = await response.json()
 
         if (data.transaction?.status === 'completed') {
@@ -47,13 +74,13 @@ export default function PaymentSuccessPage() {
           setStatus('failed')
           setMessage('Payment is still processing. Please check back later.')
         }
-      } catch (error) {
+      } catch {
         setStatus('failed')
         setMessage('Unable to verify payment status')
       }
     }
 
-    checkPayment()
+    void checkPayment()
   }, [searchParams])
 
   return (

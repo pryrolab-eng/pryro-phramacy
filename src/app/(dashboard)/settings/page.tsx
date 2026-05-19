@@ -14,12 +14,21 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Progress } from "@/components/ui/progress"
 import { Switch } from "@/components/ui/switch"
-import { Settings, CreditCard, Users, Building2, Check, Globe, DollarSign, ArrowUpRight, Shield, Bell, Download, Edit, Save, X, Zap, BarChart3, Database, Key, Webhook, Monitor, Palette, FileText, AlertTriangle, Clock, Plus } from 'lucide-react'
+import { Settings, CreditCard, Users, Building2, Check, Globe, DollarSign, ArrowUpRight, Shield, Bell, Download, Edit, Save, X, Zap, BarChart3, Database, Key, Webhook, Monitor, Palette, FileText, AlertTriangle, Clock, Plus, Loader2 } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
 import { ResponsiveContainer, LineChart, Line } from 'recharts'
+import {
+  createPendingSubscription,
+  pollKpayTransaction,
+  startKpaySubscriptionCheckout,
+  startPolarSubscriptionCheckout,
+} from '@/lib/subscription/checkout-client'
+import { fallbackPlansForDisplay } from '@/lib/subscription/default-plans'
+import { normalizeSubscriptionPlanRow } from '@/lib/subscription/normalize-plan'
 
 interface SubscriptionPlan {
+  id: string
   name: string
   price: number
   features: string[]
@@ -53,9 +62,11 @@ export default function SettingsPage() {
   const [verifyCode, setVerifyCode] = useState('')
   const [setupStep, setSetupStep] = useState<'qr' | 'verify' | 'backup'>('qr')
   const [isUpgradeDialogOpen, setIsUpgradeDialogOpen] = useState(false)
+  const [isUpgradePaymentLoading, setIsUpgradePaymentLoading] = useState(false)
   const [selectedUpgradePlan, setSelectedUpgradePlan] = useState<any>(null)
+  const [polarEnabled, setPolarEnabled] = useState(false)
   const [upgradePaymentData, setUpgradePaymentData] = useState({
-    paymentMethod: '1',
+    paymentMethod: 'kpay',
     phone: '',
     email: ''
   })
@@ -140,7 +151,16 @@ export default function SettingsPage() {
     nextBilling: '',
     amount: 0,
     paymentMethod: 'Not set',
-    invoices: [] as Array<{id: string, date: string, amount: number, status: string}>
+    emailReceiptsEnabled: false,
+    invoices: [] as Array<{
+      id: string
+      date: string
+      amount: number
+      status: string
+      planName?: string
+      provider?: string
+      invoiceNumber?: string
+    }>
   })
 
   const fetchBillingInfo = async () => {
@@ -148,11 +168,13 @@ export default function SettingsPage() {
       const response = await fetch('/api/invoices')
       if (response.ok) {
         const data = await response.json()
+        const history = data.history ?? data.invoices ?? []
         setBillingInfo({
           nextBilling: data.nextBilling || new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
           amount: data.amount || 0,
           paymentMethod: data.paymentMethod || 'Not set',
-          invoices: data.invoices || []
+          emailReceiptsEnabled: Boolean(data.emailReceiptsEnabled),
+          invoices: history
         })
       } else {
         console.error('Failed to fetch billing info')
@@ -223,6 +245,15 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    fetch('/api/polar/config')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.enabled) setPolarEnabled(true)
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
     const loadData = async () => {
       setLoading(true)
       await Promise.all([
@@ -240,34 +271,56 @@ export default function SettingsPage() {
     loadData()
   }, [])
 
+  useEffect(() => {
+    const onFocus = () => {
+      void fetchPlans()
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [currentPlan])
+
   const fetchPlans = async () => {
     try {
-      const response = await fetch('/api/plans')
+      const response = await fetch(`/api/plans?_=${Date.now()}`, {
+        cache: 'no-store',
+      })
       if (response.ok) {
         const data = await response.json()
-        setPlans(data.map((plan: any) => ({
-          name: plan.name,
-          price: plan.price,
-          current: currentPlan === plan.name.toLowerCase(),
-          features: plan.features
-        })))
+        setPlans(
+          (Array.isArray(data) ? data : []).map((row: Record<string, unknown>) => {
+            const plan = normalizeSubscriptionPlanRow(row)
+            return {
+              id: plan.id,
+              name: plan.name,
+              price: plan.price,
+              current: currentPlan === plan.name.toLowerCase(),
+              features: plan.features,
+            }
+          })
+        )
       } else {
         console.error('Failed to fetch plans, using defaults')
-        // Fallback to default plans
-        setPlans([
-          { name: 'Free', price: 0, current: currentPlan === 'free', features: ['Basic POS', 'Up to 3 users', 'Email support'] },
-          { name: 'Standard', price: 50000, current: currentPlan === 'standard', features: ['Full POS', 'Up to 10 users', 'Insurance integration', 'Priority support'] },
-          { name: 'Premium', price: 120000, current: currentPlan === 'premium', features: ['Everything in Standard', 'Unlimited users', 'Advanced analytics', '24/7 support'] }
-        ])
+        setPlans(
+          fallbackPlansForDisplay().map((plan) => ({
+            id: plan.id,
+            name: plan.name,
+            price: plan.price,
+            current: currentPlan === plan.name.toLowerCase(),
+            features: plan.features,
+          }))
+        )
       }
     } catch (error) {
       console.error('Error fetching plans:', error)
-      // Fallback to default plans
-      setPlans([
-        { name: 'Free', price: 0, current: currentPlan === 'free', features: ['Basic POS', 'Up to 3 users', 'Email support'] },
-        { name: 'Standard', price: 50000, current: currentPlan === 'standard', features: ['Full POS', 'Up to 10 users', 'Insurance integration', 'Priority support'] },
-        { name: 'Premium', price: 120000, current: currentPlan === 'premium', features: ['Everything in Standard', 'Unlimited users', 'Advanced analytics', '24/7 support'] }
-      ])
+      setPlans(
+        fallbackPlansForDisplay().map((plan) => ({
+          id: plan.id,
+          name: plan.name,
+          price: plan.price,
+          current: currentPlan === plan.name.toLowerCase(),
+          features: plan.features,
+        }))
+      )
     }
   }
 
@@ -357,7 +410,7 @@ export default function SettingsPage() {
         const response = await fetch('/api/subscriptions/upgrade', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId: plan.name })
+          body: JSON.stringify({ planId: plan.id || plan.name })
         })
         
         if (response.ok) {
@@ -382,7 +435,7 @@ export default function SettingsPage() {
     // Paid plan - open dialog
     setSelectedUpgradePlan(plan)
     setUpgradePaymentData({
-      paymentMethod: '1',
+      paymentMethod: 'kpay',
       phone: pharmacyInfo.phone || '',
       email: pharmacyInfo.email || ''
     })
@@ -395,124 +448,90 @@ export default function SettingsPage() {
     const plan = selectedUpgradePlan
     const { paymentMethod, phone, email } = upgradePaymentData
 
-    if (!phone || !email) {
-      alert('Please fill in all required fields.')
+    if (!email) {
+      alert('Please enter your email.')
+      return
+    }
+    if (paymentMethod === 'kpay' && !phone) {
+      alert('Please enter your Mobile Money number.')
       return
     }
 
+    setIsUpgradePaymentLoading(true)
     try {
+      const subscription = await createPendingSubscription(plan.id || plan.name)
 
-      // Validate phone number
+      if (paymentMethod === 'polar') {
+        const polar = await startPolarSubscriptionCheckout({
+          planId: plan.id || plan.name,
+          subscriptionId: subscription.id,
+          customerEmail: email,
+          customerName: pharmacyInfo.name || 'Pharmacy Customer',
+          customerPhone: phone,
+          returnContext: 'settings',
+        })
+        setIsUpgradeDialogOpen(false)
+        window.location.href = polar.checkoutUrl
+        return
+      }
+
       const phoneValidation = await fetch('/api/test-validation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber: phone })
+        body: JSON.stringify({ phoneNumber: phone }),
       })
       const phoneResult = await phoneValidation.json()
-      
+
       if (!phoneResult.phone?.isValid) {
         alert('Please enter a valid Rwanda phone number (e.g. 0788123456)')
         return
       }
 
-      // Create subscription
-      const subResponse = await fetch('/api/subscriptions/upgrade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId: plan.name })
+      const paymentData = await startKpaySubscriptionCheckout({
+        plan,
+        subscriptionId: subscription.id,
+        customerName: pharmacyInfo.name || 'Pharmacy Customer',
+        customerPhone: phoneResult.phone.formatted,
+        customerEmail: email,
+        bankId: phoneResult.phone.kpayBankId,
       })
 
-      if (subResponse.status === 401) {
-        alert('Please log in to upgrade your plan.')
-        window.location.href = '/login'
-        return
-      }
-
-      const subData = await subResponse.json()
-      if (!subResponse.ok) {
-        alert(subData.error || 'Failed to create subscription. Please try again.')
-        return
-      }
-
-      // Initiate KPay payment
-      const paymentResponse = await fetch('/api/kpay/initiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: plan.price,
-          subscriptionId: subData.subscription?.id,
-          paymentMethod: paymentMethod === '1' ? 'momo' : 'cc',
-          bankId: phoneResult.phone.kpayBankId || (paymentMethod === '1' ? '63510' : '000'),
-          customerName: pharmacyInfo.name || 'Pharmacy Customer',
-          customerPhone: phoneResult.phone.formatted,
-          customerEmail: email,
-          details: `${plan.name} plan subscription - Monthly payment`
-        })
-      })
-
-      if (paymentResponse.status === 401) {
-        alert('Please log in to process payment.')
-        window.location.href = '/login'
-        return
-      }
-
-      const paymentData = await paymentResponse.json()
-
-      if (!paymentResponse.ok) {
-        alert(paymentData.error || 'Payment initiation failed. Please try again.')
-        return
-      }
-
-      if (paymentData.success) {
-        if (paymentData.transaction?.checkoutUrl) {
-          // Card payment - redirect to checkout
-          if (confirm('You will be redirected to complete payment. Continue?')) {
-            window.location.href = paymentData.transaction.checkoutUrl
-          }
-        } else {
-          // Mobile money - show instructions
-          alert(`Payment initiated successfully!\n\nCheck your phone (${phoneResult.phone.formatted}) for a payment prompt.\nEnter your PIN to complete the payment.\n\nTransaction ID: ${paymentData.transaction?.tid || 'N/A'}\n\nCarrier: ${phoneResult.phone.carrier}`)
-          
-          // Poll for status
-          let pollCount = 0
-          const maxPolls = 60 // 5 minutes
-          
-          const checkStatus = setInterval(async () => {
-            pollCount++
-            try {
-              const statusResponse = await fetch(`/api/kpay/status?transactionId=${paymentData.transaction?.id}`)
-              const statusData = await statusResponse.json()
-              
-              if (statusData.transaction?.status === 'completed') {
-                clearInterval(checkStatus)
-                setCurrentPlan(plan.name.toLowerCase())
-                await fetchPharmacyInfo()
-                await fetchBillingInfo()
-                alert(`🎉 Payment successful! You have been upgraded to the ${plan.name} plan.`)
-              } else if (statusData.transaction?.status === 'failed') {
-                clearInterval(checkStatus)
-                alert('❌ Payment failed. Please try again or contact support.')
-              } else if (pollCount >= maxPolls) {
-                clearInterval(checkStatus)
-                alert('⏰ Payment status check timed out. Please check your payment status manually or contact support.')
-              }
-            } catch (error) {
-              console.error('Status check error:', error)
-              if (pollCount >= maxPolls) {
-                clearInterval(checkStatus)
-                alert('Unable to verify payment status. Please contact support.')
-              }
-            }
-          }, 5000)
-        }
-      } else {
-        alert(paymentData.kpayResponse?.statusdesc || 'Payment failed. Please try again.')
-      }
-      
       setIsUpgradeDialogOpen(false)
+
+      if (paymentData.success && paymentData.transaction?.checkoutUrl) {
+        window.location.href = paymentData.transaction.checkoutUrl
+        return
+      }
+
+      if (paymentData.success && paymentData.transaction?.id) {
+        alert(
+          `Payment initiated! Check your phone (${phoneResult.phone.formatted}) for the prompt.`
+        )
+        pollKpayTransaction(
+          paymentData.transaction.id,
+          async () => {
+            setCurrentPlan(plan.name.toLowerCase())
+            await fetchPharmacyInfo()
+            await fetchBillingInfo()
+            alert(`Payment successful! You are now on the ${plan.name} plan.`)
+          },
+          (msg) => alert(msg)
+        )
+      } else {
+        alert(
+          paymentData.kpayResponse?.statusdesc ||
+            'Payment failed. Please try again.'
+        )
+      }
     } catch (error) {
       console.error('Upgrade error:', error)
-      alert('An error occurred while processing your upgrade. Please try again or contact support.')
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'An error occurred while processing your upgrade.'
+      )
+    } finally {
+      setIsUpgradePaymentLoading(false)
     }
   }
 
@@ -887,11 +906,29 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
+                  {billingInfo.invoices.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-6 text-center">
+                      No payments recorded yet. After you pay for a plan, your receipt will appear here.
+                      {!billingInfo.emailReceiptsEnabled ? (
+                        <span className="block mt-2 text-xs">
+                          Email receipts require SMTP settings (SMTP_HOST, SMTP_USER, SMTP_PASS in .env).
+                        </span>
+                      ) : null}
+                    </p>
+                  ) : null}
                   {billingInfo.invoices.map(invoice => (
                     <div key={invoice.id} className="flex justify-between items-center p-3 border rounded-lg">
                       <div>
-                        <p className="font-medium">{invoice.date}</p>
-                        <p className="text-sm text-muted-foreground">{invoice.amount.toLocaleString()} RWF</p>
+                        <p className="font-medium">
+                          {invoice.planName || 'Subscription'} · {invoice.date}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {invoice.amount.toLocaleString()} RWF
+                          {invoice.provider ? ` · ${invoice.provider}` : ''}
+                        </p>
+                        {invoice.invoiceNumber ? (
+                          <p className="text-xs text-muted-foreground">{invoice.invoiceNumber}</p>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant="outline">{invoice.status}</Badge>
@@ -1839,12 +1876,20 @@ export default function SettingsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isUpgradeDialogOpen} onOpenChange={setIsUpgradeDialogOpen}>
+      <Dialog
+        open={isUpgradeDialogOpen}
+        onOpenChange={(open) => {
+          if (isUpgradePaymentLoading) return
+          setIsUpgradeDialogOpen(open)
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Upgrade to {selectedUpgradePlan?.name} Plan</DialogTitle>
             <DialogDescription>
-              Complete payment to upgrade your subscription
+              {isUpgradePaymentLoading
+                ? 'Starting payment — please wait…'
+                : 'Complete payment to upgrade your subscription'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1868,25 +1913,31 @@ export default function SettingsPage() {
                 <Select 
                   value={upgradePaymentData.paymentMethod} 
                   onValueChange={(value) => setUpgradePaymentData({...upgradePaymentData, paymentMethod: value})}
+                  disabled={isUpgradePaymentLoading}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger disabled={isUpgradePaymentLoading}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="1">Mobile Money (MTN/Airtel)</SelectItem>
-                    <SelectItem value="2">Card (Visa/Mastercard)</SelectItem>
+                    <SelectItem value="kpay">Mobile Money — KPay (Rwanda)</SelectItem>
+                    {polarEnabled ? (
+                      <SelectItem value="polar">Card / international — Polar</SelectItem>
+                    ) : null}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="grid gap-2">
-                <Label>Phone Number</Label>
-                <Input
-                  placeholder="0788123456"
-                  value={upgradePaymentData.phone}
-                  onChange={(e) => setUpgradePaymentData({...upgradePaymentData, phone: e.target.value})}
-                />
-              </div>
+              {upgradePaymentData.paymentMethod === 'kpay' ? (
+                <div className="grid gap-2">
+                  <Label>Phone Number</Label>
+                  <Input
+                    placeholder="0788123456"
+                    value={upgradePaymentData.phone}
+                    disabled={isUpgradePaymentLoading}
+                    onChange={(e) => setUpgradePaymentData({...upgradePaymentData, phone: e.target.value})}
+                  />
+                </div>
+              ) : null}
 
               <div className="grid gap-2">
                 <Label>Email</Label>
@@ -1894,22 +1945,42 @@ export default function SettingsPage() {
                   type="email"
                   placeholder="your@email.com"
                   value={upgradePaymentData.email}
+                  disabled={isUpgradePaymentLoading}
                   onChange={(e) => setUpgradePaymentData({...upgradePaymentData, email: e.target.value})}
                 />
               </div>
             </div>
 
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setIsUpgradeDialogOpen(false)} className="flex-1">
-                Cancel
-              </Button>
-              <Button 
-                onClick={processUpgradePayment} 
-                disabled={!upgradePaymentData.phone || !upgradePaymentData.email}
+              <Button
+                variant="outline"
+                onClick={() => setIsUpgradeDialogOpen(false)}
+                disabled={isUpgradePaymentLoading}
                 className="flex-1"
               >
-                <CreditCard className="mr-2 h-4 w-4" />
-                Pay Now
+                Cancel
+              </Button>
+              <Button
+                onClick={() => void processUpgradePayment()}
+                disabled={
+                  isUpgradePaymentLoading ||
+                  !upgradePaymentData.email ||
+                  (upgradePaymentData.paymentMethod === 'kpay' &&
+                    !upgradePaymentData.phone)
+                }
+                className="flex-1"
+              >
+                {isUpgradePaymentLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing…
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    Pay Now
+                  </>
+                )}
               </Button>
             </div>
           </div>

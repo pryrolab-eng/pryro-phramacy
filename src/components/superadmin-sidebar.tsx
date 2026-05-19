@@ -3,18 +3,9 @@
 import * as React from "react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import {
-  Shield,
-  Store,
-  Users,
-  Settings,
-  BarChart3,
-  Package,
-  CreditCard,
-  FileText,
-  LogOut,
-} from "lucide-react"
+import { Shield, LogOut } from "lucide-react"
 
+import { ADMIN_SIDEBAR_NAV } from "@/lib/admin/navigation"
 import {
   Sidebar,
   SidebarContent,
@@ -26,59 +17,11 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
-
 } from "@/components/ui/sidebar"
 
-
-const superadminData = {
-  user: {
-    name: "Super Admin",
-    email: "abdousentore@gmail.com",
-    avatar: "/avatars/admin.jpg",
-  },
-  navMain: [
-    {
-      title: "Dashboard",
-      url: "/admin",
-      icon: BarChart3,
-    },
-    {
-      title: "Pharmacy List",
-      url: "/admin/stores",
-      icon: Store,
-    },
-    {
-      title: "Categories",
-      url: "/admin/categories",
-      icon: Package,
-    },
-    {
-      title: "Subscriptions",
-      url: "/admin/subscriptions",
-      icon: CreditCard,
-    },
-    {
-      title: "Reports",
-      url: "/admin/reports",
-      icon: FileText,
-    },
-    {
-      title: "Settings",
-      url: "/admin/settings",
-      icon: Settings,
-    },
-  ],
-}
-
 export function SuperadminSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  let pathname = '/admin'
-  try {
-    pathname = usePathname()
-  } catch (error) {
-    // Fallback when usePathname is not available
-    console.log('usePathname not available, using fallback')
-  }
-  
+  const pathname = usePathname()
+
   return (
     <Sidebar variant="inset" {...props}>
       <SidebarHeader>
@@ -98,19 +41,21 @@ export function SuperadminSidebar({ ...props }: React.ComponentProps<typeof Side
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      
-      <SidebarContent>
+
+      <SidebarContent className="overflow-y-auto">
         <SidebarGroup>
           <SidebarGroupLabel>Administration</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {superadminData.navMain.map((item) => {
+              {ADMIN_SIDEBAR_NAV.map((item) => {
                 const isActive =
-                  item.url === '/admin'
-                    ? pathname === '/admin' || pathname === '/superadmin'
-                    : pathname === item.url || pathname.startsWith(`${item.url}/`)
+                  item.url === "/admin"
+                    ? pathname === "/admin" || pathname === "/superadmin"
+                    : pathname === item.url ||
+                      pathname.startsWith(`${item.url}/`)
+
                 return (
-                  <SidebarMenuItem key={item.title}>
+                  <SidebarMenuItem key={item.url}>
                     <SidebarMenuButton asChild isActive={isActive}>
                       <Link href={item.url}>
                         <item.icon />
@@ -124,7 +69,7 @@ export function SuperadminSidebar({ ...props }: React.ComponentProps<typeof Side
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      
+
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>

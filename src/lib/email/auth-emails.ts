@@ -143,7 +143,7 @@ export async function sendSignupConfirmationEmail(options: {
   const appUrl = getAppUrl();
   const redirect = callbackUrl(redirectTo);
 
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data, error } = await supabase.auth.signUp({
     email,

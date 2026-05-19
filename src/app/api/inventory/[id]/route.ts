@@ -3,8 +3,9 @@ import { createClient } from '../../../../../supabase/server'
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -22,7 +23,7 @@ export async function PUT(
         selling_price: body.selling_price,
         minimum_stock_level: body.minimum_stock_level
       })
-      .eq('id', params.id)
+      .eq('id', id)
 
     if (error) throw error
 
@@ -35,8 +36,9 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -48,7 +50,7 @@ export async function DELETE(
     const { error } = await supabase
       .from('inventory')
       .delete()
-      .eq('id', params.id)
+      .eq('id', id)
 
     if (error) throw error
 

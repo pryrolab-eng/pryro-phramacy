@@ -5,7 +5,7 @@ import { User, UserCircle } from "lucide-react";
 import UserProfile from "./user-profile";
 
 export default async function Navbar() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },

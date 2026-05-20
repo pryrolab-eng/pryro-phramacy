@@ -13,29 +13,16 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  console.log('🏠 DASHBOARD LAYOUT CHECK');
+  const supabase = createClient()
   
-  const supabase = await createClient()
-  
-  // Use getUser which handles session refresh automatically
-  const { data: { user }, error } = await supabase.auth.getUser()
-  
-  console.log('👤 LAYOUT USER CHECK:', {
-    hasUser: !!user,
-    userEmail: user?.email,
-    userId: user?.id,
-    error: error?.message,
-    errorCode: error?.status
-  });
+  const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
-    console.log('➡️ LAYOUT: No user, redirecting to sign-in');
     redirect('/sign-in')
   }
-  
-  console.log('✅ LAYOUT: User authenticated successfully');
 
-  const [{ data: publicProfile }, { data: membershipRows }] = await Promise.all([
+  // Run all DB queries in parallel
+  const [{ data: publicProfile }, { data: membershipRows }, ] = await Promise.all([
     supabase
       .from('users')
       .select('is_platform_admin')
@@ -50,16 +37,13 @@ export default async function DashboardLayout({
 
   const userProfile = selectPrimaryMembership(membershipRows ?? undefined)
 
-  console.log('👤 USER ROLE:', userProfile?.role);
-
   const isPlatformAdmin =
     publicProfile?.is_platform_admin === true ||
     userProfile?.role === 'superadmin' ||
     userProfile?.role === 'admin'
 
-  // Check subscription status
   let isSubscriptionExpired = false
-  let userRole = userProfile?.role || 'pharmacy_owner'
+  const userRole = userProfile?.role || 'pharmacy_owner'
   
   if (userProfile?.pharmacy_id && !isPlatformAdmin) {
     const { data: pharmacy } = await supabase
@@ -74,17 +58,9 @@ export default async function DashboardLayout({
     }
   }
 
-  // Determine which sidebar to show based on user role
   const getSidebar = () => {
-    if (isPlatformAdmin) {
-      return <SuperadminSidebar />
-    }
-    
-    if (userProfile?.role === 'pharmacist') {
-      return <PharmacistSidebar />
-    }
-    
-    // Default to pharmacy owner sidebar
+    if (isPlatformAdmin) return <SuperadminSidebar />
+    if (userProfile?.role === 'pharmacist') return <PharmacistSidebar />
     return <PharmacySidebar />
   }
 

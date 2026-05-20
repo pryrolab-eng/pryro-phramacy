@@ -54,50 +54,54 @@ export function ForgotPasswordForm({ initialMessage }: Props) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col space-y-6">
-      <div className="space-y-2 text-center">
-        <h1 className="text-3xl font-semibold tracking-tight">Reset Password</h1>
-        <p className="text-sm text-muted-foreground">
-          Already have an account?{" "}
-          <Link
-            className="text-primary font-medium hover:underline transition-all"
-            href="/sign-in"
-          >
-            Sign in
-          </Link>
-        </p>
+    <form onSubmit={handleSubmit} className="flex flex-col space-y-5">
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="4" width="20" height="16" rx="2" />
+            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+          </svg>
+        </span>
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          placeholder="Email"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="w-full border-0 border-b border-gray-200 rounded-none bg-transparent pl-9 pb-2 pt-2 text-sm placeholder:text-gray-400 focus-visible:ring-0 focus-visible:border-gray-900 transition-colors"
+        />
       </div>
 
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="email" className="text-sm font-medium">
-            Email
-          </Label>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            placeholder="you@example.com"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full"
-          />
-        </div>
-      </div>
-
-      <Button type="submit" disabled={loading} className="w-full">
+      <button
+        type="submit"
+        disabled={loading}
+        className="flex items-center gap-2 rounded-full bg-gray-950 px-6 py-2.5 text-sm font-medium text-white hover:bg-gray-800 transition-colors disabled:opacity-60 w-fit"
+      >
         {loading ? (
           <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Sending reset link...
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Sending...
           </>
         ) : (
-          "Reset Password"
+          <>
+            Send Reset Link
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </>
         )}
-      </Button>
+      </button>
 
       {message ? <FormMessage message={message} /> : null}
+
+      <p className="text-sm text-gray-500">
+        Remember your password?{" "}
+        <Link href="/sign-in" className="font-medium text-gray-900 hover:underline">
+          Sign in
+        </Link>
+      </p>
     </form>
   );
 }

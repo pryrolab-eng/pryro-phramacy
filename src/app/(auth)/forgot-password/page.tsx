@@ -1,7 +1,8 @@
 import { FormMessage, Message } from "@/components/form-message";
-import { SmtpMessage } from "../smtp-message";
-import Navbar from "@/components/navbar";
+import { Logo } from "@/components/logo";
+import { AuthBrandingLogo, AuthBrandingFooter, AuthBrandingName } from "@/components/auth-branding";
 import { ForgotPasswordForm } from "@/components/forgot-password-form";
+import Link from "next/link";
 
 export default async function ForgotPassword(props: {
   searchParams: Promise<Message>;
@@ -24,14 +25,64 @@ export default async function ForgotPassword(props: {
         : undefined;
 
   return (
-    <>
-      <Navbar />
-      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-8">
-        <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-sm">
-          <ForgotPasswordForm initialMessage={initialMessage} />
-        </div>
-        <SmtpMessage />
+    <div className="flex min-h-screen bg-white">
+      {/* Top-left logo */}
+      <div className="absolute top-6 left-6 z-10">
+        <Link href="/">
+          <AuthBrandingLogo />
+        </Link>
       </div>
-    </>
+
+      {/* Left — form */}
+      <div className="flex w-full flex-col justify-center bg-white px-8 py-12 lg:w-1/2 lg:px-16 xl:px-24">
+        <div className="mx-auto w-full max-w-md">
+          {/* Back button */}
+          <Link
+            href="/sign-in"
+            className="mb-8 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5M12 5l-7 7 7 7" />
+            </svg>
+          </Link>
+
+          <h1 className="text-3xl font-bold text-gray-900">Forgot Password</h1>
+          <p className="mt-2 text-sm text-gray-500">
+            Enter your email and we'll send you a reset link.
+          </p>
+
+          <div className="mt-8">
+            <ForgotPasswordForm initialMessage={initialMessage} />
+          </div>
+        </div>
+      </div>
+
+      {/* Right — black panel */}
+      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gray-950">
+        <div className="absolute -top-20 -right-20 h-72 w-72 rounded-full bg-white/5" />
+        <div className="absolute bottom-10 -left-16 h-56 w-56 rounded-full bg-white/5" />
+        <div className="absolute top-1/2 right-0 h-40 w-40 rounded-full bg-white/5" />
+
+        <div className="relative z-10 flex w-full flex-col items-center justify-center gap-6 px-12">
+          <div className="w-64 text-center">
+            <h2 className="text-2xl font-bold text-white leading-snug">Secure Account Recovery</h2>
+            <p className="mt-2 text-sm text-gray-400">We'll send a secure link to your email to reset your password safely.</p>
+          </div>
+
+          <div className="flex w-64 flex-wrap justify-center gap-2">
+            {["Secure Link", "Email Verified", "Quick Reset", "Safe & Private"].map((f) => (
+              <span key={f} className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white border border-white/20">
+                {f}
+              </span>
+            ))}
+          </div>
+
+        </div>
+
+        {/* Footer */}
+        <AuthBrandingFooter />
+
+      </div>
+    </div>
   );
 }

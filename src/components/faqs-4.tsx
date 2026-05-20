@@ -7,48 +7,48 @@ export default function FAQsFour() {
     const faqItems = [
         {
             id: 'item-1',
-            question: 'How long does shipping take?',
-            answer: 'Standard shipping takes 3-5 business days, depending on your location. Express shipping options are available at checkout for 1-2 business day delivery.',
+            question: 'How do I get started with Pryrox?',
+            answer: 'Sign up, create your pharmacy profile, and you can start managing inventory, sales, and staff right away. Onboarding takes less than 10 minutes.',
         },
         {
             id: 'item-2',
-            question: 'What payment methods do you accept?',
-            answer: 'We accept all major credit cards (Visa, Mastercard, American Express), PayPal, Apple Pay, and Google Pay. For enterprise customers, we also offer invoicing options.',
+            question: 'Does Pryrox support multiple branches?',
+            answer: 'Yes. Pryrox is built for multi-branch pharmacies. Each branch has its own inventory, staff, and sales data, all visible from a single owner dashboard.',
         },
         {
             id: 'item-3',
-            question: 'Can I change or cancel my order?',
-            answer: 'You can modify or cancel your order within 1 hour of placing it. After this window, please contact our customer support team who will assist you with any changes.',
+            question: 'Which insurance providers are supported?',
+            answer: 'Pryrox natively supports RSSB, RAMA, MMI, and Radiant insurance providers with automatic coverage calculations per item at the point of sale.',
         },
         {
             id: 'item-4',
-            question: 'Do you ship internationally?',
-            answer: "Yes, we ship to over 50 countries worldwide. International shipping typically takes 7-14 business days. Additional customs fees may apply depending on your country's import regulations.",
+            question: 'What payment methods does the POS support?',
+            answer: 'The POS supports cash, card, mobile money, insurance, and mixed payments. KPay integration is available for subscription billing.',
         },
         {
             id: 'item-5',
-            question: 'What is your return policy?',
-            answer: 'We offer a 30-day return policy for most items. Products must be in original condition with tags attached. Some specialty items may have different return terms, which will be noted on the product page.',
+            question: 'Is my data secure?',
+            answer: 'Yes. All data is stored in Supabase with Row-Level Security enforced at the database level. Each pharmacy can only access its own data. Sessions use HTTP-only cookies with JWT authentication.',
+        },
+        {
+            id: 'item-6',
+            question: 'Can I manage prescriptions and patients?',
+            answer: 'Yes. Pryrox includes a full prescription queue with priority levels, patient profiles, insurance numbers, and dispensing workflows for pharmacists.',
         },
     ]
 
     return (
-        <section className="py-16 md:py-24">
+        <section className="pt-6 md:pt-10 pb-8 md:pb-12">
             <div className="mx-auto max-w-5xl px-4 md:px-6">
                 <div className="mx-auto max-w-xl text-center">
                     <h2 className="text-balance text-3xl font-bold md:text-4xl lg:text-5xl">Frequently Asked Questions</h2>
-                    <p className="text-muted-foreground mt-4 text-balance">Discover quick and comprehensive answers to common questions about our platform, services, and features.</p>
+                    <p className="text-muted-foreground mt-4 text-balance">Everything you need to know about Pryrox pharmacy management platform.</p>
                 </div>
 
                 <div className="mx-auto mt-12 max-w-xl">
-                    <Accordion
-                        type="single"
-                        collapsible
-                        className="bg-muted dark:bg-muted/50 w-full rounded-2xl p-1">
+                    <Accordion type="single" collapsible className="bg-muted dark:bg-muted/50 w-full rounded-2xl p-1">
                         {faqItems.map((item) => (
-                            <div
-                                className="group"
-                                key={item.id}>
+                            <div className="group" key={item.id}>
                                 <AccordionItem
                                     value={item.id}
                                     className="data-[state=open]:bg-card dark:data-[state=open]:bg-muted peer rounded-xl border-none px-7 py-1 data-[state=open]:border-none data-[state=open]:shadow-sm">
@@ -63,11 +63,13 @@ export default function FAQsFour() {
                     </Accordion>
 
                     <p className="text-muted-foreground mt-6 px-8">
-                        Can't find what you're looking for? Contact our{' '}
-                        <Link
-                            href="#"
-                            className="text-primary font-medium hover:underline">
-                            customer support team
+                        Still have questions?{' '}
+                        <Link href="/sign-up" className="text-primary font-medium hover:underline">
+                            Start a free trial
+                        </Link>{' '}
+                        or{' '}
+                        <Link href="#" className="text-primary font-medium hover:underline">
+                            contact support
                         </Link>
                     </p>
                 </div>

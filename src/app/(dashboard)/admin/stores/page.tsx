@@ -38,7 +38,7 @@ export default function PharmacyManagementPage() {
     owner_email: '',
     owner_password: '',
     subscription_plan: 'free',
-    insurance_providers: []
+    insurance_providers: [] as string[]
   })
 
   const handleInsuranceChange = (insuranceId: string, checked: boolean) => {

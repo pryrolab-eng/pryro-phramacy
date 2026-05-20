@@ -1,4 +1,5 @@
 import { Logo } from '@/components/logo'
+import { DynamicLogo, AuthBrandingName } from '@/components/auth-branding'
 import Link from 'next/link'
 
 const links = [
@@ -30,13 +31,13 @@ const links = [
 
 export default function FooterSection() {
     return (
-        <footer className="py-16 md:py-32">
+        <footer className="pt-6 md:pt-10 pb-16 md:pb-32">
             <div className="mx-auto max-w-5xl px-6">
                 <Link
                     href="/"
                     aria-label="go home"
                     className="mx-auto block size-fit">
-                    <Logo />
+                    <DynamicLogo />
                 </Link>
 
                 <div className="my-8 flex flex-wrap justify-center gap-6 text-sm">
@@ -158,7 +159,9 @@ export default function FooterSection() {
                         </svg>
                     </Link>
                 </div>
-                <span className="text-muted-foreground block text-center text-sm"> © {new Date().getFullYear()} Tailark, All rights reserved</span>
+                <span className="text-muted-foreground block text-center text-sm">
+                    © {new Date().getFullYear()} <AuthBrandingName />, All rights reserved
+                </span>
             </div>
         </footer>
     )

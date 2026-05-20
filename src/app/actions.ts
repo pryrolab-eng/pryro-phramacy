@@ -19,68 +19,16 @@ export const signInAction = async (formData: FormData) => {
     if (name.startsWith("sb-") && name.includes("auth-token")) {
       try {
         cookieStore.set(name, "", { path: "/", maxAge: 0 });
-      } catch {
-        /* ignore if cookie is not writable in this context */
-      }
+      } catch {}
     }
   }
 
   const supabase = createClient();
 
-  console.log('🔐 LOGIN ATTEMPT:', email);
-
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    console.log('❌ LOGIN ERROR:', error.message);
     return encodedRedirect("error", "/sign-in", error.message);
-  }
-
-  console.log('✅ LOGIN SUCCESS:', data.user?.email);
-
-  // Verify session was created
-  const { data: session } = await supabase.auth.getSession();
-  if (!session.session) {
-    console.log('❌ NO SESSION AFTER LOGIN');
-    return encodedRedirect("error", "/sign-in", "Session creation failed");
-  }
-
-  // Setup test users if needed
-  if (data.user && email.includes('@test.com')) {
-    console.log('🧪 SETTING UP TEST USER');
-    const role = email.includes('pharmacy') ? 'pharmacy_owner' : 
-                 email.includes('pharmacist') ? 'pharmacist' : 'cashier';
-    
-    try {
-      const { data: existingUser } = await supabase
-        .from('pharmacy_users')
-        .select('user_id')
-        .eq('user_id', data.user.id)
-        .single();
-      
-      if (!existingUser) {
-        console.log('👤 CREATING USER RECORDS');
-        await Promise.all([
-          supabase.from('users').upsert({
-            id: data.user.id,
-            email: data.user.email,
-            role: role
-          }),
-          supabase.from('pharmacy_users').upsert({
-            pharmacy_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-            user_id: data.user.id,
-            role: role,
-            branch_id: null,
-            is_active: true
-          })
-        ]);
-      }
-    } catch (setupError) {
-      console.log('❌ USER SETUP ERROR:', setupError);
-    }
   }
 
   // Check if 2FA is enabled
@@ -91,26 +39,20 @@ export const signInAction = async (formData: FormData) => {
     .single();
 
   if (userData?.two_factor_enabled) {
-    console.log('🔐 2FA REQUIRED');
-    // Create temporary session token
     const sessionToken = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
-    console.log('Creating session, expires:', expiresAt.toISOString());
-    
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
     await supabase.from('two_factor_sessions').insert({
       user_id: data.user.id,
       session_token: sessionToken,
       verified: false,
       expires_at: expiresAt.toISOString()
     });
-    
-    // Sign out temporarily
+
     await supabase.auth.signOut();
-    
     return redirect(`/verify-2fa?session=${sessionToken}`);
   }
 
-  console.log('➡️ REDIRECTING TO DASHBOARD');
   redirect("/dashboard");
 };
 
@@ -141,10 +83,7 @@ export const signUpAction = async (formData: FormData) => {
     redirect("/onboarding");
   }
 
-  const viaFallback =
-    result.provider === "nodemailer"
-      ? " (sent via backup email service)"
-      : "";
+  const viaFallback = result.provider === "nodemailer" ? " (sent via backup email service)" : "";
 
   return encodedRedirect(
     "success",
@@ -153,9 +92,26 @@ export const signUpAction = async (formData: FormData) => {
   );
 };
 
+export const signInWithGoogleAction = async () => {
+  const supabase = createClient();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+    },
+  });
+
+  if (error) {
+    return encodedRedirect("error", "/sign-in", error.message);
+  }
+
+  if (data.url) {
+    redirect(data.url);
+  }
+};
+
 export const signOutAction = async () => {
   const supabase = createClient();
-  console.log('🚪 SIGNING OUT');
   await supabase.auth.signOut();
   return redirect("/sign-in");
 };
@@ -166,17 +122,13 @@ export const forgotPasswordAction = async (formData: FormData) => {
     return encodedRedirect("error", "/forgot-password", "Email is required.");
   }
 
-  const result = await sendPasswordRecoveryEmail(
-    email,
-    "/dashboard/reset-password"
-  );
+  const result = await sendPasswordRecoveryEmail(email, "/dashboard/reset-password");
 
   if (!result.ok) {
     return encodedRedirect("error", "/forgot-password", result.error);
   }
 
-  const viaFallback =
-    result.provider === "nodemailer" ? " (sent via backup email service)" : "";
+  const viaFallback = result.provider === "nodemailer" ? " (sent via backup email service)" : "";
 
   return encodedRedirect(
     "success",
@@ -190,32 +142,17 @@ export const resetPasswordAction = async (formData: FormData) => {
   const confirmPassword = formData.get("confirmPassword") as string;
 
   if (!password || !confirmPassword) {
-    return encodedRedirect(
-      "error",
-      "/dashboard/reset-password",
-      "Password fields are required.",
-    );
+    return encodedRedirect("error", "/dashboard/reset-password", "Password fields are required.");
   }
   if (password !== confirmPassword) {
-    return encodedRedirect(
-      "error",
-      "/dashboard/reset-password",
-      "Passwords do not match.",
-    );
+    return encodedRedirect("error", "/dashboard/reset-password", "Passwords do not match.");
   }
   if (password.length < 6) {
-    return encodedRedirect(
-      "error",
-      "/dashboard/reset-password",
-      "Password must be at least 6 characters.",
-    );
+    return encodedRedirect("error", "/dashboard/reset-password", "Password must be at least 6 characters.");
   }
 
   const supabase = createClient();
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
 
   if (userError || !user) {
     return encodedRedirect(
@@ -231,9 +168,5 @@ export const resetPasswordAction = async (formData: FormData) => {
   }
 
   await supabase.auth.signOut();
-  return encodedRedirect(
-    "success",
-    "/sign-in",
-    "Your password was updated. Sign in with your new password.",
-  );
+  return encodedRedirect("success", "/sign-in", "Your password was updated. Sign in with your new password.");
 };

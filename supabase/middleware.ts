@@ -1,82 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
-import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { getSupabaseAnonKey, getSupabaseUrl } from "./env";
 
-/**
- * After login / sign-up, send users either to the dashboard or to onboarding
- * until they have a pharmacy and an active subscription.
- */
-async function postAuthLandingPath(
-  supabase: SupabaseClient,
-  user: User
-): Promise<"/dashboard" | "/onboarding"> {
-  const { data: profile } = await supabase
-    .from("users")
-    .select("is_platform_admin")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profile?.is_platform_admin) {
-    return "/dashboard";
-  }
-
-  const { data: memberships } = await supabase
-    .from("pharmacy_users")
-    .select("pharmacy_id")
-    .eq("user_id", user.id)
-    .eq("is_active", true)
-    .limit(1);
-
-  let pharmacyId = memberships?.[0]?.pharmacy_id;
-  if (!pharmacyId) {
-    const { data: owned } = await supabase
-      .from("pharmacies")
-      .select("id")
-      .eq("owner_id", user.id)
-      .limit(1)
-      .maybeSingle();
-    if (owned?.id) {
-      await supabase.from("pharmacy_users").upsert(
-        {
-          pharmacy_id: owned.id,
-          user_id: user.id,
-          role: "pharmacy_owner",
-          is_active: true,
-        },
-        { onConflict: "pharmacy_id,user_id" }
-      );
-      pharmacyId = owned.id;
-    }
-  }
-  if (!pharmacyId) {
-    return "/onboarding";
-  }
-
-  const { data: activeSub } = await supabase
-    .from("subscriptions")
-    .select("id")
-    .eq("pharmacy_id", pharmacyId)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  if (!activeSub) {
-    return "/onboarding";
-  }
-
-  return "/dashboard";
-}
-
 export const updateSession = async (request: NextRequest) => {
-  console.log('🔍 MIDDLEWARE:', request.nextUrl.pathname);
-  
   try {
-    // Create an unmodified response
     const response = NextResponse.next({
-      request: {
-        headers: request.headers,
-      },
+      request: { headers: request.headers },
     });
 
     const supabase = createServerClient(
@@ -97,14 +26,18 @@ export const updateSession = async (request: NextRequest) => {
       }
     );
 
-    // This will refresh session if expired - required for Server Components
-    // https://supabase.com/docs/guides/auth/server-side/nextjs
     const pathname = request.nextUrl.pathname;
     const isResetPasswordPath = pathname.startsWith("/dashboard/reset-password");
     const isAuthCallbackPath = pathname.startsWith("/auth/callback");
+    const isAuthProcessingPath =
+      pathname.startsWith("/auth/") ||
+      pathname.startsWith("/auth-success") ||
+      pathname.startsWith("/verify-2fa");
 
+    // Refresh session — required for Server Components
     const { data: { user }, error } = await supabase.auth.getUser();
 
+    // Clean up stale tokens
     if (
       !isResetPasswordPath &&
       !isAuthCallbackPath &&
@@ -118,11 +51,12 @@ export const updateSession = async (request: NextRequest) => {
         }
       }
     }
-    
-    console.log('👤 USER:', user?.email || 'No user');
-    console.log('❌ ERROR:', error?.message || 'No error');
 
-    // protected routes - redirect to sign-in if no user
+    // Allow auth processing paths through unconditionally
+    if (isAuthProcessingPath) {
+      return response;
+    }
+
     const protectedPaths = [
       "/dashboard",
       "/superadmin",
@@ -139,70 +73,28 @@ export const updateSession = async (request: NextRequest) => {
       "/admin",
       "/onboarding",
     ];
-    
-    const authPaths = ["/sign-in", "/sign-up", "/forgot-password", "/auth/success", "/auth/callback", "/auth-success", "/verify-2fa"];
 
-    const isProtectedPath = protectedPaths.some((path) =>
-      pathname.startsWith(path)
-    );
+    const isProtectedPath = protectedPaths.some((p) => pathname.startsWith(p));
+    const isPublicAuthPath =
+      pathname.startsWith("/sign-in") ||
+      pathname.startsWith("/sign-up") ||
+      pathname.startsWith("/forgot-password");
 
+    // Unauthenticated user hitting a protected path → sign-in
     if (isProtectedPath && (!user || error) && !isResetPasswordPath) {
-      console.log("➡️ REDIRECTING unauthenticated user to /sign-in");
       return NextResponse.redirect(new URL("/sign-in", request.url));
     }
 
-    if (
-      user &&
-      !error &&
-      isProtectedPath &&
-      !pathname.startsWith("/onboarding") &&
-      !pathname.startsWith("/payment-success") &&
-      !pathname.startsWith("/dashboard/reset-password")
-    ) {
-      const landing = await postAuthLandingPath(supabase, user);
-      if (landing === "/onboarding") {
-        return NextResponse.redirect(new URL("/onboarding", request.url));
-      }
-    }
-
-    if (pathname.startsWith("/onboarding") && user && !error) {
-      const dest = await postAuthLandingPath(supabase, user);
-      if (dest === "/dashboard") {
-        return NextResponse.redirect(new URL("/dashboard", request.url));
-      }
-    }
-
-    // Redirect authenticated users away from auth pages (except success/callback)
-    const publicAuthPaths = ["/sign-in", "/sign-up", "/forgot-password"];
-    const isPublicAuthPath = publicAuthPaths.some((path) =>
-      pathname.startsWith(path)
-    );
-
+    // Authenticated user hitting a public auth page → dashboard
+    // Only do the onboarding check on the auth pages, NOT on every dashboard navigation
     if (isPublicAuthPath && user && !error) {
-      const dest = await postAuthLandingPath(supabase, user);
-      console.log("➡️ REDIRECTING authenticated user from auth page to", dest);
-      return NextResponse.redirect(new URL(dest, request.url));
-    }
-    
-    // Allow auth success/callback pages to run without protection
-    const isAuthProcessingPath = authPaths.some((path) =>
-      pathname.startsWith(path)
-    );
-
-    if (isAuthProcessingPath) {
-      console.log("✅ ALLOWING auth processing path:", pathname);
-      return response;
+      return NextResponse.redirect(new URL("/dashboard", request.url));
     }
 
     return response;
-  } catch (e) {
-    console.error('❌ MIDDLEWARE ERROR:', e);
-    // If you are here, a Supabase client could not be created!
-    // This is likely because you have not set up environment variables.
+  } catch {
     return NextResponse.next({
-      request: {
-        headers: request.headers,
-      },
+      request: { headers: request.headers },
     });
   }
 };

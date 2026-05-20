@@ -6,7 +6,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { patientId, insuranceType, items, doctorName, mrcCode } = body
 
-    const supabase = createClient()
+    const supabase = await createClient()
     
     // Get pharmacy settings
     const { data: pharmacy } = await supabase

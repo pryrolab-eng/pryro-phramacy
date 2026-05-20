@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,7 +14,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const { data: currentPharmacy } = await supabase
       .from('pharmacies')
       .select('owner_id, email')
-      .eq('id', params.id)
+      .eq('id', id)
       .single()
     
     // Update pharmacy information
@@ -29,7 +30,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         owner_name: body.owner_name,
         owner_email: body.owner_email || body.email
       })
-      .eq('id', params.id)
+      .eq('id', id)
       .select()
       .single()
 
@@ -80,7 +81,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -90,7 +92,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     const { error } = await supabase
       .from('pharmacies')
       .delete()
-      .eq('id', params.id)
+      .eq('id', id)
 
     if (error) throw error
 

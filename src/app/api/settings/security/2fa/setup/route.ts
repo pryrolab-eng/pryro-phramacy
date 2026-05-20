@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/../../supabase/server'
+import { createClient } from '../../../../../../../supabase/server'
 import { authenticator } from 'otplib'
 import QRCode from 'qrcode'
 import crypto from 'crypto'

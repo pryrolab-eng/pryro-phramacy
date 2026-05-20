@@ -1,14 +1,21 @@
 'use client'
 
 import { type FormEvent, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { BarChart3, Download, FileStack, TrendingUp, Users, Building2, DollarSign, Upload } from "lucide-react";
+import { BarChart3, Download, FileStack, TrendingUp, Users, Building2, DollarSign, Upload, Receipt } from "lucide-react";
 import { Spinner } from '@/components/ui/spinner';
 import { useAdminReportsSummary, useUploadPlatformAdminReportMutation } from '@/hooks';
+
+function formatRwf(amount: number): string {
+  if (amount >= 1_000_000) return `RWF ${(amount / 1_000_000).toFixed(1)}M`
+  if (amount >= 1_000) return `RWF ${Math.round(amount / 1_000)}K`
+  return `RWF ${amount.toLocaleString()}`
+}
 
 export default function ReportsPage() {
   const reportsQuery = useAdminReportsSummary()
@@ -20,6 +27,9 @@ export default function ReportsPage() {
   const [uploadError, setUploadError] = useState<string | null>(null)
 
   const totalRevenue = reportsQuery.data?.totalRevenue ?? 0
+  const estimatedMrr = reportsQuery.data?.estimatedMrr ?? 0
+  const completedPaymentCount = reportsQuery.data?.completedPaymentCount ?? 0
+  const pendingPaymentCount = reportsQuery.data?.pendingPaymentCount ?? 0
   const activePharmacies = reportsQuery.data?.activePharmacies ?? 0
   const totalUsers = reportsQuery.data?.totalUsers ?? 0
   const revenueData = reportsQuery.data?.revenueData ?? []
@@ -29,13 +39,19 @@ export default function ReportsPage() {
   const metrics = useMemo(
     () => [
       {
-        title: "Total Revenue",
-        value: `RWF ${(totalRevenue / 1000000).toFixed(1)}M`,
+        title: "Cash collected",
+        value: formatRwf(totalRevenue),
         caption:
           totalRevenue > 0
-            ? "Sum of completed payments (all time)"
-            : "No completed payments in the database yet",
+            ? `${completedPaymentCount} completed payment(s) — KPay & Polar`
+            : "No completed payments yet — use Billing to sync or check transactions",
         icon: DollarSign,
+      },
+      {
+        title: "Est. monthly recurring",
+        value: formatRwf(estimatedMrr),
+        caption: "Active subscriptions × plan catalog price (not cash)",
+        icon: TrendingUp,
       },
       {
         title: "Active Pharmacies",
@@ -49,14 +65,14 @@ export default function ReportsPage() {
         caption: "Total users in the database",
         icon: Users,
       },
-      {
-        title: "Conversion Rate",
-        value: "—",
-        caption: "Not tracked yet (needs funnel data)",
-        icon: TrendingUp,
-      },
     ],
-    [totalRevenue, activePharmacies, totalUsers],
+    [
+      totalRevenue,
+      estimatedMrr,
+      completedPaymentCount,
+      activePharmacies,
+      totalUsers,
+    ],
   );
 
   const planRevenueTotal = useMemo(
@@ -153,6 +169,24 @@ export default function ReportsPage() {
             <p className="text-gray-600">View business analytics and performance metrics</p>
           </div>
 
+          {totalRevenue === 0 && (estimatedMrr > 0 || pendingPaymentCount > 0) ? (
+            <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <p className="font-medium">Cash collected is RWF 0, but you have active subscriptions.</p>
+              <p className="mt-1 text-amber-900/90">
+                The chart below shows <strong>estimated</strong> monthly recurring (MRR), not money received.
+                {pendingPaymentCount > 0
+                  ? ` ${pendingPaymentCount} payment(s) are still pending or processing.`
+                  : ' If customers paid via Polar/KPay, open Billing and click “Sync invoices from payments”.'}
+              </p>
+              <Button variant="outline" size="sm" className="mt-3 bg-white" asChild>
+                <Link href="/admin/billing">
+                  <Receipt className="h-4 w-4 mr-2" />
+                  Open Billing &amp; transactions
+                </Link>
+              </Button>
+            </div>
+          ) : null}
+
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
             {metrics.map((metric) => (
               <Card key={metric.title}>
@@ -173,7 +207,9 @@ export default function ReportsPage() {
           <Card className="mb-8">
             <CardHeader>
               <CardTitle>Revenue Analytics</CardTitle>
-              <CardDescription>Monthly revenue and pharmacy growth over the past year</CardDescription>
+              <CardDescription>
+                Monthly <strong>cash collected</strong> from completed payments (empty until Billing has completed transactions)
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="min-h-48 space-y-6">
@@ -209,7 +245,7 @@ export default function ReportsPage() {
                             </div>
                           </div>
                           <div className="w-16 text-xs font-medium">
-                            {(data.revenue / 1000000).toFixed(1)}M
+                            {formatRwf(data.revenue)}
                           </div>
                           <div className="w-20 text-right">
                             <div className="text-sm font-semibold">
@@ -271,7 +307,7 @@ export default function ReportsPage() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm font-semibold">{(data.revenue / 1000000).toFixed(1)}M</div>
+                        <div className="text-sm font-semibold">{formatRwf(data.revenue)}</div>
                         <div className="text-xs text-muted-foreground">
                           {data.source === "payments"
                             ? `${data.pharmacies} pharmacies`

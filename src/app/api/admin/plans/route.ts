@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '../../../../../supabase/server'
 import { resolveIsAppPlatformAdmin } from '@/lib/platform-admin'
+import { syncPlanToPolarAndSave } from '@/lib/polar/sync-plan-db'
 
 export async function GET() {
   try {
@@ -96,7 +97,14 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) throw error
-    return NextResponse.json({ success: true, plan })
+
+    const synced = await syncPlanToPolarAndSave(db, plan as Parameters<typeof syncPlanToPolarAndSave>[1])
+
+    return NextResponse.json({
+      success: true,
+      plan: synced.plan,
+      polarSync: synced.polarSync,
+    })
   } catch (error) {
     return NextResponse.json({ success: false, error: 'Failed to add plan' }, { status: 500 })
   }

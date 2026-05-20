@@ -17,7 +17,7 @@ export default function UserProfile() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={async () => {
-                    await createClient().auth.signOut()
+                    (await createClient()).auth.signOut()
                     router.refresh()
                 }}>
                     Sign out

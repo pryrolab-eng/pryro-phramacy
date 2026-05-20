@@ -28,14 +28,13 @@ import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 
-const superAdminNavigation = [
-  { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
-  { name: 'Pharmacy List', href: '/admin/stores', icon: Building2 },
-  { name: 'Categories', href: '/admin/categories', icon: Tag },
-  { name: 'Template Designer', href: '/admin/insurance-templates', icon: FileText },
-  { name: 'Subscriptions', href: '/admin/subscriptions', icon: CreditCard },
-  { name: 'Reports', href: '/admin/reports', icon: BarChart3 },
-]
+import { ADMIN_SIDEBAR_NAV } from '@/lib/admin/navigation'
+
+const superAdminNavigation = ADMIN_SIDEBAR_NAV.map((item) => ({
+  name: item.title,
+  href: item.url,
+  icon: item.icon,
+}))
 
 const pharmacyOwnerNavigation = [
   { name: 'Pharmacy Dashboard', href: '/pharmacy-dashboard', icon: LayoutDashboard },
@@ -188,7 +187,7 @@ export default function Sidebar() {
 
   const handleSignOut = async () => {
     sessionStorage.removeItem('userRole')
-    await createClient().auth.signOut()
+    (await createClient()).auth.signOut()
     router.push('/sign-in')
   }
 

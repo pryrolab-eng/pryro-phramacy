@@ -14,7 +14,7 @@ export const signInAction = async (formData: FormData) => {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   for (const { name } of cookieStore.getAll()) {
     if (name.startsWith("sb-") && name.includes("auth-token")) {
       try {
@@ -23,7 +23,7 @@ export const signInAction = async (formData: FormData) => {
     }
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
@@ -111,7 +111,8 @@ export const signInWithGoogleAction = async () => {
 };
 
 export const signOutAction = async () => {
-  const supabase = createClient();
+  const supabase = await createClient();
+  console.log('🚪 SIGNING OUT');
   await supabase.auth.signOut();
   return redirect("/sign-in");
 };
@@ -151,8 +152,11 @@ export const resetPasswordAction = async (formData: FormData) => {
     return encodedRedirect("error", "/dashboard/reset-password", "Password must be at least 6 characters.");
   }
 
-  const supabase = createClient();
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
 
   if (userError || !user) {
     return encodedRedirect(

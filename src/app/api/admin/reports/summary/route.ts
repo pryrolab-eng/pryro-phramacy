@@ -25,14 +25,72 @@ export async function GET() {
 
     const db = createServiceClient();
 
-    const { data: payments } = await db
-      .from("payments")
-      .select("amount, created_at, pharmacy_id")
-      .eq("status", "completed");
+    const [
+      { data: payments },
+      { data: completedTx },
+      { data: pendingTx },
+    ] = await Promise.all([
+      db
+        .from("payments")
+        .select("amount, created_at, pharmacy_id, payment_reference")
+        .eq("status", "completed"),
+      db
+        .from("payment_transactions")
+        .select("id, amount, created_at, completed_at, pharmacy_id")
+        .eq("status", "completed"),
+      db
+        .from("payment_transactions")
+        .select("id")
+        .in("status", ["pending", "processing"]),
+    ]);
 
-    const totalRevenue =
-      payments?.reduce((sum, p) => sum + Number((p as { amount?: unknown }).amount ?? 0), 0) ??
-      0;
+    const linkedTxIds = new Set(
+      (payments ?? [])
+        .map((p) => (p as { payment_reference?: string | null }).payment_reference)
+        .filter(Boolean)
+    );
+
+    type RevenueRow = {
+      amount: number;
+      created_at: string;
+      pharmacy_id: string | null;
+    };
+
+    const revenueRows: RevenueRow[] = [];
+
+    (payments ?? []).forEach((p) => {
+      const row = p as {
+        amount?: unknown;
+        created_at?: string | null;
+        pharmacy_id?: string | null;
+      };
+      if (!row.created_at) return;
+      revenueRows.push({
+        amount: Number(row.amount ?? 0),
+        created_at: row.created_at,
+        pharmacy_id: row.pharmacy_id ?? null,
+      });
+    });
+
+    (completedTx ?? []).forEach((t) => {
+      const row = t as {
+        id: string;
+        amount?: unknown;
+        created_at?: string | null;
+        completed_at?: string | null;
+        pharmacy_id?: string | null;
+      };
+      if (linkedTxIds.has(row.id)) return;
+      const at = row.completed_at || row.created_at;
+      if (!at) return;
+      revenueRows.push({
+        amount: Number(row.amount ?? 0),
+        created_at: at,
+        pharmacy_id: row.pharmacy_id ?? null,
+      });
+    });
+
+    const totalRevenue = revenueRows.reduce((sum, r) => sum + r.amount, 0);
 
     const { count: activePharmacyCount } = await db
       .from("pharmacies")
@@ -49,20 +107,14 @@ export async function GET() {
       { revenue: number; pharmacies: Set<string> }
     >();
 
-    (payments ?? []).forEach((p) => {
-      const row = p as {
-        amount?: unknown;
-        created_at?: string | null;
-        pharmacy_id?: string | null;
-      };
-      if (!row.created_at) return;
+    revenueRows.forEach((row) => {
       const d = new Date(row.created_at);
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       if (!monthlyData.has(ym)) {
         monthlyData.set(ym, { revenue: 0, pharmacies: new Set() });
       }
       const agg = monthlyData.get(ym)!;
-      agg.revenue += Number(row.amount ?? 0);
+      agg.revenue += row.amount;
       if (row.pharmacy_id) {
         agg.pharmacies.add(row.pharmacy_id);
       }
@@ -154,8 +206,13 @@ export async function GET() {
       }
     }
 
+    const estimatedMrr = planBreakdown.reduce((sum, p) => sum + p.revenue, 0);
+
     const payload: AdminReportsSummary = {
       totalRevenue,
+      estimatedMrr,
+      completedPaymentCount: revenueRows.length,
+      pendingPaymentCount: pendingTx?.length ?? 0,
       activePharmacies: activePharmacyCount ?? 0,
       totalUsers: userCount ?? 0,
       revenueData,

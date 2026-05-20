@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const body = await request.json()
     const supabase = await createClient()
@@ -24,7 +25,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         description: body.description,
         is_active: body.status === 'Active'
       })
-      .eq('id', params.id)
+      .eq('id', id)
       .eq('pharmacy_id', userPharmacy.pharmacy_id)
       .select()
       .single()
@@ -41,7 +42,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -59,7 +60,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     const { error } = await supabase
       .from('categories')
       .delete()
-      .eq('id', params.id)
+      .eq('id', id)
       .eq('pharmacy_id', userPharmacy.pharmacy_id)
     
     if (error) {

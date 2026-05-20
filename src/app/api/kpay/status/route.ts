@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { recordSubscriptionPayment } from '@/lib/billing/record-subscription-payment'
 import { createClient } from '../../../../../supabase/server'
+import { createServiceClient } from '../../../../../supabase/service'
 import { kpayService } from '@/lib/kpay'
 
 export async function GET(request: NextRequest) {
@@ -65,6 +67,7 @@ export async function GET(request: NextRequest) {
 
     if (kpayStatus.statusid === '01') {
       updateData.status = 'completed'
+      updateData.completed_at = new Date().toISOString()
       updateData.kpay_status_id = kpayStatus.statusid
       updateData.mom_transaction_id = kpayStatus.momtransactionid
     } else if (kpayStatus.statusid === '02') {
@@ -86,6 +89,9 @@ export async function GET(request: NextRequest) {
         .from('subscriptions')
         .update({ is_active: true })
         .eq('id', transaction.subscription_id)
+
+      const admin = createServiceClient()
+      await recordSubscriptionPayment(admin, transaction.id as string)
     }
 
     return NextResponse.json({

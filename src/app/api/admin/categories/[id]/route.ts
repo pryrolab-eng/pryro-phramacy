@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const body = await request.json()
     const supabase = createClient(
@@ -16,7 +17,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         description: body.description,
         is_active: body.status === 'Active'
       })
-      .eq('id', params.id)
+      .eq('id', id)
       .is('pharmacy_id', null)
       .select()
       .single()
@@ -33,7 +34,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -43,7 +45,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     const { error } = await supabase
       .from('categories')
       .delete()
-      .eq('id', params.id)
+      .eq('id', id)
       .is('pharmacy_id', null)
     
     if (error) {

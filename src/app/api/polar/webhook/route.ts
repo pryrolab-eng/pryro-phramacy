@@ -1,150 +1,68 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { polar } from '@/lib/polar'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { validateEvent, WebhookVerificationError } from '@polar-sh/sdk/webhooks'
-
-const getServiceClient = () =>
-  createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+import { NextRequest, NextResponse } from "next/server";
+import { validateEvent, WebhookVerificationError } from "@polar-sh/sdk/webhooks";
+import { createServiceClient } from "../../../../../supabase/service";
+import {
+  fulfillPolarSubscription,
+  parsePolarMetadata,
+} from "@/lib/polar/fulfillment";
 
 export async function POST(request: NextRequest) {
-  const body = await request.text()
-  const headers = Object.fromEntries(request.headers.entries())
-
-  let event: ReturnType<typeof validateEvent>
-  try {
-    event = validateEvent(body, headers, process.env.POLAR_WEBHOOK_SECRET!)
-  } catch (e) {
-    if (e instanceof WebhookVerificationError) {
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 403 })
-    }
-    return NextResponse.json({ error: 'Webhook error' }, { status: 400 })
+  const secret = process.env.POLAR_WEBHOOK_SECRET?.trim();
+  if (!secret) {
+    console.error("POLAR_WEBHOOK_SECRET is not set");
+    return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
   }
 
-  const db = getServiceClient()
+  const body = await request.text();
+  const headers: Record<string, string> = {};
+  request.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
 
+  let event: { type?: string; data?: Record<string, unknown> };
   try {
-    switch (event.type) {
-      case 'checkout.created':
-      case 'checkout.updated': {
-        const checkout = event.data
-        if (checkout.status === 'succeeded' && checkout.metadata?.userId) {
-          const userId = checkout.metadata.userId as string
-          const plan = (checkout.metadata.plan as string) || 'starter'
-
-          // Find the pharmacy for this user
-          const { data: membership } = await db
-            .from('pharmacy_users')
-            .select('pharmacy_id')
-            .eq('user_id', userId)
-            .eq('is_active', true)
-            .single()
-
-          if (membership?.pharmacy_id) {
-            const expiresAt = new Date()
-            expiresAt.setFullYear(expiresAt.getFullYear() + 1)
-
-            // Update pharmacy subscription
-            await db
-              .from('pharmacies')
-              .update({
-                subscription_plan: plan,
-                subscription_expires_at: expiresAt.toISOString(),
-                status: 'active',
-              })
-              .eq('id', membership.pharmacy_id)
-
-            // Upsert subscription record
-            await db.from('subscriptions').upsert(
-              {
-                pharmacy_id: membership.pharmacy_id,
-                plan_name: plan,
-                polar_checkout_id: checkout.id,
-                is_active: true,
-                expires_at: expiresAt.toISOString(),
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: 'pharmacy_id' }
-            )
-          }
-        }
-        break
-      }
-
-      case 'subscription.created':
-      case 'subscription.updated': {
-        const sub = event.data
-        const userId = sub.metadata?.userId as string | undefined
-        if (!userId) break
-
-        const { data: membership } = await db
-          .from('pharmacy_users')
-          .select('pharmacy_id')
-          .eq('user_id', userId)
-          .eq('is_active', true)
-          .single()
-
-        if (membership?.pharmacy_id) {
-          const isActive = sub.status === 'active'
-          const expiresAt = sub.currentPeriodEnd
-            ? new Date(sub.currentPeriodEnd).toISOString()
-            : null
-
-          await db
-            .from('pharmacies')
-            .update({
-              status: isActive ? 'active' : 'suspended',
-              subscription_expires_at: expiresAt,
-            })
-            .eq('id', membership.pharmacy_id)
-
-          await db.from('subscriptions').upsert(
-            {
-              pharmacy_id: membership.pharmacy_id,
-              polar_subscription_id: sub.id,
-              is_active: isActive,
-              expires_at: expiresAt,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: 'pharmacy_id' }
-          )
-        }
-        break
-      }
-
-      case 'subscription.canceled':
-      case 'subscription.revoked': {
-        const sub = event.data
-        const userId = sub.metadata?.userId as string | undefined
-        if (!userId) break
-
-        const { data: membership } = await db
-          .from('pharmacy_users')
-          .select('pharmacy_id')
-          .eq('user_id', userId)
-          .eq('is_active', true)
-          .single()
-
-        if (membership?.pharmacy_id) {
-          await db
-            .from('pharmacies')
-            .update({ status: 'suspended' })
-            .eq('id', membership.pharmacy_id)
-
-          await db
-            .from('subscriptions')
-            .update({ is_active: false, updated_at: new Date().toISOString() })
-            .eq('pharmacy_id', membership.pharmacy_id)
-        }
-        break
-      }
+    event = validateEvent(body, headers, secret) as typeof event;
+  } catch (err) {
+    if (err instanceof WebhookVerificationError) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 403 });
     }
-
-    return NextResponse.json({ received: true })
-  } catch (error: any) {
-    console.error('Webhook handler error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    throw err;
   }
+
+  const admin = createServiceClient();
+  const type = event.type ?? "";
+  const data = (event.data ?? {}) as Record<string, unknown>;
+
+  const metadata = parsePolarMetadata(
+    (data.metadata as Record<string, unknown>) ??
+      ((data.checkout as Record<string, unknown>)?.metadata as Record<
+        string,
+        unknown
+      >)
+  );
+
+  const checkoutId =
+    (typeof data.id === "string" ? data.id : null) ||
+    (typeof (data.checkout as Record<string, unknown>)?.id === "string"
+      ? ((data.checkout as Record<string, unknown>).id as string)
+      : null);
+
+  const shouldFulfill =
+    type === "order.paid" ||
+    type === "subscription.active" ||
+    (type === "checkout.updated" &&
+      (data.status === "succeeded" || data.status === "confirmed"));
+
+  if (shouldFulfill && metadata.subscription_id) {
+    const result = await fulfillPolarSubscription(
+      admin,
+      metadata,
+      checkoutId ?? undefined
+    );
+    if (!result.ok) {
+      console.error("Polar webhook fulfillment:", result.error);
+    }
+  }
+
+  return NextResponse.json({ received: true });
 }

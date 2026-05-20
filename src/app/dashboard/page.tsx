@@ -5,7 +5,7 @@ import { selectPrimaryMembership } from "@/utils/select-pharmacy-membership";
 export default async function Dashboard() {
   console.log('🏠 DASHBOARD PAGE ACCESSED');
   
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
 
   console.log('👤 DASHBOARD USER CHECK:', {

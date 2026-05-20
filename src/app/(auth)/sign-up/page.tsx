@@ -1,18 +1,16 @@
 import { FormMessage, Message } from "@/components/form-message";
 import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
+import { Logo, LogoIcon } from "@/components/logo";
+import { AuthBrandingLogo, AuthBrandingFooter, AuthBrandingName } from "@/components/auth-branding";
 import Link from "next/link";
-import { SmtpMessage } from "../smtp-message";
-import { signUpAction } from "@/app/actions";
-import Navbar from "@/components/navbar";
+import { signUpAction, signInWithGoogleAction } from "@/app/actions";
 import { UrlProvider } from "@/components/url-provider";
 
-export default async function Signup(props: {
-  searchParams: Promise<Message>;
-}) {
+export default async function Signup(props: { searchParams: Promise<Message> }) {
   const searchParams = await props.searchParams;
+
   if ("message" in searchParams) {
     return (
       <div className="flex h-screen w-full flex-1 items-center justify-center p-4 sm:max-w-md">
@@ -22,83 +20,145 @@ export default async function Signup(props: {
   }
 
   return (
-    <>
-      <Navbar />
-      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-8">
-        <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-sm">
-          <UrlProvider>
-            <form className="flex flex-col space-y-6">
-              <div className="space-y-2 text-center">
-                <h1 className="text-3xl font-semibold tracking-tight">Sign up</h1>
-                <p className="text-sm text-muted-foreground">
-                  Create your account, then we&apos;ll set up your pharmacy and subscription.{" "}
-                  <Link
-                    className="text-primary font-medium hover:underline transition-all"
-                    href="/sign-in"
-                  >
-                    Already have an account? Sign in
-                  </Link>
-                </p>
-              </div>
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 lg:p-8">
+      <div className="flex w-full max-w-5xl flex-col lg:flex-row relative bg-white rounded-3xl shadow-2xl overflow-hidden min-h-[650px]">
+        
+        {/* Top-left logo (Left side of screen) */}
+        <div className="absolute top-8 left-8 z-20 lg:[&_span.text-foreground]:!text-white">
+          <Link href="/">
+            <AuthBrandingLogo />
+          </Link>
+        </div>
 
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="full_name" className="text-sm font-medium">
-                    Full Name
-                  </Label>
+        {/* Back button (Left side of screen) */}
+        <div className="absolute top-20 left-8 z-20 mt-2">
+          <Link
+            href="/"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50 lg:border-white/20 lg:text-white/70 lg:hover:bg-white/10 lg:hover:text-white transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5M12 5l-7 7 7 7" />
+            </svg>
+          </Link>
+        </div>
+
+        {/* Left — black panel (hidden on mobile) */}
+        <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gray-950">
+          <div className="absolute -top-20 -right-20 h-72 w-72 rounded-full bg-white/5" />
+          <div className="absolute bottom-10 -left-16 h-56 w-56 rounded-full bg-white/5" />
+          <div className="absolute top-1/2 right-0 h-40 w-40 rounded-full bg-white/5" />
+
+          <div className="relative z-10 flex w-full flex-col items-center justify-center gap-6 px-12">
+
+            {/* Headline */}
+            <div className="w-64 text-center">
+              <h2 className="text-2xl font-bold text-white leading-snug">Pharmacy Management Made Simple</h2>
+              <p className="mt-2 text-sm text-gray-400">Pryrox helps pharmacies manage inventory, sales, prescriptions, and staff — all in one place.</p>
+            </div>
+
+            {/* Feature pills */}
+            <div className="flex w-64 flex-wrap justify-center gap-2">
+              {["POS & Sales", "Inventory", "Prescriptions", "Insurance", "Reports", "Multi-Branch"].map((f) => (
+                <span key={f} className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white border border-white/20">
+                  {f}
+                </span>
+              ))}
+            </div>
+
+          </div>
+
+          {/* Footer */}
+          <AuthBrandingFooter />
+
+        </div>
+
+        {/* Right — form */}
+        <div className="flex w-full flex-col justify-center px-8 py-12 lg:w-1/2 lg:px-16 xl:px-20 pt-32 lg:pt-12 relative">
+          <div className="mx-auto w-full max-w-md">
+            <h1 className="text-3xl font-bold text-gray-900">Sign Up</h1>
+            <p className="mt-2 text-sm text-gray-500">
+              Create your account to get started
+            </p>
+
+            <UrlProvider>
+              <form className="mt-8 space-y-5">
+                {/* Full Name */}
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                    </svg>
+                  </span>
                   <Input
-                    id="full_name"
                     name="full_name"
                     type="text"
-                    placeholder="John Doe"
+                    placeholder="Full Name"
                     required
-                    className="w-full"
+                    className="w-full border-0 border-b border-gray-200 rounded-none bg-transparent pl-9 pb-2 pt-2 text-sm placeholder:text-gray-400 focus-visible:ring-0 focus-visible:border-blue-500 transition-colors"
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-sm font-medium">
-                    Email
-                  </Label>
+                {/* Email */}
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="2" y="4" width="20" height="16" rx="2" />
+                      <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                    </svg>
+                  </span>
                   <Input
-                    id="email"
                     name="email"
                     type="email"
-                    placeholder="you@example.com"
+                    placeholder="Email"
                     required
-                    className="w-full"
+                    className="w-full border-0 border-b border-gray-200 rounded-none bg-transparent pl-9 pb-2 pt-2 text-sm placeholder:text-gray-400 focus-visible:ring-0 focus-visible:border-blue-500 transition-colors"
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="password" className="text-sm font-medium">
-                    Password
-                  </Label>
+                {/* Password */}
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 z-10">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                  </span>
                   <PasswordInput
-                    id="password"
                     name="password"
-                    placeholder="Your password"
+                    placeholder="Password"
                     minLength={6}
                     required
-                    className="w-full"
+                    className="w-full border-0 border-b border-gray-200 rounded-none bg-transparent pl-9 pb-2 pt-2 text-sm placeholder:text-gray-400 focus-visible:ring-0 focus-visible:border-blue-500 transition-colors"
                   />
                 </div>
-              </div>
 
-              <SubmitButton
-                formAction={signUpAction}
-                pendingText="Signing up..."
-                className="w-full"
-              >
-                Sign up
-              </SubmitButton>
+                <FormMessage message={searchParams} />
 
-              <FormMessage message={searchParams} />
-            </form>
-          </UrlProvider>
+                <div className="pt-2">
+                  <SubmitButton
+                    formAction={signUpAction}
+                    pendingText="Signing up..."
+                    className="w-full flex items-center justify-center gap-2 rounded-full bg-gray-950 px-6 py-3 text-sm font-medium text-white hover:bg-gray-800 transition-colors"
+                  >
+                    Sign Up
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14M12 5l7 7-7 7" />
+                    </svg>
+                  </SubmitButton>
+                </div>
+
+                <p className="text-sm text-gray-500">
+                  Already have an account?{" "}
+                  <Link href="/sign-in" className="font-medium text-blue-600 hover:underline">
+                    Sign in
+                  </Link>
+                </p>
+              </form>
+            </UrlProvider>
+          </div>
         </div>
-        <SmtpMessage />
       </div>
-    </>
+    </div>
   );
 }

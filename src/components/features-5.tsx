@@ -1,50 +1,45 @@
-import { Activity, DraftingCompass, Mail, Zap } from 'lucide-react'
-import Image from 'next/image'
+import { Activity, DraftingCompass, Mail, Plus, Zap } from 'lucide-react'
+import PolarPricing from '@/components/polar-pricing'
+
+const integrations = [
+    { name: 'KPay', description: 'Accept mobile money and card payments directly at the counter.', icon: '💳' },
+    { name: 'RSSB Insurance', description: 'Automatically calculate how much insurance covers for each medicine.', icon: '🏥' },
+    { name: 'Supabase', description: 'Your data is saved instantly and stays safe — always up to date.', icon: '⚡' },
+]
 
 export default function FeaturesSection() {
     return (
-        <section className="py-16 md:py-32">
-            <div className="mx-auto max-w-6xl px-6">
-                <div className="grid items-center gap-12 md:grid-cols-2 md:gap-12 lg:grid-cols-5 lg:gap-24">
-                    <div className="lg:col-span-2">
-                        <div className="md:pr-6 lg:pr-0">
-                            <h2 className="text-4xl font-semibold lg:text-5xl">Built for Scaling teams</h2>
-                            <p className="mt-6">Orrupti aut temporibus assumenda atque ab, accusamus sit, molestiae veniam laboriosam pariatur.</p>
-                        </div>
-                        <ul className="mt-8 divide-y border-y *:flex *:items-center *:gap-3 *:py-3">
-                            <li>
-                                <Mail className="size-5" />
-                                Email and web support
-                            </li>
-                            <li>
-                                <Zap className="size-5" />
-                                Fast response time
-                            </li>
-                            <li>
-                                <Activity className="size-5" />
-                                Menitoring and analytics
-                            </li>
-                            <li>
-                                <DraftingCompass className="size-5" />
-                                Architectural review
-                            </li>
-                        </ul>
+        <section className="pt-6 md:pt-10 pb-8 md:pb-12">
+            <div className="mx-auto max-w-6xl px-6 space-y-24">
+
+                {/* Top: Integrations */}
+                <div className="mx-auto max-w-3xl flex flex-col gap-8 text-center">
+                    <div>
+                        <h2 className="text-3xl font-semibold lg:text-4xl">Integrates with your pharmacy stack</h2>
+                        <p className="mt-3 text-muted-foreground text-sm">Connect with payment gateways, insurance providers, and real-time infrastructure to run your pharmacy smoothly.</p>
                     </div>
-                    <div className="border-border/50 relative rounded-3xl border p-3 lg:col-span-3">
-                        <div className="bg-linear-to-b aspect-76/59 relative rounded-2xl from-zinc-300 to-transparent p-px dark:from-zinc-700">
-                            <div className="bg-gradient-to-br from-green-50 to-emerald-100 dark:from-gray-800 dark:to-gray-900 aspect-76/59 rounded-[15px] flex items-center justify-center">
-                                <div className="text-center">
-                                    <div className="w-16 h-16 bg-green-500 rounded-lg mx-auto mb-4 flex items-center justify-center">
-                                        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                                        </svg>
-                                    </div>
-                                    <p className="text-gray-600 dark:text-gray-400">Payment Processing</p>
+                    <div className="rounded-2xl border bg-background px-6 pb-8 pt-4 shadow-sm text-left">
+                        {integrations.map((item, i) => (
+                            <div key={item.name} className={`grid grid-cols-[auto_1fr] items-center gap-4 py-4 ${i < integrations.length - 1 ? 'border-b border-dashed' : ''}`}>
+                                <div className="bg-muted border-foreground/5 flex size-12 items-center justify-center rounded-lg border text-2xl">{item.icon}</div>
+                                <div>
+                                    <h3 className="text-base font-medium">{item.name}</h3>
+                                    <p className="text-muted-foreground text-sm line-clamp-1">{item.description}</p>
                                 </div>
                             </div>
-                        </div>
+                        ))}
                     </div>
                 </div>
+
+                {/* Bottom: Polar Pricing */}
+                <div id="pricing" className="w-full pt-4 scroll-mt-24">
+                    <div className="text-center mb-8">
+                        <h2 className="text-4xl font-serif tracking-tight lg:text-5xl text-gray-900 dark:text-white">Choose Pricing Plan</h2>
+                        <p className="mt-4 text-gray-500 text-sm max-w-lg mx-auto">Choose the perfect plan for your pharmacy needs — from getting started to scaling your branches.</p>
+                    </div>
+                    <PolarPricing />
+                </div>
+
             </div>
         </section>
     )

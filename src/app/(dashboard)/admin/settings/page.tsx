@@ -35,6 +35,7 @@ export default function AdminSettingsPage() {
   
   const [settings, setSettings] = useState({
     platformName: 'Pryrox',
+    platformLogoUrl: '',
     adminEmail: 'admin@pryrox.com',
     maxPharmacies: 100,
     enableRegistrations: true,
@@ -153,6 +154,17 @@ export default function AdminSettingsPage() {
                   value={settings.platformName}
                   onChange={(e) => setSettings({...settings, platformName: e.target.value})}
                 />
+              </div>
+              <div className="grid gap-2">
+                <Label>Platform Logo URL</Label>
+                <Input
+                  placeholder="https://example.com/logo.png"
+                  value={settings.platformLogoUrl}
+                  onChange={(e) => setSettings({...settings, platformLogoUrl: e.target.value})}
+                />
+                {settings.platformLogoUrl && (
+                  <img src={settings.platformLogoUrl} alt="Logo preview" className="h-8 w-auto object-contain mt-1" />
+                )}
               </div>
               <div className="grid gap-2">
                 <Label>Admin Email</Label>

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Users, UserPlus, Calendar, Search, RefreshCw } from 'lucide-react'
+import { FeatureGate } from '@/components/feature-gate'
 
 interface Patient {
   id: string
@@ -61,6 +62,7 @@ export default function PatientsPage() {
   }
 
   return (
+    <FeatureGate feature="patients">
     <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
       <div className="flex items-center justify-between space-y-2">
         <div>
@@ -179,5 +181,6 @@ export default function PatientsPage() {
         </CardContent>
       </Card>
     </div>
+    </FeatureGate>
   )
 }

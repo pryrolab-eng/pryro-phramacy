@@ -37,8 +37,8 @@ import type { SubscriptionPlan } from '@/lib/saas/types'
 const emptyForm = {
   name: '',
   description: '',
-  price: '',
-  yearly_price: '',
+  price: '',           // monthly price set by admin
+  yearly_discount: '17', // % discount for yearly billing (default 17% = ~2 months free)
   billing_period: 'monthly',
   plan_type: 'main',
   max_branches: '1',
@@ -46,6 +46,19 @@ const emptyForm = {
   monthly_tx_limit: '500',
   features: '',
   is_popular: false,
+}
+
+/** Compute yearly price from monthly + discount % */
+function calcYearlyPrice(monthlyStr: string, discountStr: string): number {
+  const monthly = Number(monthlyStr) || 0
+  const discount = Math.min(100, Math.max(0, Number(discountStr) || 0))
+  return Math.round(monthly * 12 * (1 - discount / 100))
+}
+
+/** Savings vs paying monthly for 12 months */
+function calcYearlySavings(monthlyStr: string, discountStr: string): number {
+  const monthly = Number(monthlyStr) || 0
+  return Math.round(monthly * 12) - calcYearlyPrice(monthlyStr, discountStr)
 }
 
 type SubRow = {
@@ -97,6 +110,10 @@ export default function AdminSubscriptionsPage() {
       await createPlan.mutateAsync({
         name: form.name,
         price: Number(form.price),
+        yearly_price: form.billing_period !== 'free' && Number(form.price) > 0
+          ? calcYearlyPrice(form.price, form.yearly_discount)
+          : 0,
+        yearly_discount_pct: Number(form.yearly_discount) || 0,
         billing_period: form.billing_period,
         plan_type: form.plan_type,
         max_branches: Number(form.max_branches),
@@ -115,11 +132,22 @@ export default function AdminSubscriptionsPage() {
 
   const openEdit = (plan: SubscriptionPlan) => {
     setEditTarget(plan)
+    // Reverse-calculate discount % from stored yearly_price if available
+    const storedYearly = plan.yearly_price
+    const monthly = plan.price
+    let discountPct = '17'
+    if (storedYearly && monthly > 0) {
+      const computed = Math.round((1 - storedYearly / (monthly * 12)) * 100)
+      discountPct = String(Math.max(0, computed))
+    }
+    if ((plan as SubscriptionPlan & { yearly_discount_pct?: number }).yearly_discount_pct !== undefined) {
+      discountPct = String((plan as SubscriptionPlan & { yearly_discount_pct?: number }).yearly_discount_pct)
+    }
     setEditForm({
       name: plan.name,
       description: (plan as SubscriptionPlan & { description?: string }).description ?? '',
       price: String(plan.price),
-      yearly_price: String((plan as SubscriptionPlan & { yearly_price?: number }).yearly_price ?? ''),
+      yearly_discount: discountPct,
       billing_period: plan.billing_period,
       plan_type: plan.plan_type,
       max_branches: String(plan.max_branches),
@@ -139,6 +167,10 @@ export default function AdminSubscriptionsPage() {
         updates: {
           name: editForm.name,
           price: Number(editForm.price),
+          yearly_price: editForm.billing_period !== 'free' && Number(editForm.price) > 0
+            ? calcYearlyPrice(editForm.price, editForm.yearly_discount)
+            : 0,
+          yearly_discount_pct: Number(editForm.yearly_discount) || 0,
           billing_period: editForm.billing_period,
           plan_type: editForm.plan_type,
           max_branches: Number(editForm.max_branches),
@@ -465,6 +497,15 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
 }
 
 function PlanCard({ plan, onEdit, onToggle }: { plan: SubscriptionPlan; onEdit: () => void; onToggle: (next: boolean) => void }) {
+  // Use exactly what the admin stored — no fallback calculations
+  const yearlyPrice = plan.yearly_price ?? 0
+  const discountPct = (plan as SubscriptionPlan & { yearly_discount_pct?: number }).yearly_discount_pct ?? 0
+  const yearlySavings = plan.price > 0 && yearlyPrice > 0
+    ? Math.round(plan.price * 12) - yearlyPrice
+    : 0
+  // Only show yearly block if it's a paid plan with a real yearly price stored
+  const showYearly = plan.price > 0 && yearlyPrice > 0
+
   return (
     <Card className={`relative ${plan.is_popular ? 'border-2 border-blue-600' : ''} ${!plan.is_active ? 'opacity-60' : ''}`}>
       {plan.is_popular && (
@@ -479,10 +520,39 @@ function PlanCard({ plan, onEdit, onToggle }: { plan: SubscriptionPlan; onEdit: 
             {plan.plan_type === 'main' ? 'Main Plan' : 'Branch Add-on'}
           </Badge>
         </div>
+
+        {/* Monthly price */}
         <div className="text-3xl font-bold">
           {plan.price === 0 ? 'Free' : `RWF ${Number(plan.price).toLocaleString()}`}
-          {plan.price > 0 && <span className="text-sm font-normal text-muted-foreground">/{plan.billing_period}</span>}
+          {plan.price > 0 && <span className="text-sm font-normal text-muted-foreground">/month</span>}
         </div>
+
+        {/* Yearly pricing block — only for paid plans with a stored yearly price */}
+        {showYearly && (
+          <div className="mt-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2 space-y-0.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-green-800">Yearly billing</span>
+              {discountPct > 0 && (
+                <span className="text-xs font-bold text-green-700 bg-green-200 rounded-full px-2 py-0.5">
+                  -{discountPct}% off
+                </span>
+              )}
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-bold text-green-900">
+                RWF {yearlyPrice.toLocaleString()}/year
+              </span>
+              {yearlySavings > 0 && (
+                <span className="text-xs text-green-700">
+                  Save RWF {yearlySavings.toLocaleString()}
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-green-600">
+              ≈ RWF {Math.round(yearlyPrice / 12).toLocaleString()}/month billed annually
+            </p>
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-3 gap-2 text-center text-xs">
@@ -529,6 +599,14 @@ function PlanForm({ form, setForm }: { form: typeof emptyForm; setForm: React.Di
   const set = (key: keyof typeof emptyForm, val: string | boolean) =>
     setForm(prev => ({ ...prev, [key]: val }))
 
+  const monthly = Number(form.price) || 0
+  const discount = Math.min(100, Math.max(0, Number(form.yearly_discount) || 0))
+  const yearlyFull = monthly * 12
+  const yearlyDiscounted = Math.round(yearlyFull * (1 - discount / 100))
+  const savings = yearlyFull - yearlyDiscounted
+  const effectiveMonthly = monthly > 0 ? Math.round(yearlyDiscounted / 12) : 0
+  const isPaid = form.billing_period !== 'free' && monthly > 0
+
   return (
     <div className="grid gap-4 py-2 max-h-[70vh] overflow-y-auto pr-1">
       <div className="grid grid-cols-2 gap-3">
@@ -536,16 +614,6 @@ function PlanForm({ form, setForm }: { form: typeof emptyForm; setForm: React.Di
           <Label>Plan Name</Label>
           <Input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Standard" />
         </div>
-        <div className="space-y-1">
-          <Label>Monthly Price (RWF)</Label>
-          <Input type="number" min={0} value={form.price} onChange={e => set('price', e.target.value)} placeholder="0" />
-        </div>
-      </div>
-      <div className="space-y-1">
-        <Label>Description (optional)</Label>
-        <Input value={form.description} onChange={e => set('description', e.target.value)} placeholder="Short plan description" />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label>Billing Period</Label>
           <Select value={form.billing_period} onValueChange={v => set('billing_period', v)}>
@@ -557,6 +625,70 @@ function PlanForm({ form, setForm }: { form: typeof emptyForm; setForm: React.Di
             </SelectContent>
           </Select>
         </div>
+      </div>
+
+      <div className="space-y-1">
+        <Label>Description (optional)</Label>
+        <Input value={form.description} onChange={e => set('description', e.target.value)} placeholder="Short plan description" />
+      </div>
+
+      {/* Pricing section */}
+      <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pricing</p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label>Monthly Price (RWF)</Label>
+            <Input
+              type="number" min={0}
+              value={form.price}
+              onChange={e => set('price', e.target.value)}
+              placeholder="0"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Yearly Discount (%)</Label>
+            <Input
+              type="number" min={0} max={100}
+              value={form.yearly_discount}
+              onChange={e => set('yearly_discount', e.target.value)}
+              placeholder="17"
+              disabled={!isPaid}
+            />
+          </div>
+        </div>
+
+        {/* Live yearly calculation preview */}
+        {isPaid && (
+          <div className="rounded-md bg-green-50 border border-green-200 p-3 space-y-1.5">
+            <p className="text-xs font-semibold text-green-800">Yearly billing — auto-calculated</p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+              <span className="text-muted-foreground">Monthly × 12</span>
+              <span className="font-medium">RWF {yearlyFull.toLocaleString()}</span>
+
+              <span className="text-muted-foreground">Discount ({discount}%)</span>
+              <span className="font-medium text-red-600">− RWF {savings.toLocaleString()}</span>
+
+              <span className="text-green-800 font-semibold">Yearly price</span>
+              <span className="font-bold text-green-900">RWF {yearlyDiscounted.toLocaleString()}</span>
+
+              <span className="text-muted-foreground">Effective monthly</span>
+              <span className="font-medium">RWF {effectiveMonthly.toLocaleString()}/mo</span>
+            </div>
+            {savings > 0 && (
+              <p className="text-[11px] text-green-700 font-medium">
+                Customer saves RWF {savings.toLocaleString()} by choosing yearly
+              </p>
+            )}
+          </div>
+        )}
+
+        {form.billing_period === 'free' && (
+          <p className="text-xs text-muted-foreground">Free plans have no pricing.</p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label>Plan Type</Label>
           <Select value={form.plan_type} onValueChange={v => set('plan_type', v)}>
@@ -567,8 +699,13 @@ function PlanForm({ form, setForm }: { form: typeof emptyForm; setForm: React.Di
             </SelectContent>
           </Select>
         </div>
+        <div className="space-y-1">
+          <Label>Tx Limit/mo</Label>
+          <Input type="number" min={1} value={form.monthly_tx_limit} onChange={e => set('monthly_tx_limit', e.target.value)} />
+        </div>
       </div>
-      <div className="grid grid-cols-3 gap-3">
+
+      <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label>Max Branches</Label>
           <Input type="number" min={1} value={form.max_branches} onChange={e => set('max_branches', e.target.value)} />
@@ -577,11 +714,8 @@ function PlanForm({ form, setForm }: { form: typeof emptyForm; setForm: React.Di
           <Label>Max Users</Label>
           <Input type="number" min={1} value={form.max_users} onChange={e => set('max_users', e.target.value)} />
         </div>
-        <div className="space-y-1">
-          <Label>Tx Limit/mo</Label>
-          <Input type="number" min={1} value={form.monthly_tx_limit} onChange={e => set('monthly_tx_limit', e.target.value)} />
-        </div>
       </div>
+
       <div className="space-y-1">
         <Label>Features (comma-separated)</Label>
         <Textarea
@@ -591,6 +725,7 @@ function PlanForm({ form, setForm }: { form: typeof emptyForm; setForm: React.Di
           rows={3}
         />
       </div>
+
       <div className="flex items-center gap-2">
         <Switch checked={form.is_popular} onCheckedChange={v => set('is_popular', v)} id="is-popular" />
         <Label htmlFor="is-popular" className="cursor-pointer">Mark as Most Popular</Label>

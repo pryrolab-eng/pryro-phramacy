@@ -51,6 +51,7 @@ export default function PharmacyBillingPage() {
 
   const [upgradeTarget, setUpgradeTarget] = useState<SubscriptionPlan | null>(null)
   const [cancelTarget, setCancelTarget] = useState<string | null>(null)
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly')
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const [generatingInvoice, setGeneratingInvoice] = useState(false)
 
@@ -65,9 +66,13 @@ export default function PharmacyBillingPage() {
 
   const handleSubscribe = async (plan: SubscriptionPlan) => {
     try {
-      await subscribe.mutateAsync({ plan_id: plan.id, subscription_type: 'main' })
+      await subscribe.mutateAsync({
+        plan_id: plan.id,
+        subscription_type: 'main',
+        billing_cycle: billingCycle,
+      })
       setUpgradeTarget(null)
-      showToast(`Subscribed to ${plan.name} successfully`)
+      showToast(`Subscribed to ${plan.name} (${billingCycle}) successfully`)
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Subscription failed', 'error')
     }
@@ -324,11 +329,40 @@ export default function PharmacyBillingPage() {
 
         {/* ── Upgrade tab ── */}
         <TabsContent value="upgrade" className="mt-6">
+          {/* Billing cycle toggle */}
+          {(() => {
+            const firstPaid = plans.find(p => p.price > 0 && (p.yearly_price ?? 0) > 0)
+            const discPct = firstPaid?.yearly_discount_pct ?? null
+            return (
+              <div className="flex items-center justify-center gap-4 mb-6">
+                <span className={`text-sm font-medium ${billingCycle === 'monthly' ? 'text-foreground' : 'text-muted-foreground'}`}>
+                  Monthly
+                </span>
+                <button
+                  onClick={() => setBillingCycle(c => c === 'monthly' ? 'yearly' : 'monthly')}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${billingCycle === 'yearly' ? 'bg-blue-600' : 'bg-gray-200'}`}
+                  role="switch"
+                  aria-checked={billingCycle === 'yearly'}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${billingCycle === 'yearly' ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+                <span className={`text-sm font-medium ${billingCycle === 'yearly' ? 'text-foreground' : 'text-muted-foreground'}`}>
+                  Yearly
+                  {discPct !== null && discPct > 0 && (
+                    <span className="ml-1.5 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                      Save {discPct}%
+                    </span>
+                  )}
+                </span>
+              </div>
+            )
+          })()}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {plans.map(plan => (
               <PlanCard
                 key={plan.id}
                 plan={plan}
+                billingCycle={billingCycle}
                 isCurrent={summary?.main_subscription?.plan_id === plan.id}
                 onSelect={() => setUpgradeTarget(plan)}
               />
@@ -380,7 +414,14 @@ export default function PharmacyBillingPage() {
             <AlertDialogDescription>
               {upgradeTarget?.price === 0
                 ? 'This is a free plan.'
-                : `You will be charged RWF ${Number(upgradeTarget?.price ?? 0).toLocaleString()} per ${upgradeTarget?.billing_period}.`}
+                : billingCycle === 'yearly' && (upgradeTarget?.yearly_price ?? 0) > 0
+                  ? (() => {
+                      const yp = upgradeTarget!.yearly_price!
+                      const discPct = upgradeTarget?.yearly_discount_pct ?? 0
+                      const savings = Math.round((upgradeTarget?.price ?? 0) * 12) - yp
+                      return `You will be charged RWF ${yp.toLocaleString()} per year${savings > 0 ? ` — saving RWF ${savings.toLocaleString()}${discPct > 0 ? ` (${discPct}% off)` : ''}` : ''}.`
+                    })()
+                  : `You will be charged RWF ${Number(upgradeTarget?.price ?? 0).toLocaleString()} per month.`}
               {' '}Your current plan will be cancelled immediately.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -514,12 +555,26 @@ function BranchUsageRow({ branch }: { branch: { id: string; name: string; usage:
 }
 
 function PlanCard({
-  plan, isCurrent, onSelect,
+  plan, isCurrent, onSelect, billingCycle = 'monthly',
 }: {
   plan: SubscriptionPlan
   isCurrent: boolean
   onSelect: () => void
+  billingCycle?: 'monthly' | 'yearly'
 }) {
+  // Use exactly what the admin stored — no fallback calculations
+  const discountPct = plan.yearly_discount_pct ?? 0
+  const yearlyPrice = plan.yearly_price != null && plan.yearly_price > 0
+    ? plan.yearly_price
+    : 0
+  const yearlySavings = plan.price > 0 && yearlyPrice > 0
+    ? Math.round(plan.price * 12) - yearlyPrice
+    : 0
+  // Only switch to yearly display if there's an actual yearly price stored
+  const showYearly = billingCycle === 'yearly' && plan.price > 0 && yearlyPrice > 0
+  const displayPrice = showYearly ? yearlyPrice : plan.price
+  const displayPeriod = showYearly ? 'year' : plan.billing_period
+
   return (
     <Card className={`relative ${plan.is_popular ? 'border-2 border-blue-600' : ''} ${isCurrent ? 'ring-2 ring-green-500' : ''}`}>
       {plan.is_popular && (
@@ -538,11 +593,16 @@ function PlanCard({
       <CardHeader>
         <CardTitle>{plan.name}</CardTitle>
         <div className="text-3xl font-bold">
-          {plan.price === 0 ? 'Free' : `RWF ${Number(plan.price).toLocaleString()}`}
-          {plan.price > 0 && (
-            <span className="text-sm font-normal text-muted-foreground">/{plan.billing_period}</span>
+          {displayPrice === 0 ? 'Free' : `RWF ${Number(displayPrice).toLocaleString()}`}
+          {displayPrice > 0 && (
+            <span className="text-sm font-normal text-muted-foreground">/{displayPeriod}</span>
           )}
         </div>
+        {showYearly && yearlySavings > 0 && (
+          <p className="text-xs text-green-600 font-medium">
+            Save RWF {yearlySavings.toLocaleString()} vs monthly
+          </p>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-3 gap-2 text-center text-xs">

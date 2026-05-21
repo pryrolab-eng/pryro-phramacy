@@ -8,6 +8,8 @@ export type SubscriptionPlanRow = {
   id: string
   name: string
   price: number
+  yearly_price: number
+  yearly_discount_pct: number
   period: string
   features: string[]
   is_popular: boolean
@@ -40,10 +42,18 @@ export default function PolarPricing() {
         )
     }
 
-    const getDisplayPrice = (price: number) => {
-        if (price === 0) return 0
-        return billing === 'annually' ? Math.round(price * 0.8) : price
+    const getDisplayPrice = (plan: SubscriptionPlanRow) => {
+        if (plan.price === 0) return 0
+        // Only use yearly price if the admin actually stored one
+        if (billing === 'annually' && plan.yearly_price > 0) {
+            return plan.yearly_price
+        }
+        return plan.price
     }
+
+    // Show the discount badge only if there are paid plans with a real yearly price
+    const firstPaidPlan = plans.find(p => p.price > 0 && p.yearly_price > 0)
+    const badgeDiscountPct = firstPaidPlan?.yearly_discount_pct ?? null
 
     return (
         <div className="w-full relative mx-auto max-w-6xl">
@@ -61,7 +71,9 @@ export default function PolarPricing() {
                         className={`rounded-lg px-8 py-2 text-sm font-medium transition-all flex items-center gap-2 ${billing === 'annually' ? 'bg-gray-950 text-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}
                     >
                         Annually
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${billing === 'annually' ? 'bg-white/20 text-white' : 'bg-green-100 text-green-700'}`}>-20%</span>
+                        {badgeDiscountPct !== null && badgeDiscountPct > 0 && (
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${billing === 'annually' ? 'bg-white/20 text-white' : 'bg-green-100 text-green-700'}`}>-{badgeDiscountPct}%</span>
+                        )}
                     </button>
                 </div>
             </div>
@@ -70,7 +82,10 @@ export default function PolarPricing() {
             <div className="relative">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
                     {plans.map((plan, index) => {
-                        const displayPrice = getDisplayPrice(plan.price)
+                        const displayPrice = getDisplayPrice(plan)
+                        const yearlySavings = plan.price > 0 && plan.yearly_price > 0
+                            ? Math.round(plan.price * 12) - plan.yearly_price
+                            : 0
                         return (
                         <div 
                             key={plan.id} 
@@ -105,6 +120,12 @@ export default function PolarPricing() {
                                     /{billing === 'annually' ? 'year' : plan.period.replace('per ', '')}
                                 </span>
                             </div>
+                            {/* Savings line for annual billing */}
+                            {billing === 'annually' && plan.price > 0 && plan.yearly_price > 0 && yearlySavings > 0 && (
+                                <p className="text-xs font-medium text-green-600 dark:text-green-400 -mt-4 mb-4">
+                                    Save RWF {yearlySavings.toLocaleString()} vs monthly
+                                </p>
+                            )}
 
                             {/* Description */}
                             <p className="mb-8 text-sm text-gray-500 dark:text-gray-400 leading-relaxed min-h-[40px]">

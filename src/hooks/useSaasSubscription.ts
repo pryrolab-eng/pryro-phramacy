@@ -53,6 +53,7 @@ export function useSubscribeToPlan() {
       plan_id: string
       subscription_type?: SubscriptionType
       branch_id?: string
+      billing_cycle?: 'monthly' | 'yearly'
     }) => {
       const res = await fetch('/api/saas/subscribe', {
         method: 'POST',

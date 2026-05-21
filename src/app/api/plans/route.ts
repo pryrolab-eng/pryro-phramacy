@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "../../../../supabase/service";
-import { fallbackPlansForDisplay } from "@/lib/subscription/default-plans";
-import { ensureDefaultSubscriptionPlans } from "@/lib/subscription/ensure-default-plans";
 import { normalizeSubscriptionPlanRow } from "@/lib/subscription/normalize-plan";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +8,7 @@ export async function GET() {
   try {
     const admin = createServiceClient();
 
-    let { data: plans, error } = await admin
+    const { data: plans, error } = await admin
       .from("subscription_plans")
       .select("*")
       .eq("is_active", true)
@@ -21,40 +19,24 @@ export async function GET() {
     }
 
     if (!plans?.length) {
-      await ensureDefaultSubscriptionPlans(admin);
-      const refetch = await admin
-        .from("subscription_plans")
-        .select("*")
-        .eq("is_active", true)
-        .order("price", { ascending: true });
-      if (refetch.error) {
-        throw refetch.error;
-      }
-      plans = refetch.data;
+      // No plans yet — admin needs to create them through the dashboard
+      return NextResponse.json([], {
+        headers: { "Cache-Control": "no-store, max-age=0" },
+      });
     }
 
-    if (!plans?.length) {
-      console.warn(
-        "GET /api/plans: catalog still empty after seed attempt; using display fallback"
-      );
-      return NextResponse.json(fallbackPlansForDisplay());
-    }
-
-    const normalized = (plans ?? []).map((row) =>
+    const normalized = plans.map((row) =>
       normalizeSubscriptionPlanRow(row as Record<string, unknown>)
     );
 
     return NextResponse.json(normalized, {
-      headers: {
-        "Cache-Control": "no-store, max-age=0",
-      },
+      headers: { "Cache-Control": "no-store, max-age=0" },
     });
   } catch (error) {
     console.error("Error fetching plans:", error);
-    return NextResponse.json(fallbackPlansForDisplay(), {
-      headers: {
-        "Cache-Control": "no-store, max-age=0",
-      },
-    });
+    return NextResponse.json(
+      { error: "Failed to load plans" },
+      { status: 500, headers: { "Cache-Control": "no-store, max-age=0" } }
+    );
   }
 }

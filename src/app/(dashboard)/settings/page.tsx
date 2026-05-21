@@ -24,7 +24,6 @@ import {
   startKpaySubscriptionCheckout,
   startPolarSubscriptionCheckout,
 } from '@/lib/subscription/checkout-client'
-import { fallbackPlansForDisplay } from '@/lib/subscription/default-plans'
 import { normalizeSubscriptionPlanRow } from '@/lib/subscription/normalize-plan'
 
 interface SubscriptionPlan {
@@ -299,28 +298,12 @@ export default function SettingsPage() {
           })
         )
       } else {
-        console.error('Failed to fetch plans, using defaults')
-        setPlans(
-          fallbackPlansForDisplay().map((plan) => ({
-            id: plan.id,
-            name: plan.name,
-            price: plan.price,
-            current: currentPlan === plan.name.toLowerCase(),
-            features: plan.features,
-          }))
-        )
+        console.error('Failed to fetch plans')
+        setPlans([])
       }
     } catch (error) {
       console.error('Error fetching plans:', error)
-      setPlans(
-        fallbackPlansForDisplay().map((plan) => ({
-          id: plan.id,
-          name: plan.name,
-          price: plan.price,
-          current: currentPlan === plan.name.toLowerCase(),
-          features: plan.features,
-        }))
-      )
+      setPlans([])
     }
   }
 

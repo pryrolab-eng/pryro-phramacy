@@ -49,9 +49,10 @@ $$;
 ALTER TABLE public.subscription_plans
   ADD COLUMN IF NOT EXISTS description text;
 
--- Add yearly_price column to subscription_plans
+-- Add yearly_discount_pct column to subscription_plans
 ALTER TABLE public.subscription_plans
-  ADD COLUMN IF NOT EXISTS yearly_price numeric(12,2);
+  ADD COLUMN IF NOT EXISTS yearly_discount_pct integer NOT NULL DEFAULT 17
+    CHECK (yearly_discount_pct >= 0 AND yearly_discount_pct <= 100);
 
 -- Add grace_period_days to subscription_plans
 ALTER TABLE public.subscription_plans

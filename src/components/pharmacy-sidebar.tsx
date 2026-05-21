@@ -154,7 +154,7 @@ export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sideba
       try {
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
-        
+
         if (user) {
           // Get user name
           const fullName = user.user_metadata?.full_name || user.user_metadata?.name
@@ -164,40 +164,59 @@ export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sideba
             const emailName = user.email?.split('@')[0]
             setUserName(emailName || 'Pharmacy Owner')
           }
-          
-          // Get subscription info from pharmacy_users and pharmacies
+
+          // Get pharmacy_id for this user
           const { data: userPharmacy } = await supabase
             .from('pharmacy_users')
             .select('pharmacy_id')
             .eq('user_id', user.id)
             .single()
-          
+
           if (userPharmacy) {
-            const { data: pharmacy } = await supabase
-              .from('pharmacies')
-              .select('subscription_plan, subscription_expires_at')
-              .eq('id', userPharmacy.pharmacy_id)
-              .single()
-            
-            if (pharmacy) {
-              setSubscriptionPlan(pharmacy.subscription_plan || 'trial')
-              
-              if (pharmacy.subscription_expires_at) {
-                const expiryDate = new Date(pharmacy.subscription_expires_at)
+            // Read from the NEW subscriptions table — not the legacy enum
+            const { data: activeSub } = await supabase
+              .from('subscriptions')
+              .select('current_period_end, plan:subscription_plans(name)')
+              .eq('pharmacy_id', userPharmacy.pharmacy_id)
+              .eq('subscription_type', 'main')
+              .eq('status', 'active')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+
+            if (activeSub) {
+              const planName = (activeSub.plan as { name?: string } | null)?.name ?? 'Active'
+              setSubscriptionPlan(planName)
+
+              if (activeSub.current_period_end) {
+                const expiryDate = new Date(activeSub.current_period_end)
                 const today = new Date()
-                const diffTime = expiryDate.getTime() - today.getTime()
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+                const diffDays = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
                 const days = diffDays > 0 ? diffDays : 0
                 setDaysLeft(days)
                 setIsExpired(days === 0)
                 setIsExpiringSoon(days > 0 && days <= 7)
-                
-                // If expired, update pharmacy status
-                if (days === 0 && pharmacy.status !== 'suspended') {
-                  await supabase
-                    .from('pharmacies')
-                    .update({ status: 'suspended' })
-                    .eq('id', userPharmacy.pharmacy_id)
+                // NOTE: do NOT suspend here — that is the cron job's responsibility
+              }
+            } else {
+              // No active subscription — check legacy fallback for display only
+              const { data: pharmacy } = await supabase
+                .from('pharmacies')
+                .select('subscription_plan, subscription_expires_at, status')
+                .eq('id', userPharmacy.pharmacy_id)
+                .single()
+
+              if (pharmacy) {
+                setSubscriptionPlan(pharmacy.subscription_plan || 'trial')
+                setIsExpired(pharmacy.status === 'suspended')
+
+                if (pharmacy.subscription_expires_at) {
+                  const expiryDate = new Date(pharmacy.subscription_expires_at)
+                  const today = new Date()
+                  const diffDays = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+                  const days = diffDays > 0 ? diffDays : 0
+                  setDaysLeft(days)
+                  setIsExpiringSoon(days > 0 && days <= 7)
                 }
               }
             }
@@ -207,7 +226,7 @@ export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sideba
         console.error('Error fetching user data:', error)
       }
     }
-    
+
     fetchUserData()
   }, [])
   
@@ -260,7 +279,7 @@ export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sideba
             <div className="mb-1">
               <span className="text-[10px] font-bold text-red-700">Expired</span>
             </div>
-            <Link href="/settings" className="flex items-center justify-center gap-1 text-[10px] bg-red-600 text-white hover:bg-red-700 font-medium py-1 px-2 rounded">
+            <Link href="/pharmacy-dashboard/billing" className="flex items-center justify-center gap-1 text-[10px] bg-red-600 text-white hover:bg-red-700 font-medium py-1 px-2 rounded">
               Renew
             </Link>
           </div>

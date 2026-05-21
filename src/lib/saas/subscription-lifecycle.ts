@@ -75,6 +75,7 @@ async function getPharmacyOwnerEmail(
 }
 
 // ─── Job 1: Check and auto-suspend expired subscriptions ─
+// Respects grace_period_days from the plan before suspending.
 
 export async function runExpiryCheck(admin: SupabaseClient): Promise<LifecycleResult> {
   const result: LifecycleResult = { processed: 0, suspended: 0, emailsSent: 0, errors: [] }
@@ -85,7 +86,7 @@ export async function runExpiryCheck(admin: SupabaseClient): Promise<LifecycleRe
     .from('subscriptions')
     .select(`
       id, pharmacy_id, status, current_period_end, trial_ends_at,
-      plan:subscription_plans(name)
+      plan:subscription_plans(name, grace_period_days)
     `)
     .eq('subscription_type', 'main')
     .eq('status', 'active')
@@ -99,13 +100,26 @@ export async function runExpiryCheck(admin: SupabaseClient): Promise<LifecycleRe
   for (const sub of expired ?? []) {
     result.processed++
     try {
-      // Mark subscription as expired
+      const graceDays = (sub.plan as { grace_period_days?: number } | null)?.grace_period_days ?? 3
+      const periodEnd = new Date(sub.current_period_end)
+      const graceEnd = new Date(periodEnd)
+      graceEnd.setDate(graceEnd.getDate() + graceDays)
+
+      // Still within grace period — mark as past_due but don't suspend yet
+      if (new Date() < graceEnd) {
+        await admin
+          .from('subscriptions')
+          .update({ status: 'past_due' })
+          .eq('id', sub.id)
+        continue
+      }
+
+      // Grace period over — expire and suspend
       await admin
         .from('subscriptions')
         .update({ status: 'expired', is_active: false })
         .eq('id', sub.id)
 
-      // Suspend the pharmacy
       await admin
         .from('pharmacies')
         .update({ status: 'suspended' })
@@ -113,7 +127,6 @@ export async function runExpiryCheck(admin: SupabaseClient): Promise<LifecycleRe
 
       result.suspended++
 
-      // Send expired email
       const contact = await getPharmacyOwnerEmail(admin, sub.pharmacy_id)
       if (contact) {
         const sent = await sendSubscriptionExpiredEmail({

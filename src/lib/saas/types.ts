@@ -14,6 +14,7 @@ export interface SubscriptionPlan {
   description?: string
   price: number
   yearly_price?: number
+  yearly_discount_pct?: number
   period: string
   billing_period: BillingPeriod
   plan_type: PlanType
@@ -34,6 +35,7 @@ export interface Subscription {
   plan_id: string
   branch_id: string | null
   subscription_type: SubscriptionType
+  billing_period: BillingPeriod
   status: SubscriptionStatus
   is_active: boolean
   current_period_start: string | null
@@ -128,4 +130,5 @@ export interface ActivateSubscriptionParams {
   plan_id: string
   branch_id?: string
   subscription_type: SubscriptionType
+  billing_period_override?: string
 }

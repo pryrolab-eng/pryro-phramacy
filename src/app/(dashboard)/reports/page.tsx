@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { FeatureGate } from '@/components/feature-gate'
 import { Area, AreaChart, CartesianGrid, XAxis, Line, LineChart, YAxis } from "recharts"
 
 import {
@@ -207,6 +208,7 @@ export default function ReportsPage() {
   )
 
   return (
+    <FeatureGate feature="reports">
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -587,5 +589,6 @@ export default function ReportsPage() {
       </div>
       )}
     </div>
+    </FeatureGate>
   )
 }

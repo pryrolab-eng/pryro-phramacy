@@ -24,7 +24,8 @@ function periodEnd(start: Date, billing_period: string): Date {
   if (billing_period === 'yearly') {
     end.setFullYear(end.getFullYear() + 1)
   } else if (billing_period === 'free') {
-    end.setFullYear(end.getFullYear() + 100)
+    // Free/trial: 14 days (handled by onboarding, but fallback here)
+    end.setDate(end.getDate() + 14)
   } else {
     // monthly
     end.setMonth(end.getMonth() + 1)
@@ -173,8 +174,13 @@ export async function getPharmacySubscriptionSummary(
     .eq('is_active', true)
 
   const totalMonthlyCost = subscriptions.reduce((sum, s) => {
-    const price = (s.plan as SubscriptionPlan | undefined)?.price ?? 0
-    return sum + Number(price)
+    const plan = s.plan as SubscriptionPlan | undefined
+    const billingPeriod = s.billing_period ?? 'monthly'
+    // For yearly subscribers show the effective monthly cost (yearly_price / 12)
+    if (billingPeriod === 'yearly' && plan?.yearly_price && Number(plan.yearly_price) > 0) {
+      return sum + Math.round(Number(plan.yearly_price) / 12)
+    }
+    return sum + Number(plan?.price ?? 0)
   }, 0)
 
   return {
@@ -202,7 +208,7 @@ export async function activateSubscription(
   if (!plan.is_active) throw new Error('Plan is not available')
 
   const now = new Date()
-  const end = periodEnd(now, plan.billing_period)
+  const end = periodEnd(now, params.billing_period_override ?? plan.billing_period)
 
   // For main plans: deactivate any existing main subscription
   if (params.subscription_type === 'main') {
@@ -214,6 +220,8 @@ export async function activateSubscription(
       .eq('status', 'active')
   }
 
+  const effectiveBillingPeriod = params.billing_period_override ?? plan.billing_period
+
   const { data, error } = await admin
     .from('subscriptions')
     .insert({
@@ -221,6 +229,7 @@ export async function activateSubscription(
       plan_id: params.plan_id,
       branch_id: params.branch_id ?? null,
       subscription_type: params.subscription_type,
+      billing_period: effectiveBillingPeriod,
       status: 'active',
       is_active: true,
       plan: 'standard', // legacy enum — keep for backward compat
@@ -269,15 +278,41 @@ export async function activateSubscription(
   // Send activation email (non-blocking)
   if (params.subscription_type === 'main') {
     try {
+      // 3-step email fallback: pharmacies.email → pharmacy_owner member → owner_id auth user
       const { data: pharmacy } = await admin
         .from('pharmacies')
-        .select('name, email')
+        .select('name, email, owner_id')
         .eq('id', params.pharmacy_id)
         .maybeSingle()
-      if (pharmacy?.email) {
+
+      let recipientEmail: string | null = (pharmacy?.email as string | null)?.trim() ?? null
+
+      if (!recipientEmail) {
+        // Try pharmacy_owner member
+        const { data: ownerMember } = await admin
+          .from('pharmacy_users')
+          .select('user_id')
+          .eq('pharmacy_id', params.pharmacy_id)
+          .eq('role', 'pharmacy_owner')
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle()
+
+        const ownerUserId: string | null =
+          (ownerMember?.user_id as string | null) ??
+          (pharmacy?.owner_id as string | null) ??
+          null
+
+        if (ownerUserId) {
+          const { data: authUser } = await admin.auth.admin.getUserById(ownerUserId)
+          recipientEmail = authUser?.user?.email?.trim() ?? null
+        }
+      }
+
+      if (recipientEmail) {
         void sendSubscriptionActivatedEmail({
-          to: pharmacy.email as string,
-          pharmacyName: (pharmacy.name as string) ?? 'Your pharmacy',
+          to: recipientEmail,
+          pharmacyName: (pharmacy?.name as string) ?? 'Your pharmacy',
           planName: plan.name,
           periodEnd: end.toLocaleDateString('en-RW', { dateStyle: 'medium' }),
           isRenewal: false,
@@ -440,15 +475,25 @@ export async function generateMonthlyInvoice(
 
   const lines = activeSubscriptions.map(s => {
     const plan = s.plan as SubscriptionPlan | undefined
-    const price = Number(plan?.price ?? 0)
+    const billingPeriod = s.billing_period ?? 'monthly'
+
+    // For yearly subscribers: charge yearly_price / 12 per month
+    // For monthly subscribers: charge the monthly price
+    let amount: number
+    if (billingPeriod === 'yearly' && plan?.yearly_price && plan.yearly_price > 0) {
+      amount = Math.round(Number(plan.yearly_price) / 12)
+    } else {
+      amount = Number(plan?.price ?? 0)
+    }
+
     const label = s.subscription_type === 'main'
-      ? `${plan?.name ?? 'Plan'} — Main subscription`
-      : `${plan?.name ?? 'Branch Add-on'} — Branch subscription`
+      ? `${plan?.name ?? 'Plan'} — Main subscription (${billingPeriod})`
+      : `${plan?.name ?? 'Branch Add-on'} — Branch subscription (${billingPeriod})`
     return {
       subscription_id: s.id,
       branch_id: s.branch_id,
       description: label,
-      amount: price,
+      amount,
     }
   })
 
@@ -518,6 +563,8 @@ export async function createPlan(
   input: {
     name: string
     price: number
+    yearly_price?: number
+    yearly_discount_pct?: number
     billing_period: string
     plan_type: string
     max_branches: number
@@ -528,11 +575,22 @@ export async function createPlan(
   }
 ): Promise<SubscriptionPlan> {
   const period = input.billing_period === 'free' ? 'free' : `per ${input.billing_period.replace('ly', '')}`
+
+  // Auto-compute yearly_price if not provided
+  const discountPct = input.yearly_discount_pct ?? 17
+  const yearlyPrice = input.yearly_price !== undefined
+    ? input.yearly_price
+    : input.price > 0
+      ? Math.round(input.price * 12 * (1 - discountPct / 100))
+      : 0
+
   const { data, error } = await admin
     .from('subscription_plans')
     .insert({
       name: input.name,
       price: input.price,
+      yearly_price: yearlyPrice,
+      yearly_discount_pct: discountPct,
       period,
       billing_period: input.billing_period,
       plan_type: input.plan_type,
@@ -556,6 +614,8 @@ export async function updatePlan(
   updates: Partial<{
     name: string
     price: number
+    yearly_price: number
+    yearly_discount_pct: number
     billing_period: string
     plan_type: string
     max_branches: number
@@ -567,10 +627,28 @@ export async function updatePlan(
   }>
 ): Promise<SubscriptionPlan> {
   const payload: Record<string, unknown> = { ...updates }
+
   if (updates.billing_period) {
     payload.period = updates.billing_period === 'free'
       ? 'free'
       : `per ${updates.billing_period.replace('ly', '')}`
+  }
+
+  // Auto-recalculate yearly_price when price or discount changes
+  // (the DB trigger also does this, but we keep the payload consistent)
+  const price = updates.price
+  const discountPct = updates.yearly_discount_pct
+  if (price !== undefined || discountPct !== undefined) {
+    // We need both values to compute — fetch current plan if one is missing
+    if (price !== undefined && discountPct !== undefined) {
+      const billingPeriod = updates.billing_period
+      const isFree = billingPeriod === 'free' || price === 0
+      payload.yearly_price = isFree
+        ? 0
+        : Math.round(price * 12 * (1 - discountPct / 100))
+      payload.yearly_discount_pct = discountPct
+    }
+    // If only one is provided, the DB trigger will handle recalculation
   }
 
   const { data, error } = await admin

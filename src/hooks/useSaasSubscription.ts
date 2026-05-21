@@ -210,3 +210,31 @@ export function useUpdateSaasPlan() {
     },
   })
 }
+
+// ─── Admin: suspend / reactivate subscription ─────────────
+export function useAdminSubscriptionAction() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      subscriptionId,
+      action,
+      reason,
+    }: {
+      subscriptionId: string
+      action: 'suspend' | 'reactivate'
+      reason?: string
+    }) => {
+      const res = await fetch(`/api/saas/admin/subscriptions/${subscriptionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, reason }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Action failed')
+      return data
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: saasKeys.adminSubscriptions() })
+    },
+  })
+}

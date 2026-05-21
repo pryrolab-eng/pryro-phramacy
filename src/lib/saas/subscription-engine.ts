@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { sendSubscriptionActivatedEmail } from '@/lib/email/subscription-emails'
 import type {
   ActivateSubscriptionParams,
   Branch,
@@ -153,6 +154,7 @@ export async function getPharmacySubscriptionSummary(
   const branchSubs = subscriptions.filter(s => s.subscription_type === 'branch_addon')
 
   const branchLimit = (mainSub?.plan as SubscriptionPlan | undefined)?.max_branches ?? 0
+  const userLimit = (mainSub?.plan as SubscriptionPlan | undefined)?.max_users ?? 0
   const branchCount = branches.length
 
   // Fetch usage for all branches in parallel
@@ -162,6 +164,13 @@ export async function getPharmacySubscriptionSummary(
       return { ...b, usage }
     })
   )
+
+  // Count active users for this pharmacy
+  const { count: userCount } = await admin
+    .from('pharmacy_users')
+    .select('id', { count: 'exact', head: true })
+    .eq('pharmacy_id', pharmacyId)
+    .eq('is_active', true)
 
   const totalMonthlyCost = subscriptions.reduce((sum, s) => {
     const price = (s.plan as SubscriptionPlan | undefined)?.price ?? 0
@@ -177,6 +186,8 @@ export async function getPharmacySubscriptionSummary(
     branch_limit: branchLimit,
     branch_count: branchCount,
     can_add_branch: branchCount < branchLimit,
+    user_count: userCount ?? 0,
+    user_limit: userLimit,
   }
 }
 
@@ -253,6 +264,26 @@ export async function activateSubscription(
       p_subscription_id: sub.id,
       p_tx_limit: plan.monthly_tx_limit,
     })
+  }
+
+  // Send activation email (non-blocking)
+  if (params.subscription_type === 'main') {
+    try {
+      const { data: pharmacy } = await admin
+        .from('pharmacies')
+        .select('name, email')
+        .eq('id', params.pharmacy_id)
+        .maybeSingle()
+      if (pharmacy?.email) {
+        void sendSubscriptionActivatedEmail({
+          to: pharmacy.email as string,
+          pharmacyName: (pharmacy.name as string) ?? 'Your pharmacy',
+          planName: plan.name,
+          periodEnd: end.toLocaleDateString('en-RW', { dateStyle: 'medium' }),
+          isRenewal: false,
+        })
+      }
+    } catch { /* non-fatal */ }
   }
 
   return sub

@@ -208,8 +208,8 @@ export default function PharmacyBillingPage() {
                   />
                   <LimitCard
                     icon={<Users className="h-4 w-4 text-green-500" />}
-                    label="Max Users"
-                    used={null}
+                    label="Staff Users"
+                    used={summary.user_count ?? null}
                     limit={summary.main_subscription.plan?.max_users ?? 0}
                   />
                   <LimitCard

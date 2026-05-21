@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/saas/admin/cron",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}

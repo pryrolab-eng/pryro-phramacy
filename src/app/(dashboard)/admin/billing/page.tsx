@@ -3,33 +3,12 @@
 import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DollarSign, Loader2, RefreshCw, Receipt } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { useAdminTransactions } from '@/hooks/useAdminTransactions'
 import { fetchJson } from '@/lib/http/client'
-import type { AdminPaymentTransactionRow } from '@/lib/http/admin/transactions'
-
-function statusVariant(status: string) {
-  if (status === 'completed') return 'default' as const
-  if (status === 'failed') return 'destructive' as const
-  if (status === 'pending') return 'secondary' as const
-  return 'outline' as const
-}
-
-function pharmacyFromTx(tx: AdminPaymentTransactionRow) {
-  if (Array.isArray(tx.pharmacies)) return tx.pharmacies[0]
-  return tx.pharmacies
-}
+import { TransactionsTable, SubscriptionsTable } from '@/components/subscription'
 
 export default function AdminBillingPage() {
   const query = useAdminTransactions()
@@ -175,58 +154,8 @@ export default function AdminBillingPage() {
                 KPay Mobile Money and Polar card checkouts for subscription upgrades.
               </CardDescription>
             </CardHeader>
-            <CardContent className="overflow-x-auto">
-              {transactions.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-8 text-center">
-                  No transactions yet.
-                </p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Pharmacy</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Provider</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Customer</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transactions.map((tx) => {
-                      const ph = pharmacyFromTx(tx)
-                      return (
-                        <TableRow key={tx.id}>
-                          <TableCell className="whitespace-nowrap text-sm">
-                            {new Date(tx.created_at).toLocaleString()}
-                          </TableCell>
-                          <TableCell>
-                            <p className="font-medium">{ph?.name ?? '-'}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {ph?.email ?? ''}
-                            </p>
-                          </TableCell>
-                          <TableCell>
-                            {Number(tx.amount).toLocaleString()}{' '}
-                            {tx.currency ?? 'RWF'}
-                          </TableCell>
-                          <TableCell className="capitalize">
-                            {tx.payment_provider || tx.payment_method || '-'}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={statusVariant(tx.status)}>
-                              {tx.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {tx.customer_email || tx.customer_name || '-'}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              )}
+            <CardContent>
+              <TransactionsTable transactions={transactions} pageSize={10} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -239,47 +168,8 @@ export default function AdminBillingPage() {
                 Rows in the subscriptions table (active and historical).
               </CardDescription>
             </CardHeader>
-            <CardContent className="overflow-x-auto">
-              {subscriptions.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-8 text-center">
-                  No subscriptions yet.
-                </p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Plan</TableHead>
-                      <TableHead>Pharmacy ID</TableHead>
-                      <TableHead>Active</TableHead>
-                      <TableHead>Expires</TableHead>
-                      <TableHead>Payment method</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {subscriptions.map((sub) => (
-                      <TableRow key={sub.id}>
-                        <TableCell className="capitalize font-medium">
-                          {sub.plan ?? '-'}
-                        </TableCell>
-                        <TableCell className="text-xs font-mono">
-                          {sub.pharmacy_id.slice(0, 8)}...
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={sub.is_active ? 'default' : 'secondary'}>
-                            {sub.is_active ? 'Yes' : 'No'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm whitespace-nowrap">
-                          {sub.expires_at
-                            ? new Date(sub.expires_at).toLocaleDateString()
-                            : '-'}
-                        </TableCell>
-                        <TableCell>{sub.payment_method ?? '-'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
+            <CardContent>
+              <SubscriptionsTable subscriptions={subscriptions} pageSize={10} />
             </CardContent>
           </Card>
         </TabsContent>

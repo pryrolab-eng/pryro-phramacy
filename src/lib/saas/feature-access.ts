@@ -74,6 +74,38 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
 }
 
 /**
+ * The canonical string stored in plan.features[] for each feature key.
+ * This is what gets written to the database when admin selects a feature.
+ */
+export const FEATURE_CANONICAL: Record<FeatureKey, string> = {
+  pos:                 'POS',
+  inventory:           'Inventory',
+  reports:             'Reports',
+  insurance:           'Insurance',
+  analytics:           'Analytics',
+  multi_branch:        'Multi-Branch',
+  staff_management:    'Staff Management',
+  patients:            'Patients',
+  prescriptions:       'Prescriptions',
+  advanced_reports:    'Advanced Reports',
+  custom_integrations: 'Custom Integrations',
+  priority_support:    'Priority Support',
+}
+
+/** All valid canonical feature strings (lowercase for comparison). */
+export const VALID_FEATURE_STRINGS: Set<string> = new Set(
+  Object.values(FEATURE_CANONICAL).map(v => v.toLowerCase())
+)
+
+/**
+ * Validate that every string in a features array maps to a known system feature.
+ * Returns the list of invalid entries (empty array = all valid).
+ */
+export function validatePlanFeatures(features: string[]): string[] {
+  return features.filter(f => !VALID_FEATURE_STRINGS.has(f.toLowerCase()))
+}
+
+/**
  * Route → feature key mapping.
  * Used by middleware and FeatureGate to auto-detect required feature.
  */

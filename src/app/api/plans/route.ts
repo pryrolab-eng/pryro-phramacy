@@ -27,17 +27,7 @@ export async function GET() {
       });
     }
 
-<<<<<<< HEAD
-    const normalized = plans.map((row) =>
-=======
-    if (!plans?.length) {
-      console.warn(
-        "GET /api/plans: catalog still empty after seed attempt; using display fallback"
-      );
-      return NextResponse.json(fallbackPlansForDisplay());
-    }
-
-    let catalog = plans ?? [];
+    let catalog = plans;
     const dedupedPreview = dedupeSubscriptionPlansByName(catalog);
     if (catalog.length > dedupedPreview.length) {
       try {
@@ -57,7 +47,6 @@ export async function GET() {
 
     const deduped = dedupeSubscriptionPlansByName(catalog);
     const normalized = deduped.map((row) =>
->>>>>>> 313716b48a93eb34c93cede1cb263a21779e3d51
       normalizeSubscriptionPlanRow(row as Record<string, unknown>)
     );
 

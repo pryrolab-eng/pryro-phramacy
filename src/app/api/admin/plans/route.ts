@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '../../../../../supabase/serve
 import { resolveIsAppPlatformAdmin } from '@/lib/platform-admin'
 import { syncPlanToPolarAndSave } from '@/lib/polar/sync-plan-db'
 import { dedupeSubscriptionPlansByName, normalizePlanName } from '@/lib/subscription/dedupe-plans'
+import { validatePlanFeatures } from '@/lib/saas/feature-access'
 
 export async function GET() {
   try {
@@ -112,13 +113,37 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate features — only system-defined features are allowed
+    const rawFeatures: string[] = Array.isArray(body.features)
+      ? body.features.map(String)
+      : typeof body.features === 'string'
+        ? body.features.split(',').map((f: string) => f.trim()).filter(Boolean)
+        : []
+
+    const invalidFeatures = validatePlanFeatures(rawFeatures)
+    if (invalidFeatures.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Unknown feature(s): ${invalidFeatures.join(', ')}. Only system-defined features are allowed.`,
+        },
+        { status: 400 },
+      )
+    }
+
     const { data: plan, error } = await db
       .from('subscription_plans')
       .insert({
         name: body.name,
         price: body.price,
+        yearly_discount_pct: Number(body.yearly_discount_pct) || 0,
         period: body.period || 'per month',
-        features: body.features,
+        billing_period: body.billing_period || 'monthly',
+        plan_type: body.plan_type || 'main',
+        max_branches: Number(body.max_branches) || 1,
+        max_users: Number(body.max_users) || 5,
+        monthly_tx_limit: Number(body.monthly_tx_limit) || 500,
+        features: rawFeatures,
         is_popular: body.is_popular || false,
         is_active: true
       })

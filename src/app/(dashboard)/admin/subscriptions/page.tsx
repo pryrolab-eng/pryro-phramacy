@@ -27,52 +27,139 @@ import {
 } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import {
-  useSaasPlans, useCreateSaasPlan, useUpdateSaasPlan, saasKeys,
-  useAdminSaasSubscriptions,
-} from '@/hooks/useSaasSubscription'
-import type { SubscriptionPlan } from '@/lib/saas/types'
+  PolarSyncDialog,
+  type PolarSyncPlanResult,
+} from "@/components/admin/polar-sync-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { CreditCard, Plus, Edit, Crown, CheckCircle, Loader2 } from "lucide-react";
+import { Spinner } from '@/components/ui/spinner';
+import { adminPlansQueryKey, useAdminPlans } from '@/hooks'
+import { createAdminPlan, dedupeAdminPlans, syncAllPlansToPolar, updateAdminPlan, type AdminSubscriptionPlanRow } from '@/lib/http/admin/plans'
+import { parsePlanPriceInput } from '@/lib/subscription/normalize-plan'
 
-// ─── Plan form state ───────────────────────────────────────
-const emptyForm = {
-  name: '',
-  price: '',
-  billing_period: 'monthly',
-  plan_type: 'main',
-  max_branches: '1',
-  max_users: '5',
-  monthly_tx_limit: '500',
-  features: '',
-  is_popular: false,
+type PlanCard = {
+  id: string
+  name: string
+  price: number
+  period: string
+  features: string[]
+  users: number
+  popular: boolean
+  is_popular?: boolean
+  is_active: boolean
+  polar_product_id: string
 }
 
-export default function AdminSubscriptionsPage() {
-  const qc = useQueryClient()
-  const plansQuery = useSaasPlans()
-  const subsQuery = useAdminSaasSubscriptions()
-  const createPlan = useCreateSaasPlan()
-  const updatePlan = useUpdateSaasPlan()
+export default function SubscriptionsPage() {
+  const queryClient = useQueryClient()
+  const plansQuery = useAdminPlans()
 
-  const [addOpen, setAddOpen] = useState(false)
-  const [editOpen, setEditOpen] = useState(false)
-  const [editTarget, setEditTarget] = useState<SubscriptionPlan | null>(null)
-  const [form, setForm] = useState(emptyForm)
-  const [editForm, setEditForm] = useState(emptyForm)
-  const [deactivateTarget, setDeactivateTarget] = useState<SubscriptionPlan | null>(null)
-  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
+  const plans = useMemo((): PlanCard[] => {
+    return (plansQuery.data ?? []).map((plan) => {
+      const row = plan as AdminSubscriptionPlanRow
+      const rawFeatures = row.features
+      let features: string[] = []
+      if (Array.isArray(rawFeatures)) {
+        features = rawFeatures.map((f) => String(f))
+      } else if (typeof rawFeatures === 'string') {
+        features = rawFeatures.split(',').map((f) => f.trim()).filter(Boolean)
+      }
+      return {
+        id: row.id,
+        name: row.name,
+        price: Number(row.price ?? 0),
+        period: (row.period as string) || 'per month',
+        features,
+        users: Number(row.active_subscriber_count ?? 0),
+        popular: !!row.is_popular,
+        is_popular: !!row.is_popular,
+        is_active: row.is_active !== false,
+        polar_product_id: String(row.polar_product_id ?? ''),
+      }
+    })
+  }, [plansQuery.data])
 
-  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
-    setToast({ msg, type })
-    setTimeout(() => setToast(null), 4000)
+  const maxSubscribers = useMemo(
+    () => Math.max(...plans.map((p) => p.users), 1),
+    [plans],
+  )
+
+  const [isAddingPlan, setIsAddingPlan] = useState(false)
+  const [isEditingPlan, setIsEditingPlan] = useState(false)
+  const [selectedPlan, setSelectedPlan] = useState<PlanCard | null>(null)
+  const [editPlanPrice, setEditPlanPrice] = useState('')
+  const [newPlan, setNewPlan] = useState({
+    name: '',
+    price: '',
+    period: 'per month',
+    features: ''
+  })
+
+  const [isAddingPlanLoading, setIsAddingPlanLoading] = useState(false)
+  const [isSavingPlan, setIsSavingPlan] = useState(false)
+  const [togglingPlanId, setTogglingPlanId] = useState<string | null>(null)
+
+  const [dedupeLoading, setDedupeLoading] = useState(false)
+  const [polarSyncOpen, setPolarSyncOpen] = useState(false)
+  const [polarSyncLoading, setPolarSyncLoading] = useState(false)
+  const [polarSyncError, setPolarSyncError] = useState<string | null>(null)
+  const [polarSyncStats, setPolarSyncStats] = useState({ synced: 0, failed: 0, skipped: 0 })
+  const [polarSyncResults, setPolarSyncResults] = useState<PolarSyncPlanResult[]>([])
+
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [feedbackTitle, setFeedbackTitle] = useState('')
+  const [feedbackMessage, setFeedbackMessage] = useState('')
+  const [feedbackVariant, setFeedbackVariant] = useState<AdminFeedbackVariant>('success')
+
+  const [deactivateConfirm, setDeactivateConfirm] = useState<PlanCard | null>(null)
+
+  const showFeedback = (
+    title: string,
+    message: string,
+    variant: AdminFeedbackVariant = 'success'
+  ) => {
+    setFeedbackTitle(title)
+    setFeedbackMessage(message)
+    setFeedbackVariant(variant)
+    setFeedbackOpen(true)
   }
 
   const plans = plansQuery.data ?? []
   const allSubs = subsQuery.data ?? []
 
-  // Stats
-  const activeSubs = allSubs.filter((s: { status: string }) => s.status === 'active').length
-  const totalRevenue = allSubs
-    .filter((s: { status: string }) => s.status === 'active')
-    .reduce((sum: number, s: { plan?: { price?: number } }) => sum + Number(s.plan?.price ?? 0), 0)
+  const handleRemoveDuplicates = async () => {
+    setDedupeLoading(true)
+    try {
+      const result = await dedupeAdminPlans()
+      await queryClient.invalidateQueries({ queryKey: adminPlansQueryKey })
+      showFeedback(
+        result.deactivated > 0 ? 'Duplicates removed' : 'No duplicates',
+        result.message ??
+          (result.deactivated > 0
+            ? `Deactivated ${result.deactivated} duplicate plan row(s). In Polar, archive extra "${result.duplicateGroupsBefore > 0 ? 'Basic/Standard/Premium' : ''}" products manually if they remain.`
+            : 'Each active plan name appears only once in the database.'),
+        result.deactivated > 0 ? 'success' : 'warning'
+      )
+    } catch (error) {
+      showFeedback(
+        'Could not remove duplicates',
+        error instanceof Error ? error.message : 'Dedupe failed',
+        'error'
+      )
+    } finally {
+      setDedupeLoading(false)
+    }
+  }
+
+  const handleSyncAllToPolar = async () => {
+    setPolarSyncOpen(true)
+    setPolarSyncLoading(true)
+    setPolarSyncError(null)
+    setPolarSyncResults([])
+    setPolarSyncStats({ synced: 0, failed: 0, skipped: 0 })
 
   const handleCreate = async () => {
     try {
@@ -95,20 +182,43 @@ export default function AdminSubscriptionsPage() {
     }
   }
 
-  const openEdit = (plan: SubscriptionPlan) => {
-    setEditTarget(plan)
-    setEditForm({
-      name: plan.name,
-      price: String(plan.price),
-      billing_period: plan.billing_period,
-      plan_type: plan.plan_type,
-      max_branches: String(plan.max_branches),
-      max_users: String(plan.max_users),
-      monthly_tx_limit: String(plan.monthly_tx_limit),
-      features: plan.features.join(', '),
-      is_popular: plan.is_popular,
-    })
-    setEditOpen(true)
+  const handleAddPlan = async () => {
+    setIsAddingPlanLoading(true)
+    try {
+      const { polarSync } = await createAdminPlan({
+        name: newPlan.name,
+        price: parseInt(newPlan.price, 10),
+        period: newPlan.period,
+        features: newPlan.features.split(',').map(f => f.trim()).filter(Boolean),
+      })
+      await queryClient.invalidateQueries({ queryKey: adminPlansQueryKey })
+      setIsAddingPlan(false)
+      setNewPlan({ name: '', price: '', period: 'per month', features: '' })
+      if (polarSync?.error) {
+        showFeedback(
+          'Plan saved',
+          `The plan was saved in Pryrox, but Polar sync failed:\n${polarSync.error}`,
+          'warning'
+        )
+      } else if (
+        polarSync?.action === 'created' ||
+        polarSync?.action === 'updated' ||
+        polarSync?.action === 'recreated'
+      ) {
+        showFeedback('Plan added', 'The plan was saved and synced to Polar.')
+      } else {
+        showFeedback('Plan added', 'Your new subscription plan is live.')
+      }
+    } catch (error) {
+      console.error('Error adding plan:', error)
+      showFeedback(
+        'Could not add plan',
+        error instanceof Error ? error.message : 'Failed to add plan',
+        'error'
+      )
+    } finally {
+      setIsAddingPlanLoading(false)
+    }
   }
 
   const handleEdit = async () => {
@@ -153,11 +263,56 @@ export default function AdminSubscriptionsPage() {
   const confirmDeactivate = async () => {
     if (!deactivateTarget) return
     try {
-      await updatePlan.mutateAsync({ planId: deactivateTarget.id, updates: { is_active: false } })
-      void qc.invalidateQueries({ queryKey: saasKeys.plans })
-      showToast(`${deactivateTarget.name} deactivated`)
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed', 'error')
+      const data = await fetch(`/api/admin/plans/${selectedPlan.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: selectedPlan.name,
+          price,
+          period: selectedPlan.period,
+          features: selectedPlan.features,
+          is_popular: selectedPlan.popular,
+          is_active: selectedPlan.is_active,
+        }),
+      }).then((r) => r.json())
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to update plan')
+      }
+
+      await queryClient.invalidateQueries({ queryKey: adminPlansQueryKey })
+      setIsEditingPlan(false)
+      setSelectedPlan(null)
+
+      const savedPrice = Number(data.plan?.price ?? price)
+      if (data.polarSync?.error) {
+        showFeedback(
+          'Plan saved',
+          `${selectedPlan.name} is now ${savedPrice.toLocaleString()} RWF/month in Pryrox.\n\nPolar sync failed:\n${data.polarSync.error}`,
+          'warning'
+        )
+      } else if (
+        data.polarSync?.action === 'created' ||
+        data.polarSync?.action === 'updated' ||
+        data.polarSync?.action === 'recreated'
+      ) {
+        showFeedback(
+          'Plan updated',
+          `${selectedPlan.name} is now ${savedPrice.toLocaleString()} RWF/month and synced to Polar.`
+        )
+      } else {
+        showFeedback(
+          'Plan updated',
+          `${selectedPlan.name} is now ${savedPrice.toLocaleString()} RWF/month. Pharmacies will see this after they refresh Settings.`
+        )
+      }
+    } catch (error) {
+      console.error('Error updating plan:', error)
+      showFeedback(
+        'Could not save plan',
+        error instanceof Error ? error.message : 'Failed to update plan',
+        'error'
+      )
     } finally {
       setDeactivateTarget(null)
     }
@@ -444,16 +599,171 @@ function PlanForm({
   const set = (key: keyof typeof emptyForm, val: string | boolean) =>
     setForm(prev => ({ ...prev, [key]: val }))
 
-  return (
-    <div className="grid gap-4 py-2">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label>Plan Name</Label>
-          <Input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Standard" />
-        </div>
-        <div className="space-y-1">
-          <Label>Price (RWF)</Label>
-          <Input type="number" min={0} value={form.price} onChange={e => set('price', e.target.value)} placeholder="0" />
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Plan Management</CardTitle>
+                  <CardDescription>Create and manage subscription plans</CardDescription>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={dedupeLoading || polarSyncLoading}
+                    onClick={() => void handleRemoveDuplicates()}
+                  >
+                    {dedupeLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Cleaning…
+                      </>
+                    ) : (
+                      'Remove duplicates'
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={polarSyncLoading || dedupeLoading}
+                    onClick={() => void handleSyncAllToPolar()}
+                  >
+                    {polarSyncLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Syncing…
+                      </>
+                    ) : (
+                      'Sync all to Polar'
+                    )}
+                  </Button>
+                <Dialog open={isAddingPlan} onOpenChange={setIsAddingPlan}>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Create New Plan
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Add New Plan</DialogTitle>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid gap-2">
+                        <Label>Plan Name</Label>
+                        <Input
+                          value={newPlan.name}
+                          onChange={(e) => setNewPlan({...newPlan, name: e.target.value})}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Price (RWF)</Label>
+                        <Input
+                          type="number"
+                          value={newPlan.price}
+                          onChange={(e) => setNewPlan({...newPlan, price: e.target.value})}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Features (comma separated)</Label>
+                        <Textarea
+                          value={newPlan.features}
+                          onChange={(e) => setNewPlan({...newPlan, features: e.target.value})}
+                          placeholder="Feature 1, Feature 2, Feature 3"
+                        />
+                      </div>
+                      <Button
+                        onClick={() => void handleAddPlan()}
+                        disabled={!newPlan.name || !newPlan.price || isAddingPlanLoading}
+                      >
+                        {isAddingPlanLoading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Saving…
+                          </>
+                        ) : (
+                          'Add Plan'
+                        )}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+                </div>
+              </div>
+            </CardHeader>
+          </Card>
+
+          {/* Edit Dialog */}
+          <Dialog open={isEditingPlan} onOpenChange={setIsEditingPlan}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit Plan</DialogTitle>
+              </DialogHeader>
+              {selectedPlan && (
+                <div className="grid gap-4 py-4">
+                  <div className="grid gap-2">
+                    <Label>Plan Name</Label>
+                    <Input
+                      value={selectedPlan.name}
+                      onChange={(e) => setSelectedPlan({...selectedPlan, name: e.target.value})}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Price (RWF)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={editPlanPrice}
+                      onChange={(e) => setEditPlanPrice(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Features (comma separated)</Label>
+                    <Textarea
+                      value={selectedPlan.features.join(', ')}
+                      onChange={(e) => setSelectedPlan({...selectedPlan, features: e.target.value.split(',').map(f => f.trim())})}
+                    />
+                  </div>
+                  {selectedPlan.polar_product_id ? (
+                    <p className="text-xs text-muted-foreground rounded-md border px-3 py-2">
+                      Polar product (auto-synced):{' '}
+                      <code className="text-[10px] break-all">{selectedPlan.polar_product_id}</code>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Paid plans sync to Polar when you save. Renaming the plan
+                      updates the Polar product title on the next save or sync.
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                    <Label htmlFor="edit-plan-active" className="cursor-pointer">
+                      Active (visible in onboarding and upgrades)
+                    </Label>
+                    <Switch
+                      id="edit-plan-active"
+                      checked={selectedPlan.is_active}
+                      onCheckedChange={(checked) =>
+                        setSelectedPlan({ ...selectedPlan, is_active: checked })
+                      }
+                    />
+                  </div>
+                  <Button
+                    onClick={() => void handleEditPlan()}
+                    disabled={isSavingPlan}
+                  >
+                    {isSavingPlan ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Saving…
+                      </>
+                    ) : (
+                      'Save Changes'
+                    )}
+                  </Button>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 

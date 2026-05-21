@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordSubscriptionPayment } from "@/lib/billing/record-subscription-payment";
+import { activatePaidSubscription } from "@/lib/subscription/activate-subscription";
 
 export type PolarCheckoutMetadata = {
   pharmacy_id?: string;
@@ -35,59 +36,20 @@ export async function fulfillPolarSubscription(
   polarCheckoutId?: string
 ): Promise<{ ok: boolean; error?: string }> {
   const subscriptionId = meta.subscription_id;
-  const pharmacyId = meta.pharmacy_id;
 
   if (!subscriptionId) {
     return { ok: false, error: "Missing subscription_id in Polar metadata" };
   }
 
-  const { data: sub, error: subErr } = await admin
-    .from("subscriptions")
-    .select("id, pharmacy_id, plan_id, expires_at")
-    .eq("id", subscriptionId)
-    .maybeSingle();
+  const activated = await activatePaidSubscription(admin, subscriptionId, {
+    paymentMethod: "polar",
+    paymentReference: polarCheckoutId ?? null,
+    planName: meta.plan_name,
+  });
 
-  if (subErr || !sub) {
-    return { ok: false, error: subErr?.message || "Subscription not found" };
+  if (!activated.ok) {
+    return activated;
   }
-
-  const pid = pharmacyId || sub.pharmacy_id;
-
-  await admin
-    .from("subscriptions")
-    .update({ is_active: false })
-    .eq("pharmacy_id", pid)
-    .neq("id", subscriptionId);
-
-  const { error: activateErr } = await admin
-    .from("subscriptions")
-    .update({
-      is_active: true,
-      payment_method: "polar",
-      payment_reference: polarCheckoutId ?? null,
-    })
-    .eq("id", subscriptionId);
-
-  if (activateErr) {
-    return { ok: false, error: activateErr.message };
-  }
-
-  let planEnum: "trial" | "standard" | "premium" = "standard";
-  if (meta.plan_name) {
-    const n = meta.plan_name.toLowerCase();
-    if (n.includes("premium")) planEnum = "premium";
-    else if (n.includes("standard")) planEnum = "standard";
-    else if (n.includes("free")) planEnum = "trial";
-  }
-
-  await admin
-    .from("pharmacies")
-    .update({
-      subscription_plan: planEnum,
-      subscription_expires_at: sub.expires_at,
-      status: "active",
-    })
-    .eq("id", pid);
 
   if (polarCheckoutId) {
     await admin

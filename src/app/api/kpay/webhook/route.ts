@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { recordSubscriptionPayment } from '@/lib/billing/record-subscription-payment'
+import { activatePaidSubscription } from '@/lib/subscription/activate-subscription'
 
 export async function POST(request: NextRequest) {
   try {
@@ -54,13 +55,11 @@ export async function POST(request: NextRequest) {
       .update(updateData)
       .eq('id', transaction.id)
 
-    // Activate subscription if payment completed
     if (statusid === '01' && transaction.subscription_id) {
-      await supabase
-        .from('subscriptions')
-        .update({ is_active: true })
-        .eq('id', transaction.subscription_id)
-
+      await activatePaidSubscription(supabase, transaction.subscription_id as string, {
+        paymentMethod: 'kpay',
+        paymentReference: refid,
+      })
       await recordSubscriptionPayment(supabase, transaction.id as string)
     }
 

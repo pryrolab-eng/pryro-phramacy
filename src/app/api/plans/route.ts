@@ -3,6 +3,8 @@ import { createServiceClient } from "../../../../supabase/service";
 import { fallbackPlansForDisplay } from "@/lib/subscription/default-plans";
 import { ensureDefaultSubscriptionPlans } from "@/lib/subscription/ensure-default-plans";
 import { normalizeSubscriptionPlanRow } from "@/lib/subscription/normalize-plan";
+import { dedupeSubscriptionPlansByName } from "@/lib/subscription/dedupe-plans";
+import { dedupeSubscriptionPlansInDb } from "@/lib/subscription/dedupe-plans-db";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +42,26 @@ export async function GET() {
       return NextResponse.json(fallbackPlansForDisplay());
     }
 
-    const normalized = (plans ?? []).map((row) =>
+    let catalog = plans ?? [];
+    const dedupedPreview = dedupeSubscriptionPlansByName(catalog);
+    if (catalog.length > dedupedPreview.length) {
+      try {
+        await dedupeSubscriptionPlansInDb(admin);
+        const refetchAfterDedupe = await admin
+          .from("subscription_plans")
+          .select("*")
+          .eq("is_active", true)
+          .order("price", { ascending: true });
+        if (!refetchAfterDedupe.error && refetchAfterDedupe.data?.length) {
+          catalog = refetchAfterDedupe.data;
+        }
+      } catch (dedupeErr) {
+        console.warn("GET /api/plans: auto-dedupe failed", dedupeErr);
+      }
+    }
+
+    const deduped = dedupeSubscriptionPlansByName(catalog);
+    const normalized = deduped.map((row) =>
       normalizeSubscriptionPlanRow(row as Record<string, unknown>)
     );
 

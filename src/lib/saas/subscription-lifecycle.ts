@@ -25,40 +25,53 @@ export interface LifecycleResult {
 }
 
 // ─── Helper: get pharmacy owner email ────────────────────
+// Strategy (in order):
+//   1. pharmacies.email  (set during onboarding)
+//   2. auth.users.email of the pharmacy_owner member
+//   3. auth.users.email of the owner_id on the pharmacy row
 
 async function getPharmacyOwnerEmail(
   admin: SupabaseClient,
   pharmacyId: string
 ): Promise<{ email: string; pharmacyName: string } | null> {
-  const { data } = await admin
+  // Step 1: fetch pharmacy row — has email + owner_id + name
+  const { data: pharmacy } = await admin
     .from('pharmacies')
-    .select(`
-      name,
-      pharmacy_users!inner(
-        user_id,
-        role,
-        users:user_id(email)
-      )
-    `)
+    .select('id, name, email, owner_id')
     .eq('id', pharmacyId)
-    .eq('pharmacy_users.role', 'pharmacy_owner')
-    .eq('pharmacy_users.is_active', true)
+    .maybeSingle()
+
+  if (!pharmacy) return null
+
+  const pharmacyName: string = (pharmacy.name as string) ?? 'Your pharmacy'
+
+  // Use pharmacy.email if present
+  const directEmail = (pharmacy.email as string | null)?.trim()
+  if (directEmail) return { email: directEmail, pharmacyName }
+
+  // Step 2: find the pharmacy_owner member and get their auth email
+  const { data: ownerMember } = await admin
+    .from('pharmacy_users')
+    .select('user_id')
+    .eq('pharmacy_id', pharmacyId)
+    .eq('role', 'pharmacy_owner')
+    .eq('is_active', true)
     .limit(1)
     .maybeSingle()
 
-  if (!data) return null
+  const ownerUserId: string | null =
+    (ownerMember?.user_id as string | null) ??
+    (pharmacy.owner_id as string | null) ??
+    null
 
-  // Try pharmacy email first, then owner user email
-  const { data: pharmacy } = await admin
-    .from('pharmacies')
-    .select('name, email')
-    .eq('id', pharmacyId)
-    .maybeSingle()
+  if (!ownerUserId) return null
 
-  const ownerEmail = (pharmacy?.email as string | null) ?? null
+  // Step 3: look up the auth user's email via service role
+  const { data: authUser } = await admin.auth.admin.getUserById(ownerUserId)
+  const authEmail = authUser?.user?.email?.trim()
+  if (authEmail) return { email: authEmail, pharmacyName }
 
-  if (!ownerEmail) return null
-  return { email: ownerEmail, pharmacyName: pharmacy?.name ?? 'Your pharmacy' }
+  return null
 }
 
 // ─── Job 1: Check and auto-suspend expired subscriptions ─

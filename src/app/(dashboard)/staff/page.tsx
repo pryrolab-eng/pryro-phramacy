@@ -8,14 +8,17 @@ import { deleteStaffMember, updateStaffMember, type StaffUser } from '@/lib/http
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Input } from "@/components/ui/input"
 import { PasswordInput } from "@/components/ui/password-input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { UserCog, Plus, Mail, Phone, Calendar } from 'lucide-react'
+import { UserCog, Plus, Mail, Phone, Calendar, Users, Lock, Crown, AlertTriangle } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
+import { useSaasSubscription } from '@/hooks/useSaasSubscription'
 
 interface StaffMember {
   id: string
@@ -30,6 +33,7 @@ interface StaffMember {
 export default function StaffManagePage() {
   const queryClient = useQueryClient()
   const usersQuery = useUsers()
+  const subQuery = useSaasSubscription()
 
   const staff = useMemo((): StaffMember[] => {
     return (usersQuery.data ?? []).map((u) => ({
@@ -37,6 +41,14 @@ export default function StaffManagePage() {
       status: u.status === 'inactive' ? 'inactive' : 'active',
     }))
   }, [usersQuery.data])
+
+  // ── Subscription limits ───────────────────────────────
+  const summary = subQuery.data
+  const userLimit = summary?.main_subscription?.plan?.max_users ?? null
+  const userCount = summary?.user_count ?? staff.length
+  const atUserLimit = userLimit !== null && userCount >= userLimit
+  const [limitDialogOpen, setLimitDialogOpen] = useState(false)
+  // ─────────────────────────────────────────────────────
 
   const [isAddingStaff, setIsAddingStaff] = useState(false)
   const [newStaff, setNewStaff] = useState({
@@ -75,6 +87,14 @@ export default function StaffManagePage() {
 
   const loading = usersQuery.isPending || pharmacyLoading
 
+  const handleAddClick = () => {
+    if (atUserLimit) {
+      setLimitDialogOpen(true)
+      return
+    }
+    setIsAddingStaff(true)
+  }
+
   const handleAddStaff = async () => {
     try {
       const credentials = {
@@ -93,14 +113,21 @@ export default function StaffManagePage() {
       })
 
       await queryClient.invalidateQueries({ queryKey: staffUsersQueryKey })
+      void subQuery.refetch()
       setIsAddingStaff(false)
       setNewStaff({ name: '', email: '', phone: '', role: 'pharmacist', password: '' })
 
       alert(`✅ Pharmacist Created Successfully!\n\n📧 SHARE THESE LOGIN CREDENTIALS:\n\nEmail: ${credentials.email}\nPassword: ${credentials.password}\n\n🔐 The pharmacist can now login at the sign-in page using these credentials.\n\n⚠️ Save these credentials to share with ${credentials.name}`)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
+      // Show a clean message for limit errors
+      if (message.includes('User limit reached') || message.includes('USER_LIMIT_REACHED')) {
+        setIsAddingStaff(false)
+        setLimitDialogOpen(true)
+        return
+      }
       console.error('Error adding pharmacist:', error)
-      alert(`❌ Failed to create pharmacist: ${message}\n\nPlease check:\n- Email is unique (not already used)\n- Password is at least 4 characters\n- All required fields are filled`)
+      alert(`❌ Failed to create pharmacist: ${message}`)
     }
   }
 
@@ -192,64 +219,57 @@ export default function StaffManagePage() {
             ) : null}
           </div>
         </div>
-        <Dialog open={isAddingStaff} onOpenChange={setIsAddingStaff}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Staff Member
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Pharmacist</DialogTitle>
-              <DialogDescription>Create a new pharmacist account for your pharmacy</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="staff_name">Full Name</Label>
-                <Input
-                  id="staff_name"
-                  value={newStaff.name}
-                  onChange={(e) => setNewStaff({...newStaff, name: e.target.value})}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="staff_email">Email</Label>
-                <Input
-                  id="staff_email"
-                  type="email"
-                  value={newStaff.email}
-                  onChange={(e) => setNewStaff({...newStaff, email: e.target.value})}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="staff_phone">Phone</Label>
-                <Input
-                  id="staff_phone"
-                  value={newStaff.phone}
-                  onChange={(e) => setNewStaff({...newStaff, phone: e.target.value})}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="staff_password">Password</Label>
-                <PasswordInput
-                  id="staff_password"
-                  value={newStaff.password}
-                  onChange={(e) => setNewStaff({...newStaff, password: e.target.value})}
-                  placeholder="Any password (1+ characters)"
-                />
-              </div>
-
-            </div>
-            <DialogFooter>
-              <Button onClick={handleAddStaff} disabled={!newStaff.email || !newStaff.password || !newStaff.name}>
-                Add Pharmacist
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={handleAddClick} disabled={atUserLimit}>
+          {atUserLimit ? <Lock className="mr-2 h-4 w-4" /> : <Plus className="mr-2 h-4 w-4" />}
+          Add Staff Member
+        </Button>
       </div>
 
+      {/* User limit banner */}
+      {userLimit !== null && (
+        <Card className={atUserLimit ? 'border-amber-300 bg-amber-50' : ''}>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <Users className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">
+                    {userCount} of {userLimit} staff used
+                    {summary?.main_subscription?.plan?.name
+                      ? ` · ${summary.main_subscription.plan.name} plan`
+                      : ''}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {atUserLimit
+                      ? 'Limit reached — upgrade your plan to add more staff'
+                      : `${userLimit - userCount} slot${userLimit - userCount !== 1 ? 's' : ''} remaining`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 min-w-[160px]">
+                <Progress
+                  value={Math.min(100, (userCount / userLimit) * 100)}
+                  className="flex-1 h-2"
+                />
+                <span className="text-xs font-medium whitespace-nowrap">
+                  {userCount}/{userLimit}
+                </span>
+              </div>
+              {atUserLimit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-amber-400 text-amber-700 hover:bg-amber-100"
+                  onClick={() => window.location.href = '/pharmacy-dashboard/billing'}
+                >
+                  <Crown className="h-3.5 w-3.5 mr-1.5" />
+                  Upgrade Plan
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {staff.map((member) => (
           <Card key={member.id} className="p-3">
@@ -314,6 +334,40 @@ export default function StaffManagePage() {
         ))}
       </div>
 
+      {/* Add Staff Dialog */}
+      <Dialog open={isAddingStaff} onOpenChange={setIsAddingStaff}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Pharmacist</DialogTitle>
+            <DialogDescription>Create a new pharmacist account for your pharmacy</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="staff_name">Full Name</Label>
+              <Input id="staff_name" value={newStaff.name} onChange={(e) => setNewStaff({...newStaff, name: e.target.value})} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="staff_email">Email</Label>
+              <Input id="staff_email" type="email" value={newStaff.email} onChange={(e) => setNewStaff({...newStaff, email: e.target.value})} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="staff_phone">Phone</Label>
+              <Input id="staff_phone" value={newStaff.phone} onChange={(e) => setNewStaff({...newStaff, phone: e.target.value})} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="staff_password">Password</Label>
+              <PasswordInput id="staff_password" value={newStaff.password} onChange={(e) => setNewStaff({...newStaff, password: e.target.value})} placeholder="Any password (1+ characters)" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleAddStaff} disabled={!newStaff.email || !newStaff.password || !newStaff.name}>
+              Add Pharmacist
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Staff Dialog */}
       <Dialog open={isEditingStaff} onOpenChange={setIsEditingStaff}>
         <DialogContent>
           <DialogHeader>
@@ -323,32 +377,20 @@ export default function StaffManagePage() {
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label>Full Name</Label>
-              <Input
-                value={editingStaff?.name || ''}
-                onChange={(e) => setEditingStaff({...editingStaff, name: e.target.value})}
-              />
+              <Input value={editingStaff?.name || ''} onChange={(e) => setEditingStaff({...editingStaff, name: e.target.value})} />
             </div>
             <div className="grid gap-2">
               <Label>Email</Label>
-              <Input
-                type="email"
-                value={editingStaff?.email || ''}
-                onChange={(e) => setEditingStaff({...editingStaff, email: e.target.value})}
-              />
+              <Input type="email" value={editingStaff?.email || ''} onChange={(e) => setEditingStaff({...editingStaff, email: e.target.value})} />
             </div>
             <div className="grid gap-2">
               <Label>Phone</Label>
-              <Input
-                value={editingStaff?.phone || ''}
-                onChange={(e) => setEditingStaff({...editingStaff, phone: e.target.value})}
-              />
+              <Input value={editingStaff?.phone || ''} onChange={(e) => setEditingStaff({...editingStaff, phone: e.target.value})} />
             </div>
             <div className="grid gap-2">
               <Label>Role</Label>
               <Select value={editingStaff?.role || 'pharmacist'} onValueChange={(value) => setEditingStaff({...editingStaff, role: value})}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="pharmacist">Pharmacist</SelectItem>
                   <SelectItem value="cashier">Cashier</SelectItem>
@@ -358,11 +400,7 @@ export default function StaffManagePage() {
             </div>
             <div className="grid gap-2">
               <Label>New Password (optional)</Label>
-              <PasswordInput
-                value={editingStaff?.password || ''}
-                onChange={(e) => setEditingStaff({...editingStaff, password: e.target.value})}
-                placeholder="Leave blank to keep current password"
-              />
+              <PasswordInput value={editingStaff?.password || ''} onChange={(e) => setEditingStaff({...editingStaff, password: e.target.value})} placeholder="Leave blank to keep current password" />
             </div>
           </div>
           <DialogFooter>
@@ -370,6 +408,30 @@ export default function StaffManagePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* User limit reached dialog */}
+      <AlertDialog open={limitDialogOpen} onOpenChange={setLimitDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Lock className="h-5 w-5 text-amber-500" />
+              Staff Limit Reached
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Your current plan allows {userLimit} staff member{userLimit !== 1 ? 's' : ''}.
+              You have used all {userLimit} slot{userLimit !== 1 ? 's' : ''}.
+              Upgrade your plan to add more staff.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Close</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setLimitDialogOpen(false); window.location.href = '/pharmacy-dashboard/billing' }}>
+              <Crown className="h-4 w-4 mr-2" />
+              View Plans
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

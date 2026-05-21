@@ -14,7 +14,6 @@ import { InsuranceSelector } from '@/components/insurance-selector'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
-
 interface Product {
   id: string
   name: string
@@ -535,6 +534,53 @@ export default function POSPage() {
 
   return (
     <div className="p-4 h-screen flex flex-col">
+      {/* ── Transaction limit blocker dialog ── */}
+      {txBlocked && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+            {/* Red header */}
+            <div className="bg-red-600 px-6 py-5 text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                  <AlertTriangle className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold">Transaction Blocked</h2>
+                  <p className="text-red-100 text-sm">This branch cannot process sales</p>
+                </div>
+              </div>
+            </div>
+            {/* Body */}
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-gray-700 leading-relaxed">
+                {txBlocked.reason === 'no_subscription'
+                  ? 'This branch has no active subscription. A subscription is required to process sales.'
+                  : txBlocked.message}
+              </p>
+              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 font-medium">
+                {txBlocked.reason === 'no_subscription'
+                  ? '⚠️ No active subscription found for this branch.'
+                  : '⚠️ Monthly transaction limit reached. Upgrade your plan or wait for the next billing cycle.'}
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={() => setTxBlocked(null)}
+                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Dismiss
+                </button>
+                <button
+                  onClick={() => { window.location.href = '/pharmacy-dashboard/billing' }}
+                  className="flex-1 px-4 py-2.5 bg-red-600 rounded-lg text-sm font-medium text-white hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+                >
+                  <CreditCard className="h-4 w-4" />
+                  Upgrade Plan
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="mb-4 flex items-center gap-4">
         <SidebarTrigger />
         <div className="h-4 w-px bg-border" />

@@ -26,6 +26,7 @@ import { PharmacyRadialChart } from '@/components/pharmacy-radial-chart'
 import { PharmacyBarChart } from '@/components/pharmacy-bar-chart'
 import { PharmacyInventoryChart } from '@/components/pharmacy-inventory-chart'
 import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
+import { BranchUsageWidget } from '@/components/branch-usage-widget'
 
 interface PharmacyStats {
   totalProducts: number
@@ -413,6 +414,9 @@ export default function PharmacyDashboard() {
         </TabsList>
         
         <TabsContent value="overview" className="space-y-4">
+          {/* Subscription & branch usage widget */}
+          <BranchUsageWidget />
+
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {/* Recent Sales */}
             <Card>

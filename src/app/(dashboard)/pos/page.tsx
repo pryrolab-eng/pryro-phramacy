@@ -293,6 +293,60 @@ export default function POSPage() {
 
   const { addSale, updateStock } = usePharmacyStore()
 
+  // ── Subscription / transaction gate ──────────────────────
+  const [txBlocked, setTxBlocked] = useState<{ reason: string; message: string } | null>(null)
+  const [currentBranchId, setCurrentBranchId] = useState<string | null>(null)
+
+  // Load the current branch_id for this user on mount
+  useEffect(() => {
+    const loadBranchId = async () => {
+      try {
+        const res = await fetch('/api/saas/branches')
+        if (res.ok) {
+          const data = await res.json()
+          // Use the first active branch for this user's session
+          const firstBranch = (data.branches ?? [])[0]
+          if (firstBranch?.id) setCurrentBranchId(firstBranch.id)
+        }
+      } catch {
+        // non-fatal — POS still works without branch tracking
+      }
+    }
+    void loadBranchId()
+  }, [])
+
+  const checkTransactionAllowed = async (): Promise<boolean> => {
+    if (!currentBranchId) return true // no branch context → allow (graceful degradation)
+    try {
+      const res = await fetch(`/api/saas/usage/check?branch_id=${currentBranchId}`)
+      if (!res.ok) return true // API error → allow (don't block sales on infra issues)
+      const data = await res.json()
+      if (!data.allowed) {
+        setTxBlocked({
+          reason: data.reason ?? 'limit_reached',
+          message: data.message ?? 'Transaction limit reached for this branch.',
+        })
+        return false
+      }
+      return true
+    } catch {
+      return true // network error → allow
+    }
+  }
+
+  const incrementTransactionCount = async () => {
+    if (!currentBranchId) return
+    try {
+      await fetch('/api/saas/usage/increment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branch_id: currentBranchId }),
+      })
+    } catch {
+      // non-fatal
+    }
+  }
+
   const processSale = async () => {
     if (cart.length === 0) {
       alert('Cart is empty. Add items to process sale.')
@@ -303,7 +357,11 @@ export default function POSPage() {
       alert('Please select a payment method.')
       return
     }
-    
+
+    // ── Transaction gate: check before sale ──
+    const allowed = await checkTransactionAllowed()
+    if (!allowed) return // txBlocked state is set — UI will show the blocker
+
     const saleData = {
       customer,
       items: cart,
@@ -331,6 +389,9 @@ export default function POSPage() {
       if (!result.success) {
         throw new Error(result.error || 'Failed to save sale')
       }
+
+      // ── Increment usage counter after successful sale ──
+      await incrementTransactionCount()
       
       const receiptNumber = result.receiptNumber || `RCP-${Date.now()}`
       
@@ -1574,6 +1635,45 @@ export default function POSPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Transaction Blocked Overlay */}
+      {txBlocked && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6 space-y-4">
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
+                <AlertTriangle className="h-8 w-8 text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-red-700">
+                  {txBlocked.reason === 'no_subscription' ? 'No Active Subscription' : 'Transaction Limit Reached'}
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">{txBlocked.message}</p>
+              </div>
+            </div>
+            <div className="bg-red-50 rounded-lg p-4 text-sm text-red-700">
+              {txBlocked.reason === 'no_subscription'
+                ? 'This branch has no active subscription. Please contact your pharmacy owner to subscribe.'
+                : 'This branch has reached its monthly transaction limit. Sales are blocked until the billing cycle resets or the plan is upgraded.'}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setTxBlocked(null)}
+              >
+                Dismiss
+              </Button>
+              <Button
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                onClick={() => { window.location.href = '/pharmacy-dashboard/billing' }}
+              >
+                View Plans
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AI Safety Check Dialog */}
       {aiSafetyOpen && (

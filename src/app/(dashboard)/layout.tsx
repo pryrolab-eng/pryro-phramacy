@@ -46,16 +46,34 @@ export default async function DashboardLayout({
   const userRole = userProfile?.role || 'pharmacy_owner'
   
   if (userProfile?.pharmacy_id && !isPlatformAdmin) {
-    const { data: pharmacy } = await supabase
-      .from('pharmacies')
-      .select('status, subscription_expires_at')
-      .eq('id', userProfile.pharmacy_id)
-      .single()
-    
-    if (pharmacy) {
-      isSubscriptionExpired = pharmacy.status === 'suspended' || 
-        (pharmacy.subscription_expires_at && new Date(pharmacy.subscription_expires_at) < new Date())
+    // Check the new SaaS subscription model first (subscriptions.status = 'active')
+    // Fall back to legacy pharmacy.status check for backward compatibility
+    const [{ data: activeSub }, { data: pharmacy }] = await Promise.all([
+      supabase
+        .from('subscriptions')
+        .select('id, status')
+        .eq('pharmacy_id', userProfile.pharmacy_id)
+        .eq('subscription_type', 'main')
+        .eq('status', 'active')
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('pharmacies')
+        .select('status, subscription_expires_at')
+        .eq('id', userProfile.pharmacy_id)
+        .maybeSingle(),
+    ])
+
+    if (!activeSub) {
+      // No active SaaS subscription — check legacy fields
+      if (pharmacy) {
+        isSubscriptionExpired =
+          pharmacy.status === 'suspended' ||
+          (pharmacy.subscription_expires_at != null &&
+            new Date(pharmacy.subscription_expires_at) < new Date())
+      }
     }
+    // If activeSub exists, subscription is valid — isSubscriptionExpired stays false
   }
 
   const getSidebar = () => {

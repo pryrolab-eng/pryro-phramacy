@@ -24,6 +24,8 @@ import {
   Search,
   MoreVertical,
   UserCheck,
+  Building2,
+  CreditCard,
 } from "lucide-react"
 
 import {
@@ -91,6 +93,16 @@ const pharmacyData = {
       title: "Reports",
       url: "/reports",
       icon: FileText,
+    },
+    {
+      title: "Branches",
+      url: "/branches",
+      icon: Building2,
+    },
+    {
+      title: "Billing",
+      url: "/pharmacy-dashboard/billing",
+      icon: CreditCard,
     },
     {
       title: "Settings",
@@ -259,7 +271,7 @@ export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sideba
               <span className="text-xs font-medium text-gray-700 capitalize">{subscriptionPlan}</span>
               <Badge variant="secondary" className="text-[10px] h-4 px-1">{daysLeft}d</Badge>
             </div>
-            <Link href="/settings" className="flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 font-medium">
+            <Link href="/pharmacy-dashboard/billing" className="flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 font-medium">
               <Crown className="h-3 w-3" />
               Renew Subscription
             </Link>
@@ -271,7 +283,7 @@ export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sideba
               <span className="text-xs font-medium text-gray-700 capitalize">{subscriptionPlan}</span>
               <Badge variant="secondary" className="text-[10px] h-4 px-1">{daysLeft}d</Badge>
             </div>
-            <Link href="/settings" className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700 font-medium">
+            <Link href="/pharmacy-dashboard/billing" className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700 font-medium">
               <Crown className="h-3 w-3" />
               {subscriptionPlan === 'premium' ? 'Manage Plan' : 'Upgrade to Premium'}
             </Link>

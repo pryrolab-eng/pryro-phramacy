@@ -41,7 +41,11 @@ export function PolarSyncDialog({
 }: PolarSyncDialogProps) {
   const failures = results.filter((r) => r.error);
   const successes = results.filter(
-    (r) => (r.action === "created" || r.action === "updated") && !r.error
+    (r) =>
+      (r.action === "created" ||
+        r.action === "updated" ||
+        r.action === "recreated") &&
+      !r.error
   );
 
   return (

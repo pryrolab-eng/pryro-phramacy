@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
+import { createServiceClient } from '../../../../../supabase/service'
+import { createSubscriptionUpgrade } from '@/lib/subscription/create-pending-upgrade'
 
 export async function GET(request: NextRequest) {
   try {
@@ -120,75 +122,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
     }
 
-    const { data: plan } = await supabase
+    const admin = createServiceClient()
+    const { data: plan } = await admin
       .from('subscription_plans')
       .select('*')
       .eq('name', planId)
       .eq('is_active', true)
-      .single()
+      .maybeSingle()
 
     if (!plan) {
       return NextResponse.json({ error: 'Plan not found' }, { status: 404 })
     }
 
-    const now = new Date()
-    const expiresAt = new Date(now)
-    
-    if (plan.period === 'per month') {
-      expiresAt.setMonth(expiresAt.getMonth() + 1)
-    } else if (plan.period === 'per year') {
-      expiresAt.setFullYear(expiresAt.getFullYear() + 1)
-    } else {
-      expiresAt.setFullYear(expiresAt.getFullYear() + 100)
-    }
-
-    const planEnum = (() => {
-      const n = (plan.name || '').toLowerCase()
-      if (n.includes('premium')) return 'premium' as const
-      if (n.includes('standard')) return 'standard' as const
-      return 'trial' as const
-    })()
-
-    const { data: subscription, error: subscriptionError } = await supabase
-      .from('subscriptions')
-      .insert({
-        pharmacy_id: userPharmacy.pharmacy_id,
-        plan_id: plan.id,
-        plan: planEnum,
-        is_active: plan.price === 0,
-        expires_at: expiresAt.toISOString(),
-        payment_method: 'kpay'
-      })
-      .select()
-      .single()
-
-    if (subscriptionError) {
-      return NextResponse.json({ error: 'Failed to create subscription' }, { status: 500 })
-    }
-
-    await supabase
-      .from('pharmacies')
-      .update({
-        subscription_plan: planEnum,
-        subscription_expires_at: expiresAt.toISOString(),
-        status:
-          plan.price === 0 && subscription.is_active
-            ? planEnum === 'trial'
-              ? 'trial'
-              : 'active'
-            : 'trial',
-      })
-      .eq('id', userPharmacy.pharmacy_id)
+    const result = await createSubscriptionUpgrade(admin, userPharmacy.pharmacy_id, {
+      id: plan.id as string,
+      name: String(plan.name),
+      price: plan.price,
+      period: plan.period as string | null,
+    })
 
     return NextResponse.json({
       success: true,
       subscription: {
-        id: subscription.id,
-        planId: plan.id,
-        planName: plan.name,
-        amount: plan.price,
-        requiresPayment: plan.price > 0
-      }
+        id: result.id,
+        planId: result.planId,
+        planName: result.planName,
+        amount: result.amount,
+        requiresPayment: result.requiresPayment,
+      },
     })
 
   } catch (error: any) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '../../../../../supabase/server'
 import { resolveIsAppPlatformAdmin } from '@/lib/platform-admin'
 import { syncPlanToPolarAndSave } from '@/lib/polar/sync-plan-db'
+import { dedupeSubscriptionPlansByName, normalizePlanName } from '@/lib/subscription/dedupe-plans'
 
 export async function GET() {
   try {
@@ -47,7 +48,9 @@ export async function GET() {
       counts[k] = (counts[k] ?? 0) + 1
     }
 
-    const enriched = (plans ?? []).map((p) => {
+    const catalog = dedupeSubscriptionPlansByName(plans ?? [])
+
+    const enriched = catalog.map((p) => {
       const name = (p as { name?: string }).name ?? ''
       return {
         ...p,
@@ -81,8 +84,34 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+    const planName = String(body.name ?? '').trim()
+    if (!planName) {
+      return NextResponse.json(
+        { success: false, error: 'Plan name is required' },
+        { status: 400 },
+      )
+    }
 
     const db = createServiceClient()
+
+    const { data: existing } = await db
+      .from('subscription_plans')
+      .select('id, name')
+      .eq('is_active', true)
+
+    const duplicate = (existing ?? []).some(
+      (row) => normalizePlanName(String(row.name)) === normalizePlanName(planName),
+    )
+    if (duplicate) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `A plan named "${planName}" already exists. Edit the existing plan or remove duplicates first.`,
+        },
+        { status: 409 },
+      )
+    }
+
     const { data: plan, error } = await db
       .from('subscription_plans')
       .insert({

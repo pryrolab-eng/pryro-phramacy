@@ -3,6 +3,8 @@ import { createClient, createServiceClient } from "../../../../../../supabase/se
 import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
 import { syncPlanToPolarAndSave } from "@/lib/polar/sync-plan-db";
 import { isPolarConfigured } from "@/lib/polar/client";
+import { dedupeSubscriptionPlansInDb } from "@/lib/subscription/dedupe-plans-db";
+import { dedupeSubscriptionPlansByName } from "@/lib/subscription/dedupe-plans";
 
 /** Backfill / refresh Polar products for all paid active plans. */
 export async function POST() {
@@ -29,6 +31,8 @@ export async function POST() {
     }
 
     const db = createServiceClient();
+    await dedupeSubscriptionPlansInDb(db);
+
     const { data: plans, error } = await db
       .from("subscription_plans")
       .select("*")
@@ -36,6 +40,8 @@ export async function POST() {
       .gt("price", 0);
 
     if (error) throw error;
+
+    const catalog = dedupeSubscriptionPlansByName(plans ?? []);
 
     const results: Array<{
       id: string;
@@ -45,7 +51,7 @@ export async function POST() {
       polar_product_id?: string | null;
     }> = [];
 
-    for (const row of plans ?? []) {
+    for (const row of catalog) {
       const synced = await syncPlanToPolarAndSave(db, row);
       results.push({
         id: row.id,
@@ -57,7 +63,11 @@ export async function POST() {
     }
 
     const synced = results.filter(
-      (r) => (r.action === "created" || r.action === "updated") && !r.error
+      (r) =>
+        (r.action === "created" ||
+          r.action === "updated" ||
+          r.action === "recreated") &&
+        !r.error
     ).length;
     const skipped = results.filter((r) => r.action === "skipped").length;
     const failed = results.filter((r) => r.error).length;

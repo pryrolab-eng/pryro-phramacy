@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { recordSubscriptionPayment } from '@/lib/billing/record-subscription-payment'
+import { activatePaidSubscription } from '@/lib/subscription/activate-subscription'
 import { createClient } from '../../../../../supabase/server'
 import { createServiceClient } from '../../../../../supabase/service'
 import { kpayService } from '@/lib/kpay'
@@ -83,14 +84,12 @@ export async function GET(request: NextRequest) {
       .update(updateData)
       .eq('id', transaction.id)
 
-    // Activate subscription if payment completed
     if (kpayStatus.statusid === '01' && transaction.subscription_id) {
-      await supabase
-        .from('subscriptions')
-        .update({ is_active: true })
-        .eq('id', transaction.subscription_id)
-
       const admin = createServiceClient()
+      await activatePaidSubscription(admin, transaction.subscription_id as string, {
+        paymentMethod: 'kpay',
+        paymentReference: transaction.kpay_refid as string,
+      })
       await recordSubscriptionPayment(admin, transaction.id as string)
     }
 

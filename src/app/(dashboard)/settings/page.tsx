@@ -273,6 +273,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const onFocus = () => {
+      void fetchPharmacyInfo()
       void fetchPlans()
     }
     window.addEventListener('focus', onFocus)
@@ -397,8 +398,10 @@ export default function SettingsPage() {
     }
   }
 
-  const handleUpgrade = async (planName: string) => {
-    const plan = plans.find(p => p.name === planName)
+  const handleUpgrade = async (planIdOrName: string) => {
+    const plan = plans.find(
+      (p) => p.id === planIdOrName || p.name === planIdOrName
+    )
     if (!plan) {
       alert('Plan not found. Please refresh the page and try again.')
       return
@@ -414,10 +417,10 @@ export default function SettingsPage() {
         })
         
         if (response.ok) {
-          setCurrentPlan(planName.toLowerCase())
+          setCurrentPlan(plan.name.toLowerCase())
           await fetchPharmacyInfo()
           await fetchBillingInfo()
-          alert(`Successfully switched to ${planName} plan!`)
+          alert(`Successfully switched to ${plan.name} plan!`)
         } else if (response.status === 401) {
           alert('Please log in to upgrade your plan.')
           window.location.href = '/login'
@@ -1995,7 +1998,7 @@ export default function SettingsPage() {
         <CardContent>
           <div className="grid gap-4 md:grid-cols-3">
             {plans.map((plan) => (
-              <div key={plan.name} className={`border rounded-lg p-6 ${plan.current ? 'border-blue-500 bg-blue-50' : ''}`}>
+              <div key={plan.id || plan.name} className={`border rounded-lg p-6 ${plan.current ? 'border-blue-500 bg-blue-50' : ''}`}>
                 <div className="text-center mb-4">
                   <h3 className="font-semibold text-lg">{plan.name}</h3>
                   <div className="text-3xl font-bold text-blue-600">{plan.price.toLocaleString()} RWF</div>
@@ -2018,7 +2021,7 @@ export default function SettingsPage() {
                   </Button>
                 ) : (
                   <Button 
-                    onClick={() => handleUpgrade(plan.name)}
+                    onClick={() => handleUpgrade(plan.id || plan.name)}
                     variant={plan.name === 'Premium' ? 'default' : 'outline'}
                     className="w-full"
                     data-plan={plan.name}

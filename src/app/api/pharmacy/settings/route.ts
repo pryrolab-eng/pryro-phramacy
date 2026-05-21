@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
+import { getEffectiveSubscriptionLabel } from '@/lib/subscription/effective-plan'
 
 export async function GET() {
   try {
@@ -27,6 +28,12 @@ export async function GET() {
       .single()
     
     if (error) throw error
+
+    const subscription = await getEffectiveSubscriptionLabel(
+      supabase,
+      userPharmacy.pharmacy_id,
+      pharmacy.subscription_plan
+    )
     
     return NextResponse.json({
       name: pharmacy.name,
@@ -34,7 +41,7 @@ export async function GET() {
       location: `${pharmacy.city}, ${pharmacy.province}`,
       phone: pharmacy.phone,
       email: pharmacy.email,
-      subscription: pharmacy.subscription_plan || 'standard',
+      subscription,
       currency: 'RWF',
       language: 'en'
     })

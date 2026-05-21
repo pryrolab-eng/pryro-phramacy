@@ -7,7 +7,8 @@ export async function ensureDefaultSubscriptionPlans(
 ): Promise<void> {
   const { data: existing, error } = await admin
     .from("subscription_plans")
-    .select("name");
+    .select("name")
+    .eq("is_active", true);
 
   if (error) {
     throw error;

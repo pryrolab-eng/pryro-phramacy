@@ -36,7 +36,7 @@ import { Switch } from "@/components/ui/switch";
 import { CreditCard, Plus, Edit, Crown, CheckCircle, Loader2 } from "lucide-react";
 import { Spinner } from '@/components/ui/spinner';
 import { adminPlansQueryKey, useAdminPlans } from '@/hooks'
-import { createAdminPlan, syncAllPlansToPolar, updateAdminPlan, type AdminSubscriptionPlanRow } from '@/lib/http/admin/plans'
+import { createAdminPlan, dedupeAdminPlans, syncAllPlansToPolar, updateAdminPlan, type AdminSubscriptionPlanRow } from '@/lib/http/admin/plans'
 import { parsePlanPriceInput } from '@/lib/subscription/normalize-plan'
 
 type PlanCard = {
@@ -101,6 +101,7 @@ export default function SubscriptionsPage() {
   const [isSavingPlan, setIsSavingPlan] = useState(false)
   const [togglingPlanId, setTogglingPlanId] = useState<string | null>(null)
 
+  const [dedupeLoading, setDedupeLoading] = useState(false)
   const [polarSyncOpen, setPolarSyncOpen] = useState(false)
   const [polarSyncLoading, setPolarSyncLoading] = useState(false)
   const [polarSyncError, setPolarSyncError] = useState<string | null>(null)
@@ -130,6 +131,30 @@ export default function SubscriptionsPage() {
     subscribers: plan.users,
     width: Math.max(6, Math.round((plan.users / maxSubscribers) * 100)),
   }))
+
+  const handleRemoveDuplicates = async () => {
+    setDedupeLoading(true)
+    try {
+      const result = await dedupeAdminPlans()
+      await queryClient.invalidateQueries({ queryKey: adminPlansQueryKey })
+      showFeedback(
+        result.deactivated > 0 ? 'Duplicates removed' : 'No duplicates',
+        result.message ??
+          (result.deactivated > 0
+            ? `Deactivated ${result.deactivated} duplicate plan row(s). In Polar, archive extra "${result.duplicateGroupsBefore > 0 ? 'Basic/Standard/Premium' : ''}" products manually if they remain.`
+            : 'Each active plan name appears only once in the database.'),
+        result.deactivated > 0 ? 'success' : 'warning'
+      )
+    } catch (error) {
+      showFeedback(
+        'Could not remove duplicates',
+        error instanceof Error ? error.message : 'Dedupe failed',
+        'error'
+      )
+    } finally {
+      setDedupeLoading(false)
+    }
+  }
 
   const handleSyncAllToPolar = async () => {
     setPolarSyncOpen(true)
@@ -174,7 +199,11 @@ export default function SubscriptionsPage() {
           `The plan was saved in Pryrox, but Polar sync failed:\n${polarSync.error}`,
           'warning'
         )
-      } else if (polarSync?.action === 'created' || polarSync?.action === 'updated') {
+      } else if (
+        polarSync?.action === 'created' ||
+        polarSync?.action === 'updated' ||
+        polarSync?.action === 'recreated'
+      ) {
         showFeedback('Plan added', 'The plan was saved and synced to Polar.')
       } else {
         showFeedback('Plan added', 'Your new subscription plan is live.')
@@ -257,7 +286,11 @@ export default function SubscriptionsPage() {
           `${selectedPlan.name} is now ${savedPrice.toLocaleString()} RWF/month in Pryrox.\n\nPolar sync failed:\n${data.polarSync.error}`,
           'warning'
         )
-      } else if (data.polarSync?.action === 'created' || data.polarSync?.action === 'updated') {
+      } else if (
+        data.polarSync?.action === 'created' ||
+        data.polarSync?.action === 'updated' ||
+        data.polarSync?.action === 'recreated'
+      ) {
         showFeedback(
           'Plan updated',
           `${selectedPlan.name} is now ${savedPrice.toLocaleString()} RWF/month and synced to Polar.`
@@ -453,11 +486,26 @@ export default function SubscriptionsPage() {
                   <CardTitle>Plan Management</CardTitle>
                   <CardDescription>Create and manage subscription plans</CardDescription>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={polarSyncLoading}
+                    disabled={dedupeLoading || polarSyncLoading}
+                    onClick={() => void handleRemoveDuplicates()}
+                  >
+                    {dedupeLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Cleaning…
+                      </>
+                    ) : (
+                      'Remove duplicates'
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={polarSyncLoading || dedupeLoading}
                     onClick={() => void handleSyncAllToPolar()}
                   >
                     {polarSyncLoading ? (

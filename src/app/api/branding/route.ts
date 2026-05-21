@@ -7,7 +7,7 @@ import { createClient } from '../../../../supabase/server'
  */
 export async function GET() {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
 
     const { data: settings } = await supabase
       .from('system_settings')

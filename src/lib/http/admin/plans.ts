@@ -45,6 +45,29 @@ export async function createAdminPlan(
   return { plan: data.plan, polarSync: data.polarSync };
 }
 
+export async function dedupeAdminPlans(): Promise<{
+  deactivated: number;
+  subscriptionsRepointed: number;
+  duplicateGroupsBefore: number;
+  message?: string;
+}> {
+  const data = await fetchJson<{
+    success: boolean;
+    deactivated?: number;
+    subscriptionsRepointed?: number;
+    duplicateGroupsBefore?: number;
+    message?: string;
+    error?: string;
+  }>("/api/admin/plans/dedupe", { method: "POST" });
+  ensureApiSuccess(data, "Failed to remove duplicate plans");
+  return {
+    deactivated: data.deactivated ?? 0,
+    subscriptionsRepointed: data.subscriptionsRepointed ?? 0,
+    duplicateGroupsBefore: data.duplicateGroupsBefore ?? 0,
+    message: data.message,
+  };
+}
+
 export async function syncAllPlansToPolar(): Promise<{
   synced: number;
   failed: number;

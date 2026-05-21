@@ -11,7 +11,11 @@ export type PlanForPolarSync = {
 };
 
 export type PolarSyncResult =
-  | { ok: true; polarProductId: string; action: "created" | "updated" | "skipped" }
+  | {
+      ok: true;
+      polarProductId: string;
+      action: "created" | "updated" | "recreated" | "skipped";
+    }
   | { ok: false; error: string };
 
 function rwfPerUsd(): number {
@@ -156,6 +160,22 @@ async function createPolarProduct(
   return id;
 }
 
+/** True if the stored Polar product is missing or not usable for checkout. */
+async function polarProductNeedsRecreate(
+  polar: ReturnType<typeof getPolarClient>,
+  productId: string
+): Promise<boolean> {
+  try {
+    const existing = await polar.products.get({ id: productId });
+    const archived =
+      (existing as { isArchived?: boolean }).isArchived === true ||
+      (existing as { is_archived?: boolean }).is_archived === true;
+    return archived;
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Create or update a Polar product for a subscription_plans row.
  * Linked by metadata.pryrox_plan_id (stable UUID); name/price/features update on each save.
@@ -185,25 +205,52 @@ export async function syncPlanToPolar(
   const description = planDescription(plan);
 
   try {
-    if (plan.polar_product_id) {
-      try {
-        await polar.products.update({
-          id: plan.polar_product_id,
-          name: productName,
-          description,
-          metadata,
-        });
-        return {
-          ok: true,
-          polarProductId: plan.polar_product_id,
-          action: "updated",
-        };
-      } catch (updateErr) {
+    const existingId = plan.polar_product_id?.trim() || null;
+
+    if (existingId) {
+      const needsRecreate = await polarProductNeedsRecreate(polar, existingId);
+
+      if (!needsRecreate) {
+        try {
+          await polar.products.update({
+            id: existingId,
+            productUpdate: {
+              name: productName,
+              description,
+              metadata,
+            },
+          });
+          return {
+            ok: true,
+            polarProductId: existingId,
+            action: "updated",
+          };
+        } catch (updateErr) {
+          console.warn(
+            `Polar update failed for ${plan.name} (${existingId}), creating new product:`,
+            polarErrorMessage(updateErr)
+          );
+        }
+      } else {
         console.warn(
-          `Polar update failed for ${plan.name} (${plan.polar_product_id}), creating new product:`,
-          polarErrorMessage(updateErr)
+          `Polar product ${existingId} for ${plan.name} is archived or missing; creating a new product.`
         );
       }
+
+      const id = await createPolarProduct(
+        plan,
+        productName,
+        recurringInterval,
+        priceAmount,
+        currency,
+        metadata
+      );
+
+      return {
+        ok: true,
+        polarProductId: id,
+        action: "recreated",
+      };
     }
 
     const id = await createPolarProduct(

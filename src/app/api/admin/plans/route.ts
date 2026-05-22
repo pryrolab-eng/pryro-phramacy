@@ -100,12 +100,26 @@ export async function POST(request: NextRequest) {
 
     const { data: existing } = await db
       .from('subscription_plans')
-      .select('id, name')
+      .select('id, name, plan_type')
       .eq('is_active', true)
 
-    const duplicate = (existing ?? []).some(
-      (row) => normalizePlanName(String(row.name)) === normalizePlanName(planName),
-    )
+    const requestedType =
+      String(body.plan_type ?? 'main').trim().toLowerCase() === 'branch_addon'
+        ? 'branch_addon'
+        : 'main'
+
+    const duplicate = (existing ?? []).some((row) => {
+      const rowType =
+        String((row as { plan_type?: string }).plan_type ?? 'main')
+          .trim()
+          .toLowerCase() === 'branch_addon'
+          ? 'branch_addon'
+          : 'main'
+      return (
+        normalizePlanName(String(row.name)) === normalizePlanName(planName) &&
+        rowType === requestedType
+      )
+    })
     if (duplicate) {
       return NextResponse.json(
         {
@@ -148,7 +162,12 @@ export async function POST(request: NextRequest) {
         monthly_tx_limit: Number(body.monthly_tx_limit) || 500,
         features: rawFeatures,
         is_popular: body.is_popular || false,
-        is_active: true
+        is_active: true,
+        plan_type: requestedType,
+        billing_period: body.billing_period || 'monthly',
+        max_branches: requestedType === 'branch_addon' ? 1 : Number(body.max_branches ?? 1),
+        max_users: Number(body.max_users ?? 5),
+        monthly_tx_limit: Number(body.monthly_tx_limit ?? 500),
       })
       .select()
       .single()

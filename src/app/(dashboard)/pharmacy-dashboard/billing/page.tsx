@@ -17,11 +17,8 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
 import {
-  useSaasSubscription,
-  useSaasPlans,
-  useSaasInvoices,
-  useSubscribeToPlan,
-  useCancelSubscription,
+  useSaasSubscription, useSaasPlans, useSaasInvoices,
+  useSubscribeToPlan, useCancelSubscription,
 } from '@/hooks/useSaasSubscription'
 import { BillingStatCard, InvoicesTable, PlansGrid } from '@/components/subscription'
 import type { SubscriptionPlan } from '@/lib/saas/types'
@@ -42,15 +39,9 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function LimitBar({
-  icon, label, used, limit,
-}: {
-  icon: React.ReactNode
-  label: string
-  used: number | null
-  limit: number
+function LimitBar({ icon, label, used, limit }: {
+  icon: React.ReactNode; label: string; used: number | null; limit: number
 }) {
-  // No plan / limit unknown — show a neutral placeholder
   if (limit === 0 && used === null) {
     return (
       <div className="space-y-1.5">
@@ -73,21 +64,15 @@ function LimitBar({
         </span>
       </div>
       <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-500 ${color}`}
-          style={{ width: pct !== null ? `${pct}%` : '100%' }}
-        />
+        <div className={`h-full rounded-full transition-all duration-500 ${color}`}
+          style={{ width: pct !== null ? `${pct}%` : '100%' }} />
       </div>
     </div>
   )
 }
 
 function BranchUsageRow({ branch }: {
-  branch: {
-    id: string
-    name: string
-    usage: { tx_count: number; tx_limit: number; is_blocked: boolean; billing_cycle_end: string } | null
-  }
+  branch: { id: string; name: string; usage: { tx_count: number; tx_limit: number; is_blocked: boolean; billing_cycle_end: string } | null }
 }) {
   const usage = branch.usage
   if (!usage) {
@@ -110,9 +95,7 @@ function BranchUsageRow({ branch }: {
               <AlertTriangle className="h-2.5 w-2.5 mr-1" />Blocked
             </Badge>
           )}
-          <span className="text-xs text-gray-400">
-            Resets {new Date(usage.billing_cycle_end).toLocaleDateString()}
-          </span>
+          <span className="text-xs text-gray-400">Resets {new Date(usage.billing_cycle_end).toLocaleDateString()}</span>
         </div>
       </div>
       <div className="flex items-center gap-3">
@@ -130,15 +113,15 @@ function BranchUsageRow({ branch }: {
 // ─── Page ─────────────────────────────────────────────────
 
 export default function PharmacyBillingPage() {
-  const subQuery    = useSaasSubscription()
-  const plansQuery  = useSaasPlans()
+  const subQuery      = useSaasSubscription()
+  const plansQuery    = useSaasPlans()
   const invoicesQuery = useSaasInvoices()
-  const subscribe   = useSubscribeToPlan()
-  const cancel      = useCancelSubscription()
+  const subscribe     = useSubscribeToPlan()
+  const cancel        = useCancelSubscription()
 
-  const [upgradeTarget, setUpgradeTarget]   = useState<{ plan: SubscriptionPlan; cycle: 'monthly' | 'yearly' } | null>(null)
-  const [cancelTarget, setCancelTarget]     = useState<string | null>(null)
-  const [pendingPlanId, setPendingPlanId]   = useState<string | null>(null)
+  const [upgradeTarget, setUpgradeTarget] = useState<{ plan: SubscriptionPlan; cycle: 'monthly' | 'yearly' } | null>(null)
+  const [cancelTarget, setCancelTarget]   = useState<string | null>(null)
+  const [pendingPlanId, setPendingPlanId] = useState<string | null>(null)
   const [generatingInvoice, setGeneratingInvoice] = useState(false)
 
   const summary  = subQuery.data
@@ -148,8 +131,6 @@ export default function PharmacyBillingPage() {
   const paidInvoices    = invoices.filter(i => i.status === 'paid').length
   const overdueInvoices = invoices.filter(i => i.status === 'overdue').length
   const totalBilled     = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + Number(i.total ?? 0), 0)
-
-  // ── Handlers ───────────────────────────────────────────
 
   const handleSelectPlan = (plan: SubscriptionPlan, cycle: 'monthly' | 'yearly') => {
     setUpgradeTarget({ plan, cycle })
@@ -161,21 +142,11 @@ export default function PharmacyBillingPage() {
     setPendingPlanId(plan.id)
     const tid = toast.loading(`Subscribing to ${plan.name}…`)
     try {
-      await subscribe.mutateAsync({
-        plan_id: plan.id,
-        subscription_type: 'main',
-        billing_cycle: cycle,
-      })
+      await subscribe.mutateAsync({ plan_id: plan.id, subscription_type: 'main', billing_cycle: cycle })
       setUpgradeTarget(null)
-      toast.success(`Subscribed to ${plan.name}`, {
-        id: tid,
-        description: `Billing cycle: ${cycle}`,
-      })
+      toast.success(`Subscribed to ${plan.name}`, { id: tid, description: `Billing cycle: ${cycle}` })
     } catch (err) {
-      toast.error('Subscription failed', {
-        id: tid,
-        description: err instanceof Error ? err.message : 'Could not subscribe to plan',
-      })
+      toast.error('Subscription failed', { id: tid, description: err instanceof Error ? err.message : 'Could not subscribe to plan' })
     } finally {
       setPendingPlanId(null)
     }
@@ -189,10 +160,7 @@ export default function PharmacyBillingPage() {
       setCancelTarget(null)
       toast.success('Subscription cancelled', { id: tid })
     } catch (err) {
-      toast.error('Cancel failed', {
-        id: tid,
-        description: err instanceof Error ? err.message : 'Could not cancel subscription',
-      })
+      toast.error('Cancel failed', { id: tid, description: err instanceof Error ? err.message : 'Could not cancel subscription' })
     }
   }
 
@@ -213,80 +181,45 @@ export default function PharmacyBillingPage() {
   }
 
   if (subQuery.isPending || plansQuery.isPending) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Spinner className="size-6" />
-      </div>
-    )
+    return <div className="flex items-center justify-center min-h-[60vh]"><Spinner className="size-6" /></div>
   }
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8">
-
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <CreditCard className="h-6 w-6 text-blue-600" />
-            Billing &amp; Subscription
+            <CreditCard className="h-6 w-6 text-blue-600" />Billing &amp; Subscription
           </h1>
           <p className="text-sm text-gray-500 mt-1">Manage your plan, branches, and invoices</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
+        <Button variant="outline" size="sm"
           onClick={() => { void subQuery.refetch(); void plansQuery.refetch(); void invoicesQuery.refetch() }}
-          disabled={subQuery.isFetching || plansQuery.isFetching}
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${(subQuery.isFetching || plansQuery.isFetching) ? 'animate-spin' : ''}`} />
-          Refresh
+          disabled={subQuery.isFetching || plansQuery.isFetching}>
+          <RefreshCw className={`h-4 w-4 mr-2 ${(subQuery.isFetching || plansQuery.isFetching) ? 'animate-spin' : ''}`} />Refresh
         </Button>
       </div>
 
-      {/* ── Stat cards ── */}
+      {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <BillingStatCard
-          icon={<CreditCard className="h-5 w-5" />}
-          label="Current Plan"
-          value={summary?.main_subscription?.plan?.name ?? 'No Plan'}
-          accent="blue"
-        />
-        <BillingStatCard
-          icon={<GitBranch className="h-5 w-5" />}
-          label="Branches"
-          value={
-            summary?.main_subscription
-              ? `${summary.branch_count} / ${summary.branch_limit}`
-              : `${summary?.branch_count ?? 0} branches`
-          }
-          sub={
-            summary?.main_subscription
-              ? (summary.can_add_branch ? 'Can add more' : 'At limit')
-              : 'No active plan'
-          }
-          accent="green"
-        />
-        <BillingStatCard
-          icon={<TrendingUp className="h-5 w-5" />}
-          label="Monthly Cost"
+        <BillingStatCard icon={<CreditCard className="h-5 w-5" />} label="Current Plan"
+          value={summary?.main_subscription?.plan?.name ?? 'No Plan'} accent="blue" />
+        <BillingStatCard icon={<GitBranch className="h-5 w-5" />} label="Branches"
+          value={summary?.main_subscription ? `${summary.branch_count} / ${summary.branch_limit}` : `${summary?.branch_count ?? 0} branches`}
+          sub={summary?.main_subscription ? (summary.can_add_branch ? 'Can add more' : 'At limit') : 'No active plan'}
+          accent="green" />
+        <BillingStatCard icon={<TrendingUp className="h-5 w-5" />} label="Monthly Cost"
           value={`RWF ${(summary?.total_monthly_cost ?? 0).toLocaleString()}`}
           sub={`${(summary?.branch_subscriptions ?? []).length + (summary?.main_subscription ? 1 : 0)} active subscription(s)`}
-          accent="purple"
-        />
-        <BillingStatCard
-          icon={<Calendar className="h-5 w-5" />}
-          label="Renews"
-          value={
-            summary?.main_subscription?.current_period_end
-              ? new Date(summary.main_subscription.current_period_end).toLocaleDateString()
-              : '—'
-          }
+          accent="purple" />
+        <BillingStatCard icon={<Calendar className="h-5 w-5" />} label="Renews"
+          value={summary?.main_subscription?.current_period_end ? new Date(summary.main_subscription.current_period_end).toLocaleDateString() : '—'}
           sub={summary?.main_subscription?.status ? `Status: ${summary.main_subscription.status}` : undefined}
-          accent="orange"
-        />
+          accent="orange" />
       </div>
 
-      {/* ── Tabs ── */}
+      {/* Tabs */}
       <Tabs defaultValue="plan">
         <TabsList className="bg-gray-100 rounded-xl p-1">
           <TabsTrigger value="plan" className="rounded-lg">Current Plan</TabsTrigger>
@@ -294,27 +227,22 @@ export default function PharmacyBillingPage() {
           <TabsTrigger value="invoices" className="rounded-lg flex items-center gap-1.5">
             Invoices
             {invoices.length > 0 && (
-              <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-700">
-                {invoices.length}
-              </span>
+              <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-700">{invoices.length}</span>
             )}
           </TabsTrigger>
         </TabsList>
 
-        {/* ── Current Plan ── */}
+        {/* Current Plan tab */}
         <TabsContent value="plan" className="mt-6 space-y-6">
           {summary?.main_subscription ? (
             <>
-              {/* Active plan card */}
               <Card className="rounded-2xl border-gray-200 shadow-sm">
                 <CardHeader className="pb-4">
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <Crown className="h-5 w-5 text-yellow-500" />
-                        <CardTitle className="text-lg">
-                          {summary.main_subscription.plan?.name ?? 'Active Plan'}
-                        </CardTitle>
+                        <CardTitle className="text-lg">{summary.main_subscription.plan?.name ?? 'Active Plan'}</CardTitle>
                         <StatusBadge status={summary.main_subscription.status} />
                       </div>
                       <CardDescription>
@@ -323,74 +251,40 @@ export default function PharmacyBillingPage() {
                           : `RWF ${Number(summary.main_subscription.plan?.price ?? 0).toLocaleString()} / ${summary.main_subscription.plan?.billing_period}`}
                       </CardDescription>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-red-600 border-red-200 hover:bg-red-50 shrink-0"
-                      onClick={() => setCancelTarget(summary.main_subscription!.id)}
-                    >
-                      <XCircle className="h-4 w-4 mr-1.5" />
-                      Cancel
+                    <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 shrink-0"
+                      onClick={() => setCancelTarget(summary.main_subscription!.id)}>
+                      <XCircle className="h-4 w-4 mr-1.5" />Cancel
                     </Button>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* Usage bars */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                    <LimitBar
-                      icon={<GitBranch className="h-4 w-4 text-blue-500" />}
-                      label="Branches"
-                      used={summary.branch_count}
-                      limit={summary.branch_limit}
-                    />
-                    <LimitBar
-                      icon={<Users className="h-4 w-4 text-purple-500" />}
-                      label="Staff Members"
-                      used={summary.user_count ?? null}
-                      limit={summary.main_subscription.plan?.max_users ?? 0}
-                    />
-                    <LimitBar
-                      icon={<Activity className="h-4 w-4 text-green-500" />}
-                      label="Tx / Branch / mo"
-                      used={null}
-                      limit={summary.main_subscription.plan?.monthly_tx_limit ?? 0}
-                    />
+                    <LimitBar icon={<GitBranch className="h-4 w-4 text-blue-500" />} label="Branches"
+                      used={summary.branch_count} limit={summary.branch_limit} />
+                    <LimitBar icon={<Users className="h-4 w-4 text-purple-500" />} label="Staff Members"
+                      used={summary.user_count ?? null} limit={summary.main_subscription.plan?.max_users ?? 0} />
+                    <LimitBar icon={<Activity className="h-4 w-4 text-green-500" />} label="Tx / Branch / mo"
+                      used={null} limit={summary.main_subscription.plan?.monthly_tx_limit ?? 0} />
                   </div>
-
-                  {/* Features */}
                   {summary.main_subscription.plan?.features?.length ? (
                     <div>
                       <p className="text-sm font-semibold text-gray-700 mb-3">Included features</p>
                       <ul className="grid grid-cols-2 gap-y-2 gap-x-4">
                         {summary.main_subscription.plan.features.map((f, i) => (
                           <li key={i} className="flex items-center gap-2 text-sm text-gray-600">
-                            <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
-                            {f}
+                            <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />{f}
                           </li>
                         ))}
                       </ul>
                     </div>
                   ) : null}
-
-                  {/* Period */}
                   <div className="flex items-center gap-6 text-xs text-gray-400 border-t pt-4">
-                    <span>
-                      Started:{' '}
-                      {summary.main_subscription.current_period_start
-                        ? new Date(summary.main_subscription.current_period_start).toLocaleDateString()
-                        : '—'}
-                    </span>
-                    <span>
-                      Ends:{' '}
-                      {summary.main_subscription.current_period_end
-                        ? new Date(summary.main_subscription.current_period_end).toLocaleDateString()
-                        : '—'}
-                    </span>
+                    <span>Started: {summary.main_subscription.current_period_start ? new Date(summary.main_subscription.current_period_start).toLocaleDateString() : '—'}</span>
+                    <span>Ends: {summary.main_subscription.current_period_end ? new Date(summary.main_subscription.current_period_end).toLocaleDateString() : '—'}</span>
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Branch add-ons */}
               {summary.branch_subscriptions.length > 0 && (
                 <Card className="rounded-2xl border-gray-200 shadow-sm">
                   <CardHeader>
@@ -402,20 +296,11 @@ export default function PharmacyBillingPage() {
                       <div key={sub.id} className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
                         <div>
                           <p className="text-sm font-semibold text-gray-800">{sub.plan?.name ?? 'Branch Add-on'}</p>
-                          <p className="text-xs text-gray-400">
-                            RWF {Number(sub.plan?.price ?? 0).toLocaleString()} / {sub.plan?.billing_period}
-                          </p>
+                          <p className="text-xs text-gray-400">RWF {Number(sub.plan?.price ?? 0).toLocaleString()} / {sub.plan?.billing_period}</p>
                         </div>
                         <div className="flex items-center gap-2">
                           <StatusBadge status={sub.status} />
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-500 h-7 text-xs"
-                            onClick={() => setCancelTarget(sub.id)}
-                          >
-                            Cancel
-                          </Button>
+                          <Button variant="ghost" size="sm" className="text-red-500 h-7 text-xs" onClick={() => setCancelTarget(sub.id)}>Cancel</Button>
                         </div>
                       </div>
                     ))}
@@ -423,7 +308,6 @@ export default function PharmacyBillingPage() {
                 </Card>
               )}
 
-              {/* Branch tx usage */}
               {summary.branches.length > 0 && (
                 <Card className="rounded-2xl border-gray-200 shadow-sm">
                   <CardHeader>
@@ -431,15 +315,12 @@ export default function PharmacyBillingPage() {
                     <CardDescription>Transaction counts per branch for the current billing cycle</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {summary.branches.map(branch => (
-                      <BranchUsageRow key={branch.id} branch={branch} />
-                    ))}
+                    {summary.branches.map(branch => <BranchUsageRow key={branch.id} branch={branch} />)}
                   </CardContent>
                 </Card>
               )}
             </>
           ) : (
-            /* No subscription state */
             <div className="rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex flex-col items-center justify-center py-16 gap-4">
               <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center">
                 <AlertTriangle className="h-7 w-7 text-amber-500" />
@@ -448,86 +329,48 @@ export default function PharmacyBillingPage() {
                 <p className="text-lg font-bold text-gray-900">No active subscription</p>
                 <p className="text-sm text-gray-500 mt-1">Choose a plan below to unlock all features</p>
               </div>
-              <Button
-                onClick={() => {
-                  const el = document.querySelector('[data-value="upgrade"]') as HTMLElement | null
-                  el?.click()
-                }}
-              >
+              <Button onClick={() => { const el = document.querySelector('[data-value="upgrade"]') as HTMLElement | null; el?.click() }}>
                 View Plans
               </Button>
             </div>
           )}
         </TabsContent>
 
-        {/* ── Upgrade / Change ── */}
+        {/* Upgrade tab */}
         <TabsContent value="upgrade" className="mt-6">
-          <PlansGrid
-            plans={plans}
-            currentPlanId={summary?.main_subscription?.plan_id}
-            isLoading={plansQuery.isFetching && plans.length === 0}
-            isError={plansQuery.isError}
-            pendingPlanId={pendingPlanId}
-            onSelect={handleSelectPlan}
-            onRetry={() => void plansQuery.refetch()}
-          />
+          <PlansGrid plans={plans} currentPlanId={summary?.main_subscription?.plan_id}
+            isLoading={plansQuery.isFetching && plans.length === 0} isError={plansQuery.isError}
+            pendingPlanId={pendingPlanId} onSelect={handleSelectPlan}
+            onRetry={() => void plansQuery.refetch()} />
         </TabsContent>
 
-        {/* ── Invoices ── */}
+        {/* Invoices tab */}
         <TabsContent value="invoices" className="mt-6 space-y-5">
           <div className="grid grid-cols-3 gap-4">
-            <BillingStatCard
-              icon={<Receipt className="h-5 w-5" />}
-              label="Total invoices"
-              value={invoices.length}
-              accent="blue"
-            />
-            <BillingStatCard
-              icon={<CheckCircle className="h-5 w-5" />}
-              label="Paid"
-              value={paidInvoices}
-              sub={`RWF ${totalBilled.toLocaleString()} total`}
-              accent="green"
-            />
-            <BillingStatCard
-              icon={<AlertTriangle className="h-5 w-5" />}
-              label="Overdue"
-              value={overdueInvoices}
-              accent={overdueInvoices > 0 ? 'red' : 'green'}
-            />
+            <BillingStatCard icon={<Receipt className="h-5 w-5" />} label="Total invoices" value={invoices.length} accent="blue" />
+            <BillingStatCard icon={<CheckCircle className="h-5 w-5" />} label="Paid" value={paidInvoices} sub={`RWF ${totalBilled.toLocaleString()} total`} accent="green" />
+            <BillingStatCard icon={<AlertTriangle className="h-5 w-5" />} label="Overdue" value={overdueInvoices} accent={overdueInvoices > 0 ? 'red' : 'green'} />
           </div>
-
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-500">Combined monthly invoices for all your subscriptions</p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void handleGenerateInvoice()}
-              disabled={generatingInvoice}
-            >
-              {generatingInvoice
-                ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                : <Plus className="h-4 w-4 mr-2" />}
+            <Button variant="outline" size="sm" onClick={() => void handleGenerateInvoice()} disabled={generatingInvoice}>
+              {generatingInvoice ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
               Generate This Month
             </Button>
           </div>
-
-          {invoicesQuery.isPending ? (
-            <div className="flex justify-center py-8"><Spinner className="size-5" /></div>
-          ) : (
-            <InvoicesTable invoices={invoices} pageSize={8} cardView />
-          )}
+          {invoicesQuery.isPending
+            ? <div className="flex justify-center py-8"><Spinner className="size-5" /></div>
+            : <InvoicesTable invoices={invoices} pageSize={8} cardView />}
         </TabsContent>
       </Tabs>
 
-      {/* ── Subscribe confirm dialog ── */}
+      {/* Subscribe confirm */}
       <AlertDialog open={!!upgradeTarget} onOpenChange={o => !o && setUpgradeTarget(null)}>
         <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle>Subscribe to {upgradeTarget?.plan.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              {upgradeTarget?.plan.price === 0
-                ? 'This is a free plan — no charge.'
+              {upgradeTarget?.plan.price === 0 ? 'This is a free plan — no charge.'
                 : upgradeTarget?.cycle === 'yearly' && (upgradeTarget.plan.yearly_price ?? 0) > 0
                   ? `You will be charged RWF ${(upgradeTarget.plan.yearly_price!).toLocaleString()} per year. Your current plan will be cancelled immediately.`
                   : `You will be charged RWF ${Number(upgradeTarget?.plan.price ?? 0).toLocaleString()} per month. Your current plan will be cancelled immediately.`}
@@ -535,18 +378,14 @@ export default function PharmacyBillingPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => void handleSubscribe()}
-              disabled={subscribe.isPending}
-            >
-              {subscribe.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Confirm
+            <AlertDialogAction onClick={() => void handleSubscribe()} disabled={subscribe.isPending}>
+              {subscribe.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Confirm
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Cancel confirm dialog ── */}
+      {/* Cancel confirm */}
       <AlertDialog open={!!cancelTarget} onOpenChange={o => !o && setCancelTarget(null)}>
         <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>
@@ -557,13 +396,8 @@ export default function PharmacyBillingPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep it</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-red-600 hover:bg-red-700"
-              onClick={() => void handleCancel()}
-              disabled={cancel.isPending}
-            >
-              {cancel.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Yes, cancel
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => void handleCancel()} disabled={cancel.isPending}>
+              {cancel.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Yes, cancel
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

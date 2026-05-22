@@ -37,8 +37,6 @@ import { PlansGrid } from '@/components/subscription'
 
 type BranchWithUsage = Branch & { usage: BranchUsage | null }
 
-// ─── Helpers ──────────────────────────────────────────────
-
 function usagePct(usage: BranchUsage | null): number {
   if (!usage || usage.tx_limit === 0) return 0
   return Math.min(100, Math.round((usage.tx_count / usage.tx_limit) * 100))
@@ -54,8 +52,6 @@ function usageColor(pct: number, blocked: boolean): string {
 type BranchForm = { name: string; address: string; phone: string; email: string }
 const emptyForm: BranchForm = { name: '', address: '', phone: '', email: '' }
 
-// ─── Page ─────────────────────────────────────────────────
-
 export default function BranchesPage() {
   const branchesQuery = useSaasBranches()
   const subQuery      = useSaasSubscription()
@@ -63,21 +59,13 @@ export default function BranchesPage() {
   const createBranch  = useCreateBranch()
   const subscribe     = useSubscribeToPlan()
 
-  // Add-branch dialog
   const [addOpen, setAddOpen]               = useState(false)
   const [form, setForm]                     = useState<BranchForm>(emptyForm)
-
-  // Step 1: no-subscription warning alert (shown after clicking Create Branch)
   const [noSubAlertOpen, setNoSubAlertOpen] = useState(false)
-  // Step 2: plans modal (shown after clicking "Upgrade Plan" in the alert)
   const [upgradeOpen, setUpgradeOpen]       = useState(false)
   const [savedForm, setSavedForm]           = useState<BranchForm | null>(null)
-
-  // Subscribe-confirm dialog (inside the upgrade modal)
   const [upgradeTarget, setUpgradeTarget]   = useState<{ plan: SubscriptionPlan; cycle: 'monthly' | 'yearly' } | null>(null)
   const [pendingPlanId, setPendingPlanId]   = useState<string | null>(null)
-
-  // Limit-reached dialog (has subscription but hit the branch cap)
   const [limitWarningOpen, setLimitWarningOpen] = useState(false)
   const [pendingFormData, setPendingFormData]   = useState<BranchForm | null>(null)
 
@@ -89,48 +77,25 @@ export default function BranchesPage() {
   const branchLimit     = summary?.branch_limit ?? 0
   const plans           = plansQuery.data ?? []
 
-  // ── Create branch handler ──────────────────────────────
-
   const handleAddBranch = async () => {
-    if (!form.name.trim()) {
-      toast.error('Branch name is required')
-      return
-    }
-
-    // No subscription at all → show warning alert first, keep form data
+    if (!form.name.trim()) { toast.error('Branch name is required'); return }
     if (!hasSubscription) {
-      setSavedForm(form)
-      setAddOpen(false)
-      setNoSubAlertOpen(true)
-      return
+      setSavedForm(form); setAddOpen(false); setNoSubAlertOpen(true); return
     }
-
-    // Has subscription but hit the branch limit → show limit warning
     if (!canAddBranch) {
-      setPendingFormData(form)
-      setAddOpen(false)
-      setLimitWarningOpen(true)
-      return
+      setPendingFormData(form); setAddOpen(false); setLimitWarningOpen(true); return
     }
-
     try {
       await createBranch.mutateAsync({
-        name:    form.name.trim(),
-        address: form.address || undefined,
-        phone:   form.phone   || undefined,
-        email:   form.email   || undefined,
+        name: form.name.trim(), address: form.address || undefined,
+        phone: form.phone || undefined, email: form.email || undefined,
       })
-      setAddOpen(false)
-      setForm(emptyForm)
+      setAddOpen(false); setForm(emptyForm)
       toast.success('Branch created successfully')
     } catch (err) {
-      toast.error('Failed to create branch', {
-        description: err instanceof Error ? err.message : 'Please try again',
-      })
+      toast.error('Failed to create branch', { description: err instanceof Error ? err.message : 'Please try again' })
     }
   }
-
-  // ── Subscribe handler (inside upgrade modal) ───────────
 
   const handleSubscribe = async () => {
     if (!upgradeTarget) return
@@ -138,55 +103,31 @@ export default function BranchesPage() {
     setPendingPlanId(plan.id)
     const tid = toast.loading(`Subscribing to ${plan.name}…`)
     try {
-      await subscribe.mutateAsync({
-        plan_id: plan.id,
-        subscription_type: 'main',
-        billing_cycle: cycle,
-      })
-      setUpgradeTarget(null)
-      setUpgradeOpen(false)
+      await subscribe.mutateAsync({ plan_id: plan.id, subscription_type: 'main', billing_cycle: cycle })
+      setUpgradeTarget(null); setUpgradeOpen(false)
       toast.success(`Subscribed to ${plan.name}`, { id: tid, description: `Billing cycle: ${cycle}` })
-
-      // Now actually create the branch they were trying to add
       if (savedForm?.name.trim()) {
         try {
           await createBranch.mutateAsync({
-            name:    savedForm.name.trim(),
-            address: savedForm.address || undefined,
-            phone:   savedForm.phone   || undefined,
-            email:   savedForm.email   || undefined,
+            name: savedForm.name.trim(), address: savedForm.address || undefined,
+            phone: savedForm.phone || undefined, email: savedForm.email || undefined,
           })
-          setSavedForm(null)
-          setForm(emptyForm)
           toast.success(`Branch "${savedForm.name}" created`)
-        } catch {
-          // Subscription succeeded but branch creation failed — let them retry
-          toast.error('Subscribed! Now retry adding your branch.')
-          setSavedForm(null)
-        }
+        } catch { toast.error('Subscribed! Now retry adding your branch.') }
+        setSavedForm(null); setForm(emptyForm)
       }
     } catch (err) {
-      toast.error('Subscription failed', {
-        id: tid,
-        description: err instanceof Error ? err.message : 'Could not subscribe to plan',
-      })
-    } finally {
-      setPendingPlanId(null)
-    }
+      toast.error('Subscription failed', { id: tid, description: err instanceof Error ? err.message : 'Could not subscribe' })
+    } finally { setPendingPlanId(null) }
   }
 
   if (branchesQuery.isPending || subQuery.isPending) {
-    return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <Spinner className="size-6" />
-      </div>
-    )
+    return <div className="flex items-center justify-center min-h-[50vh]"><Spinner className="size-6" /></div>
   }
 
   return (
     <FeatureGate feature="multi_branch">
       <div className="p-6 space-y-6">
-
         {/* Header */}
         <div className="flex justify-between items-start">
           <div>
@@ -194,26 +135,17 @@ export default function BranchesPage() {
             <p className="text-muted-foreground">Manage your pharmacy locations and monitor usage</p>
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
+            <Button variant="outline" size="sm"
               onClick={() => { void branchesQuery.refetch(); void subQuery.refetch() }}
-              disabled={branchesQuery.isFetching}
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${branchesQuery.isFetching ? 'animate-spin' : ''}`} />
-              Refresh
+              disabled={branchesQuery.isFetching}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${branchesQuery.isFetching ? 'animate-spin' : ''}`} />Refresh
             </Button>
-            <Button onClick={() => setAddOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Branch
-            </Button>
+            <Button onClick={() => setAddOpen(true)}><Plus className="mr-2 h-4 w-4" />Add Branch</Button>
           </div>
         </div>
 
-        {/* Plan quota — compact live counter (handles no-subscription state itself) */}
         <PlanQuotaWidget variant="compact" />
 
-        {/* Plan usage banner — only shown when there IS an active subscription */}
         {hasSubscription && (
           <Card className={branchCount >= branchLimit && branchLimit > 0 ? 'border-amber-300 bg-amber-50' : ''}>
             <CardContent className="pt-4 pb-4">
@@ -223,9 +155,7 @@ export default function BranchesPage() {
                   <div>
                     <p className="text-sm font-medium">
                       {branchCount} of {branchLimit} branches used
-                      {summary?.main_subscription?.plan?.name
-                        ? ` · ${summary.main_subscription.plan.name} plan`
-                        : ''}
+                      {summary?.main_subscription?.plan?.name ? ` · ${summary.main_subscription.plan.name} plan` : ''}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {canAddBranch
@@ -235,21 +165,12 @@ export default function BranchesPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3 min-w-[160px]">
-                  <Progress
-                    value={branchLimit > 0 ? Math.min(100, (branchCount / branchLimit) * 100) : 0}
-                    className="flex-1 h-2"
-                  />
-                  <span className="text-xs font-medium whitespace-nowrap">
-                    {branchCount}/{branchLimit}
-                  </span>
+                  <Progress value={branchLimit > 0 ? Math.min(100, (branchCount / branchLimit) * 100) : 0} className="flex-1 h-2" />
+                  <span className="text-xs font-medium whitespace-nowrap">{branchCount}/{branchLimit}</span>
                 </div>
                 {!canAddBranch && branchLimit > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-amber-400 text-amber-700 hover:bg-amber-100"
-                    onClick={() => window.location.href = '/pharmacy-dashboard/billing'}
-                  >
+                  <Button size="sm" variant="outline" className="border-amber-400 text-amber-700 hover:bg-amber-100"
+                    onClick={() => window.location.href = '/pharmacy-dashboard/billing'}>
                     Upgrade Plan
                   </Button>
                 )}
@@ -258,107 +179,67 @@ export default function BranchesPage() {
           </Card>
         )}
 
-        {/* Branch cards */}
         {branches.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
               <Building2 className="h-12 w-12 text-muted-foreground" />
               <div className="text-center">
                 <p className="font-semibold text-lg">No branches yet</p>
-                <p className="text-muted-foreground text-sm mt-1">
-                  Add your first branch to start tracking usage
-                </p>
+                <p className="text-muted-foreground text-sm mt-1">Add your first branch to start tracking usage</p>
               </div>
-              <Button onClick={() => setAddOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add First Branch
-              </Button>
+              <Button onClick={() => setAddOpen(true)}><Plus className="mr-2 h-4 w-4" />Add First Branch</Button>
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {branches.map(branch => (
-              <BranchCard key={branch.id} branch={branch} />
-            ))}
+            {branches.map(branch => <BranchCard key={branch.id} branch={branch} />)}
           </div>
         )}
 
-        {/* ── Add branch dialog ── */}
+        {/* Add branch dialog */}
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
           <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Branch</DialogTitle>
-            </DialogHeader>
+            <DialogHeader><DialogTitle>Add New Branch</DialogTitle></DialogHeader>
             <BranchFormFields form={form} onChange={setForm} />
             <div className="flex gap-2 pt-2">
-              <Button variant="outline" onClick={() => setAddOpen(false)} className="flex-1">
-                Cancel
-              </Button>
-              <Button
-                onClick={() => void handleAddBranch()}
-                disabled={createBranch.isPending || !form.name.trim()}
-                className="flex-1"
-              >
-                {createBranch.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Create Branch
+              <Button variant="outline" onClick={() => setAddOpen(false)} className="flex-1">Cancel</Button>
+              <Button onClick={() => void handleAddBranch()} disabled={createBranch.isPending || !form.name.trim()} className="flex-1">
+                {createBranch.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Create Branch
               </Button>
             </div>
           </DialogContent>
         </Dialog>
 
-        {/* ── No-subscription warning alert (step 1) ── */}
-        <AlertDialog open={noSubAlertOpen} onOpenChange={(open) => {
-          setNoSubAlertOpen(open)
-          if (!open) { /* keep savedForm intact so Back to Form works */ }
-        }}>
+        {/* No-subscription alert */}
+        <AlertDialog open={noSubAlertOpen} onOpenChange={setNoSubAlertOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
-                <Crown className="h-5 w-5 text-amber-500" />
-                No active subscription
+                <Crown className="h-5 w-5 text-amber-500" />No active subscription
               </AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-3">
-                  <p>
-                    You need an active plan to create branches and process transactions.
-                    {savedForm?.name && (
-                      <> Your branch <strong>&quot;{savedForm.name}&quot;</strong> will be created automatically once you subscribe.</>
-                    )}
+                  <p>You need an active plan to create branches and process transactions.
+                    {savedForm?.name && <> Your branch <strong>&quot;{savedForm.name}&quot;</strong> will be created automatically once you subscribe.</>}
                   </p>
-                  <p className="text-sm">
-                    Choose a plan to unlock branch management and all other features.
-                  </p>
+                  <p className="text-sm">Choose a plan to unlock branch management and all other features.</p>
                 </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-              <AlertDialogCancel onClick={() => {
-                setNoSubAlertOpen(false)
-                if (savedForm) setForm(savedForm)
-                setAddOpen(true)
-              }}>
+              <AlertDialogCancel onClick={() => { setNoSubAlertOpen(false); if (savedForm) setForm(savedForm); setAddOpen(true) }}>
                 Back to Form
               </AlertDialogCancel>
-              <AlertDialogAction
-                className="bg-amber-600 hover:bg-amber-700 text-white"
-                onClick={() => {
-                  setNoSubAlertOpen(false)
-                  setUpgradeOpen(true)
-                }}
-              >
-                <CreditCard className="h-4 w-4 mr-2" />
-                View Plans
-                <ArrowRight className="h-4 w-4 ml-2" />
+              <AlertDialogAction className="bg-amber-600 hover:bg-amber-700 text-white"
+                onClick={() => { setNoSubAlertOpen(false); setUpgradeOpen(true) }}>
+                <CreditCard className="h-4 w-4 mr-2" />View Plans<ArrowRight className="h-4 w-4 ml-2" />
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* ── Plans modal (step 2 — after clicking "View Plans") ── */}
-        <Dialog open={upgradeOpen} onOpenChange={(open) => {
-          setUpgradeOpen(open)
-          if (!open) { setUpgradeTarget(null); setPendingPlanId(null) }
-        }}>
+        {/* Plans modal */}
+        <Dialog open={upgradeOpen} onOpenChange={(open) => { setUpgradeOpen(open); if (!open) { setUpgradeTarget(null); setPendingPlanId(null) } }}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <div className="flex items-center gap-3 mb-1">
@@ -368,121 +249,71 @@ export default function BranchesPage() {
                 <div>
                   <DialogTitle className="text-lg">Choose a plan to continue</DialogTitle>
                   <p className="text-sm text-muted-foreground mt-0.5">
-                    {savedForm?.name
-                      ? <>Your branch <strong>&quot;{savedForm.name}&quot;</strong> will be created right after you subscribe.</>
-                      : 'Subscribe to a plan to start managing branches.'}
+                    {savedForm?.name ? <>Your branch <strong>&quot;{savedForm.name}&quot;</strong> will be created right after you subscribe.</> : 'Subscribe to a plan to start managing branches.'}
                   </p>
                 </div>
               </div>
             </DialogHeader>
-
-            {/* Back link */}
-            <button
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
-              onClick={() => {
-                setUpgradeOpen(false)
-                setNoSubAlertOpen(true)
-              }}
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-              Back
+            <button className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
+              onClick={() => { setUpgradeOpen(false); setNoSubAlertOpen(true) }}>
+              <ChevronLeft className="h-3.5 w-3.5" />Back
             </button>
-
-            {/* Plans grid */}
-            <PlansGrid
-              plans={plans}
-              currentPlanId={null}
-              isLoading={plansQuery.isFetching && plans.length === 0}
-              isError={plansQuery.isError}
-              pendingPlanId={pendingPlanId}
-              onSelect={(plan, cycle) => setUpgradeTarget({ plan, cycle })}
-              onRetry={() => void plansQuery.refetch()}
-            />
+            <PlansGrid plans={plans} currentPlanId={null}
+              isLoading={plansQuery.isFetching && plans.length === 0} isError={plansQuery.isError}
+              pendingPlanId={pendingPlanId} onSelect={(plan, cycle) => setUpgradeTarget({ plan, cycle })}
+              onRetry={() => void plansQuery.refetch()} />
           </DialogContent>
         </Dialog>
 
-        {/* ── Subscribe confirm dialog (inside upgrade flow) ── */}
+        {/* Subscribe confirm */}
         <AlertDialog open={!!upgradeTarget} onOpenChange={o => !o && setUpgradeTarget(null)}>
           <AlertDialogContent className="rounded-2xl">
             <AlertDialogHeader>
               <AlertDialogTitle>Subscribe to {upgradeTarget?.plan.name}?</AlertDialogTitle>
               <AlertDialogDescription>
-                {upgradeTarget?.plan.price === 0
-                  ? 'This is a free plan — no charge.'
+                {upgradeTarget?.plan.price === 0 ? 'This is a free plan — no charge.'
                   : upgradeTarget?.cycle === 'yearly' && (upgradeTarget.plan.yearly_price ?? 0) > 0
                     ? `You will be charged RWF ${(upgradeTarget.plan.yearly_price!).toLocaleString()} per year.`
                     : `You will be charged RWF ${Number(upgradeTarget?.plan.price ?? 0).toLocaleString()} per month.`}
-                {savedForm?.name && (
-                  <> Your branch <strong>&quot;{savedForm.name}&quot;</strong> will be created automatically after subscribing.</>
-                )}
+                {savedForm?.name && <> Your branch <strong>&quot;{savedForm.name}&quot;</strong> will be created automatically after subscribing.</>}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Back</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => void handleSubscribe()}
-                disabled={subscribe.isPending}
-              >
-                {subscribe.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Confirm &amp; Subscribe
+              <AlertDialogAction onClick={() => void handleSubscribe()} disabled={subscribe.isPending}>
+                {subscribe.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Confirm &amp; Subscribe
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* ── Limit warning dialog (has plan but hit cap) ── */}
-        <AlertDialog open={limitWarningOpen} onOpenChange={(open) => {
-          setLimitWarningOpen(open)
-          if (!open) setPendingFormData(null)
-        }}>
+        {/* Limit warning */}
+        <AlertDialog open={limitWarningOpen} onOpenChange={(open) => { setLimitWarningOpen(open); if (!open) setPendingFormData(null) }}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
-                Branch Limit Reached
+                <AlertTriangle className="h-5 w-5 text-amber-500" />Branch Limit Reached
               </AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-3">
-                  <p>
-                    Your current plan allows <strong>{branchLimit} branch{branchLimit !== 1 ? 'es' : ''}</strong> and
-                    you&apos;ve used all {branchLimit} slot{branchLimit !== 1 ? 's' : ''}.
-                    {pendingFormData?.name && (
-                      <> The branch <strong>&quot;{pendingFormData.name}&quot;</strong> was not saved.</>
-                    )}
+                  <p>Your current plan allows <strong>{branchLimit} branch{branchLimit !== 1 ? 'es' : ''}</strong> and you&apos;ve used all {branchLimit} slot{branchLimit !== 1 ? 's' : ''}.
+                    {pendingFormData?.name && <> The branch <strong>&quot;{pendingFormData.name}&quot;</strong> was not saved.</>}
                   </p>
-                  <p className="text-sm">
-                    Upgrade your plan or add a Branch Add-on to unlock more branches.
-                  </p>
+                  <p className="text-sm">Upgrade your plan or add a Branch Add-on to unlock more branches.</p>
                 </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-              <AlertDialogCancel onClick={() => {
-                if (pendingFormData) {
-                  setForm(pendingFormData)
-                  setPendingFormData(null)
-                }
-                setLimitWarningOpen(false)
-                setAddOpen(true)
-              }}>
+              <AlertDialogCancel onClick={() => { if (pendingFormData) { setForm(pendingFormData); setPendingFormData(null) } setLimitWarningOpen(false); setAddOpen(true) }}>
                 Back to Form
               </AlertDialogCancel>
-              <AlertDialogAction
-                className="bg-amber-600 hover:bg-amber-700 text-white"
-                onClick={() => {
-                  setLimitWarningOpen(false)
-                  setPendingFormData(null)
-                  window.location.href = '/pharmacy-dashboard/billing?tab=upgrade'
-                }}
-              >
-                <CreditCard className="h-4 w-4 mr-2" />
-                Upgrade Plan
-                <ArrowRight className="h-4 w-4 ml-2" />
+              <AlertDialogAction className="bg-amber-600 hover:bg-amber-700 text-white"
+                onClick={() => { setLimitWarningOpen(false); setPendingFormData(null); window.location.href = '/pharmacy-dashboard/billing?tab=upgrade' }}>
+                <CreditCard className="h-4 w-4 mr-2" />Upgrade Plan<ArrowRight className="h-4 w-4 ml-2" />
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-
       </div>
     </FeatureGate>
   )
@@ -490,47 +321,25 @@ export default function BranchesPage() {
 
 // ─── Shared form fields ────────────────────────────────────
 
-function BranchFormFields({
-  form,
-  onChange,
-}: {
-  form: BranchForm
-  onChange: (f: BranchForm) => void
-}) {
+function BranchFormFields({ form, onChange }: { form: BranchForm; onChange: (f: BranchForm) => void }) {
   return (
     <div className="space-y-4">
       <div>
         <Label>Branch Name *</Label>
-        <Input
-          placeholder="e.g. Remera Branch"
-          value={form.name}
-          onChange={e => onChange({ ...form, name: e.target.value })}
-        />
+        <Input placeholder="e.g. Remera Branch" value={form.name} onChange={e => onChange({ ...form, name: e.target.value })} />
       </div>
       <div>
         <Label>Address</Label>
-        <Input
-          placeholder="Full address"
-          value={form.address}
-          onChange={e => onChange({ ...form, address: e.target.value })}
-        />
+        <Input placeholder="Full address" value={form.address} onChange={e => onChange({ ...form, address: e.target.value })} />
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <Label>Phone</Label>
-          <Input
-            placeholder="+250788123456"
-            value={form.phone}
-            onChange={e => onChange({ ...form, phone: e.target.value })}
-          />
+          <Input placeholder="+250788123456" value={form.phone} onChange={e => onChange({ ...form, phone: e.target.value })} />
         </div>
         <div>
           <Label>Email</Label>
-          <Input
-            placeholder="branch@pharmacy.com"
-            value={form.email}
-            onChange={e => onChange({ ...form, email: e.target.value })}
-          />
+          <Input placeholder="branch@pharmacy.com" value={form.email} onChange={e => onChange({ ...form, email: e.target.value })} />
         </div>
       </div>
     </div>
@@ -546,10 +355,7 @@ function BranchCard({ branch }: { branch: BranchWithUsage }) {
   const [editOpen, setEditOpen]     = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [editForm, setEditForm]     = useState<BranchForm>({
-    name:    branch.name,
-    address: branch.address ?? '',
-    phone:   branch.phone   ?? '',
-    email:   branch.email   ?? '',
+    name: branch.name, address: branch.address ?? '', phone: branch.phone ?? '', email: branch.email ?? '',
   })
 
   const usage = branch.usage
@@ -557,26 +363,16 @@ function BranchCard({ branch }: { branch: BranchWithUsage }) {
   const color = usageColor(pct, usage?.is_blocked ?? false)
 
   const handleEdit = async () => {
-    if (!editForm.name.trim()) {
-      toast.error('Branch name is required')
-      return
-    }
+    if (!editForm.name.trim()) { toast.error('Branch name is required'); return }
     try {
-      await updateBranch.mutateAsync({
-        branchId: branch.id,
-        updates: {
-          name:    editForm.name.trim(),
-          address: editForm.address || undefined,
-          phone:   editForm.phone   || undefined,
-          email:   editForm.email   || undefined,
-        },
-      })
+      await updateBranch.mutateAsync({ branchId: branch.id, updates: {
+        name: editForm.name.trim(), address: editForm.address || undefined,
+        phone: editForm.phone || undefined, email: editForm.email || undefined,
+      }})
       setEditOpen(false)
       toast.success('Branch updated')
     } catch (err) {
-      toast.error('Failed to update branch', {
-        description: err instanceof Error ? err.message : 'Please try again',
-      })
+      toast.error('Failed to update branch', { description: err instanceof Error ? err.message : 'Please try again' })
     }
   }
 
@@ -586,9 +382,7 @@ function BranchCard({ branch }: { branch: BranchWithUsage }) {
       setDeleteOpen(false)
       toast.success(`"${branch.name}" has been removed`)
     } catch (err) {
-      toast.error('Failed to remove branch', {
-        description: err instanceof Error ? err.message : 'Please try again',
-      })
+      toast.error('Failed to remove branch', { description: err instanceof Error ? err.message : 'Please try again' })
     }
   }
 
@@ -604,158 +398,84 @@ function BranchCard({ branch }: { branch: BranchWithUsage }) {
             <div className="flex items-center gap-1 shrink-0">
               {usage?.is_blocked && (
                 <Badge variant="destructive" className="text-xs">
-                  <AlertTriangle className="h-3 w-3 mr-1" />
-                  Blocked
+                  <AlertTriangle className="h-3 w-3 mr-1" />Blocked
                 </Badge>
               )}
-              <Badge variant={branch.is_active ? 'default' : 'secondary'}>
-                {branch.is_active ? 'Active' : 'Inactive'}
-              </Badge>
-
-              {/* Actions menu */}
+              <Badge variant={branch.is_active ? 'default' : 'secondary'}>{branch.is_active ? 'Active' : 'Inactive'}</Badge>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-7 w-7 ml-1">
-                    <MoreVertical className="h-4 w-4" />
-                    <span className="sr-only">Branch actions</span>
+                    <MoreVertical className="h-4 w-4" /><span className="sr-only">Branch actions</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onClick={() => {
-                      setEditForm({
-                        name:    branch.name,
-                        address: branch.address ?? '',
-                        phone:   branch.phone   ?? '',
-                        email:   branch.email   ?? '',
-                      })
-                      setEditOpen(true)
-                    }}
-                  >
-                    <Pencil className="h-4 w-4 mr-2" />
-                    Edit branch
+                  <DropdownMenuItem onClick={() => { setEditForm({ name: branch.name, address: branch.address ?? '', phone: branch.phone ?? '', email: branch.email ?? '' }); setEditOpen(true) }}>
+                    <Pencil className="h-4 w-4 mr-2" />Edit branch
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-red-600 focus:text-red-600"
-                    onClick={() => setDeleteOpen(true)}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Remove branch
+                  <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => setDeleteOpen(true)}>
+                    <Trash2 className="h-4 w-4 mr-2" />Remove branch
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
           </CardTitle>
         </CardHeader>
-
         <CardContent className="space-y-3">
-          {/* Contact info */}
           <div className="space-y-1.5 text-sm">
-            {branch.address && (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <MapPin className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{branch.address}</span>
-              </div>
-            )}
-            {branch.phone && (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Phone className="h-3.5 w-3.5 shrink-0" />
-                {branch.phone}
-              </div>
-            )}
-            {branch.email && (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Mail className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{branch.email}</span>
-              </div>
-            )}
+            {branch.address && <div className="flex items-center gap-2 text-muted-foreground"><MapPin className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{branch.address}</span></div>}
+            {branch.phone && <div className="flex items-center gap-2 text-muted-foreground"><Phone className="h-3.5 w-3.5 shrink-0" />{branch.phone}</div>}
+            {branch.email && <div className="flex items-center gap-2 text-muted-foreground"><Mail className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{branch.email}</span></div>}
           </div>
-
-          {/* Usage widget */}
           {usage ? (
             <div className="border rounded-lg p-3 space-y-2 bg-muted/30">
               <div className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-1 font-medium">
-                  <Activity className="h-3.5 w-3.5" />
-                  Transactions this month
-                </span>
-                <span className="font-bold">
-                  {usage.tx_count.toLocaleString()} / {usage.tx_limit.toLocaleString()}
-                </span>
+                <span className="flex items-center gap-1 font-medium"><Activity className="h-3.5 w-3.5" />Transactions this month</span>
+                <span className="font-bold">{usage.tx_count.toLocaleString()} / {usage.tx_limit.toLocaleString()}</span>
               </div>
               <div className="w-full bg-muted rounded-full h-2">
-                <div
-                  className={`h-2 rounded-full transition-all ${color}`}
-                  style={{ width: `${pct}%` }}
-                />
+                <div className={`h-2 rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
               </div>
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>{pct}% used</span>
                 <span>Resets {new Date(usage.billing_cycle_end).toLocaleDateString()}</span>
               </div>
-              {usage.is_blocked && (
-                <p className="text-xs text-red-600 font-medium">
-                  Transaction limit reached. New sales are blocked until the cycle resets or plan is upgraded.
-                </p>
-              )}
-              {!usage.is_blocked && pct >= 80 && (
-                <p className="text-xs text-amber-600 font-medium">
-                  Approaching limit — {usage.tx_limit - usage.tx_count} transactions remaining.
-                </p>
-              )}
+              {usage.is_blocked && <p className="text-xs text-red-600 font-medium">Transaction limit reached. New sales are blocked until the cycle resets or plan is upgraded.</p>}
+              {!usage.is_blocked && pct >= 80 && <p className="text-xs text-amber-600 font-medium">Approaching limit — {usage.tx_limit - usage.tx_count} transactions remaining.</p>}
             </div>
           ) : (
             <div className="border rounded-lg p-3 bg-muted/30 text-xs text-muted-foreground flex items-center gap-2">
-              <TrendingUp className="h-3.5 w-3.5" />
-              No usage record for this billing cycle
+              <TrendingUp className="h-3.5 w-3.5" />No usage record for this billing cycle
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* ── Edit dialog ── */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Branch</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Edit Branch</DialogTitle></DialogHeader>
           <BranchFormFields form={editForm} onChange={setEditForm} />
           <div className="flex gap-2 pt-2">
-            <Button variant="outline" onClick={() => setEditOpen(false)} className="flex-1">
-              Cancel
-            </Button>
-            <Button
-              onClick={() => void handleEdit()}
-              disabled={updateBranch.isPending || !editForm.name.trim()}
-              className="flex-1"
-            >
-              {updateBranch.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Save Changes
+            <Button variant="outline" onClick={() => setEditOpen(false)} className="flex-1">Cancel</Button>
+            <Button onClick={() => void handleEdit()} disabled={updateBranch.isPending || !editForm.name.trim()} className="flex-1">
+              {updateBranch.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save Changes
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* ── Delete confirm dialog ── */}
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove &quot;{branch.name}&quot;?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will deactivate the branch and free up a slot in your plan. Existing
-              transaction history is preserved. This action can be reversed by contacting support.
+              This will deactivate the branch and free up a slot in your plan. Existing transaction history is preserved.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep it</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-red-600 hover:bg-red-700"
-              onClick={() => void handleDelete()}
-              disabled={deleteBranch.isPending}
-            >
-              {deleteBranch.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Yes, remove branch
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => void handleDelete()} disabled={deleteBranch.isPending}>
+              {deleteBranch.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Yes, remove branch
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

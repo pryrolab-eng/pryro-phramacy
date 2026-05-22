@@ -10,39 +10,5 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export async function ensureDefaultSubscriptionPlans(
   _admin: SupabaseClient
 ): Promise<void> {
-<<<<<<< HEAD
   // No-op: plans are managed by the admin, not seeded from code.
-=======
-  const { data: existing, error } = await admin
-    .from("subscription_plans")
-    .select("name")
-    .eq("is_active", true);
-
-  if (error) {
-    throw error;
-  }
-
-  const names = new Set(
-    (existing ?? []).map((row) => String(row.name).toLowerCase())
-  );
-
-  const missing = DEFAULT_SUBSCRIPTION_PLANS.filter(
-    (plan) => !names.has(plan.name.toLowerCase())
-  );
-
-  if (missing.length === 0) {
-    return;
-  }
-
-  const { error: insertError } = await admin.from("subscription_plans").insert(
-    missing.map((plan) => ({
-      ...plan,
-      is_active: true,
-    }))
-  );
-
-  if (insertError) {
-    throw insertError;
-  }
->>>>>>> 313716b48a93eb34c93cede1cb263a21779e3d51
 }

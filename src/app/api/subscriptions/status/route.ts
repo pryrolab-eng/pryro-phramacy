@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
 import { createServiceClient } from '../../../../../supabase/service'
 import { createSubscriptionUpgrade } from '@/lib/subscription/create-pending-upgrade'
+import { getScheduledSubscriptionChange } from '@/lib/subscription/get-scheduled-change'
+import { SubscriptionPlanChangeError } from '@/lib/subscription/validate-upgrade'
+import { SUBSCRIPTION_CURRENT_PLAN_EMBED } from '@/lib/subscription/embed-plan'
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,7 +31,7 @@ export async function GET(request: NextRequest) {
       .from('subscriptions')
       .select(`
         *,
-        subscription_plans (
+        ${SUBSCRIPTION_CURRENT_PLAN_EMBED} (
           name,
           price,
           period,
@@ -40,6 +43,12 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(1)
       .single()
+
+    const admin = createServiceClient()
+    const scheduled = await getScheduledSubscriptionChange(
+      admin,
+      userPharmacy.pharmacy_id
+    )
 
     if (!subscription) {
       // Default to free plan
@@ -53,7 +62,16 @@ export async function GET(request: NextRequest) {
         },
         daysRemaining: null,
         isActive: true,
-        expiresAt: null
+        expiresAt: null,
+        scheduledChange: scheduled
+          ? {
+              status: scheduled.status,
+              effectiveAt: scheduled.effectiveAt,
+              changeType: scheduled.changeType,
+              targetPlan: scheduled.targetPlan,
+              currentPlan: scheduled.currentPlan,
+            }
+          : null,
       })
     }
 
@@ -91,7 +109,16 @@ export async function GET(request: NextRequest) {
         minutes: Math.max(0, Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60)) % 60),
         isExpiring: daysRemaining <= 7 && daysRemaining > 0,
         isExpired: isExpired
-      }
+      },
+      scheduledChange: scheduled
+        ? {
+            status: scheduled.status,
+            effectiveAt: scheduled.effectiveAt,
+            changeType: scheduled.changeType,
+            targetPlan: scheduled.targetPlan,
+            currentPlan: scheduled.currentPlan,
+          }
+        : null,
     })
 
   } catch (error: any) {
@@ -152,7 +179,14 @@ export async function POST(request: NextRequest) {
       },
     })
 
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error: unknown) {
+    if (error instanceof SubscriptionPlanChangeError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: 400 }
+      )
+    }
+    const message = error instanceof Error ? error.message : 'Request failed'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

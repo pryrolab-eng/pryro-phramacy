@@ -62,7 +62,11 @@ export function useSubscribeToPlan() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Subscription failed')
-      return data.subscription
+      return {
+        subscription: data.subscription,
+        requiresPayment: Boolean(data.requiresPayment),
+        message: data.message as string | undefined,
+      }
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: saasKeys.subscription })

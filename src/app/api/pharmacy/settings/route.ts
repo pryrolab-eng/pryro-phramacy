@@ -42,6 +42,7 @@ export async function GET() {
       phone: pharmacy.phone,
       email: pharmacy.email,
       subscription,
+      subscriptionExpiresAt: pharmacy.subscription_expires_at ?? null,
       currency: 'RWF',
       language: 'en'
     })

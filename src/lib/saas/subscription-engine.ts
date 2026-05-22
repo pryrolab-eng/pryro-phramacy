@@ -24,10 +24,8 @@ function periodEnd(start: Date, billing_period: string): Date {
   if (billing_period === 'yearly') {
     end.setFullYear(end.getFullYear() + 1)
   } else if (billing_period === 'free') {
-    // Free/trial: 14 days (handled by onboarding, but fallback here)
     end.setDate(end.getDate() + 14)
   } else {
-    // monthly
     end.setMonth(end.getMonth() + 1)
   }
   return end
@@ -83,7 +81,6 @@ export async function getPharmacySubscriptions(
     .order('created_at', { ascending: false })
 
   if (error) {
-    // If the status column doesn't exist yet (pre-migration), fall back to is_active
     if (error.message.includes('status') || error.message.includes('column')) {
       const { data: fallback, error: fallbackErr } = await admin
         .from('subscriptions')
@@ -159,17 +156,14 @@ export async function getPharmacySubscriptionSummary(
   admin: SupabaseClient,
   pharmacyId: string
 ): Promise<PharmacySubscriptionSummary> {
-  // Run subscriptions + branches in parallel; treat errors as empty results
   const [subscriptions, branches] = await Promise.all([
     getPharmacySubscriptions(admin, pharmacyId).catch(() => [] as Subscription[]),
     getPharmacyBranches(admin, pharmacyId).catch(() => [] as Branch[]),
   ])
 
-  const mainSub = subscriptions.find(s => s.subscription_type === 'main') ?? null
+  const mainSub    = subscriptions.find(s => s.subscription_type === 'main') ?? null
   const branchSubs = subscriptions.filter(s => s.subscription_type === 'branch_addon')
 
-  // When there is no active subscription, limits are null (unknown/no plan)
-  // rather than 0 — so the UI can distinguish "no plan" from "plan with 0 limit"
   const branchLimit = mainSub
     ? ((mainSub.plan as SubscriptionPlan | undefined)?.max_branches ?? 0)
     : null
@@ -178,27 +172,24 @@ export async function getPharmacySubscriptionSummary(
     : null
   const branchCount = branches.length
 
-  // Fetch usage for all branches in parallel; swallow individual failures
   const branchesWithUsage = await Promise.all(
-    branches.map(async (b) => {
-      const usage = await getBranchCurrentUsage(admin, b.id).catch(() => null)
-      return { ...b, usage }
-    })
+    branches.map(async (b) => ({
+      ...b,
+      usage: await getBranchCurrentUsage(admin, b.id).catch(() => null),
+    }))
   )
 
-  // Count active users for this pharmacy; default to 0 on error
-  const userCount = await admin
-    .from('pharmacy_users')
-    .select('id', { count: 'exact', head: true })
-    .eq('pharmacy_id', pharmacyId)
-    .eq('is_active', true)
-    .then(({ count }) => count ?? 0)
-    .catch(() => 0)
+  const userCount = await Promise.resolve(
+    admin
+      .from('pharmacy_users')
+      .select('id', { count: 'exact', head: true })
+      .eq('pharmacy_id', pharmacyId)
+      .eq('is_active', true)
+  ).then(({ count }) => count ?? 0).catch(() => 0)
 
   const totalMonthlyCost = subscriptions.reduce((sum, s) => {
     const plan = s.plan as SubscriptionPlan | undefined
     const billingPeriod = s.billing_period ?? 'monthly'
-    // For yearly subscribers show the effective monthly cost (yearly_price / 12)
     if (billingPeriod === 'yearly' && plan?.yearly_price && Number(plan.yearly_price) > 0) {
       return sum + Math.round(Number(plan.yearly_price) / 12)
     }
@@ -232,7 +223,7 @@ export async function activateSubscription(
   const now = new Date()
   const end = periodEnd(now, params.billing_period_override ?? plan.billing_period)
 
-  // For main plans: deactivate any existing main subscription
+  // For main plans: cancel any existing active main subscription first
   if (params.subscription_type === 'main') {
     await admin
       .from('subscriptions')
@@ -265,7 +256,7 @@ export async function activateSubscription(
 
   const sub = data as Subscription
 
-  // Provision usage for all active branches (main plan) or specific branch (addon)
+  // Provision usage for branches
   if (params.subscription_type === 'main') {
     const branches = await getPharmacyBranches(admin, params.pharmacy_id)
     await Promise.all(
@@ -278,7 +269,6 @@ export async function activateSubscription(
         })
       )
     )
-    // Update pharmacy status
     await admin
       .from('pharmacies')
       .update({
@@ -288,7 +278,6 @@ export async function activateSubscription(
       })
       .eq('id', params.pharmacy_id)
   } else if (params.branch_id) {
-    // Branch addon: provision usage for that specific branch
     await admin.rpc('provision_branch_usage', {
       p_branch_id: params.branch_id,
       p_pharmacy_id: params.pharmacy_id,
@@ -300,7 +289,6 @@ export async function activateSubscription(
   // Send activation email (non-blocking)
   if (params.subscription_type === 'main') {
     try {
-      // 3-step email fallback: pharmacies.email → pharmacy_owner member → owner_id auth user
       const { data: pharmacy } = await admin
         .from('pharmacies')
         .select('name, email, owner_id')
@@ -310,7 +298,6 @@ export async function activateSubscription(
       let recipientEmail: string | null = (pharmacy?.email as string | null)?.trim() ?? null
 
       if (!recipientEmail) {
-        // Try pharmacy_owner member
         const { data: ownerMember } = await admin
           .from('pharmacy_users')
           .select('user_id')
@@ -416,7 +403,6 @@ export async function createBranch(
   pharmacyId: string,
   data: { name: string; address?: string; phone?: string; email?: string }
 ): Promise<Branch> {
-  // Check branch limit
   const mainSub = await getPharmacyMainSubscription(admin, pharmacyId)
   if (!mainSub) throw new Error('No active subscription. Please subscribe first.')
 
@@ -424,9 +410,6 @@ export async function createBranch(
   if (!plan) throw new Error('Subscription plan not found.')
 
   const branches = await getPharmacyBranches(admin, pharmacyId)
-
-  // Count branches covered by main plan
-  const mainPlanBranchCount = branches.length
   const addonSubs = await admin
     .from('subscriptions')
     .select('id')
@@ -437,7 +420,7 @@ export async function createBranch(
   const addonCount = (addonSubs.data ?? []).length
   const totalAllowed = plan.max_branches + addonCount
 
-  if (mainPlanBranchCount >= totalAllowed) {
+  if (branches.length >= totalAllowed) {
     throw new Error(
       `Branch limit reached (${totalAllowed} allowed). Upgrade your plan or add a Branch Add-on subscription.`
     )
@@ -458,7 +441,6 @@ export async function createBranch(
 
   if (error) throw new Error(`createBranch: ${error.message}`)
 
-  // Provision usage for the new branch under the main subscription
   await admin.rpc('provision_branch_usage', {
     p_branch_id: branch.id,
     p_pharmacy_id: pharmacyId,
@@ -474,11 +456,10 @@ export async function createBranch(
 export async function generateMonthlyInvoice(
   admin: SupabaseClient,
   pharmacyId: string,
-  billingMonth?: string // 'YYYY-MM', defaults to current month
+  billingMonth?: string
 ): Promise<SubscriptionInvoice> {
   const month = billingMonth ?? new Date().toISOString().slice(0, 7)
 
-  // Check if invoice already exists
   const { data: existing } = await admin
     .from('subscription_invoices')
     .select('*')
@@ -498,30 +479,21 @@ export async function generateMonthlyInvoice(
   const lines = activeSubscriptions.map(s => {
     const plan = s.plan as SubscriptionPlan | undefined
     const billingPeriod = s.billing_period ?? 'monthly'
-
-    // For yearly subscribers: charge yearly_price / 12 per month
-    // For monthly subscribers: charge the monthly price
     let amount: number
     if (billingPeriod === 'yearly' && plan?.yearly_price && plan.yearly_price > 0) {
       amount = Math.round(Number(plan.yearly_price) / 12)
     } else {
       amount = Number(plan?.price ?? 0)
     }
-
     const label = s.subscription_type === 'main'
       ? `${plan?.name ?? 'Plan'} — Main subscription (${billingPeriod})`
       : `${plan?.name ?? 'Branch Add-on'} — Branch subscription (${billingPeriod})`
-    return {
-      subscription_id: s.id,
-      branch_id: s.branch_id,
-      description: label,
-      amount,
-    }
+    return { subscription_id: s.id, branch_id: s.branch_id, description: label, amount }
   })
 
   const subtotal = lines.reduce((sum, l) => sum + l.amount, 0)
   const dueDate = new Date()
-  dueDate.setDate(dueDate.getDate() + 7) // due in 7 days
+  dueDate.setDate(dueDate.getDate() + 7)
 
   const { data: invoice, error: invErr } = await admin
     .from('subscription_invoices')
@@ -539,9 +511,9 @@ export async function generateMonthlyInvoice(
 
   if (invErr) throw new Error(`generateMonthlyInvoice: ${invErr.message}`)
 
-  // Insert line items
-  const lineInserts = lines.map(l => ({ ...l, invoice_id: invoice.id }))
-  await admin.from('subscription_invoice_lines').insert(lineInserts)
+  await admin.from('subscription_invoice_lines').insert(
+    lines.map(l => ({ ...l, invoice_id: invoice.id }))
+  )
 
   return invoice as SubscriptionInvoice
 }
@@ -552,28 +524,20 @@ export async function getAllSubscriptions(
   admin: SupabaseClient,
   opts?: { status?: string; limit?: number; offset?: number }
 ) {
-  // Step 1: fetch subscriptions (base columns only — avoids 500 if newer
-  // columns like billing_period / trial_ends_at haven't been migrated yet).
   let query = admin
     .from('subscriptions')
-    .select(`
-      id, pharmacy_id, plan_id,
-      status, is_active, current_period_start, current_period_end,
-      cancelled_at, created_at, updated_at
-    `)
+    .select('id, pharmacy_id, plan_id, status, is_active, current_period_start, current_period_end, cancelled_at, created_at, updated_at')
     .order('created_at', { ascending: false })
 
   if (opts?.status) query = query.eq('status', opts.status)
-  if (opts?.limit) query = query.limit(opts.limit)
+  if (opts?.limit)  query = query.limit(opts.limit)
   if (opts?.offset) query = query.range(opts.offset, (opts.offset + (opts.limit ?? 20)) - 1)
 
   const { data: subs, error: subsErr } = await query
   if (subsErr) throw new Error(`getAllSubscriptions: ${subsErr.message}`)
   if (!subs || subs.length === 0) return []
 
-  // Step 2: fetch extended columns that may not exist on older DB instances.
-  // We do this in a separate query so a missing column only degrades gracefully.
-  const ids = subs.map((s: Record<string, unknown>) => s.id as string)
+  const ids = (subs as Record<string, unknown>[]).map(s => s.id as string)
 
   const { data: extended } = await admin
     .from('subscriptions')
@@ -585,8 +549,9 @@ export async function getAllSubscriptions(
     extMap.set(row.id as string, row as Record<string, unknown>)
   }
 
-  // Step 3: fetch related plans (select only stable columns + optional newer ones).
-  const planIds = [...new Set(subs.map((s: Record<string, unknown>) => s.plan_id as string).filter(Boolean))]
+  const planIds = Array.from(new Set(
+    (subs as Record<string, unknown>[]).map(s => s.plan_id as string).filter(Boolean)
+  ))
   let plans: Record<string, unknown>[] = []
   if (planIds.length > 0) {
     const { data: planData } = await admin
@@ -598,8 +563,9 @@ export async function getAllSubscriptions(
   const planMap = new Map<string, Record<string, unknown>>()
   for (const p of plans) planMap.set(p.id as string, p)
 
-  // Step 4: fetch related pharmacies.
-  const pharmacyIds = [...new Set(subs.map((s: Record<string, unknown>) => s.pharmacy_id as string).filter(Boolean))]
+  const pharmacyIds = Array.from(new Set(
+    (subs as Record<string, unknown>[]).map(s => s.pharmacy_id as string).filter(Boolean)
+  ))
   let pharmacies: Record<string, unknown>[] = []
   if (pharmacyIds.length > 0) {
     const { data: pharmData } = await admin
@@ -611,17 +577,16 @@ export async function getAllSubscriptions(
   const pharmacyMap = new Map<string, Record<string, unknown>>()
   for (const ph of pharmacies) pharmacyMap.set(ph.id as string, ph)
 
-  // Step 5: merge everything.
-  return subs.map((row: Record<string, unknown>) => {
-    const ext = extMap.get(row.id as string) ?? {}
-    const plan = planMap.get(row.plan_id as string) ?? null
+  return (subs as Record<string, unknown>[]).map(row => {
+    const ext      = extMap.get(row.id as string) ?? {}
+    const plan     = planMap.get(row.plan_id as string) ?? null
     const pharmacy = pharmacyMap.get(row.pharmacy_id as string) ?? null
     return {
       ...row,
-      branch_id: ext.branch_id ?? null,
+      branch_id:         ext.branch_id ?? null,
       subscription_type: ext.subscription_type ?? 'main',
-      billing_period: ext.billing_period ?? 'monthly',
-      trial_ends_at: ext.trial_ends_at ?? null,
+      billing_period:    ext.billing_period ?? 'monthly',
+      trial_ends_at:     ext.trial_ends_at ?? null,
       plan,
       pharmacy,
     }
@@ -655,8 +620,6 @@ export async function createPlan(
   }
 ): Promise<SubscriptionPlan> {
   const period = input.billing_period === 'free' ? 'free' : `per ${input.billing_period.replace('ly', '')}`
-
-  // Auto-compute yearly_price if not provided
   const discountPct = input.yearly_discount_pct ?? 17
   const yearlyPrice = input.yearly_price !== undefined
     ? input.yearly_price
@@ -696,7 +659,7 @@ export async function grantFreeTrial(
     pharmacy_id: string
     plan_id: string
     trial_days: number
-    granted_by?: string // admin user id for audit
+    granted_by?: string
   }
 ): Promise<Subscription> {
   const { pharmacy_id, plan_id, trial_days } = params
@@ -713,7 +676,6 @@ export async function grantFreeTrial(
   const trialEnd = new Date(now)
   trialEnd.setDate(trialEnd.getDate() + trial_days)
 
-  // Cancel any existing active main subscription first
   await admin
     .from('subscriptions')
     .update({ status: 'cancelled', cancelled_at: now.toISOString() })
@@ -731,7 +693,7 @@ export async function grantFreeTrial(
       billing_period: 'free',
       status: 'trialing',
       is_active: true,
-      plan: 'standard', // legacy enum
+      plan: 'standard',
       current_period_start: now.toISOString(),
       current_period_end: trialEnd.toISOString(),
       trial_ends_at: trialEnd.toISOString(),
@@ -743,7 +705,6 @@ export async function grantFreeTrial(
 
   const sub = data as Subscription
 
-  // Provision usage for all active branches
   const branches = await getPharmacyBranches(admin, pharmacy_id)
   await Promise.all(
     branches.map(b =>
@@ -756,7 +717,6 @@ export async function grantFreeTrial(
     )
   )
 
-  // Update pharmacy status
   await admin
     .from('pharmacies')
     .update({
@@ -766,7 +726,6 @@ export async function grantFreeTrial(
     })
     .eq('id', pharmacy_id)
 
-  // Send activation email (non-blocking)
   try {
     const { data: pharmacy } = await admin
       .from('pharmacies')
@@ -837,21 +796,14 @@ export async function updatePlan(
       : `per ${updates.billing_period.replace('ly', '')}`
   }
 
-  // Auto-recalculate yearly_price when price or discount changes
-  // (the DB trigger also does this, but we keep the payload consistent)
   const price = updates.price
   const discountPct = updates.yearly_discount_pct
-  if (price !== undefined || discountPct !== undefined) {
-    // We need both values to compute — fetch current plan if one is missing
-    if (price !== undefined && discountPct !== undefined) {
-      const billingPeriod = updates.billing_period
-      const isFree = billingPeriod === 'free' || price === 0
-      payload.yearly_price = isFree
-        ? 0
-        : Math.round(price * 12 * (1 - discountPct / 100))
-      payload.yearly_discount_pct = discountPct
-    }
-    // If only one is provided, the DB trigger will handle recalculation
+  if (price !== undefined && discountPct !== undefined) {
+    const isFree = updates.billing_period === 'free' || price === 0
+    payload.yearly_price = isFree
+      ? 0
+      : Math.round(price * 12 * (1 - discountPct / 100))
+    payload.yearly_discount_pct = discountPct
   }
 
   const { data, error } = await admin

@@ -7,12 +7,18 @@ export function normalizePlanName(name: string): string {
 type PlanRow = {
   id: string;
   name: string;
+  plan_type?: string | null;
   price?: number | string | null;
   polar_product_id?: string | null;
   is_active?: boolean | null;
   updated_at?: string | null;
   created_at?: string | null;
 };
+
+function planDedupeKey(plan: Pick<PlanRow, "name" | "plan_type">): string {
+  const type = String(plan.plan_type ?? "main").trim().toLowerCase();
+  return `${normalizePlanName(plan.name)}::${type === "branch_addon" ? "branch_addon" : "main"}`;
+}
 
 /** Prefer row with Polar link, then most recently updated, then oldest created. */
 export function planRowSortScore(row: PlanRow): number {
@@ -35,12 +41,12 @@ export function comparePlanRows(a: PlanRow, b: PlanRow): number {
   return String(a.id).localeCompare(String(b.id));
 }
 
-/** One canonical plan per name (case-insensitive). */
+/** One canonical plan per name + plan_type (case-insensitive name). */
 export function dedupeSubscriptionPlansByName<T extends PlanRow>(plans: T[]): T[] {
   const byName = new Map<string, T[]>();
   for (const plan of plans) {
-    const key = normalizePlanName(plan.name);
-    if (!key) continue;
+    if (!normalizePlanName(plan.name)) continue;
+    const key = planDedupeKey(plan);
     const list = byName.get(key) ?? [];
     list.push(plan);
     byName.set(key, list);
@@ -67,7 +73,7 @@ export type PlanDuplicateGroup = {
   duplicateIds: string[];
 };
 
-/** Groups with more than one active row per name. */
+/** Groups with more than one active row per name + plan_type. */
 export function findDuplicatePlanGroups<T extends PlanRow>(
   plans: T[],
   options?: { activeOnly?: boolean }
@@ -77,22 +83,22 @@ export function findDuplicatePlanGroups<T extends PlanRow>(
     ? plans.filter((p) => p.is_active !== false)
     : plans;
 
-  const byName = new Map<string, T[]>();
+  const byKey = new Map<string, T[]>();
   for (const plan of filtered) {
-    const key = normalizePlanName(plan.name);
-    if (!key) continue;
-    const list = byName.get(key) ?? [];
+    if (!normalizePlanName(plan.name)) continue;
+    const key = planDedupeKey(plan);
+    const list = byKey.get(key) ?? [];
     list.push(plan);
-    byName.set(key, list);
+    byKey.set(key, list);
   }
 
   const groups: PlanDuplicateGroup[] = [];
-  for (const [name, list] of byName) {
+  for (const [key, list] of byKey) {
     if (list.length <= 1) continue;
     list.sort(comparePlanRows);
     const keeper = list[0];
     groups.push({
-      name,
+      name: key,
       keeperId: keeper.id,
       duplicateIds: list.slice(1).map((p) => p.id),
     });

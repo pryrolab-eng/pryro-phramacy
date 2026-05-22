@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/subscription-transitions",
       "schedule": "*/5 * * * *"
+    },
+     {
+      "path": "/api/saas/admin/cron",
+      "schedule": "0 6 * * *"
     }
   ]
 }

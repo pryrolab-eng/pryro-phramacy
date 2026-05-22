@@ -18,7 +18,7 @@ interface SubscriptionBlockerProps {
 }
 
 // Pages that are always accessible even when subscription is expired
-const ALLOWED_PATHS = ['/settings', '/pharmacy-dashboard/billing', '/sign-in', '/sign-out']
+const ALLOWED_PATHS = ['/settings', '/pharmacy-dashboard/billing', '/sign-in', '/sign-out', '/branches']
 
 export default function SubscriptionBlocker({ isExpired, userRole }: SubscriptionBlockerProps) {
   const pathname = usePathname()

@@ -1,10 +1,18 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { DEFAULT_SUBSCRIPTION_PLANS } from "./default-plans";
+// Plans are created and managed by the admin through the dashboard.
+// This file is kept for backward compatibility but no longer seeds hardcoded plans.
 
-/** Inserts missing catalog plans (by name). Safe to call on every empty fetch. */
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+/**
+ * Previously seeded hardcoded plans when the catalog was empty.
+ * Now a no-op — the admin creates all plans through the subscription management UI.
+ */
 export async function ensureDefaultSubscriptionPlans(
-  admin: SupabaseClient
+  _admin: SupabaseClient
 ): Promise<void> {
+<<<<<<< HEAD
+  // No-op: plans are managed by the admin, not seeded from code.
+=======
   const { data: existing, error } = await admin
     .from("subscription_plans")
     .select("name")
@@ -36,4 +44,5 @@ export async function ensureDefaultSubscriptionPlans(
   if (insertError) {
     throw insertError;
   }
+>>>>>>> 313716b48a93eb34c93cede1cb263a21779e3d51
 }

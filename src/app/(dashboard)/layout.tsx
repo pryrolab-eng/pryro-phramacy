@@ -9,6 +9,7 @@ import { PharmacistSidebar } from '@/components/pharmacist-sidebar'
 import SubscriptionBlocker from '@/components/subscription-blocker'
 import { createServiceClient } from '../../../supabase/service'
 import { resolvePharmacyEntitlements } from '@/lib/subscription/lifecycle/entitlements'
+import { Toaster } from 'sonner'
 
 export default async function DashboardLayout({
   children,
@@ -77,6 +78,7 @@ export default async function DashboardLayout({
           {children}
         </SidebarInset>
       </SidebarProvider>
+      <Toaster richColors position="top-right" />
     </PharmacyProvider>
   )
 }

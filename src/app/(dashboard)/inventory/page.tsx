@@ -26,10 +26,11 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import { toast } from "@/components/ui/use-toast"
+import { toast } from 'sonner'
 import { Package, Plus, AlertTriangle, Calendar, Upload, Download, QrCode, Scan, Search, Filter, MoreHorizontal, Edit, Trash2, Eye, TrendingUp, TrendingDown } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
+import { FeatureGate } from '@/components/feature-gate'
 import * as XLSX from 'xlsx'
 import JsBarcode from 'jsbarcode'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, AreaChart, Area } from 'recharts'
@@ -709,6 +710,7 @@ export default function InventoryPage() {
   )
 
   return (
+    <FeatureGate feature="inventory">
     <div className="flex-1 space-y-4 p-4 md:p-8">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -1919,5 +1921,6 @@ export default function InventoryPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </FeatureGate>
   )
 }

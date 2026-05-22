@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { FileText, Plus, Shield } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -87,13 +88,25 @@ export function PlatformDashboardActions() {
   const handleAddPharmacy = async () => {
     setSaving(true)
     try {
-      await createAdminPharmacy(newPharmacy as Record<string, unknown>)
+      const result = await createAdminPharmacy(newPharmacy as Record<string, unknown>)
       await invalidateDashboard()
       setIsAddingPharmacy(false)
       setNewPharmacy({ ...emptyPharmacy, insurance_providers: [] })
+      if (result.emailSent) {
+        toast.success('Pharmacy created successfully', {
+          description: `Welcome email with login credentials sent to ${result.owner.email}`,
+        })
+      } else {
+        toast.success('Pharmacy created successfully', {
+          description: result.smtpConfigured
+            ? `Email delivery failed — share credentials manually with ${result.owner.email}`
+            : `SMTP not configured — share credentials manually with ${result.owner.email}`,
+        })
+      }
     } catch (error) {
       console.error('Error adding pharmacy:', error)
-      alert(error instanceof Error ? error.message : 'Failed to create pharmacy')
+      const message = error instanceof Error ? error.message : 'Failed to create pharmacy'
+      toast.error('Failed to create pharmacy', { description: message })
     } finally {
       setSaving(false)
     }
@@ -113,9 +126,11 @@ export function PlatformDashboardActions() {
       await invalidateDashboard()
       setIsAddingInsurance(false)
       setNewInsurance(emptyInsurance)
+      toast.success('Insurance provider added successfully')
     } catch (error) {
       console.error('Error adding insurance:', error)
-      alert(error instanceof Error ? error.message : 'Failed to add insurance provider')
+      const message = error instanceof Error ? error.message : 'Failed to add insurance provider'
+      toast.error('Failed to add insurance provider', { description: message })
     } finally {
       setSaving(false)
     }

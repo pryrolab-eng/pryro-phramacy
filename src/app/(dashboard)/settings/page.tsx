@@ -28,7 +28,6 @@ import {
   startPolarSubscriptionCheckout,
   type ScheduledChangeResponse,
 } from '@/lib/subscription/checkout-client'
-import { fallbackPlansForDisplay } from '@/lib/subscription/default-plans'
 import { normalizeSubscriptionPlanRow } from '@/lib/subscription/normalize-plan'
 import { BranchAddonCheckoutDialog } from '@/components/subscription/branch-addon-checkout-dialog'
 import type { SubscriptionPlan as SaasSubscriptionPlan } from '@/lib/saas/types'

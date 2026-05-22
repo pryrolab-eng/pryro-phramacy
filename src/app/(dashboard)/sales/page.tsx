@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { FeatureGate } from '@/components/feature-gate'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -284,6 +285,7 @@ export default function SalesPage() {
   )
 
   return (
+    <FeatureGate feature="reports">
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -625,5 +627,6 @@ export default function SalesPage() {
 
 
     </div>
+    </FeatureGate>
   )
 }

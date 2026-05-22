@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,10 @@ import {
   deleteAdminCategory,
   updateAdminCategory,
 } from '@/lib/http/admin/categories'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 interface CategoryRow {
   id: string
@@ -48,26 +53,31 @@ export default function CategoriesPage() {
   const [isAddingCategory, setIsAddingCategory] = useState(false)
   const [isEditingCategory, setIsEditingCategory] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState<CategoryRow | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [newCategory, setNewCategory] = useState({
     name: '',
     description: ''
   })
 
   const handleAddCategory = async () => {
+    const tid = toast.loading('Adding category…')
     try {
       await createAdminCategory(newCategory)
       await queryClient.invalidateQueries({ queryKey: adminCategoriesQueryKey })
       setIsAddingCategory(false)
       setNewCategory({ name: '', description: '' })
-      alert('Global category added successfully!')
+      toast.success('Category added', { id: tid })
     } catch (error) {
-      console.error('Error adding category:', error)
-      alert(error instanceof Error ? error.message : 'Failed to add category')
+      toast.error('Failed to add category', {
+        id: tid,
+        description: error instanceof Error ? error.message : 'Please try again',
+      })
     }
   }
 
   const handleEditCategory = async () => {
     if (!selectedCategory) return
+    const tid = toast.loading('Saving changes…')
     try {
       await updateAdminCategory(selectedCategory.id, {
         name: selectedCategory.name,
@@ -77,23 +87,26 @@ export default function CategoriesPage() {
       await queryClient.invalidateQueries({ queryKey: adminCategoriesQueryKey })
       setIsEditingCategory(false)
       setSelectedCategory(null)
-      alert('Global category updated successfully!')
+      toast.success('Category updated', { id: tid })
     } catch (error) {
-      console.error('Error updating category:', error)
-      alert(error instanceof Error ? error.message : 'Failed to update category')
+      toast.error('Failed to update category', {
+        id: tid,
+        description: error instanceof Error ? error.message : 'Please try again',
+      })
     }
   }
 
   const handleDeleteCategory = async (id: string) => {
-    if (confirm('Are you sure you want to delete this global category?')) {
-      try {
-        await deleteAdminCategory(id)
-        await queryClient.invalidateQueries({ queryKey: adminCategoriesQueryKey })
-        alert('Global category deleted successfully!')
-      } catch (error) {
-        console.error('Error deleting category:', error)
-        alert(error instanceof Error ? error.message : 'Failed to delete category')
-      }
+    const tid = toast.loading('Deleting category…')
+    try {
+      await deleteAdminCategory(id)
+      await queryClient.invalidateQueries({ queryKey: adminCategoriesQueryKey })
+      toast.success('Category deleted', { id: tid })
+    } catch (error) {
+      toast.error('Failed to delete category', {
+        id: tid,
+        description: error instanceof Error ? error.message : 'Please try again',
+      })
     }
   }
 
@@ -219,7 +232,7 @@ export default function CategoriesPage() {
                         <Edit className="h-4 w-4 mr-2" />
                         Edit
                       </Button>
-                      <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700" onClick={() => handleDeleteCategory(category.id)}>
+                      <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700" onClick={() => setDeleteTarget(category.id)}>
                         <Trash2 className="h-4 w-4 mr-2" />
                         Delete
                       </Button>
@@ -256,6 +269,26 @@ export default function CategoriesPage() {
               )}
             </DialogContent>
           </Dialog>
+
+          <AlertDialog open={!!deleteTarget} onOpenChange={o => !o && setDeleteTarget(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete category?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently remove the category. Products using it will not be deleted.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-red-600 hover:bg-red-700"
+                  onClick={() => { if (deleteTarget) void handleDeleteCategory(deleteTarget); setDeleteTarget(null) }}
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
     </div>
   );

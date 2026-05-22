@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Search, Plus, Eye, Edit, Trash2 } from "lucide-react";
+import { Building2, Search, Plus, Eye, Edit, Trash2, Gift, Loader2 } from "lucide-react";
 import { Spinner } from '@/components/ui/spinner';
 import { adminPharmaciesQueryKey, useAdminPharmacies, useInsuranceProviders } from '@/hooks'
 import {
@@ -19,6 +20,7 @@ import {
   deleteAdminPharmacy,
   updateAdminPharmacy,
 } from '@/lib/http/admin/pharmacies'
+import type { SubscriptionPlan } from '@/lib/saas/types'
 
 export default function PharmacyManagementPage() {
   const queryClient = useQueryClient()
@@ -28,6 +30,15 @@ export default function PharmacyManagementPage() {
   const [isViewingPharmacy, setIsViewingPharmacy] = useState(false)
   const [isEditingPharmacy, setIsEditingPharmacy] = useState(false)
   const [selectedPharmacy, setSelectedPharmacy] = useState<any>(null)
+
+  // ─── Free trial state ──────────────────────────────────
+  const [trialPharmacy, setTrialPharmacy] = useState<any>(null)
+  const [trialPlans, setTrialPlans] = useState<SubscriptionPlan[]>([])
+  const [trialPlanId, setTrialPlanId] = useState('')
+  const [trialDays, setTrialDays] = useState('7')
+  const [trialLoading, setTrialLoading] = useState(false)
+  const [trialError, setTrialError] = useState<string | null>(null)
+  const [trialSuccess, setTrialSuccess] = useState(false)
   const [newPharmacy, setNewPharmacy] = useState({
     name: '',
     address: '',
@@ -59,9 +70,58 @@ export default function PharmacyManagementPage() {
   const insurance = insuranceQuery.data ?? []
   const loading = pharmaciesQuery.isPending || insuranceQuery.isPending
 
-  const handleAddPharmacy = async () => {
+  const openTrialDialog = async (pharmacy: any) => {
+    setTrialPharmacy(pharmacy)
+    setTrialError(null)
+    setTrialSuccess(false)
+    setTrialDays('7')
+    setTrialPlanId('')
+    // Fetch available plans
     try {
-      await createAdminPharmacy(newPharmacy as Record<string, unknown>)
+      const res = await fetch('/api/saas/admin/grant-trial')
+      const data = await res.json()
+      const plans: SubscriptionPlan[] = data.plans ?? []
+      setTrialPlans(plans)
+      if (plans.length > 0) setTrialPlanId(plans[0].id)
+    } catch {
+      setTrialPlans([])
+    }
+  }
+
+  const handleGrantTrial = async () => {
+    if (!trialPharmacy?.id || !trialPlanId) return
+    const days = Number(trialDays)
+    if (!days || days < 1 || days > 365) {
+      setTrialError('Enter a number of days between 1 and 365')
+      return
+    }
+    setTrialLoading(true)
+    setTrialError(null)
+    try {
+      const res = await fetch('/api/saas/admin/grant-trial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pharmacy_id: trialPharmacy.id,
+          plan_id: trialPlanId,
+          trial_days: days,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Failed to grant trial')
+      setTrialSuccess(true)
+      await queryClient.invalidateQueries({ queryKey: adminPharmaciesQueryKey })
+    } catch (err) {
+      setTrialError(err instanceof Error ? err.message : 'Failed to grant trial')
+    } finally {
+      setTrialLoading(false)
+    }
+  }
+
+  const handleAddPharmacy = async () => {
+    const tid = toast.loading('Creating pharmacy and owner account…')
+    try {
+      const result = await createAdminPharmacy(newPharmacy as Record<string, unknown>)
       await queryClient.invalidateQueries({ queryKey: adminPharmaciesQueryKey })
       setIsAddingPharmacy(false)
       setNewPharmacy({
@@ -69,15 +129,33 @@ export default function PharmacyManagementPage() {
         owner_name: '', owner_email: '', owner_password: '', subscription_plan: 'free',
         insurance_providers: []
       })
-      alert('Pharmacy added successfully!')
+
+      if (result.emailSent) {
+        toast.success('Pharmacy created — welcome email sent', {
+          id: tid,
+          description: `Login credentials were emailed to ${result.owner.email}.`,
+          duration: 6000,
+        })
+      } else {
+        toast.success('Pharmacy created successfully', {
+          id: tid,
+          description: result.smtpConfigured
+            ? `Email delivery failed. Share credentials manually: ${result.owner.email}`
+            : `SMTP not configured. Share credentials manually with ${result.owner.email}.`,
+          duration: 8000,
+        })
+      }
     } catch (error) {
-      console.error('Error adding pharmacy:', error)
-      alert(error instanceof Error ? error.message : 'Error adding pharmacy. Please try again.')
+      toast.error('Failed to create pharmacy', {
+        id: tid,
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
     }
   }
 
   const handleEditPharmacy = async () => {
     if (!selectedPharmacy?.id) return
+    const tid = toast.loading('Saving changes…')
     try {
       await updateAdminPharmacy(
         selectedPharmacy.id,
@@ -86,22 +164,27 @@ export default function PharmacyManagementPage() {
       await queryClient.invalidateQueries({ queryKey: adminPharmaciesQueryKey })
       setIsEditingPharmacy(false)
       setSelectedPharmacy(null)
-      alert('Pharmacy updated successfully!')
+      toast.success('Pharmacy updated', { id: tid })
     } catch (error) {
-      console.error('Error updating pharmacy:', error)
-      alert(error instanceof Error ? error.message : 'Failed to update pharmacy')
+      toast.error('Failed to update pharmacy', {
+        id: tid,
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
     }
   }
 
   const handleDeletePharmacy = async (id: string) => {
     if (confirm('Are you sure you want to delete this pharmacy?')) {
+      const tid = toast.loading('Deleting pharmacy…')
       try {
         await deleteAdminPharmacy(id)
         await queryClient.invalidateQueries({ queryKey: adminPharmaciesQueryKey })
-        alert('Pharmacy deleted successfully!')
+        toast.success('Pharmacy deleted', { id: tid })
       } catch (error) {
-        console.error('Error deleting pharmacy:', error)
-        alert(error instanceof Error ? error.message : 'Failed to delete pharmacy')
+        toast.error('Failed to delete pharmacy', {
+          id: tid,
+          description: error instanceof Error ? error.message : 'Please try again.',
+        })
       }
     }
   }
@@ -339,6 +422,15 @@ export default function PharmacyManagementPage() {
                         <Edit className="h-4 w-4 mr-2" />
                         Edit
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-purple-600 hover:text-purple-700 hover:border-purple-400"
+                        onClick={() => void openTrialDialog(pharmacy)}
+                      >
+                        <Gift className="h-4 w-4 mr-2" />
+                        Grant Trial
+                      </Button>
                       <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700" onClick={() => handleDeletePharmacy(pharmacy.id)}>
                         <Trash2 className="h-4 w-4 mr-2" />
                         Delete
@@ -371,8 +463,7 @@ export default function PharmacyManagementPage() {
         </Dialog>
 
         {/* Edit Dialog */}
-        <Dialog open={isEditingPharmacy} onOpenChange={setIsEditingPharmacy}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <Dialog open={isEditingPharmacy} onOpenChange={setIsEditingPharmacy}>          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Pharmacy</DialogTitle>
             </DialogHeader>
@@ -497,6 +588,128 @@ export default function PharmacyManagementPage() {
                 <Button onClick={handleEditPharmacy} className="w-full sm:w-auto">
                   Save Changes
                 </Button>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Grant Trial Dialog */}
+        <Dialog
+          open={!!trialPharmacy}
+          onOpenChange={(open) => { if (!open) { setTrialPharmacy(null); setTrialSuccess(false) } }}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Gift className="h-5 w-5 text-purple-600" />
+                Grant Free Trial
+              </DialogTitle>
+            </DialogHeader>
+
+            {trialSuccess ? (
+              <div className="space-y-4 py-2">
+                <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-center space-y-1">
+                  <p className="font-semibold text-green-800">Trial granted successfully</p>
+                  <p className="text-sm text-green-700">
+                    <strong>{trialPharmacy?.name}</strong> now has a {trialDays}-day free trial
+                    on the <strong>{trialPlans.find(p => p.id === trialPlanId)?.name ?? 'selected'}</strong> plan.
+                  </p>
+                </div>
+                <Button className="w-full" onClick={() => { setTrialPharmacy(null); setTrialSuccess(false) }}>
+                  Done
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4 py-2">
+                <p className="text-sm text-muted-foreground">
+                  Grant a free trial to <strong>{trialPharmacy?.name}</strong>. Any existing active
+                  subscription will be replaced.
+                </p>
+
+                {/* Plan picker */}
+                <div className="grid gap-1.5">
+                  <Label>Plan to trial</Label>
+                  {trialPlans.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Loading plans…</p>
+                  ) : (
+                    <Select value={trialPlanId} onValueChange={setTrialPlanId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a plan" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {trialPlans.map(plan => (
+                          <SelectItem key={plan.id} value={plan.id}>
+                            {plan.name}
+                            {plan.price > 0
+                              ? ` — RWF ${Number(plan.price).toLocaleString()}/${plan.billing_period}`
+                              : ' (Free)'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+
+                {/* Duration */}
+                <div className="grid gap-1.5">
+                  <Label>Trial duration (days)</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={trialDays}
+                      onChange={e => setTrialDays(e.target.value)}
+                      className="w-28"
+                    />
+                    <div className="flex gap-1">
+                      {[2, 3, 7, 14, 30].map(d => (
+                        <Button
+                          key={d}
+                          type="button"
+                          size="sm"
+                          variant={trialDays === String(d) ? 'default' : 'outline'}
+                          className="h-8 px-2 text-xs"
+                          onClick={() => setTrialDays(String(d))}
+                        >
+                          {d}d
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Trial expires on{' '}
+                    <strong>
+                      {new Date(Date.now() + Number(trialDays || 0) * 86400000).toLocaleDateString('en-RW', { dateStyle: 'medium' })}
+                    </strong>
+                  </p>
+                </div>
+
+                {trialError && (
+                  <p className="text-sm text-red-600 rounded-md border border-red-200 bg-red-50 px-3 py-2">
+                    {trialError}
+                  </p>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setTrialPharmacy(null)}
+                    disabled={trialLoading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="flex-1 bg-purple-600 hover:bg-purple-700"
+                    onClick={() => void handleGrantTrial()}
+                    disabled={trialLoading || !trialPlanId || !trialDays}
+                  >
+                    {trialLoading
+                      ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Granting…</>
+                      : <><Gift className="h-4 w-4 mr-2" />Grant {trialDays}d Trial</>}
+                  </Button>
+                </div>
               </div>
             )}
           </DialogContent>

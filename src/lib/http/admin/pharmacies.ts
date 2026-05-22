@@ -18,10 +18,13 @@ export async function getAdminPharmacies(): Promise<AdminPharmacyRow[]> {
 
 export async function createAdminPharmacy(
   body: Record<string, unknown>,
-): Promise<{ pharmacy: AdminPharmacyRow }> {
+): Promise<{ pharmacy: AdminPharmacyRow; emailSent: boolean; smtpConfigured: boolean; owner: { email: string; message: string } }> {
   const data = await fetchJson<{
     success: boolean;
     pharmacy?: AdminPharmacyRow;
+    emailSent?: boolean;
+    smtpConfigured?: boolean;
+    owner?: { email: string; message: string };
     error?: string;
   }>("/api/admin/pharmacies", {
     method: "POST",
@@ -30,7 +33,12 @@ export async function createAdminPharmacy(
   });
   ensureApiSuccess(data, "Failed to create pharmacy");
   if (!data.pharmacy) throw new Error("Invalid pharmacy response");
-  return { pharmacy: data.pharmacy };
+  return {
+    pharmacy: data.pharmacy,
+    emailSent: data.emailSent ?? false,
+    smtpConfigured: data.smtpConfigured ?? false,
+    owner: data.owner ?? { email: body.owner_email as string, message: '' },
+  };
 }
 
 export async function updateAdminPharmacy(

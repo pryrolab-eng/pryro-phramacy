@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '../../../../../supabase/serve
 import { resolveIsAppPlatformAdmin } from '@/lib/platform-admin'
 import { syncPlanToPolarAndSave } from '@/lib/polar/sync-plan-db'
 import { dedupeSubscriptionPlansByName, normalizePlanName } from '@/lib/subscription/dedupe-plans'
+import { validatePlanFeatures } from '@/lib/saas/feature-access'
 
 export async function GET() {
   try {
@@ -32,10 +33,12 @@ export async function GET() {
 
     if (plansError) throw plansError
 
+    // Count active subscribers per plan using plan_id (accurate for new SaaS subscriptions)
     const { data: subs, error: subsError } = await db
       .from('subscriptions')
-      .select('plan')
+      .select('plan_id')
       .eq('is_active', true)
+      .eq('status', 'active')
 
     if (subsError) {
       console.error('GET /api/admin/plans: subscriptions aggregate', subsError)
@@ -43,18 +46,19 @@ export async function GET() {
 
     const counts: Record<string, number> = {}
     for (const s of subs ?? []) {
-      const row = s as { plan?: string | null }
-      const k = String(row.plan ?? 'unknown').toLowerCase()
-      counts[k] = (counts[k] ?? 0) + 1
+      const row = s as { plan_id?: string | null }
+      if (row.plan_id) {
+        counts[row.plan_id] = (counts[row.plan_id] ?? 0) + 1
+      }
     }
 
     const catalog = dedupeSubscriptionPlansByName(plans ?? [])
 
     const enriched = catalog.map((p) => {
-      const name = (p as { name?: string }).name ?? ''
+      const planId = (p as { id?: string }).id ?? ''
       return {
         ...p,
-        active_subscriber_count: counts[name.toLowerCase()] ?? 0,
+        active_subscriber_count: counts[planId] ?? 0,
       }
     })
 
@@ -120,9 +124,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: `A plan named "${planName}" already exists. Edit the existing plan or remove duplicates first.`,
+          error: `A plan named "${planName}" already exists. Please choose a different name or edit the existing plan.`,
         },
         { status: 409 },
+      )
+    }
+
+    // Validate features — only system-defined features are allowed
+    const rawFeatures: string[] = Array.isArray(body.features)
+      ? body.features.map(String)
+      : typeof body.features === 'string'
+        ? body.features.split(',').map((f: string) => f.trim()).filter(Boolean)
+        : []
+
+    const invalidFeatures = validatePlanFeatures(rawFeatures)
+    if (invalidFeatures.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Unknown feature(s): ${invalidFeatures.join(', ')}. Only system-defined features are allowed.`,
+        },
+        { status: 400 },
       )
     }
 
@@ -131,8 +153,14 @@ export async function POST(request: NextRequest) {
       .insert({
         name: body.name,
         price: body.price,
+        yearly_discount_pct: Number(body.yearly_discount_pct) || 0,
         period: body.period || 'per month',
-        features: body.features,
+        billing_period: body.billing_period || 'monthly',
+        plan_type: body.plan_type || 'main',
+        max_branches: Number(body.max_branches) || 1,
+        max_users: Number(body.max_users) || 5,
+        monthly_tx_limit: Number(body.monthly_tx_limit) || 500,
+        features: rawFeatures,
         is_popular: body.is_popular || false,
         is_active: true,
         plan_type: requestedType,
@@ -146,13 +174,26 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error
 
-    const synced = await syncPlanToPolarAndSave(db, plan as Parameters<typeof syncPlanToPolarAndSave>[1])
-
-    return NextResponse.json({
-      success: true,
-      plan: synced.plan,
-      polarSync: synced.polarSync,
-    })
+    let polarSync: { action: string; error?: string } | undefined
+    try {
+      const synced = await syncPlanToPolarAndSave(db, plan as Parameters<typeof syncPlanToPolarAndSave>[1])
+      polarSync = synced.polarSync
+      return NextResponse.json({
+        success: true,
+        plan: synced.plan,
+        polarSync,
+      })
+    } catch (polarError) {
+      console.warn("POST /api/admin/plans Polar sync failed (non-fatal):", polarError)
+      return NextResponse.json({
+        success: true,
+        plan,
+        polarSync: {
+          action: "failed",
+          error: polarError instanceof Error ? polarError.message : "Polar sync failed",
+        },
+      })
+    }
   } catch (error) {
     return NextResponse.json({ success: false, error: 'Failed to add plan' }, { status: 500 })
   }

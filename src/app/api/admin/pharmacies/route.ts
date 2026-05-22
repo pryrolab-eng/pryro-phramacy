@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { sendPharmacyOwnerWelcomeEmail } from "@/lib/email/subscription-emails";
+import { isSmtpConfigured } from "@/lib/email/mailer";
 
 function getServiceClient() {
   return createClient(
@@ -63,11 +65,16 @@ export async function POST(request: NextRequest) {
 
     if (authError || !authUser.user) {
       console.error("Auth error:", authError);
+      // Provide a cleaner message for the common duplicate-email case
+      const isDuplicate =
+        authError?.message?.toLowerCase().includes("already") ||
+        authError?.message?.toLowerCase().includes("registered") ||
+        authError?.status === 422;
+      const errorMessage = isDuplicate
+        ? `The email "${ownerEmail}" is already registered in the system. Please use a different email address.`
+        : `User creation failed: ${authError?.message ?? "Unknown error"}`;
       return NextResponse.json(
-        {
-          success: false,
-          error: `User creation failed: ${authError?.message ?? "Unknown error"}`,
-        },
+        { success: false, error: errorMessage },
         { status: 400 }
       );
     }
@@ -136,13 +143,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Send welcome email with credentials to the pharmacy owner (non-blocking)
+    let emailSent = false
+    try {
+      console.log(`[pharmacy creation] Sending welcome email to: ${ownerEmail}`)
+      emailSent = await sendPharmacyOwnerWelcomeEmail({
+        to: ownerEmail,
+        ownerName: ownerName,
+        pharmacyName: (body.name as string)?.trim() ?? 'Your Pharmacy',
+        password: ownerPassword,
+      })
+      console.log(`[pharmacy creation] emailSent=${emailSent}`)
+    } catch (emailErr) {
+      console.error('[pharmacy creation] Email send threw:', emailErr)
+    }
+
     return NextResponse.json({
       success: true,
       pharmacy,
+      emailSent,
+      smtpConfigured: isSmtpConfigured(),
       owner: {
         email: ownerEmail,
-        message:
-          "Share the owner email and password with the pharmacy owner for sign-in.",
+        message: emailSent
+          ? "Welcome email with login credentials sent to the pharmacy owner."
+          : "SMTP not configured — share the owner email and password manually.",
       },
     });
   } catch (error) {

@@ -30,6 +30,7 @@ export async function GET() {
     return NextResponse.json({ summary })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Failed to load subscription'
+    console.error('[GET /api/saas/subscription]', err)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

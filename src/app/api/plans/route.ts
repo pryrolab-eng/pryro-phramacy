@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "../../../../supabase/service";
-import { fallbackPlansForDisplay } from "@/lib/subscription/default-plans";
-import { ensureDefaultSubscriptionPlans } from "@/lib/subscription/ensure-default-plans";
 import { normalizeSubscriptionPlanRow } from "@/lib/subscription/normalize-plan";
 import { dedupeSubscriptionPlansByName } from "@/lib/subscription/dedupe-plans";
 import { dedupeSubscriptionPlansInDb } from "@/lib/subscription/dedupe-plans-db";
@@ -31,26 +29,13 @@ export async function GET(request: Request) {
     }
 
     if (!plans?.length) {
-      await ensureDefaultSubscriptionPlans(admin);
-      const refetch = await admin
-        .from("subscription_plans")
-        .select("*")
-        .eq("is_active", true)
-        .order("price", { ascending: true });
-      if (refetch.error) {
-        throw refetch.error;
-      }
-      plans = refetch.data;
+      // No plans yet — admin needs to create them through the dashboard
+      return NextResponse.json([], {
+        headers: { "Cache-Control": "no-store, max-age=0" },
+      });
     }
 
-    if (!plans?.length) {
-      console.warn(
-        "GET /api/plans: catalog still empty after seed attempt; using display fallback"
-      );
-      return NextResponse.json(fallbackPlansForDisplay());
-    }
-
-    let catalog = plans ?? [];
+    let catalog = plans;
     const dedupedPreview = dedupeSubscriptionPlansByName(catalog);
     if (catalog.length > dedupedPreview.length) {
       try {
@@ -77,9 +62,7 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json(normalized, {
-      headers: {
-        "Cache-Control": "no-store, max-age=0",
-      },
+      headers: { "Cache-Control": "no-store, max-age=0" },
     });
   } catch (error) {
     console.error("Error fetching plans:", error);

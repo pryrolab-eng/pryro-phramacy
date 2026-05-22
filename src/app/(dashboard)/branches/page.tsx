@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -21,8 +21,10 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { useSaasBranches, useCreateBranch, useSaasSubscription, useSaasPlans } from '@/hooks/useSaasSubscription'
 import { BranchAddonCheckoutDialog } from '@/components/subscription/branch-addon-checkout-dialog'
+import { toast } from 'sonner'
 import type { Branch, BranchUsage } from '@/lib/saas/types'
-
+import { FeatureGate } from '@/components/feature-gate'
+import { PlanQuotaWidget } from '@/components/plan-quota-widget'
 type BranchWithUsage = Branch & { usage: BranchUsage | null }
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -51,12 +53,7 @@ export default function BranchesPage() {
   const [addonCheckoutOpen, setAddonCheckoutOpen] = useState(false)
   const [limitWarningOpen, setLimitWarningOpen] = useState(false)
   const [form, setForm] = useState({ name: '', address: '', phone: '', email: '' })
-  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
-
-  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
-    setToast({ msg, type })
-    setTimeout(() => setToast(null), 4000)
-  }
+  const [pendingFormData, setPendingFormData] = useState<typeof form | null>(null)
 
   const branches: BranchWithUsage[] = branchesQuery.data ?? []
   const summary = subQuery.data
@@ -73,7 +70,14 @@ export default function BranchesPage() {
 
   const handleAddBranch = async () => {
     if (!form.name.trim()) {
-      showToast('Branch name is required', 'error')
+      toast.error('Branch name is required')
+      return
+    }
+    // Check limit at save time — let the user fill the form first
+    if (!canAddBranch) {
+      setPendingFormData(form)
+      setAddOpen(false)
+      setLimitWarningOpen(true)
       return
     }
     try {
@@ -85,9 +89,11 @@ export default function BranchesPage() {
       })
       setAddOpen(false)
       setForm({ name: '', address: '', phone: '', email: '' })
-      showToast('Branch created successfully')
+      toast.success('Branch created successfully')
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to create branch', 'error')
+      toast.error('Failed to create branch', {
+        description: err instanceof Error ? err.message : 'Please try again',
+      })
     }
   }
 
@@ -120,14 +126,8 @@ export default function BranchesPage() {
   }
 
   return (
+    <FeatureGate feature="multi_branch">
     <div className="p-6 space-y-6">
-      {/* Toast */}
-      {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-white text-sm font-medium ${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'}`}>
-          {toast.msg}
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
@@ -156,6 +156,9 @@ export default function BranchesPage() {
           </Button>
         </div>
       </div>
+
+      {/* Plan quota — compact live counter */}
+      <PlanQuotaWidget variant="compact" />
 
       {/* Plan usage banner */}
       <Card className={branchCount >= branchLimit && branchLimit > 0 ? 'border-amber-300 bg-amber-50' : ''}>
@@ -241,7 +244,7 @@ export default function BranchesPage() {
                 Add your first branch to start tracking usage
               </p>
             </div>
-            <Button onClick={handleAddClick} disabled={!canAddBranch}>
+            <Button onClick={handleAddClick}>
               <Plus className="mr-2 h-4 w-4" />
               Add First Branch
             </Button>
@@ -314,11 +317,14 @@ export default function BranchesPage() {
       </Dialog>
 
       {/* Limit warning dialog */}
-      <AlertDialog open={limitWarningOpen} onOpenChange={setLimitWarningOpen}>
+      <AlertDialog open={limitWarningOpen} onOpenChange={(open) => {
+        setLimitWarningOpen(open)
+        if (!open) setPendingFormData(null)
+      }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <Lock className="h-5 w-5 text-amber-500" />
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
               Branch Limit Reached
             </AlertDialogTitle>
             <AlertDialogDescription>
@@ -364,6 +370,7 @@ export default function BranchesPage() {
         }}
       />
     </div>
+    </FeatureGate>
   )
 }
 

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import type { CSSProperties, DragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import type { LucideIcon } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -42,12 +43,16 @@ export default function InsuranceTemplatesPage() {
     if (!insuranceForm.name) return
     
     setIsSubmitting(true)
+    const tid = toast.loading('Adding insurance provider…')
     try {
       await createInsuranceProvider(insuranceForm)
-      alert('Insurance provider added successfully!')
+      toast.success('Insurance provider added', { id: tid })
       setInsuranceForm({ name: '', coverage_percentage: 80, contact_email: '', contact_phone: '', policy_number: '' })
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to add insurance provider')
+      toast.error('Failed to add insurance provider', {
+        id: tid,
+        description: error instanceof Error ? error.message : 'Please try again',
+      })
     } finally {
       setIsSubmitting(false)
     }

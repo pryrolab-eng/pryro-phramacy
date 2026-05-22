@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const {
-      name, price, billing_period, plan_type,
+      name, price, yearly_discount_pct, billing_period, plan_type,
       max_branches, max_users, monthly_tx_limit,
       features, is_popular,
     } = body
@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
     const plan = await createPlan(admin, {
       name,
       price: Number(price),
+      yearly_discount_pct: yearly_discount_pct !== undefined ? Number(yearly_discount_pct) : 17,
       billing_period,
       plan_type,
       max_branches: Number(max_branches ?? 1),

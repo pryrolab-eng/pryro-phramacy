@@ -4,14 +4,17 @@
 
 export type PlanType = 'main' | 'branch_addon'
 export type BillingPeriod = 'monthly' | 'yearly' | 'free'
-export type SubscriptionStatus = 'active' | 'pending' | 'cancelled' | 'expired' | 'past_due'
+export type SubscriptionStatus = 'active' | 'pending' | 'cancelled' | 'expired' | 'past_due' | 'suspended' | 'trialing'
 export type SubscriptionType = 'main' | 'branch_addon'
 export type InvoiceStatus = 'pending' | 'paid' | 'overdue' | 'void'
 
 export interface SubscriptionPlan {
   id: string
   name: string
+  description?: string
   price: number
+  yearly_price?: number
+  yearly_discount_pct?: number
   period: string
   billing_period: BillingPeriod
   plan_type: PlanType
@@ -21,6 +24,7 @@ export interface SubscriptionPlan {
   features: string[]
   is_popular: boolean
   is_active: boolean
+  grace_period_days?: number
   created_at: string
   updated_at: string
 }
@@ -31,6 +35,7 @@ export interface Subscription {
   plan_id: string
   branch_id: string | null
   subscription_type: SubscriptionType
+  billing_period: BillingPeriod
   status: SubscriptionStatus
   is_active: boolean
   current_period_start: string | null
@@ -110,6 +115,8 @@ export interface PharmacySubscriptionSummary {
   /** Branches included in the main plan (before add-ons) */
   main_plan_branch_slots?: number
   addon_subscription_count?: number
+  user_count?: number
+  user_limit?: number
 }
 
 export interface TransactionCheckResult {
@@ -126,4 +133,5 @@ export interface ActivateSubscriptionParams {
   plan_id: string
   branch_id?: string
   subscription_type: SubscriptionType
+  billing_period_override?: string
 }

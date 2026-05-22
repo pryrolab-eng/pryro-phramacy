@@ -103,6 +103,69 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ── Provision free trial subscription ────────────────────────────────
+    // Find the Starter (free) plan and create a 14-day trial subscription
+    const { data: starterPlan } = await admin
+      .from("subscription_plans")
+      .select("id, monthly_tx_limit, max_branches")
+      .eq("billing_period", "free")
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+
+    if (starterPlan) {
+      const now = new Date();
+      const trialEnd = new Date(now);
+      trialEnd.setDate(trialEnd.getDate() + 14); // 14-day free trial
+
+      const { data: trialSub } = await admin
+        .from("subscriptions")
+        .insert({
+          pharmacy_id: pharmacy.id,
+          plan_id: starterPlan.id,
+          subscription_type: "main",
+          status: "active",
+          is_active: true,
+          plan: "trial",
+          current_period_start: now.toISOString(),
+          current_period_end: trialEnd.toISOString(),
+          trial_ends_at: trialEnd.toISOString(),
+        })
+        .select("id")
+        .single();
+
+      // Provision a default branch for the pharmacy
+      const { data: defaultBranch } = await admin
+        .from("branches")
+        .insert({
+          pharmacy_id: pharmacy.id,
+          name: `${name} — Main Branch`,
+          address,
+          phone,
+          email,
+          is_active: true,
+        })
+        .select("id")
+        .single();
+
+      // Provision usage tracking for the default branch
+      if (trialSub && defaultBranch) {
+        await admin.rpc("provision_branch_usage", {
+          p_branch_id: defaultBranch.id,
+          p_pharmacy_id: pharmacy.id,
+          p_subscription_id: trialSub.id,
+          p_tx_limit: starterPlan.monthly_tx_limit ?? 200,
+        });
+      }
+
+      // Update pharmacy with trial expiry for legacy compatibility
+      await admin
+        .from("pharmacies")
+        .update({ subscription_expires_at: trialEnd.toISOString() })
+        .eq("id", pharmacy.id);
+    }
+    // ── End trial provisioning ────────────────────────────────────────────
+
     return json({
       success: true,
       pharmacyId: pharmacy.id,

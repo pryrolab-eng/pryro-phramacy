@@ -86,7 +86,7 @@ export async function runExpiryCheck(admin: SupabaseClient): Promise<LifecycleRe
     .from('subscriptions')
     .select(`
       id, pharmacy_id, status, current_period_end, trial_ends_at,
-      plan:subscription_plans(name, grace_period_days)
+      plan:subscription_plans!plan_id(name, grace_period_days)
     `)
     .eq('subscription_type', 'main')
     .in('status', ['active', 'trialing'])
@@ -165,7 +165,7 @@ export async function runExpiryWarnings(admin: SupabaseClient): Promise<Lifecycl
       .from('subscriptions')
       .select(`
         id, pharmacy_id, current_period_end, trial_ends_at, subscription_type,
-        plan:subscription_plans(name)
+        plan:subscription_plans!plan_id(name)
       `)
       .eq('subscription_type', 'main')
       .in('status', ['active', 'trialing'])
@@ -324,7 +324,7 @@ export async function adminSuspendSubscription(
     .from('subscriptions')
     .update({ status: 'cancelled', is_active: false, cancelled_at: new Date().toISOString() })
     .eq('id', subscriptionId)
-    .select('pharmacy_id, plan:subscription_plans(name)')
+    .select('pharmacy_id, plan:subscription_plans!plan_id(name)')
     .single()
 
   if (error) throw new Error(`adminSuspendSubscription: ${error.message}`)
@@ -355,7 +355,7 @@ export async function adminReactivateSubscription(
   // Get the subscription + plan
   const { data: sub, error } = await admin
     .from('subscriptions')
-    .select('id, pharmacy_id, plan_id, plan:subscription_plans(name, monthly_tx_limit)')
+    .select('id, pharmacy_id, plan_id, plan:subscription_plans!plan_id(name, monthly_tx_limit)')
     .eq('id', subscriptionId)
     .maybeSingle()
 

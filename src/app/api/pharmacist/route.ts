@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     // Accept both 'active' and 'trialing' subscriptions
     const { data: mainSub } = await admin
       .from('subscriptions')
-      .select('plan_id, plan:subscription_plans(max_users)')
+      .select('plan_id, plan:subscription_plans!plan_id(max_users)')
       .eq('pharmacy_id', body.pharmacy_id)
       .eq('subscription_type', 'main')
       .in('status', ['active', 'trialing'])

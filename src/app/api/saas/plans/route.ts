@@ -9,7 +9,11 @@ import { getAllPlans, getActivePlans, createPlan } from '@/lib/saas/subscription
 export async function GET() {
   try {
     const admin = createServiceClient()
-    const plans = await getActivePlans(admin)
+    const allActive = await getActivePlans(admin)
+    // Only expose main plans — branch_addon plans are not selectable by pharmacy owners
+    const plans = allActive.filter(
+      (p) => (p as { plan_type?: string }).plan_type === 'main' || !(p as { plan_type?: string }).plan_type
+    )
     return NextResponse.json({ plans })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Failed to load plans'

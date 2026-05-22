@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { Check, Crown, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { SubscriptionPlan } from '@/lib/saas/types'
@@ -12,6 +13,11 @@ export interface PlanCardProps {
   isCurrent: boolean
   isPending?: boolean
   onSelect: (plan: SubscriptionPlan) => void
+  /**
+   * When set, the CTA renders as a <Link> to this href instead of a <Button>.
+   * Used on the public pricing page where clicking goes to sign-up.
+   */
+  ctaHref?: string
 }
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -25,7 +31,7 @@ function formatPrice(amount: number): string {
 
 // ─── Component ────────────────────────────────────────────
 
-export function PlanCard({ plan, billingCycle, isCurrent, isPending, onSelect }: PlanCardProps) {
+export function PlanCard({ plan, billingCycle, isCurrent, isPending, onSelect, ctaHref }: PlanCardProps) {
   const yearlyPrice = plan.yearly_price != null && plan.yearly_price > 0 ? plan.yearly_price : 0
   const showYearly = billingCycle === 'yearly' && plan.price > 0 && yearlyPrice > 0
   const displayPrice = showYearly ? yearlyPrice : plan.price
@@ -129,24 +135,38 @@ export function PlanCard({ plan, billingCycle, isCurrent, isPending, onSelect }:
       </ul>
 
       {/* CTA */}
-      <Button
-        className={`
-          w-full rounded-full py-5 text-sm font-semibold transition-all
-          ${isCurrent
-            ? 'bg-green-600 hover:bg-green-700 text-white cursor-default'
-            : isPopular
+      {ctaHref ? (
+        <Link
+          href={ctaHref}
+          className={`
+            w-full rounded-full py-3 text-sm font-semibold text-center transition-all block
+            ${isPopular
               ? 'bg-gray-900 hover:bg-gray-800 text-white'
               : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'}
-        `}
-        disabled={isCurrent || isPending}
-        onClick={() => !isCurrent && onSelect(plan)}
-      >
-        {isPending
-          ? <Loader2 className="h-4 w-4 animate-spin" />
-          : isCurrent
-            ? <><Crown className="h-3.5 w-3.5 mr-1.5" />{ctaLabel}</>
-            : ctaLabel}
-      </Button>
+          `}
+        >
+          {isFree ? `Try ${plan.name} free` : `Get started`}
+        </Link>
+      ) : (
+        <Button
+          className={`
+            w-full rounded-full py-5 text-sm font-semibold transition-all
+            ${isCurrent
+              ? 'bg-green-600 hover:bg-green-700 text-white cursor-default'
+              : isPopular
+                ? 'bg-gray-900 hover:bg-gray-800 text-white'
+                : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'}
+          `}
+          disabled={isCurrent || isPending}
+          onClick={() => !isCurrent && onSelect(plan)}
+        >
+          {isPending
+            ? <Loader2 className="h-4 w-4 animate-spin" />
+            : isCurrent
+              ? <><Crown className="h-3.5 w-3.5 mr-1.5" />{ctaLabel}</>
+              : ctaLabel}
+        </Button>
+      )}
     </div>
   )
 }

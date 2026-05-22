@@ -1,11 +1,63 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import { Activity, DraftingCompass, Mail, Plus, Zap } from 'lucide-react'
-import PolarPricing from '@/components/polar-pricing'
+import { PlansGrid } from '@/components/subscription'
+import type { SubscriptionPlan } from '@/lib/saas/types'
 
 const integrations = [
     { name: 'KPay', description: 'Accept mobile money and card payments directly at the counter.', icon: '💳' },
     { name: 'RSSB Insurance', description: 'Automatically calculate how much insurance covers for each medicine.', icon: '🏥' },
     { name: 'Supabase', description: 'Your data is saved instantly and stays safe — always up to date.', icon: '⚡' },
 ]
+
+// ─── Public pricing fetcher ────────────────────────────────
+// Uses the same /api/saas/plans endpoint as the pharmacy billing
+// page — one API, one source of truth, same card design.
+
+function PublicPricing() {
+    const [plans, setPlans] = useState<SubscriptionPlan[]>([])
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState(false)
+
+    useEffect(() => {
+        fetch('/api/saas/plans')
+            .then(res => {
+                if (!res.ok) throw new Error('Failed to load plans')
+                return res.json()
+            })
+            .then(data => {
+                setPlans(data.plans ?? [])
+                setLoading(false)
+            })
+            .catch(() => {
+                setError(true)
+                setLoading(false)
+            })
+    }, [])
+
+    return (
+        <PlansGrid
+            plans={plans}
+            currentPlanId={null}
+            isLoading={loading}
+            isError={error}
+            // Public mode: CTA is a link to sign-up, not a subscribe action
+            ctaHref="/sign-up"
+            onSelect={() => { /* no-op in public mode — ctaHref takes over */ }}
+            onRetry={() => {
+                setError(false)
+                setLoading(true)
+                fetch('/api/saas/plans')
+                    .then(res => res.json())
+                    .then(data => { setPlans(data.plans ?? []); setLoading(false) })
+                    .catch(() => { setError(true); setLoading(false) })
+            }}
+        />
+    )
+}
+
+// ─── Section ───────────────────────────────────────────────
 
 export default function FeaturesSection() {
     return (
@@ -31,13 +83,13 @@ export default function FeaturesSection() {
                     </div>
                 </div>
 
-                {/* Bottom: Polar Pricing */}
+                {/* Bottom: Pricing */}
                 <div id="pricing" className="w-full pt-4 scroll-mt-24">
-                    <div className="text-center mb-8">
+                    <div className="text-center mb-10">
                         <h2 className="text-4xl font-serif tracking-tight lg:text-5xl text-gray-900 dark:text-white">Choose Pricing Plan</h2>
                         <p className="mt-4 text-gray-500 text-sm max-w-lg mx-auto">Choose the perfect plan for your pharmacy needs — from getting started to scaling your branches.</p>
                     </div>
-                    <PolarPricing />
+                    <PublicPricing />
                 </div>
 
             </div>

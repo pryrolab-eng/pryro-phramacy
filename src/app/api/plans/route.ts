@@ -46,9 +46,10 @@ export async function GET() {
     }
 
     const deduped = dedupeSubscriptionPlansByName(catalog);
-    const normalized = deduped.map((row) =>
-      normalizeSubscriptionPlanRow(row as Record<string, unknown>)
-    );
+    const normalized = deduped
+      .map((row) => normalizeSubscriptionPlanRow(row as Record<string, unknown>))
+      // Only expose main plans to the public onboarding flow
+      .filter((p) => (p as { plan_type?: string }).plan_type === 'main' || !(p as { plan_type?: string }).plan_type);
 
     return NextResponse.json(normalized, {
       headers: { "Cache-Control": "no-store, max-age=0" },

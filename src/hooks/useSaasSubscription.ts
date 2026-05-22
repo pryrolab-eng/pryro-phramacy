@@ -130,6 +130,50 @@ export function useCreateBranch() {
   })
 }
 
+export function useUpdateBranch() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      branchId,
+      updates,
+    }: {
+      branchId: string
+      updates: { name?: string; address?: string; phone?: string; email?: string }
+    }) => {
+      const res = await fetch(`/api/saas/branches/${branchId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to update branch')
+      return data.branch
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: saasKeys.branches })
+      void qc.invalidateQueries({ queryKey: saasKeys.subscription })
+    },
+  })
+}
+
+export function useDeleteBranch() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (branchId: string) => {
+      const res = await fetch(`/api/saas/branches/${branchId}`, {
+        method: 'DELETE',
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to delete branch')
+      return data
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: saasKeys.branches })
+      void qc.invalidateQueries({ queryKey: saasKeys.subscription })
+    },
+  })
+}
+
 // ─── Invoices ──────────────────────────────────────────────
 export function useSaasInvoices(month?: string) {
   return useQuery<SubscriptionInvoice[]>({

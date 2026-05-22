@@ -20,6 +20,11 @@ export interface PlansGridProps {
   onRetry?: () => void
   /** Initial billing cycle — defaults to monthly */
   defaultCycle?: 'monthly' | 'yearly'
+  /**
+   * When set, each plan card CTA renders as a link to this href (public pricing mode).
+   * onSelect is ignored when ctaHref is provided.
+   */
+  ctaHref?: string
 }
 
 // ─── Component ────────────────────────────────────────────
@@ -33,6 +38,7 @@ export function PlansGrid({
   onSelect,
   onRetry,
   defaultCycle = 'monthly',
+  ctaHref,
 }: PlansGridProps) {
   const [cycle, setCycle] = useState<'monthly' | 'yearly'>(defaultCycle)
 
@@ -86,6 +92,7 @@ export function PlansGrid({
             isCurrent={plan.id === currentPlanId}
             isPending={pendingPlanId === plan.id}
             onSelect={p => onSelect(p, cycle)}
+            ctaHref={ctaHref}
           />
         ))}
       </div>

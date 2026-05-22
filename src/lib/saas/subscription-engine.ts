@@ -77,7 +77,7 @@ export async function getPharmacySubscriptions(
 ): Promise<Subscription[]> {
   const { data, error } = await admin
     .from('subscriptions')
-    .select('*, plan:subscription_plans(*)')
+    .select('*, plan:subscription_plans!plan_id(*)')
     .eq('pharmacy_id', pharmacyId)
     .in('status', ['active', 'trialing', 'pending'])
     .order('created_at', { ascending: false })
@@ -87,7 +87,7 @@ export async function getPharmacySubscriptions(
     if (error.message.includes('status') || error.message.includes('column')) {
       const { data: fallback, error: fallbackErr } = await admin
         .from('subscriptions')
-        .select('*, plan:subscription_plans(*)')
+        .select('*, plan:subscription_plans!plan_id(*)')
         .eq('pharmacy_id', pharmacyId)
         .eq('is_active', true)
         .order('created_at', { ascending: false })
@@ -105,7 +105,7 @@ export async function getPharmacyMainSubscription(
 ): Promise<Subscription | null> {
   const { data, error } = await admin
     .from('subscriptions')
-    .select('*, plan:subscription_plans(*)')
+    .select('*, plan:subscription_plans!plan_id(*)')
     .eq('pharmacy_id', pharmacyId)
     .eq('subscription_type', 'main')
     .in('status', ['active', 'trialing'])
@@ -258,7 +258,7 @@ export async function activateSubscription(
       current_period_start: now.toISOString(),
       current_period_end: end.toISOString(),
     })
-    .select('*, plan:subscription_plans(*)')
+    .select('*, plan:subscription_plans!plan_id(*)')
     .single()
 
   if (error) throw new Error(`activateSubscription: ${error.message}`)
@@ -736,7 +736,7 @@ export async function grantFreeTrial(
       current_period_end: trialEnd.toISOString(),
       trial_ends_at: trialEnd.toISOString(),
     })
-    .select('*, plan:subscription_plans(*)')
+    .select('*, plan:subscription_plans!plan_id(*)')
     .single()
 
   if (error) throw new Error(`grantFreeTrial: ${error.message}`)

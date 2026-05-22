@@ -142,7 +142,7 @@ export default function PharmacyBillingPage() {
   const [generatingInvoice, setGeneratingInvoice] = useState(false)
 
   const summary  = subQuery.data
-  const plans    = (plansQuery.data ?? []).filter(p => p.plan_type === 'main' && p.is_active)
+  const plans    = plansQuery.data ?? []
   const invoices = invoicesQuery.data ?? []
 
   const paidInvoices    = invoices.filter(i => i.status === 'paid').length

@@ -16,10 +16,11 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   Building2, Plus, MapPin, Phone, Mail, Activity,
-  AlertTriangle, Loader2, RefreshCw, Lock, TrendingUp,
+  AlertTriangle, Loader2, RefreshCw, Lock, TrendingUp, CreditCard,
 } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
-import { useSaasBranches, useCreateBranch, useSaasSubscription } from '@/hooks/useSaasSubscription'
+import { useSaasBranches, useCreateBranch, useSaasSubscription, useSaasPlans } from '@/hooks/useSaasSubscription'
+import { BranchAddonCheckoutDialog } from '@/components/subscription/branch-addon-checkout-dialog'
 import type { Branch, BranchUsage } from '@/lib/saas/types'
 
 type BranchWithUsage = Branch & { usage: BranchUsage | null }
@@ -43,9 +44,11 @@ function usageColor(pct: number, blocked: boolean): string {
 export default function BranchesPage() {
   const branchesQuery = useSaasBranches()
   const subQuery = useSaasSubscription()
+  const plansQuery = useSaasPlans()
   const createBranch = useCreateBranch()
 
   const [addOpen, setAddOpen] = useState(false)
+  const [addonCheckoutOpen, setAddonCheckoutOpen] = useState(false)
   const [limitWarningOpen, setLimitWarningOpen] = useState(false)
   const [form, setForm] = useState({ name: '', address: '', phone: '', email: '' })
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
@@ -60,6 +63,13 @@ export default function BranchesPage() {
   const canAddBranch = summary?.can_add_branch ?? false
   const branchCount = summary?.branch_count ?? 0
   const branchLimit = summary?.branch_limit ?? 0
+  const mainSlots = summary?.main_plan_branch_slots ?? branchLimit
+  const addonCount = summary?.addon_subscription_count ?? 0
+  const needsAddonForNewBranch =
+    branchCount >= mainSlots && branchCount >= branchLimit
+  const addonPlans = (plansQuery.data ?? []).filter(
+    (p) => p.plan_type === 'branch_addon' && p.is_active
+  )
 
   const handleAddBranch = async () => {
     if (!form.name.trim()) {
@@ -82,6 +92,18 @@ export default function BranchesPage() {
   }
 
   const handleAddClick = () => {
+    if (!summary?.main_subscription) {
+      showToast('Subscribe to a main plan first', 'error')
+      return
+    }
+    if (needsAddonForNewBranch) {
+      if (addonPlans.length === 0) {
+        showToast('No branch add-on plans available. Contact support.', 'error')
+        return
+      }
+      setAddonCheckoutOpen(true)
+      return
+    }
     if (!canAddBranch) {
       setLimitWarningOpen(true)
       return
@@ -122,9 +144,15 @@ export default function BranchesPage() {
             <RefreshCw className={`h-4 w-4 mr-2 ${branchesQuery.isFetching ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button onClick={handleAddClick} disabled={!canAddBranch}>
-            {!canAddBranch ? <Lock className="mr-2 h-4 w-4" /> : <Plus className="mr-2 h-4 w-4" />}
-            Add Branch
+          <Button onClick={handleAddClick}>
+            {needsAddonForNewBranch ? (
+              <CreditCard className="mr-2 h-4 w-4" />
+            ) : !canAddBranch ? (
+              <Lock className="mr-2 h-4 w-4" />
+            ) : (
+              <Plus className="mr-2 h-4 w-4" />
+            )}
+            {needsAddonForNewBranch ? 'Add branch (add-on)' : 'Add Branch'}
           </Button>
         </div>
       </div>
@@ -137,15 +165,19 @@ export default function BranchesPage() {
               <Building2 className="h-5 w-5 text-muted-foreground" />
               <div>
                 <p className="text-sm font-medium">
-                  {branchCount} of {branchLimit} branches used
+                  {branchCount} of {branchLimit} branch slot{branchLimit !== 1 ? 's' : ''} used
                   {summary?.main_subscription?.plan?.name
-                    ? ` · ${summary.main_subscription.plan.name} plan`
+                    ? ` · ${summary.main_subscription.plan.name}`
                     : ''}
                 </p>
                 <p className="text-xs text-muted-foreground">
+                  {mainSlots} included
+                  {addonCount > 0 ? ` + ${addonCount} add-on${addonCount !== 1 ? 's' : ''}` : ''}
                   {canAddBranch
-                    ? `${branchLimit - branchCount} slot${branchLimit - branchCount !== 1 ? 's' : ''} remaining`
-                    : 'Limit reached — upgrade your plan or add a Branch Add-on'}
+                    ? ` · ${branchLimit - branchCount} slot${branchLimit - branchCount !== 1 ? 's' : ''} left`
+                    : needsAddonForNewBranch
+                      ? ' · purchase a branch add-on to add another location'
+                      : ' · limit reached'}
                 </p>
               </div>
             </div>
@@ -158,14 +190,24 @@ export default function BranchesPage() {
                 {branchCount}/{branchLimit}
               </span>
             </div>
-            {!canAddBranch && branchLimit > 0 && (
+            {needsAddonForNewBranch && addonPlans.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-amber-400 text-amber-700 hover:bg-amber-100"
+                onClick={() => setAddonCheckoutOpen(true)}
+              >
+                Buy branch add-on
+              </Button>
+            )}
+            {!canAddBranch && !needsAddonForNewBranch && branchLimit > 0 && (
               <Button
                 size="sm"
                 variant="outline"
                 className="border-amber-400 text-amber-700 hover:bg-amber-100"
                 onClick={() => window.location.href = '/pharmacy-dashboard/billing'}
               >
-                Upgrade Plan
+                Upgrade main plan
               </Button>
             )}
           </div>
@@ -280,19 +322,47 @@ export default function BranchesPage() {
               Branch Limit Reached
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Your current plan allows {branchLimit} branch{branchLimit !== 1 ? 'es' : ''}.
-              You have used all {branchLimit} slot{branchLimit !== 1 ? 's' : ''}.
-              Upgrade your plan or add a Branch Add-on to create more branches.
+              You are using all {branchLimit} branch slot{branchLimit !== 1 ? 's' : ''}
+              ({mainSlots} on your main plan
+              {addonCount > 0 ? ` plus ${addonCount} add-on` : ''}).
+              Purchase another branch add-on or upgrade your main plan to add more locations.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Close</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setLimitWarningOpen(false); window.location.href = '/pharmacy-dashboard/billing' }}>
-              View Plans
+            {addonPlans.length > 0 ? (
+              <AlertDialogAction
+                onClick={() => {
+                  setLimitWarningOpen(false)
+                  setAddonCheckoutOpen(true)
+                }}
+              >
+                Buy branch add-on
+              </AlertDialogAction>
+            ) : null}
+            <AlertDialogAction
+              onClick={() => {
+                setLimitWarningOpen(false)
+                window.location.href = '/pharmacy-dashboard/billing'
+              }}
+            >
+              View main plans
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <BranchAddonCheckoutDialog
+        open={addonCheckoutOpen}
+        onOpenChange={setAddonCheckoutOpen}
+        addonPlans={addonPlans}
+        mode="new_branch"
+        onSuccess={() => {
+          void branchesQuery.refetch()
+          void subQuery.refetch()
+          showToast('Branch add-on activated')
+        }}
+      />
     </div>
   )
 }

@@ -23,7 +23,13 @@ export default function PolarPricing() {
         fetch('/api/plans')
             .then((res) => res.json())
             .then((data) => {
-                setPlans(data)
+                const list = Array.isArray(data) ? data : []
+                setPlans(
+                  list.filter(
+                    (p: { plan_type?: string }) =>
+                      (p.plan_type ?? 'main') === 'main'
+                  )
+                )
                 setLoading(false)
             })
             .catch((error) => {

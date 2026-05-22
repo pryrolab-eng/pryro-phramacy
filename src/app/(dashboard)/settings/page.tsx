@@ -19,13 +19,19 @@ import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
 import { ResponsiveContainer, LineChart, Line } from 'recharts'
 import {
+  cancelScheduledChange,
   createPendingSubscription,
+  fetchScheduledChange,
   pollKpayTransaction,
+  scheduleSubscriptionDowngrade,
   startKpaySubscriptionCheckout,
   startPolarSubscriptionCheckout,
+  type ScheduledChangeResponse,
 } from '@/lib/subscription/checkout-client'
 import { fallbackPlansForDisplay } from '@/lib/subscription/default-plans'
 import { normalizeSubscriptionPlanRow } from '@/lib/subscription/normalize-plan'
+import { BranchAddonCheckoutDialog } from '@/components/subscription/branch-addon-checkout-dialog'
+import type { SubscriptionPlan as SaasSubscriptionPlan } from '@/lib/saas/types'
 
 interface SubscriptionPlan {
   id: string
@@ -33,6 +39,27 @@ interface SubscriptionPlan {
   price: number
   features: string[]
   current: boolean
+  plan_type: 'main' | 'branch_addon'
+  monthly_tx_limit: number
+}
+
+function toSaasAddonPlan(plan: SubscriptionPlan): SaasSubscriptionPlan {
+  return {
+    id: plan.id,
+    name: plan.name,
+    price: plan.price,
+    period: 'per month',
+    billing_period: 'monthly',
+    plan_type: 'branch_addon',
+    max_branches: 1,
+    max_users: 0,
+    monthly_tx_limit: plan.monthly_tx_limit,
+    features: plan.features,
+    is_popular: false,
+    is_active: true,
+    created_at: '',
+    updated_at: '',
+  }
 }
 
 export default function SettingsPage() {
@@ -62,8 +89,14 @@ export default function SettingsPage() {
   const [verifyCode, setVerifyCode] = useState('')
   const [setupStep, setSetupStep] = useState<'qr' | 'verify' | 'backup'>('qr')
   const [isUpgradeDialogOpen, setIsUpgradeDialogOpen] = useState(false)
+  const [isDowngradeDialogOpen, setIsDowngradeDialogOpen] = useState(false)
   const [isUpgradePaymentLoading, setIsUpgradePaymentLoading] = useState(false)
-  const [selectedUpgradePlan, setSelectedUpgradePlan] = useState<any>(null)
+  const [isSchedulingDowngrade, setIsSchedulingDowngrade] = useState(false)
+  const [selectedUpgradePlan, setSelectedUpgradePlan] = useState<SubscriptionPlan | null>(null)
+  const [selectedDowngradePlan, setSelectedDowngradePlan] = useState<SubscriptionPlan | null>(null)
+  const [scheduledChange, setScheduledChange] = useState<ScheduledChangeResponse['scheduledChange']>(null)
+  const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null)
+  const [planLimitsHint, setPlanLimitsHint] = useState<string | null>(null)
   const [polarEnabled, setPolarEnabled] = useState(false)
   const [upgradePaymentData, setUpgradePaymentData] = useState({
     paymentMethod: 'kpay',
@@ -242,6 +275,9 @@ export default function SettingsPage() {
   }
 
   const [plans, setPlans] = useState<SubscriptionPlan[]>([])
+  const [addonPlans, setAddonPlans] = useState<SubscriptionPlan[]>([])
+  const [addonCheckoutOpen, setAddonCheckoutOpen] = useState(false)
+  const [addonPlanTarget, setAddonPlanTarget] = useState<SubscriptionPlan | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -264,7 +300,9 @@ export default function SettingsPage() {
         fetchSecuritySettings(),
         fetch2FAStatus(),
         fetchBillingInfo(),
-        fetchBranding()
+        fetchBranding(),
+        fetchScheduledChangeState(),
+        fetchPlanLimitsHint(),
       ])
       setLoading(false)
     }
@@ -275,10 +313,34 @@ export default function SettingsPage() {
     const onFocus = () => {
       void fetchPharmacyInfo()
       void fetchPlans()
+      void fetchScheduledChangeState()
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [currentPlan])
+
+  const mapCatalogRow = (row: Record<string, unknown>): SubscriptionPlan => {
+    const plan = normalizeSubscriptionPlanRow(row)
+    return {
+      id: plan.id,
+      name: plan.name,
+      price: plan.price,
+      current: currentPlan === plan.name.toLowerCase(),
+      features: plan.features,
+      plan_type: plan.plan_type,
+      monthly_tx_limit: plan.monthly_tx_limit,
+    }
+  }
+
+  const applyCatalogPlans = (rows: Record<string, unknown>[]) => {
+    const mapped = rows.map(mapCatalogRow)
+    setPlans(
+      mapped.filter((p) => p.plan_type === 'main')
+    )
+    setAddonPlans(
+      mapped.filter((p) => p.plan_type === 'branch_addon')
+    )
+  }
 
   const fetchPlans = async () => {
     try {
@@ -287,41 +349,34 @@ export default function SettingsPage() {
       })
       if (response.ok) {
         const data = await response.json()
-        setPlans(
-          (Array.isArray(data) ? data : []).map((row: Record<string, unknown>) => {
-            const plan = normalizeSubscriptionPlanRow(row)
-            return {
-              id: plan.id,
-              name: plan.name,
-              price: plan.price,
-              current: currentPlan === plan.name.toLowerCase(),
-              features: plan.features,
-            }
-          })
-        )
+        applyCatalogPlans(Array.isArray(data) ? data : [])
       } else {
         console.error('Failed to fetch plans, using defaults')
-        setPlans(
-          fallbackPlansForDisplay().map((plan) => ({
-            id: plan.id,
-            name: plan.name,
-            price: plan.price,
-            current: currentPlan === plan.name.toLowerCase(),
-            features: plan.features,
-          }))
-        )
-      }
-    } catch (error) {
-      console.error('Error fetching plans:', error)
-      setPlans(
-        fallbackPlansForDisplay().map((plan) => ({
+        const fallback = fallbackPlansForDisplay().map((plan) => ({
           id: plan.id,
           name: plan.name,
           price: plan.price,
           current: currentPlan === plan.name.toLowerCase(),
           features: plan.features,
+          plan_type: 'main' as const,
+          monthly_tx_limit: plan.monthly_tx_limit ?? 0,
         }))
-      )
+        setPlans(fallback)
+        setAddonPlans([])
+      }
+    } catch (error) {
+      console.error('Error fetching plans:', error)
+      const fallback = fallbackPlansForDisplay().map((plan) => ({
+        id: plan.id,
+        name: plan.name,
+        price: plan.price,
+        current: currentPlan === plan.name.toLowerCase(),
+        features: plan.features,
+        plan_type: 'main' as const,
+        monthly_tx_limit: plan.monthly_tx_limit ?? 0,
+      }))
+      setPlans(fallback)
+      setAddonPlans([])
     }
   }
 
@@ -333,6 +388,104 @@ export default function SettingsPage() {
       })))
     }
   }, [currentPlan])
+
+  const fetchScheduledChangeState = async () => {
+    try {
+      const [scheduledData, statusRes] = await Promise.all([
+        fetchScheduledChange(),
+        fetch('/api/subscriptions/status', {
+          credentials: 'include',
+          cache: 'no-store',
+        }),
+      ])
+      setScheduledChange(scheduledData.scheduledChange)
+      if (statusRes.ok) {
+        const status = await statusRes.json()
+        setSubscriptionExpiresAt(status.expiresAt ?? null)
+        if (status.scheduledChange) {
+          setScheduledChange(status.scheduledChange)
+        }
+      }
+    } catch {
+      setScheduledChange(null)
+    }
+  }
+
+  const fetchPlanLimitsHint = async () => {
+    try {
+      const res = await fetch('/api/subscriptions/plan-limits', {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.canAddUser?.overLimit) {
+        setPlanLimitsHint(data.canAddUser.reason)
+      } else {
+        setPlanLimitsHint(null)
+      }
+    } catch {
+      setPlanLimitsHint(null)
+    }
+  }
+
+  const currentPlanPrice = () => {
+    const current = plans.find((p) => p.current)
+    return current?.price ?? 0
+  }
+
+  const isPlanUpgrade = (plan: SubscriptionPlan) =>
+    plan.price > currentPlanPrice()
+
+  const isPlanDowngrade = (plan: SubscriptionPlan) =>
+    plan.price < currentPlanPrice()
+
+  const formatEffectiveDate = (iso: string) => {
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return iso
+    return d.toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+  }
+
+  const getDowngradeEffectiveDateLabel = (): string | null => {
+    if (subscriptionExpiresAt) {
+      return formatEffectiveDate(subscriptionExpiresAt)
+    }
+    if (scheduledChange?.effectiveAt) {
+      return formatEffectiveDate(scheduledChange.effectiveAt)
+    }
+    if (billingInfo.nextBilling) {
+      const parsed = new Date(billingInfo.nextBilling)
+      if (!Number.isNaN(parsed.getTime())) {
+        return formatEffectiveDate(parsed.toISOString())
+      }
+      return billingInfo.nextBilling
+    }
+    return null
+  }
+
+  const fetchSubscriptionExpiry = async () => {
+    try {
+      const res = await fetch('/api/subscriptions/status', {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      if (res.ok) {
+        const status = await res.json()
+        if (status.expiresAt) {
+          setSubscriptionExpiresAt(status.expiresAt)
+        }
+        if (status.scheduledChange) {
+          setScheduledChange(status.scheduledChange)
+        }
+      }
+    } catch {
+      /* keep existing state */
+    }
+  }
 
   const fetchPharmacyInfo = async () => {
     try {
@@ -356,6 +509,9 @@ export default function SettingsPage() {
           language: data.language || 'en'
         })
         setCurrentPlan(data.subscription)
+        if (data.subscriptionExpiresAt) {
+          setSubscriptionExpiresAt(data.subscriptionExpiresAt)
+        }
       }
     } catch (error) {
       console.error('Error fetching pharmacy info:', error)
@@ -398,7 +554,7 @@ export default function SettingsPage() {
     }
   }
 
-  const handleUpgrade = async (planIdOrName: string) => {
+  const handlePlanChange = async (planIdOrName: string) => {
     const plan = plans.find(
       (p) => p.id === planIdOrName || p.name === planIdOrName
     )
@@ -407,35 +563,70 @@ export default function SettingsPage() {
       return
     }
 
-    if (plan.price === 0) {
-      // Free plan - no payment needed
-      try {
-        const response = await fetch('/api/subscriptions/upgrade', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId: plan.id || plan.name })
-        })
-        
-        if (response.ok) {
-          setCurrentPlan(plan.name.toLowerCase())
-          await fetchPharmacyInfo()
-          await fetchBillingInfo()
-          alert(`Successfully switched to ${plan.name} plan!`)
-        } else if (response.status === 401) {
-          alert('Please log in to upgrade your plan.')
-          window.location.href = '/login'
-        } else {
-          const error = await response.json()
-          alert(error.error || 'Failed to switch plan. Please try again.')
-        }
-      } catch (error) {
-        console.error('Error:', error)
-        alert('An error occurred. Please try again.')
-      }
+    if (plan.current) return
+
+    if (plan.plan_type === 'branch_addon') {
+      setAddonPlanTarget(plan)
+      setAddonCheckoutOpen(true)
       return
     }
 
-    // Paid plan - open dialog
+    if (plan.price === currentPlanPrice()) {
+      alert('You are already on this plan tier.')
+      return
+    }
+
+    if (isPlanDowngrade(plan)) {
+      setSelectedDowngradePlan(plan)
+      void fetchSubscriptionExpiry()
+      setIsDowngradeDialogOpen(true)
+      return
+    }
+
+    await handleUpgrade(plan)
+  }
+
+  const confirmScheduleDowngrade = async () => {
+    if (!selectedDowngradePlan) return
+    setIsSchedulingDowngrade(true)
+    try {
+      const result = await scheduleSubscriptionDowngrade(
+        selectedDowngradePlan.id || selectedDowngradePlan.name
+      )
+      setIsDowngradeDialogOpen(false)
+      setSelectedDowngradePlan(null)
+      await fetchScheduledChangeState()
+      await fetchPharmacyInfo()
+      const effective = formatEffectiveDate(result.effectiveAt)
+      const currentName = result.currentPlan.name
+      alert(
+        `Your ${currentName} plan remains active until ${effective}.\nYour plan will change to ${result.scheduledPlan.name} on renewal.`
+      )
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Could not schedule downgrade.'
+      )
+    } finally {
+      setIsSchedulingDowngrade(false)
+    }
+  }
+
+  const handleCancelScheduledDowngrade = async () => {
+    try {
+      await cancelScheduledChange()
+      setScheduledChange(null)
+      alert('Scheduled downgrade canceled.')
+    } catch (error) {
+      alert(
+        error instanceof Error ? error.message : 'Could not cancel scheduled change.'
+      )
+    }
+  }
+
+  const handleUpgrade = async (plan: SubscriptionPlan) => {
+    // Paid plan - open payment dialog (upgrades only; free→paid and paid→higher)
     setSelectedUpgradePlan(plan)
     setUpgradePaymentData({
       paymentMethod: 'kpay',
@@ -1990,10 +2181,131 @@ export default function SettingsPage() {
         </DialogContent>
       </Dialog>
 
+      {scheduledChange && (
+        <Card className="border-amber-200 bg-amber-50/50">
+          <CardHeader>
+            <CardTitle className="text-sm">Scheduled plan change</CardTitle>
+            <CardDescription>
+              Your current plan stays active until renewal. The change applies automatically.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Current plan</TableHead>
+                  <TableHead>Scheduled plan</TableHead>
+                  <TableHead>Effective date</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="font-medium capitalize">
+                    {scheduledChange.currentPlan?.name ?? currentPlan}
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    {scheduledChange.targetPlan.name}
+                  </TableCell>
+                  <TableCell>
+                    {formatEffectiveDate(scheduledChange.effectiveAt)}
+                  </TableCell>
+                  <TableCell className="text-right space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleCancelScheduledDowngrade()}
+                    >
+                      Cancel
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+            {planLimitsHint && (
+              <p className="text-xs text-amber-800 mt-3 flex items-start gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                {planLimitsHint}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={isDowngradeDialogOpen} onOpenChange={setIsDowngradeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Downgrade</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-4 text-sm text-muted-foreground">
+                {selectedDowngradePlan && (
+                  <>
+                    <div className="rounded-lg border bg-muted/50 px-4 py-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        Plan change takes effect on
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-foreground flex items-center gap-2">
+                        <Clock className="h-4 w-4 shrink-0" />
+                        {getDowngradeEffectiveDateLabel() ?? (
+                          <span className="text-base font-normal">
+                            Loading billing period…
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <p>
+                      Your{' '}
+                      <span className="font-medium text-foreground">
+                        {scheduledChange?.currentPlan?.name ??
+                          plans.find((p) => p.current)?.name ??
+                          currentPlan}
+                      </span>{' '}
+                      plan stays active until then. On that date it changes to{' '}
+                      <span className="font-medium text-foreground">
+                        {selectedDowngradePlan.name}
+                      </span>
+                      . You keep your current features until the change applies.
+                    </p>
+                    {scheduledChange?.effectiveAt && (
+                      <p className="text-xs">
+                        Confirming will replace your previous scheduled change (
+                        {scheduledChange.targetPlan.name}).
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsDowngradeDialogOpen(false)}
+              disabled={isSchedulingDowngrade}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void confirmScheduleDowngrade()}
+              disabled={isSchedulingDowngrade}
+            >
+              {isSchedulingDowngrade ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Scheduling…
+                </>
+              ) : (
+                'Confirm downgrade'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Subscription Plans</CardTitle>
-          <CardDescription>Choose the plan that fits your pharmacy needs</CardDescription>
+          <CardTitle className="text-sm">Main subscription plans</CardTitle>
+          <CardDescription>Upgrade or schedule a downgrade for your pharmacy&apos;s primary plan</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-3">
@@ -2021,13 +2333,15 @@ export default function SettingsPage() {
                   </Button>
                 ) : (
                   <Button 
-                    onClick={() => handleUpgrade(plan.id || plan.name)}
-                    variant={plan.name === 'Premium' ? 'default' : 'outline'}
+                    onClick={() => void handlePlanChange(plan.id || plan.name)}
+                    variant={isPlanUpgrade(plan) ? 'default' : 'outline'}
                     className="w-full"
                     data-plan={plan.name}
                   >
                     <ArrowUpRight className="mr-2 h-4 w-4" />
-                    {plan.price > (plans.find(p => p.current)?.price || 0) ? 'Upgrade' : 'Downgrade'}
+                    {isPlanUpgrade(plan)
+                      ? 'Upgrade'
+                      : 'Downgrade'}
                   </Button>
                 )}
               </div>
@@ -2035,6 +2349,65 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {addonPlans.length > 0 && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Building2 className="h-4 w-4" />
+              Branch add-ons
+            </CardTitle>
+            <CardDescription>
+              Extra branch locations billed separately — not a change to your main plan.
+              Purchase when you need more locations than your plan includes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-3">
+              {addonPlans.map((plan) => (
+                <div key={plan.id} className="border rounded-lg p-6 border-dashed">
+                  <div className="text-center mb-4">
+                    <Badge variant="secondary" className="mb-2">Add-on</Badge>
+                    <h3 className="font-semibold text-lg">{plan.name}</h3>
+                    <div className="text-3xl font-bold text-blue-600">{plan.price.toLocaleString()} RWF</div>
+                    <p className="text-sm text-muted-foreground">per month · one branch</p>
+                  </div>
+                  {plan.monthly_tx_limit > 0 && (
+                    <p className="text-sm text-muted-foreground text-center mb-4">
+                      {plan.monthly_tx_limit.toLocaleString()} transactions / month
+                    </p>
+                  )}
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      setAddonPlanTarget(plan)
+                      setAddonCheckoutOpen(true)
+                    }}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add branch with this plan
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <BranchAddonCheckoutDialog
+        open={addonCheckoutOpen}
+        onOpenChange={setAddonCheckoutOpen}
+        addonPlans={addonPlans.map(toSaasAddonPlan)}
+        mode="new_branch"
+        initialPlanId={addonPlanTarget?.id}
+        customerEmail={pharmacyInfo.email}
+        customerPhone={pharmacyInfo.phone}
+        customerName={pharmacyInfo.name || 'Pharmacy customer'}
+        onSuccess={() => {
+          void fetchPlans()
+          alert('Branch add-on purchased successfully')
+        }}
+      />
     </div>
   )
 }

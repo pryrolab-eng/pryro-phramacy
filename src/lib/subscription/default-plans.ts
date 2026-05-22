@@ -1,3 +1,5 @@
+import type { PlanType } from "@/lib/subscription/normalize-plan";
+
 export type SubscriptionPlanRow = {
   id: string;
   name: string;
@@ -6,6 +8,8 @@ export type SubscriptionPlanRow = {
   features: string[];
   is_popular: boolean;
   is_active: boolean;
+  plan_type?: PlanType;
+  monthly_tx_limit?: number;
 };
 
 export const DEFAULT_SUBSCRIPTION_PLANS: Omit<
@@ -57,5 +61,7 @@ export function fallbackPlansForDisplay(): SubscriptionPlanRow[] {
     ...plan,
     id: `fallback-${index + 1}`,
     is_active: true,
+    plan_type: "main" as const,
+    monthly_tx_limit: 0,
   }));
 }

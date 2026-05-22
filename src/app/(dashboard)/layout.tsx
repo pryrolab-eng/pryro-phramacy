@@ -7,6 +7,8 @@ import { SuperadminSidebar } from '@/components/superadmin-sidebar'
 import { PharmacySidebar } from '@/components/pharmacy-sidebar'
 import { PharmacistSidebar } from '@/components/pharmacist-sidebar'
 import SubscriptionBlocker from '@/components/subscription-blocker'
+import { createServiceClient } from '../../../supabase/service'
+import { resolvePharmacyEntitlements } from '@/lib/subscription/lifecycle/entitlements'
 
 export default async function DashboardLayout({
   children,
@@ -46,34 +48,18 @@ export default async function DashboardLayout({
   const userRole = userProfile?.role || 'pharmacy_owner'
   
   if (userProfile?.pharmacy_id && !isPlatformAdmin) {
-    // Check the new SaaS subscription model first (subscriptions.status = 'active')
-    // Fall back to legacy pharmacy.status check for backward compatibility
-    const [{ data: activeSub }, { data: pharmacy }] = await Promise.all([
-      supabase
-        .from('subscriptions')
-        .select('id, status')
-        .eq('pharmacy_id', userProfile.pharmacy_id)
-        .eq('subscription_type', 'main')
-        .eq('status', 'active')
-        .limit(1)
-        .maybeSingle(),
+    const admin = createServiceClient()
+    const [{ data: pharmacy }, entitlements] = await Promise.all([
       supabase
         .from('pharmacies')
-        .select('status, subscription_expires_at')
+        .select('status')
         .eq('id', userProfile.pharmacy_id)
         .maybeSingle(),
+      resolvePharmacyEntitlements(admin, userProfile.pharmacy_id),
     ])
 
-    if (!activeSub) {
-      // No active SaaS subscription — check legacy fields
-      if (pharmacy) {
-        isSubscriptionExpired =
-          pharmacy.status === 'suspended' ||
-          (pharmacy.subscription_expires_at != null &&
-            new Date(pharmacy.subscription_expires_at) < new Date())
-      }
-    }
-    // If activeSub exists, subscription is valid — isSubscriptionExpired stays false
+    isSubscriptionExpired =
+      pharmacy?.status === 'suspended' || !entitlements.isAccessAllowed
   }
 
   const getSidebar = () => {

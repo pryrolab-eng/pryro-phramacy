@@ -2,6 +2,41 @@
 
 export type PaidCheckoutContext = "onboarding" | "settings";
 
+export async function createPendingBranchAddon(params: {
+  planId: string;
+  branchId?: string;
+  branch?: {
+    name: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+  };
+}) {
+  const res = await fetch("/api/subscriptions/branch-addon", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      planId: params.planId,
+      branchId: params.branchId,
+      branch: params.branch,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Could not start branch add-on checkout.");
+  }
+  return data.subscription as {
+    id: string;
+    planId: string;
+    planName: string;
+    amount: number;
+    branchId: string;
+    branchName: string;
+    status: string;
+  };
+}
+
 export async function createPendingSubscription(planId: string) {
   const res = await fetch("/api/subscriptions/upgrade", {
     method: "POST",
@@ -76,6 +111,73 @@ export async function startPolarSubscriptionCheckout(params: {
     throw new Error(data.error || "Card checkout could not be started.");
   }
   return data as { checkoutUrl: string; checkoutId: string };
+}
+
+export type ScheduledChangeResponse = {
+  scheduledChange: {
+    status: "scheduled";
+    effectiveAt: string;
+    changeType: "downgrade";
+    currentPlan: { id: string; name: string; price: number } | null;
+    targetPlan: { id: string; name: string; price: number };
+    subscriptionId: string;
+  } | null;
+};
+
+export async function fetchScheduledChange(): Promise<ScheduledChangeResponse> {
+  const res = await fetch("/api/subscriptions/scheduled-change", {
+    credentials: "include",
+    cache: "no-store",
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Could not load scheduled change.");
+  }
+  return data as ScheduledChangeResponse;
+}
+
+export async function scheduleSubscriptionDowngrade(targetPlanId: string) {
+  const res = await fetch("/api/subscriptions/schedule-downgrade", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target_plan_id: targetPlanId }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Could not schedule downgrade.");
+  }
+  return data as {
+    success: boolean;
+    effectiveAt: string;
+    currentPlan: { id: string; name: string; price: number };
+    scheduledPlan: { id: string; name: string; price: number };
+    replaced?: boolean;
+  };
+}
+
+export async function cancelScheduledChange() {
+  const res = await fetch("/api/subscriptions/scheduled-change", {
+    method: "DELETE",
+    credentials: "include",
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Could not cancel scheduled change.");
+  }
+  return data;
+}
+
+export async function fetchSubscriptionStatus() {
+  const res = await fetch("/api/subscriptions/status", {
+    credentials: "include",
+    cache: "no-store",
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Could not load subscription status.");
+  }
+  return data;
 }
 
 export function pollKpayTransaction(

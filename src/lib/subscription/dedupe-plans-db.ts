@@ -2,8 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   comparePlanRows,
   findDuplicatePlanGroups,
-  normalizePlanName,
 } from "./dedupe-plans";
+import { normalizePlanNameForCatalog } from "./normalize-plan";
 
 export type DedupePlansDbResult = {
   deactivated: number;
@@ -20,7 +20,9 @@ export async function dedupeSubscriptionPlansInDb(
 ): Promise<DedupePlansDbResult> {
   const { data: plans, error } = await admin
     .from("subscription_plans")
-    .select("id, name, price, polar_product_id, is_active, updated_at, created_at");
+    .select(
+      "id, name, plan_type, price, polar_product_id, is_active, updated_at, created_at"
+    );
 
   if (error) throw error;
 
@@ -33,10 +35,14 @@ export async function dedupeSubscriptionPlansInDb(
   let subscriptionsRepointed = 0;
 
   for (const group of groups) {
+    const [groupName, groupType] = group.name.split("::");
     const rows = (plans ?? []).filter(
       (p) =>
-        normalizePlanName(p.name) === group.name &&
-        p.is_active !== false
+        p.is_active !== false &&
+        normalizePlanNameForCatalog(p.name) === groupName &&
+        (String(p.plan_type ?? "main").trim().toLowerCase() === "branch_addon"
+          ? "branch_addon"
+          : "main") === (groupType === "branch_addon" ? "branch_addon" : "main")
     );
     rows.sort(comparePlanRows);
     const keeper = rows[0];

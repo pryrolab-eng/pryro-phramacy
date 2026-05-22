@@ -1,7 +1,10 @@
 import { NextRequest } from 'next/server'
 import { createRouteHandlerClient } from '../../../../../supabase/route-handler'
 import { createServiceClient } from '../../../../../supabase/service'
-import { createSubscriptionUpgrade } from '@/lib/subscription/create-pending-upgrade'
+import {
+  createSubscriptionOrchestrator,
+  SubscriptionPlanChangeError,
+} from '@/lib/subscription/orchestrator'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -69,35 +72,78 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const result = await createSubscriptionUpgrade(admin, pharmacyId, {
-      id: plan.id as string,
-      name: String(plan.name),
-      price: plan.price,
-      period: plan.period as string | null,
-    })
+    const orch = createSubscriptionOrchestrator(admin)
+    const change = await orch.requestPlanChange(pharmacyId, plan.id as string)
+
+    const subscriptionId = change.subscriptionId
+    const requiresPayment =
+      'requiresPayment' in change && change.requiresPayment === true
 
     if (paymentTransactionId) {
       await admin
         .from('payment_transactions')
-        .update({ subscription_id: result.id })
+        .update({ subscription_id: subscriptionId })
         .eq('id', paymentTransactionId)
     }
 
+    if (requiresPayment) {
+      const pending = change as {
+        subscriptionId: string
+        planId: string
+        planName: string
+        amount: number
+        status: string
+      }
+      return json({
+        success: true,
+        subscription: {
+          id: pending.subscriptionId,
+          planId: pending.planId,
+          planName: pending.planName,
+          amount: pending.amount,
+          requiresPayment: true,
+          isActive: false,
+          expiresAt: null,
+          status: pending.status,
+        },
+      })
+    }
+
+    const active = change as {
+      subscriptionId: string
+      planId: string
+      planName: string
+      expiresAt: string
+      status: string
+    }
     return json({
       success: true,
       subscription: {
-        id: result.id,
-        planId: result.planId,
-        planName: result.planName,
-        amount: result.amount,
-        requiresPayment: result.requiresPayment,
-        isActive: result.isActive,
-        expiresAt: result.expiresAt,
+        id: active.subscriptionId,
+        planId: active.planId,
+        planName: active.planName,
+        amount: 0,
+        requiresPayment: false,
+        isActive: true,
+        expiresAt: active.expiresAt,
+        status: active.status,
       },
     })
 
   } catch (error: unknown) {
     console.error('Upgrade route error:', error)
+    if (error instanceof SubscriptionPlanChangeError) {
+      const status =
+        error.code === 'downgrade_use_schedule' ? 400 : 400
+      return json(
+        {
+          error: error.message,
+          code: error.code,
+          scheduleDowngradeUrl: '/api/subscriptions/schedule-downgrade',
+        },
+        { status }
+      )
+    }
     const message = error instanceof Error ? error.message : 'Internal server error'
     return json({ error: message }, { status: 500 })
   }

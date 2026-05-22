@@ -168,8 +168,14 @@ export async function getPharmacySubscriptionSummary(
   const mainSub = subscriptions.find(s => s.subscription_type === 'main') ?? null
   const branchSubs = subscriptions.filter(s => s.subscription_type === 'branch_addon')
 
-  const branchLimit = (mainSub?.plan as SubscriptionPlan | undefined)?.max_branches ?? 0
-  const userLimit = (mainSub?.plan as SubscriptionPlan | undefined)?.max_users ?? 0
+  // When there is no active subscription, limits are null (unknown/no plan)
+  // rather than 0 — so the UI can distinguish "no plan" from "plan with 0 limit"
+  const branchLimit = mainSub
+    ? ((mainSub.plan as SubscriptionPlan | undefined)?.max_branches ?? 0)
+    : null
+  const userLimit = mainSub
+    ? ((mainSub.plan as SubscriptionPlan | undefined)?.max_users ?? 0)
+    : null
   const branchCount = branches.length
 
   // Fetch usage for all branches in parallel; swallow individual failures
@@ -205,11 +211,11 @@ export async function getPharmacySubscriptionSummary(
     branch_subscriptions: branchSubs,
     branches: branchesWithUsage,
     total_monthly_cost: totalMonthlyCost,
-    branch_limit: branchLimit,
+    branch_limit: branchLimit ?? 0,
     branch_count: branchCount,
-    can_add_branch: branchCount < branchLimit,
+    can_add_branch: branchLimit !== null && branchCount < branchLimit,
     user_count: userCount,
-    user_limit: userLimit,
+    user_limit: userLimit ?? 0,
   }
 }
 

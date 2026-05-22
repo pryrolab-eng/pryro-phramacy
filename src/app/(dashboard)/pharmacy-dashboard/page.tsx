@@ -27,6 +27,7 @@ import { PharmacyBarChart } from '@/components/pharmacy-bar-chart'
 import { PharmacyInventoryChart } from '@/components/pharmacy-inventory-chart'
 import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { BranchUsageWidget } from '@/components/branch-usage-widget'
+import { PlanQuotaWidget } from '@/components/plan-quota-widget'
 
 interface PharmacyStats {
   totalProducts: number
@@ -414,7 +415,10 @@ export default function PharmacyDashboard() {
         </TabsList>
         
         <TabsContent value="overview" className="space-y-4">
-          {/* Subscription & branch usage widget */}
+          {/* Plan quota widget — branches & staff used/limit */}
+          <PlanQuotaWidget variant="full" />
+
+          {/* Subscription & branch tx usage */}
           <BranchUsageWidget />
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

@@ -26,7 +26,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import { toast } from "@/components/ui/use-toast"
+import { toast } from 'sonner'
 import { Package, Plus, AlertTriangle, Calendar, Upload, Download, QrCode, Scan, Search, Filter, MoreHorizontal, Edit, Trash2, Eye, TrendingUp, TrendingDown } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'

@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { useSaasBranches, useCreateBranch, useSaasSubscription } from '@/hooks/useSaasSubscription'
 import type { Branch, BranchUsage } from '@/lib/saas/types'
 import { FeatureGate } from '@/components/feature-gate'
+import { PlanQuotaWidget } from '@/components/plan-quota-widget'
 
 type BranchWithUsage = Branch & { usage: BranchUsage | null }
 
@@ -125,6 +126,9 @@ export default function BranchesPage() {
           </Button>
         </div>
       </div>
+
+      {/* Plan quota — compact live counter */}
+      <PlanQuotaWidget variant="compact" />
 
       {/* Plan usage banner */}
       <Card className={branchCount >= branchLimit && branchLimit > 0 ? 'border-amber-300 bg-amber-50' : ''}>

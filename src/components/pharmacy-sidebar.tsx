@@ -346,11 +346,16 @@ export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sideba
                       Get Help
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => alert('Search functionality coming soon!')}>
+                  <DropdownMenuItem onClick={() => { window.location.href = '/search' }}>
                     <Search className="mr-2 h-4 w-4" />
                     Search
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => { if(confirm('Are you sure you want to sign out?')) window.location.href = '/api/auth/signout' }}>
+                  <DropdownMenuItem onClick={async () => {
+                    const { createClient } = await import('../../supabase/client')
+                    const supabase = createClient()
+                    await supabase.auth.signOut()
+                    window.location.href = '/sign-in'
+                  }}>
                     <LogOut className="mr-2 h-4 w-4" />
                     Sign Out
                   </DropdownMenuItem>

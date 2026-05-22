@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { createClient as createServerClient } from '../../../../supabase/server'
+import { sendStaffWelcomeEmail } from '@/lib/email/subscription-emails'
 
 export async function POST(request: Request) {
   try {
@@ -16,13 +16,13 @@ export async function POST(request: Request) {
     }
 
     // ── User limit check ──────────────────────────────────
-    // 1. Get the active main subscription plan for this pharmacy
+    // Accept both 'active' and 'trialing' subscriptions
     const { data: mainSub } = await admin
       .from('subscriptions')
       .select('plan_id, plan:subscription_plans(max_users)')
       .eq('pharmacy_id', body.pharmacy_id)
       .eq('subscription_type', 'main')
-      .eq('status', 'active')
+      .in('status', ['active', 'trialing'])
       .limit(1)
       .maybeSingle()
 
@@ -30,7 +30,6 @@ export async function POST(request: Request) {
       const maxUsers = (mainSub.plan as { max_users?: number } | null)?.max_users ?? null
 
       if (maxUsers !== null) {
-        // 2. Count current active staff
         const { count: currentCount } = await admin
           .from('pharmacy_users')
           .select('id', { count: 'exact', head: true })
@@ -53,6 +52,45 @@ export async function POST(request: Request) {
       }
     }
     // ── End user limit check ──────────────────────────────
+
+    // ── Resolve pharmacy owner info for the welcome email ─
+    const { data: pharmacy } = await admin
+      .from('pharmacies')
+      .select('name, email, owner_id')
+      .eq('id', body.pharmacy_id)
+      .maybeSingle()
+
+    const pharmacyName: string = (pharmacy?.name as string) ?? 'Your Pharmacy'
+
+    // Get owner's name + email (3-step fallback)
+    let ownerEmail: string = (pharmacy?.email as string | null)?.trim() ?? ''
+    let ownerName = 'Pharmacy Manager'
+
+    if (!ownerEmail) {
+      const { data: ownerMember } = await admin
+        .from('pharmacy_users')
+        .select('user_id')
+        .eq('pharmacy_id', body.pharmacy_id)
+        .eq('role', 'pharmacy_owner')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle()
+
+      const ownerUserId: string | null =
+        (ownerMember?.user_id as string | null) ??
+        (pharmacy?.owner_id as string | null) ??
+        null
+
+      if (ownerUserId) {
+        const { data: authUser } = await admin.auth.admin.getUserById(ownerUserId)
+        ownerEmail = authUser?.user?.email?.trim() ?? ''
+        ownerName =
+          (authUser?.user?.user_metadata?.full_name as string | undefined)?.trim() ||
+          ownerEmail.split('@')[0] ||
+          'Pharmacy Manager'
+      }
+    }
+    // ── End owner resolution ──────────────────────────────
 
     // Create user in Supabase Auth
     const { data: authUser, error: createUserError } = await admin.auth.admin.createUser({
@@ -83,6 +121,21 @@ export async function POST(request: Request) {
       await admin.auth.admin.deleteUser(authUser.user.id)
       throw dbError
     }
+
+    // ── Send welcome email to the new staff member ────────
+    // Non-blocking — failure does not affect the response
+    if (body.email && body.password) {
+      void sendStaffWelcomeEmail({
+        to: body.email,
+        staffName: body.full_name ?? '',
+        pharmacyName,
+        password: body.password,
+        role: body.role || 'pharmacist',
+        ownerName,
+        ownerEmail: ownerEmail || (process.env.SMTP_USER ?? ''),
+      })
+    }
+    // ── End welcome email ─────────────────────────────────
 
     return NextResponse.json({
       success: true,

@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -94,11 +95,13 @@ export default function AdminSettingsPage() {
         onSuccess: () => {
           setIsAddLocationOpen(false)
           setNewLocation({ name: '', description: '' })
-          alert('Location added successfully!')
+          toast.success('Location added successfully')
         },
         onError: (err) => {
           console.error('Error adding location:', err)
-          alert(err instanceof Error ? err.message : 'Failed to add location')
+          toast.error('Failed to add location', {
+            description: err instanceof Error ? err.message : 'Please try again',
+          })
         },
       },
     )

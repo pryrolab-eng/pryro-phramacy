@@ -23,8 +23,10 @@ import {
   useSubscribeToPlan,
   useCancelSubscription,
 } from '@/hooks/useSaasSubscription'
+import { BranchAddonCheckoutDialog } from '@/components/subscription/branch-addon-checkout-dialog'
+import type { SubscriptionPlan, SubscriptionInvoice } from '@/lib/saas/types'
 import { BillingStatCard, InvoicesTable, PlansGrid } from '@/components/subscription'
-import type { SubscriptionPlan } from '@/lib/saas/types'
+
 
 // ─── Helpers ──────────────────────────────────────────────
 
@@ -136,14 +138,28 @@ export default function PharmacyBillingPage() {
   const subscribe   = useSubscribeToPlan()
   const cancel      = useCancelSubscription()
 
-  const [upgradeTarget, setUpgradeTarget]   = useState<{ plan: SubscriptionPlan; cycle: 'monthly' | 'yearly' } | null>(null)
-  const [cancelTarget, setCancelTarget]     = useState<string | null>(null)
-  const [pendingPlanId, setPendingPlanId]   = useState<string | null>(null)
+  const [upgradeTarget, setUpgradeTarget] = useState<SubscriptionPlan | null>(null)
+  const [addonPlanTarget, setAddonPlanTarget] = useState<SubscriptionPlan | null>(null)
+  const [addonCheckoutOpen, setAddonCheckoutOpen] = useState(false)
+  const [cancelTarget, setCancelTarget] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const [generatingInvoice, setGeneratingInvoice] = useState(false)
 
-  const summary  = subQuery.data
-  const plans    = (plansQuery.data ?? []).filter(p => p.plan_type === 'main' && p.is_active)
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  const summary = subQuery.data
+  const mainPlans = (plansQuery.data ?? []).filter(
+    (p) => p.plan_type === 'main' && p.is_active
+  )
+  const addonPlans = (plansQuery.data ?? []).filter(
+    (p) => p.plan_type === 'branch_addon' && p.is_active
+  )
   const invoices = invoicesQuery.data ?? []
+  const mainSlots = summary?.main_plan_branch_slots ?? summary?.branch_limit ?? 0
+  const addonCount = summary?.addon_subscription_count ?? 0
 
   const paidInvoices    = invoices.filter(i => i.status === 'paid').length
   const overdueInvoices = invoices.filter(i => i.status === 'overdue').length
@@ -161,16 +177,20 @@ export default function PharmacyBillingPage() {
     setPendingPlanId(plan.id)
     const tid = toast.loading(`Subscribing to ${plan.name}…`)
     try {
-      await subscribe.mutateAsync({
+      const result = await subscribe.mutateAsync({
         plan_id: plan.id,
         subscription_type: 'main',
         billing_cycle: cycle,
       })
       setUpgradeTarget(null)
-      toast.success(`Subscribed to ${plan.name}`, {
+      if (result.requiresPayment) {
+       toast.success(`Subscribed to ${plan.name}`, {
         id: tid,
         description: `Billing cycle: ${cycle}`,
       })
+        return
+      }
+      showToast(`Subscribed to ${plan.name} successfully`)
     } catch (err) {
       toast.error('Subscription failed', {
         id: tid,
@@ -179,6 +199,11 @@ export default function PharmacyBillingPage() {
     } finally {
       setPendingPlanId(null)
     }
+  }
+
+  const openAddonCheckout = (plan: SubscriptionPlan) => {
+    setAddonPlanTarget(plan)
+    setAddonCheckoutOpen(true)
   }
 
   const handleCancel = async () => {
@@ -251,6 +276,11 @@ export default function PharmacyBillingPage() {
           value={summary?.main_subscription?.plan?.name ?? 'No Plan'}
           accent="blue"
         />
+        <SummaryCard
+          icon={<GitBranch className="h-5 w-5 text-green-500" />}
+          label="Branch slots"
+          value={`${summary?.branch_count ?? 0} / ${summary?.branch_limit ?? 0}`}
+          />
         <BillingStatCard
           icon={<GitBranch className="h-5 w-5" />}
           label="Branches"
@@ -288,17 +318,11 @@ export default function PharmacyBillingPage() {
 
       {/* ── Tabs ── */}
       <Tabs defaultValue="plan">
-        <TabsList className="bg-gray-100 rounded-xl p-1">
-          <TabsTrigger value="plan" className="rounded-lg">Current Plan</TabsTrigger>
-          <TabsTrigger value="upgrade" className="rounded-lg">Upgrade / Change</TabsTrigger>
-          <TabsTrigger value="invoices" className="rounded-lg flex items-center gap-1.5">
-            Invoices
-            {invoices.length > 0 && (
-              <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-700">
-                {invoices.length}
-              </span>
-            )}
-          </TabsTrigger>
+        <TabsList>
+          <TabsTrigger value="plan">Current Plan</TabsTrigger>
+          <TabsTrigger value="upgrade">Main plans</TabsTrigger>
+          <TabsTrigger value="branch-addons">Branch add-ons</TabsTrigger>
+          <TabsTrigger value="invoices">Invoices</TabsTrigger>
         </TabsList>
 
         {/* ── Current Plan ── */}
@@ -357,18 +381,95 @@ export default function PharmacyBillingPage() {
                     />
                   </div>
 
-                  {/* Features */}
-                  {summary.main_subscription.plan?.features?.length ? (
-                    <div>
-                      <p className="text-sm font-semibold text-gray-700 mb-3">Included features</p>
-                      <ul className="grid grid-cols-2 gap-y-2 gap-x-4">
-                        {summary.main_subscription.plan.features.map((f, i) => (
-                          <li key={i} className="flex items-center gap-2 text-sm text-gray-600">
-                            <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
-                            {f}
-                          </li>
-                        ))}
-                      </ul>
+                {/* Period */}
+                <div className="flex items-center gap-6 text-sm text-muted-foreground border-t pt-4">
+                  <span>
+                    Started:{' '}
+                    {summary.main_subscription.current_period_start
+                      ? new Date(summary.main_subscription.current_period_start).toLocaleDateString()
+                      : '—'}
+                  </span>
+                  <span>
+                    Ends:{' '}
+                    {summary.main_subscription.current_period_end
+                      ? new Date(summary.main_subscription.current_period_end).toLocaleDateString()
+                      : '—'}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center justify-center py-12 gap-4">
+                <AlertTriangle className="h-10 w-10 text-amber-500" />
+                <div className="text-center">
+                  <p className="font-semibold text-lg">No active subscription</p>
+                  <p className="text-muted-foreground text-sm mt-1">
+                    Choose a plan below to unlock all features
+                  </p>
+                </div>
+                <Button onClick={() => document.querySelector<HTMLButtonElement>('[data-value="upgrade"]')?.click()}>
+                  View Plans
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card className="border-dashed bg-muted/20">
+            <CardContent className="pt-4 pb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm">
+                <span className="font-medium">{mainSlots}</span> branches included on your main plan
+                {addonCount > 0 && (
+                  <>
+                    {' '}
+                    + <span className="font-medium">{addonCount}</span> paid add-on
+                    {addonCount !== 1 ? 's' : ''}
+                  </>
+                )}
+                . Manage locations on{' '}
+                <a href="/branches" className="text-blue-600 underline font-medium">
+                  Branches
+                </a>
+                .
+              </div>
+              {addonPlans.length > 0 && (
+                <Button size="sm" variant="outline" onClick={() => document.querySelector<HTMLButtonElement>('[data-value="branch-addons"]')?.click()}>
+                  Buy branch add-on
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Branch add-on subscriptions */}
+          {summary?.branch_subscriptions && summary.branch_subscriptions.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Active branch add-ons</CardTitle>
+                <CardDescription>
+                  Each add-on unlocks an extra branch slot and its own transaction limit
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {summary.branch_subscriptions.map(sub => (
+                    <div key={sub.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div>
+                        <p className="font-medium text-sm">{sub.plan?.name ?? 'Branch Add-on'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          RWF {Number(sub.plan?.price ?? 0).toLocaleString()} / {sub.plan?.billing_period}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={sub.status} />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 h-7"
+                          onClick={() => setCancelTarget(sub.id)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
                     </div>
                   ) : null}
 
@@ -460,43 +561,77 @@ export default function PharmacyBillingPage() {
           )}
         </TabsContent>
 
-        {/* ── Upgrade / Change ── */}
-        <TabsContent value="upgrade" className="mt-6">
-          <PlansGrid
-            plans={plans}
-            currentPlanId={summary?.main_subscription?.plan_id}
-            isLoading={plansQuery.isFetching && plans.length === 0}
-            isError={plansQuery.isError}
-            pendingPlanId={pendingPlanId}
-            onSelect={handleSelectPlan}
-            onRetry={() => void plansQuery.refetch()}
-          />
+        {/* ── Main plans tab ── */}
+        <TabsContent value="upgrade" className="mt-6 space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Paid main plans require checkout in{' '}
+            <a href="/settings" className="text-blue-600 underline">
+              Settings → Billing
+            </a>{' '}
+            for card or mobile money. Free plans activate here instantly.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {mainPlans.map(plan => (
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                isCurrent={summary?.main_subscription?.plan_id === plan.id}
+                onSelect={() => setUpgradeTarget(plan)}
+              />
+            ))}
+          </div>
         </TabsContent>
 
-        {/* ── Invoices ── */}
-        <TabsContent value="invoices" className="mt-6 space-y-5">
-          <div className="grid grid-cols-3 gap-4">
-            <BillingStatCard
-              icon={<Receipt className="h-5 w-5" />}
-              label="Total invoices"
-              value={invoices.length}
-              accent="blue"
-            />
-            <BillingStatCard
-              icon={<CheckCircle className="h-5 w-5" />}
-              label="Paid"
-              value={paidInvoices}
-              sub={`RWF ${totalBilled.toLocaleString()} total`}
-              accent="green"
-            />
-            <BillingStatCard
-              icon={<AlertTriangle className="h-5 w-5" />}
-              label="Overdue"
-              value={overdueInvoices}
-              accent={overdueInvoices > 0 ? 'red' : 'green'}
-            />
-          </div>
+        {/* ── Branch add-ons tab ── */}
+        <TabsContent value="branch-addons" className="mt-6 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <GitBranch className="h-5 w-5" />
+                How branch add-ons work
+              </CardTitle>
+              <CardDescription>
+                Your main plan includes {mainSlots} branch{mainSlots !== 1 ? 'es' : ''}.
+                When you need more locations, purchase an add-on: it creates a new branch and
+                bills separately with its own monthly transaction limit.
+              </CardDescription>
+            </CardHeader>
+          </Card>
 
+          {addonPlans.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                No branch add-on plans are available yet. Your administrator can create plans
+                with type &quot;branch_addon&quot; in the admin catalog.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {addonPlans.map(plan => (
+                <Card key={plan.id}>
+                  <CardHeader>
+                    <CardTitle className="text-lg">{plan.name}</CardTitle>
+                    <CardDescription>
+                      RWF {Number(plan.price).toLocaleString()} / {plan.billing_period}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      {plan.monthly_tx_limit.toLocaleString()} transactions per month for one
+                      branch
+                    </p>
+                    <Button className="w-full" onClick={() => openAddonCheckout(plan)}>
+                      Add branch with this plan
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── Invoices tab ── */}
+        <TabsContent value="invoices" className="mt-6 space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-500">Combined monthly invoices for all your subscriptions</p>
             <Button
@@ -546,7 +681,19 @@ export default function PharmacyBillingPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Cancel confirm dialog ── */}
+      <BranchAddonCheckoutDialog
+        open={addonCheckoutOpen}
+        onOpenChange={setAddonCheckoutOpen}
+        addonPlans={addonPlans}
+        mode="new_branch"
+        initialPlanId={addonPlanTarget?.id}
+        onSuccess={() => {
+          void subQuery.refetch()
+          showToast('Branch add-on purchased successfully')
+        }}
+      />
+
+      {/* Cancel confirm dialog */}
       <AlertDialog open={!!cancelTarget} onOpenChange={o => !o && setCancelTarget(null)}>
         <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>

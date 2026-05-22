@@ -1,38 +1,18 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolvePharmacyEntitlements } from "./lifecycle/entitlements";
 
-/** Plan label for UI (lowercase name, e.g. standard, premium, basic). */
+/** Plan label for UI — uses entitlement resolver (not pharmacies.subscription_plan). */
 export async function getEffectiveSubscriptionLabel(
   supabase: SupabaseClient,
   pharmacyId: string,
   pharmacyPlanFallback?: string | null
 ): Promise<string> {
-  const { data: activeSub } = await supabase
-    .from("subscriptions")
-    .select(
-      `
-      plan,
-      subscription_plans ( name )
-    `
-    )
-    .eq("pharmacy_id", pharmacyId)
-    .eq("is_active", true)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (activeSub) {
-    const joined = activeSub.subscription_plans as
-      | { name?: string }
-      | { name?: string }[]
-      | null;
-    const catalogName = Array.isArray(joined)
-      ? joined[0]?.name
-      : joined?.name;
-    if (catalogName) {
-      return catalogName.toLowerCase();
-    }
-    return String(activeSub.plan ?? "trial").toLowerCase();
+  const ent = await resolvePharmacyEntitlements(supabase, pharmacyId);
+  if (ent.effectivePlan?.name) {
+    return ent.effectivePlan.name.toLowerCase();
   }
-
+  if (ent.effectivePlanLabel) {
+    return ent.effectivePlanLabel;
+  }
   return (pharmacyPlanFallback || "standard").toLowerCase();
 }

@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
   const { data: latestSub } = await admin
     .from("subscriptions")
     .select(
-      "id, is_active, plan_id, subscription_plans(id, name, price, period, features, is_popular)"
+      "id, is_active, plan_id, subscription_plans!plan_id(id, name, price, period, features, is_popular)"
     )
     .eq("pharmacy_id", pharmacyId)
     .order("created_at", { ascending: false })

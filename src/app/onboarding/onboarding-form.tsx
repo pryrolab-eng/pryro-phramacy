@@ -93,7 +93,9 @@ export default function OnboardingForm() {
           typeof data?.error === "string" ? data.error : "Failed to load plans"
         );
       }
-      const list = Array.isArray(data) ? (data as PlanRow[]) : [];
+      const list = (Array.isArray(data) ? (data as PlanRow[]) : []).filter(
+        (p) => (p as { plan_type?: string }).plan_type !== "branch_addon"
+      );
       if (list.length === 0) {
         throw new Error("No subscription plans are available. Please try again.");
       }

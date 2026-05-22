@@ -5,6 +5,10 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { createSubscriptionOrchestrator } from '@/lib/subscription/orchestrator'
+import { resolvePharmacyEntitlements } from '@/lib/subscription/lifecycle/entitlements'
+import { getBranchCapacity } from '@/lib/subscription/branch-addon-capacity'
+import { provisionBranchUsageForBranch } from '@/lib/subscription/provision-branch-usage'
 import type {
   ActivateSubscriptionParams,
   Branch,
@@ -75,9 +79,9 @@ export async function getPharmacySubscriptions(
 ): Promise<Subscription[]> {
   const { data, error } = await admin
     .from('subscriptions')
-    .select('*, plan:subscription_plans(*)')
+    .select('*, plan:subscription_plans!plan_id(*)')
     .eq('pharmacy_id', pharmacyId)
-    .in('status', ['active', 'pending'])
+    .in('status', ['active', 'pending_payment', 'scheduled_change', 'pending'])
     .order('created_at', { ascending: false })
 
   if (error) throw new Error(`getPharmacySubscriptions: ${error.message}`)
@@ -88,14 +92,13 @@ export async function getPharmacyMainSubscription(
   admin: SupabaseClient,
   pharmacyId: string
 ): Promise<Subscription | null> {
+  const ent = await resolvePharmacyEntitlements(admin, pharmacyId)
+  if (!ent.subscriptionId) return null
+
   const { data, error } = await admin
     .from('subscriptions')
-    .select('*, plan:subscription_plans(*)')
-    .eq('pharmacy_id', pharmacyId)
-    .eq('subscription_type', 'main')
-    .eq('status', 'active')
-    .order('created_at', { ascending: false })
-    .limit(1)
+    .select('*, plan:subscription_plans!plan_id(*)')
+    .eq('id', ent.subscriptionId)
     .maybeSingle()
 
   if (error) throw new Error(`getPharmacyMainSubscription: ${error.message}`)
@@ -152,8 +155,14 @@ export async function getPharmacySubscriptionSummary(
   const mainSub = subscriptions.find(s => s.subscription_type === 'main') ?? null
   const branchSubs = subscriptions.filter(s => s.subscription_type === 'branch_addon')
 
-  const branchLimit = (mainSub?.plan as SubscriptionPlan | undefined)?.max_branches ?? 0
+  const mainPlanSlots =
+    (mainSub?.plan as SubscriptionPlan | undefined)?.max_branches ?? 0
   const branchCount = branches.length
+  const addonSlots = branchSubs.filter((s) => {
+    const st = s.status
+    return st === 'active' || st === 'pending_payment' || st === 'pending'
+  }).length
+  const branchLimit = mainPlanSlots + addonSlots
 
   // Fetch usage for all branches in parallel
   const branchesWithUsage = await Promise.all(
@@ -177,6 +186,8 @@ export async function getPharmacySubscriptionSummary(
     branch_limit: branchLimit,
     branch_count: branchCount,
     can_add_branch: branchCount < branchLimit,
+    main_plan_branch_slots: mainPlanSlots,
+    addon_subscription_count: addonSlots,
   }
 }
 
@@ -190,72 +201,67 @@ export async function activateSubscription(
   if (!plan) throw new Error('Plan not found')
   if (!plan.is_active) throw new Error('Plan is not available')
 
-  const now = new Date()
-  const end = periodEnd(now, plan.billing_period)
+  const orch = createSubscriptionOrchestrator(admin)
 
-  // For main plans: deactivate any existing main subscription
+  // Main plans: unified lifecycle — paid plans stay pending until payment
   if (params.subscription_type === 'main') {
-    await admin
+    const price = Number(plan.price ?? 0)
+    let subscriptionId: string
+
+    if (price > 0) {
+      const pending = await orch.beginPaidPlanChange(
+        params.pharmacy_id,
+        params.plan_id
+      )
+      subscriptionId = pending.subscriptionId
+    } else {
+      const free = await orch.activateFreePlan(params.pharmacy_id, params.plan_id)
+      subscriptionId = free.subscriptionId
+    }
+
+    const { data, error } = await admin
       .from('subscriptions')
-      .update({ status: 'cancelled', cancelled_at: now.toISOString() })
-      .eq('pharmacy_id', params.pharmacy_id)
-      .eq('subscription_type', 'main')
-      .eq('status', 'active')
+      .select('*, plan:subscription_plans!plan_id(*)')
+      .eq('id', subscriptionId)
+      .single()
+
+    if (error || !data) {
+      throw new Error(error?.message || 'activateSubscription: subscription not found')
+    }
+    return data as Subscription
+  }
+
+  if (!params.branch_id) {
+    throw new Error('branch_id is required for branch_addon subscriptions')
+  }
+
+  const price = Number(plan.price ?? 0)
+  let subscriptionId: string
+
+  if (price > 0) {
+    const pending = await orch.beginPaidBranchAddon(
+      params.pharmacy_id,
+      params.plan_id,
+      { branchId: params.branch_id }
+    )
+    subscriptionId = pending.subscriptionId
+  } else {
+    throw new Error(
+      'Free branch add-ons are not supported via this path. Use POST /api/subscriptions/branch-addon.'
+    )
   }
 
   const { data, error } = await admin
     .from('subscriptions')
-    .insert({
-      pharmacy_id: params.pharmacy_id,
-      plan_id: params.plan_id,
-      branch_id: params.branch_id ?? null,
-      subscription_type: params.subscription_type,
-      status: 'active',
-      is_active: true,
-      plan: 'standard', // legacy enum — keep for backward compat
-      current_period_start: now.toISOString(),
-      current_period_end: end.toISOString(),
-    })
-    .select('*, plan:subscription_plans(*)')
+    .select('*, plan:subscription_plans!plan_id(*)')
+    .eq('id', subscriptionId)
     .single()
 
-  if (error) throw new Error(`activateSubscription: ${error.message}`)
-
-  const sub = data as Subscription
-
-  // Provision usage for all active branches (main plan) or specific branch (addon)
-  if (params.subscription_type === 'main') {
-    const branches = await getPharmacyBranches(admin, params.pharmacy_id)
-    await Promise.all(
-      branches.map(b =>
-        admin.rpc('provision_branch_usage', {
-          p_branch_id: b.id,
-          p_pharmacy_id: params.pharmacy_id,
-          p_subscription_id: sub.id,
-          p_tx_limit: plan.monthly_tx_limit,
-        })
-      )
-    )
-    // Update pharmacy status
-    await admin
-      .from('pharmacies')
-      .update({
-        status: 'active',
-        subscription_plan: plan.name.toLowerCase().includes('premium') ? 'premium' : 'standard',
-        subscription_expires_at: end.toISOString(),
-      })
-      .eq('id', params.pharmacy_id)
-  } else if (params.branch_id) {
-    // Branch addon: provision usage for that specific branch
-    await admin.rpc('provision_branch_usage', {
-      p_branch_id: params.branch_id,
-      p_pharmacy_id: params.pharmacy_id,
-      p_subscription_id: sub.id,
-      p_tx_limit: plan.monthly_tx_limit,
-    })
+  if (error || !data) {
+    throw new Error(error?.message || 'activateSubscription: subscription not found')
   }
 
-  return sub
+  return data as Subscription
 }
 
 // ─── Cancel subscription ───────────────────────────────────
@@ -265,17 +271,10 @@ export async function cancelSubscription(
   subscriptionId: string,
   pharmacyId: string
 ): Promise<void> {
-  const { error } = await admin
-    .from('subscriptions')
-    .update({
-      status: 'cancelled',
-      is_active: false,
-      cancelled_at: new Date().toISOString(),
-    })
-    .eq('id', subscriptionId)
-    .eq('pharmacy_id', pharmacyId)
-
-  if (error) throw new Error(`cancelSubscription: ${error.message}`)
+  await createSubscriptionOrchestrator(admin).cancelSubscription(
+    subscriptionId,
+    pharmacyId
+  )
 }
 
 // ─── Transaction gate ──────────────────────────────────────
@@ -335,23 +334,17 @@ export async function createBranch(
   const plan = mainSub.plan as SubscriptionPlan | undefined
   if (!plan) throw new Error('Subscription plan not found.')
 
-  const branches = await getPharmacyBranches(admin, pharmacyId)
+  const capacity = await getBranchCapacity(admin, pharmacyId)
 
-  // Count branches covered by main plan
-  const mainPlanBranchCount = branches.length
-  const addonSubs = await admin
-    .from('subscriptions')
-    .select('id')
-    .eq('pharmacy_id', pharmacyId)
-    .eq('subscription_type', 'branch_addon')
-    .eq('status', 'active')
-
-  const addonCount = (addonSubs.data ?? []).length
-  const totalAllowed = plan.max_branches + addonCount
-
-  if (mainPlanBranchCount >= totalAllowed) {
+  if (!capacity.canAddBranch) {
     throw new Error(
-      `Branch limit reached (${totalAllowed} allowed). Upgrade your plan or add a Branch Add-on subscription.`
+      `Branch limit reached (${capacity.totalSlots} allowed). Purchase a branch add-on or upgrade your main plan.`
+    )
+  }
+
+  if (capacity.needsAddonForNewBranch) {
+    throw new Error(
+      `Included branch slots are full (${capacity.mainPlanSlots}). Purchase a branch add-on before adding another branch.`
     )
   }
 
@@ -370,12 +363,11 @@ export async function createBranch(
 
   if (error) throw new Error(`createBranch: ${error.message}`)
 
-  // Provision usage for the new branch under the main subscription
-  await admin.rpc('provision_branch_usage', {
-    p_branch_id: branch.id,
-    p_pharmacy_id: pharmacyId,
-    p_subscription_id: mainSub.id,
-    p_tx_limit: plan.monthly_tx_limit,
+  await provisionBranchUsageForBranch(admin, {
+    branchId: branch.id,
+    pharmacyId,
+    subscriptionId: mainSub.id,
+    planId: plan.id,
   })
 
   return branch as Branch
@@ -458,7 +450,7 @@ export async function getAllSubscriptions(
     .from('subscriptions')
     .select(`
       *,
-      plan:subscription_plans(id, name, price, plan_type),
+      plan:subscription_plans!plan_id(id, name, price, plan_type),
       pharmacy:pharmacies(id, name, owner_id)
     `)
     .order('created_at', { ascending: false })

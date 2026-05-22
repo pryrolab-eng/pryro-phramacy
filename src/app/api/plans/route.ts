@@ -8,15 +8,23 @@ import { dedupeSubscriptionPlansInDb } from "@/lib/subscription/dedupe-plans-db"
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const admin = createServiceClient();
+    const { searchParams } = new URL(request.url);
+    const planTypeFilter = searchParams.get("plan_type");
 
-    let { data: plans, error } = await admin
+    let query = admin
       .from("subscription_plans")
       .select("*")
       .eq("is_active", true)
       .order("price", { ascending: true });
+
+    if (planTypeFilter === "main" || planTypeFilter === "branch_addon") {
+      query = query.eq("plan_type", planTypeFilter);
+    }
+
+    let { data: plans, error } = await query;
 
     if (error) {
       throw error;
@@ -61,9 +69,12 @@ export async function GET() {
     }
 
     const deduped = dedupeSubscriptionPlansByName(catalog);
-    const normalized = deduped.map((row) =>
+    let normalized = deduped.map((row) =>
       normalizeSubscriptionPlanRow(row as Record<string, unknown>)
     );
+    if (planTypeFilter === "main" || planTypeFilter === "branch_addon") {
+      normalized = normalized.filter((p) => p.plan_type === planTypeFilter);
+    }
 
     return NextResponse.json(normalized, {
       headers: {
@@ -72,6 +83,13 @@ export async function GET() {
     });
   } catch (error) {
     console.error("Error fetching plans:", error);
+    const { searchParams } = new URL(request.url);
+    const planTypeFilter = searchParams.get("plan_type");
+    if (planTypeFilter === "branch_addon") {
+      return NextResponse.json([], {
+        headers: { "Cache-Control": "no-store, max-age=0" },
+      });
+    }
     return NextResponse.json(fallbackPlansForDisplay(), {
       headers: {
         "Cache-Control": "no-store, max-age=0",

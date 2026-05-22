@@ -56,7 +56,18 @@ export async function POST(request: NextRequest) {
       branch_id,
     })
 
-    return NextResponse.json({ subscription }, { status: 201 })
+    const requiresPayment = subscription.status === 'pending_payment'
+
+    return NextResponse.json(
+      {
+        subscription,
+        requiresPayment,
+        message: requiresPayment
+          ? 'Complete checkout to activate this plan.'
+          : undefined,
+      },
+      { status: 201 }
+    )
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Subscription failed'
     return NextResponse.json({ error: msg }, { status: 500 })

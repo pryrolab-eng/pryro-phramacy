@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/subscription-transitions",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

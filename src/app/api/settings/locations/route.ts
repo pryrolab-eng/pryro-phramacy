@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
 
+const DEFAULT_LOCATIONS = [
+  { id: '1', name: 'Main Store', description: 'Primary location', is_active: true },
+  { id: '2', name: 'Branch', description: 'Secondary location', is_active: true },
+  { id: '3', name: 'Cold Storage', description: 'Temperature controlled', is_active: true },
+  { id: '4', name: 'Warehouse', description: 'Bulk storage', is_active: true },
+]
+
+function isMissingStockLocationsTable(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const code = (error as { code?: string }).code
+  return code === 'PGRST205' || code === '42P01'
+}
+
 export async function GET() {
   try {
     const supabase = await createClient()
@@ -28,17 +41,19 @@ export async function GET() {
       .eq('is_active', true)
       .order('created_at', { ascending: true })
 
-    if (error) throw error
+    if (error) {
+      if (isMissingStockLocationsTable(error)) {
+        return NextResponse.json(DEFAULT_LOCATIONS)
+      }
+      throw error
+    }
     return NextResponse.json(locations || [])
   } catch (error) {
+    if (isMissingStockLocationsTable(error)) {
+      return NextResponse.json(DEFAULT_LOCATIONS)
+    }
     console.error('Error fetching locations:', error)
-    // Return default locations if table doesn't exist
-    return NextResponse.json([
-      { id: '1', name: 'Main Store', description: 'Primary location', is_active: true },
-      { id: '2', name: 'Branch', description: 'Secondary location', is_active: true },
-      { id: '3', name: 'Cold Storage', description: 'Temperature controlled', is_active: true },
-      { id: '4', name: 'Warehouse', description: 'Bulk storage', is_active: true }
-    ])
+    return NextResponse.json(DEFAULT_LOCATIONS)
   }
 }
 
@@ -75,9 +90,31 @@ export async function POST(request: NextRequest) {
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      if (isMissingStockLocationsTable(error)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'Stock locations are not set up yet. Run database migrations (stock_locations).',
+          },
+          { status: 503 }
+        )
+      }
+      throw error
+    }
     return NextResponse.json({ success: true, location })
   } catch (error) {
+    if (isMissingStockLocationsTable(error)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Stock locations are not set up yet. Run database migrations (stock_locations).',
+        },
+        { status: 503 }
+      )
+    }
     console.error('Error creating location:', error)
     return NextResponse.json({ success: false, error: 'Failed to create location' }, { status: 500 })
   }

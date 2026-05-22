@@ -107,6 +107,9 @@ export interface PharmacySubscriptionSummary {
   branch_limit: number
   branch_count: number
   can_add_branch: boolean
+  /** Branches included in the main plan (before add-ons) */
+  main_plan_branch_slots?: number
+  addon_subscription_count?: number
 }
 
 export interface TransactionCheckResult {

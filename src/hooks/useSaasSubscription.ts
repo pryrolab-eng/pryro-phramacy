@@ -27,7 +27,7 @@ export function useSaasPlans() {
       const data = await res.json()
       return data.plans
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0, // always fresh — admin may add/edit plans at any time
   })
 }
 

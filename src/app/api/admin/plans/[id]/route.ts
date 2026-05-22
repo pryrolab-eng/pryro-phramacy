@@ -99,6 +99,28 @@ export async function PUT(
       );
     }
 
+    // Pre-check: if name is being changed, ensure it doesn't conflict with another active plan
+    if (updates.name) {
+      const newName = String(updates.name).trim().toLowerCase()
+      const { data: conflict } = await auth.db
+        .from("subscription_plans")
+        .select("id, name")
+        .eq("is_active", true)
+        .neq("id", id)  // exclude the plan being edited
+        .ilike("name", newName)
+        .maybeSingle()
+
+      if (conflict) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `A plan named "${String(updates.name).trim()}" already exists. Please choose a different name.`,
+          },
+          { status: 409 }
+        )
+      }
+    }
+
     const { data: plan, error } = await auth.db
       .from("subscription_plans")
       .update(updates)
@@ -106,22 +128,48 @@ export async function PUT(
       .select("*")
       .single();
 
-    if (error) throw error;
+    if (error) {
+      // Unique constraint on plan name
+      if (error.code === "23505") {
+        const name = updates.name ? `"${updates.name}"` : "that name";
+        return NextResponse.json(
+          { success: false, error: `A plan named ${name} already exists. Choose a different name.` },
+          { status: 409 }
+        );
+      }
+      throw error;
+    }
 
-    const synced = await syncPlanToPolarAndSave(auth.db, {
-      ...plan,
-      features: plan.features ?? updates.features,
-    } as Parameters<typeof syncPlanToPolarAndSave>[1]);
+    // Attempt Polar sync — non-fatal: DB update already succeeded
+    let polarSync: { action: string; error?: string } | undefined
+    try {
+      const synced = await syncPlanToPolarAndSave(auth.db, {
+        ...plan,
+        features: plan.features ?? updates.features,
+      } as Parameters<typeof syncPlanToPolarAndSave>[1]);
+      polarSync = synced.polarSync
 
-    return NextResponse.json({
-      success: true,
-      plan: synced.plan,
-      polarSync: synced.polarSync,
-    });
+      return NextResponse.json({
+        success: true,
+        plan: synced.plan,
+        polarSync,
+      });
+    } catch (polarError) {
+      // Polar sync failed but DB update succeeded — return success with warning
+      console.warn("PUT /api/admin/plans/[id] Polar sync failed (non-fatal):", polarError);
+      return NextResponse.json({
+        success: true,
+        plan,
+        polarSync: {
+          action: "failed",
+          error: polarError instanceof Error ? polarError.message : "Polar sync failed",
+        },
+      });
+    }
   } catch (error) {
-    console.error("PUT /api/admin/plans/[id]", error);
+    console.error("PUT /api/admin/plans/[id] error:", error instanceof Error ? error.message : error);
     return NextResponse.json(
-      { success: false, error: "Failed to update plan" },
+      { success: false, error: error instanceof Error ? error.message : "Failed to update plan" },
       { status: 500 }
     );
   }

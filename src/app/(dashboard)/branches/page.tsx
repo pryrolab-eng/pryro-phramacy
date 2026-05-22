@@ -21,6 +21,7 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { useSaasBranches, useCreateBranch, useSaasSubscription } from '@/hooks/useSaasSubscription'
 import type { Branch, BranchUsage } from '@/lib/saas/types'
+import { FeatureGate } from '@/components/feature-gate'
 
 type BranchWithUsage = Branch & { usage: BranchUsage | null }
 
@@ -98,6 +99,7 @@ export default function BranchesPage() {
   }
 
   return (
+    <FeatureGate feature="multi_branch">
     <div className="p-6 space-y-6">
       {/* Toast */}
       {toast && (
@@ -294,6 +296,7 @@ export default function BranchesPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </FeatureGate>
   )
 }
 

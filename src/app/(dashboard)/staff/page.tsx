@@ -19,6 +19,7 @@ import { UserCog, Plus, Mail, Phone, Calendar, Users, Lock, Crown, AlertTriangle
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
 import { useSaasSubscription } from '@/hooks/useSaasSubscription'
+import { FeatureGate } from '@/components/feature-gate'
 
 interface StaffMember {
   id: string
@@ -204,6 +205,7 @@ export default function StaffManagePage() {
   )
 
   return (
+    <FeatureGate feature="staff_management">
     <div className="p-6 space-y-6 bg-gray-100 min-h-screen">
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-4">

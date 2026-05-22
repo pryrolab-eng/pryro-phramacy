@@ -14,6 +14,7 @@ import { InsuranceSelector } from '@/components/insurance-selector'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
+import { FeatureGate } from '@/components/feature-gate'
 interface Product {
   id: string
   name: string
@@ -533,6 +534,7 @@ export default function POSPage() {
   )
 
   return (
+    <FeatureGate feature="pos">
     <div className="p-4 h-screen flex flex-col">
       {/* ── Transaction limit blocker dialog ── */}
       {txBlocked && (
@@ -1851,5 +1853,6 @@ export default function POSPage() {
         </div>
       )}
     </div>
+    </FeatureGate>
   )
 }

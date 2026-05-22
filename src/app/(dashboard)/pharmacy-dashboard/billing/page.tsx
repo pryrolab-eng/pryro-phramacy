@@ -24,7 +24,9 @@ import {
   useSaasInvoices,
   useSubscribeToPlan,
   useCancelSubscription,
+  saasKeys,
 } from '@/hooks/useSaasSubscription'
+import { useQueryClient } from '@tanstack/react-query'
 import type { SubscriptionPlan, SubscriptionInvoice } from '@/lib/saas/types'
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -48,6 +50,7 @@ export default function PharmacyBillingPage() {
   const invoicesQuery = useSaasInvoices()
   const subscribe = useSubscribeToPlan()
   const cancel = useCancelSubscription()
+  const queryClient = useQueryClient()
 
   const [upgradeTarget, setUpgradeTarget] = useState<SubscriptionPlan | null>(null)
   const [cancelTarget, setCancelTarget] = useState<string | null>(null)
@@ -132,8 +135,11 @@ export default function PharmacyBillingPage() {
             Manage your plan, branches, and invoices
           </p>
         </div>
-        <Button variant="outline" onClick={() => void subQuery.refetch()} disabled={subQuery.isFetching}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${subQuery.isFetching ? 'animate-spin' : ''}`} />
+        <Button variant="outline" onClick={() => {
+          void subQuery.refetch()
+          void plansQuery.refetch()
+        }} disabled={subQuery.isFetching || plansQuery.isFetching}>
+          <RefreshCw className={`h-4 w-4 mr-2 ${(subQuery.isFetching || plansQuery.isFetching) ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
       </div>
@@ -357,6 +363,23 @@ export default function PharmacyBillingPage() {
               </div>
             )
           })()}
+          {plansQuery.isError && (
+            <div className="flex flex-col items-center gap-3 py-8">
+              <p className="text-sm text-destructive">Could not load plans. Please try again.</p>
+              <Button variant="outline" size="sm" onClick={() => void plansQuery.refetch()}>
+                <RefreshCw className="h-4 w-4 mr-2" />Retry
+              </Button>
+            </div>
+          )}
+          {plansQuery.isFetching && plans.length === 0 && (
+            <div className="flex justify-center py-8"><Spinner className="size-5" /></div>
+          )}
+          {!plansQuery.isError && plans.length === 0 && !plansQuery.isFetching && (
+            <div className="flex flex-col items-center gap-3 py-8">
+              <p className="text-sm text-muted-foreground">No subscription plans available yet.</p>
+              <p className="text-xs text-muted-foreground">Contact your administrator to set up plans.</p>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {plans.map(plan => (
               <PlanCard

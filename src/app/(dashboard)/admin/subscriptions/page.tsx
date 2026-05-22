@@ -467,9 +467,12 @@ export default function SubscriptionsPage() {
         toast.success('Plan added', { id: tid, description: 'Your new subscription plan is live.' })
       }
     } catch (error) {
-      toast.error('Could not add plan', {
+      const msg = error instanceof Error ? error.message : 'Failed to add plan'
+      const isDuplicate = msg.toLowerCase().includes('already exists')
+      toast.error(isDuplicate ? msg : 'Could not add plan', {
         id: tid,
-        description: error instanceof Error ? error.message : 'Failed to add plan',
+        description: isDuplicate ? 'Choose a different plan name.' : msg,
+        duration: 6000,
       })
     } finally {
       setIsAddingPlanLoading(false)
@@ -550,9 +553,13 @@ export default function SubscriptionsPage() {
         })
       }
     } catch (error) {
-      toast.error('Could not save plan', {
+      const msg = error instanceof Error ? error.message : 'Failed to update plan'
+      // Show duplicate-name errors as the main title so they're impossible to miss
+      const isDuplicate = msg.toLowerCase().includes('already exists')
+      toast.error(isDuplicate ? msg : 'Could not save plan', {
         id: tid,
-        description: error instanceof Error ? error.message : 'Failed to update plan',
+        description: isDuplicate ? 'Rename this plan or edit the existing one.' : msg,
+        duration: 6000,
       })
     } finally {
       setIsSavingPlan(false)

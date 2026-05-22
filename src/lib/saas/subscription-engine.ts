@@ -82,7 +82,20 @@ export async function getPharmacySubscriptions(
     .in('status', ['active', 'pending'])
     .order('created_at', { ascending: false })
 
-  if (error) throw new Error(`getPharmacySubscriptions: ${error.message}`)
+  if (error) {
+    // If the status column doesn't exist yet (pre-migration), fall back to is_active
+    if (error.message.includes('status') || error.message.includes('column')) {
+      const { data: fallback, error: fallbackErr } = await admin
+        .from('subscriptions')
+        .select('*, plan:subscription_plans(*)')
+        .eq('pharmacy_id', pharmacyId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+      if (fallbackErr) throw new Error(`getPharmacySubscriptions: ${fallbackErr.message}`)
+      return (fallback ?? []) as Subscription[]
+    }
+    throw new Error(`getPharmacySubscriptions: ${error.message}`)
+  }
   return (data ?? []) as Subscription[]
 }
 
@@ -146,9 +159,10 @@ export async function getPharmacySubscriptionSummary(
   admin: SupabaseClient,
   pharmacyId: string
 ): Promise<PharmacySubscriptionSummary> {
+  // Run subscriptions + branches in parallel; treat errors as empty results
   const [subscriptions, branches] = await Promise.all([
-    getPharmacySubscriptions(admin, pharmacyId),
-    getPharmacyBranches(admin, pharmacyId),
+    getPharmacySubscriptions(admin, pharmacyId).catch(() => [] as Subscription[]),
+    getPharmacyBranches(admin, pharmacyId).catch(() => [] as Branch[]),
   ])
 
   const mainSub = subscriptions.find(s => s.subscription_type === 'main') ?? null
@@ -158,20 +172,22 @@ export async function getPharmacySubscriptionSummary(
   const userLimit = (mainSub?.plan as SubscriptionPlan | undefined)?.max_users ?? 0
   const branchCount = branches.length
 
-  // Fetch usage for all branches in parallel
+  // Fetch usage for all branches in parallel; swallow individual failures
   const branchesWithUsage = await Promise.all(
     branches.map(async (b) => {
-      const usage = await getBranchCurrentUsage(admin, b.id)
+      const usage = await getBranchCurrentUsage(admin, b.id).catch(() => null)
       return { ...b, usage }
     })
   )
 
-  // Count active users for this pharmacy
-  const { count: userCount } = await admin
+  // Count active users for this pharmacy; default to 0 on error
+  const userCount = await admin
     .from('pharmacy_users')
     .select('id', { count: 'exact', head: true })
     .eq('pharmacy_id', pharmacyId)
     .eq('is_active', true)
+    .then(({ count }) => count ?? 0)
+    .catch(() => 0)
 
   const totalMonthlyCost = subscriptions.reduce((sum, s) => {
     const plan = s.plan as SubscriptionPlan | undefined
@@ -192,7 +208,7 @@ export async function getPharmacySubscriptionSummary(
     branch_limit: branchLimit,
     branch_count: branchCount,
     can_add_branch: branchCount < branchLimit,
-    user_count: userCount ?? 0,
+    user_count: userCount,
     user_limit: userLimit,
   }
 }
@@ -534,8 +550,8 @@ export async function getAllSubscriptions(
     .from('subscriptions')
     .select(`
       *,
-      plan:subscription_plans(id, name, price, plan_type),
-      pharmacy:pharmacies(id, name, owner_id)
+      plan:subscription_plans(id, name, price, yearly_price, plan_type, billing_period, features),
+      pharmacy:pharmacies(id, name, email, owner_id)
     `)
     .order('created_at', { ascending: false })
 
@@ -606,6 +622,129 @@ export async function createPlan(
 
   if (error) throw new Error(`createPlan: ${error.message}`)
   return data as SubscriptionPlan
+}
+
+// ─── Admin: grant free trial ───────────────────────────────
+
+export async function grantFreeTrial(
+  admin: SupabaseClient,
+  params: {
+    pharmacy_id: string
+    plan_id: string
+    trial_days: number
+    granted_by?: string // admin user id for audit
+  }
+): Promise<Subscription> {
+  const { pharmacy_id, plan_id, trial_days } = params
+
+  if (trial_days < 1 || trial_days > 365) {
+    throw new Error('trial_days must be between 1 and 365')
+  }
+
+  const plan = await getPlanById(admin, plan_id)
+  if (!plan) throw new Error('Plan not found')
+  if (!plan.is_active) throw new Error('Plan is not available')
+
+  const now = new Date()
+  const trialEnd = new Date(now)
+  trialEnd.setDate(trialEnd.getDate() + trial_days)
+
+  // Cancel any existing active main subscription first
+  await admin
+    .from('subscriptions')
+    .update({ status: 'cancelled', cancelled_at: now.toISOString() })
+    .eq('pharmacy_id', pharmacy_id)
+    .eq('subscription_type', 'main')
+    .eq('status', 'active')
+
+  const { data, error } = await admin
+    .from('subscriptions')
+    .insert({
+      pharmacy_id,
+      plan_id,
+      branch_id: null,
+      subscription_type: 'main',
+      billing_period: 'free',
+      status: 'trialing',
+      is_active: true,
+      plan: 'standard', // legacy enum
+      current_period_start: now.toISOString(),
+      current_period_end: trialEnd.toISOString(),
+      trial_ends_at: trialEnd.toISOString(),
+    })
+    .select('*, plan:subscription_plans(*)')
+    .single()
+
+  if (error) throw new Error(`grantFreeTrial: ${error.message}`)
+
+  const sub = data as Subscription
+
+  // Provision usage for all active branches
+  const branches = await getPharmacyBranches(admin, pharmacy_id)
+  await Promise.all(
+    branches.map(b =>
+      admin.rpc('provision_branch_usage', {
+        p_branch_id: b.id,
+        p_pharmacy_id: pharmacy_id,
+        p_subscription_id: sub.id,
+        p_tx_limit: plan.monthly_tx_limit,
+      })
+    )
+  )
+
+  // Update pharmacy status
+  await admin
+    .from('pharmacies')
+    .update({
+      status: 'active',
+      subscription_plan: 'free',
+      subscription_expires_at: trialEnd.toISOString(),
+    })
+    .eq('id', pharmacy_id)
+
+  // Send activation email (non-blocking)
+  try {
+    const { data: pharmacy } = await admin
+      .from('pharmacies')
+      .select('name, email, owner_id')
+      .eq('id', pharmacy_id)
+      .maybeSingle()
+
+    let recipientEmail: string | null = (pharmacy?.email as string | null)?.trim() ?? null
+
+    if (!recipientEmail) {
+      const { data: ownerMember } = await admin
+        .from('pharmacy_users')
+        .select('user_id')
+        .eq('pharmacy_id', pharmacy_id)
+        .eq('role', 'pharmacy_owner')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle()
+
+      const ownerUserId: string | null =
+        (ownerMember?.user_id as string | null) ??
+        (pharmacy?.owner_id as string | null) ??
+        null
+
+      if (ownerUserId) {
+        const { data: authUser } = await admin.auth.admin.getUserById(ownerUserId)
+        recipientEmail = authUser?.user?.email?.trim() ?? null
+      }
+    }
+
+    if (recipientEmail) {
+      void sendSubscriptionActivatedEmail({
+        to: recipientEmail,
+        pharmacyName: (pharmacy?.name as string) ?? 'Your pharmacy',
+        planName: `${plan.name} (${trial_days}-day free trial)`,
+        periodEnd: trialEnd.toLocaleDateString('en-RW', { dateStyle: 'medium' }),
+        isRenewal: false,
+      })
+    }
+  } catch { /* non-fatal */ }
+
+  return sub
 }
 
 export async function updatePlan(

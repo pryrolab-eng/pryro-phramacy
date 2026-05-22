@@ -81,7 +81,7 @@ export async function runExpiryCheck(admin: SupabaseClient): Promise<LifecycleRe
   const result: LifecycleResult = { processed: 0, suspended: 0, emailsSent: 0, errors: [] }
   const now = new Date().toISOString()
 
-  // Find active subscriptions that have passed their period end
+  // Find active/trialing subscriptions that have passed their period end
   const { data: expired, error } = await admin
     .from('subscriptions')
     .select(`
@@ -89,7 +89,7 @@ export async function runExpiryCheck(admin: SupabaseClient): Promise<LifecycleRe
       plan:subscription_plans(name, grace_period_days)
     `)
     .eq('subscription_type', 'main')
-    .eq('status', 'active')
+    .in('status', ['active', 'trialing'])
     .lt('current_period_end', now)
 
   if (error) {
@@ -168,7 +168,7 @@ export async function runExpiryWarnings(admin: SupabaseClient): Promise<Lifecycl
         plan:subscription_plans(name)
       `)
       .eq('subscription_type', 'main')
-      .eq('status', 'active')
+      .in('status', ['active', 'trialing'])
       .gte('current_period_end', dayStart.toISOString())
       .lte('current_period_end', dayEnd.toISOString())
 

@@ -10,3 +10,5 @@ export type { SubscriptionRow } from './subscriptions-table'
 
 export { PlansTable } from './plans-table'
 export type { PlanTableRow } from './plans-table'
+
+export { AdminSubscribersTable } from './admin-subscribers-table'

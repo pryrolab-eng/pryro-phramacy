@@ -41,3 +41,10 @@ export {
   type StockLocationRow,
 } from "./useStockLocations";
 export { staffUsersQueryKey, useUsers, type StaffUser } from "./useUsers";
+export {
+  adminSubscriptionsQueryKey,
+  useAdminSubscriptions,
+  useSuspendSubscription,
+  useReactivateSubscription,
+  type AdminSubscriberRow,
+} from "./useAdminSubscriptions";

@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   Building2, Plus, MapPin, Phone, Mail, Activity,
-  AlertTriangle, Loader2, RefreshCw, Lock, TrendingUp,
+  AlertTriangle, Loader2, RefreshCw, Lock, TrendingUp, CreditCard, ArrowRight,
 } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { useSaasBranches, useCreateBranch, useSaasSubscription } from '@/hooks/useSaasSubscription'
@@ -50,6 +50,7 @@ export default function BranchesPage() {
   const [limitWarningOpen, setLimitWarningOpen] = useState(false)
   const [form, setForm] = useState({ name: '', address: '', phone: '', email: '' })
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
+  const [pendingFormData, setPendingFormData] = useState<typeof form | null>(null)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -65,6 +66,13 @@ export default function BranchesPage() {
   const handleAddBranch = async () => {
     if (!form.name.trim()) {
       showToast('Branch name is required', 'error')
+      return
+    }
+    // Check limit at save time — let the user fill the form first
+    if (!canAddBranch) {
+      setPendingFormData(form)
+      setAddOpen(false)
+      setLimitWarningOpen(true)
       return
     }
     try {
@@ -83,10 +91,7 @@ export default function BranchesPage() {
   }
 
   const handleAddClick = () => {
-    if (!canAddBranch) {
-      setLimitWarningOpen(true)
-      return
-    }
+    // Always open the form — limit is checked on save
     setAddOpen(true)
   }
 
@@ -124,8 +129,8 @@ export default function BranchesPage() {
             <RefreshCw className={`h-4 w-4 mr-2 ${branchesQuery.isFetching ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button onClick={handleAddClick} disabled={!canAddBranch}>
-            {!canAddBranch ? <Lock className="mr-2 h-4 w-4" /> : <Plus className="mr-2 h-4 w-4" />}
+          <Button onClick={handleAddClick}>
+            <Plus className="mr-2 h-4 w-4" />
             Add Branch
           </Button>
         </div>
@@ -201,7 +206,7 @@ export default function BranchesPage() {
                 Add your first branch to start tracking usage
               </p>
             </div>
-            <Button onClick={handleAddClick} disabled={!canAddBranch}>
+            <Button onClick={handleAddClick}>
               <Plus className="mr-2 h-4 w-4" />
               Add First Branch
             </Button>
@@ -274,23 +279,54 @@ export default function BranchesPage() {
       </Dialog>
 
       {/* Limit warning dialog */}
-      <AlertDialog open={limitWarningOpen} onOpenChange={setLimitWarningOpen}>
+      <AlertDialog open={limitWarningOpen} onOpenChange={(open) => {
+        setLimitWarningOpen(open)
+        if (!open) setPendingFormData(null)
+      }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <Lock className="h-5 w-5 text-amber-500" />
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
               Branch Limit Reached
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              Your current plan allows {branchLimit} branch{branchLimit !== 1 ? 'es' : ''}.
-              You have used all {branchLimit} slot{branchLimit !== 1 ? 's' : ''}.
-              Upgrade your plan or add a Branch Add-on to create more branches.
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  Your current plan allows <strong>{branchLimit} branch{branchLimit !== 1 ? 'es' : ''}</strong> and
+                  you&apos;ve used all {branchLimit} slot{branchLimit !== 1 ? 's' : ''}.
+                  {pendingFormData?.name && (
+                    <> The branch <strong>&quot;{pendingFormData.name}&quot;</strong> was not saved.</>
+                  )}
+                </p>
+                <p className="text-sm">
+                  Upgrade your plan or add a Branch Add-on to unlock more branches.
+                </p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Close</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { setLimitWarningOpen(false); window.location.href = '/pharmacy-dashboard/billing' }}>
-              View Plans
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel onClick={() => {
+              // Re-open the form so they don't lose their work
+              if (pendingFormData) {
+                setForm(pendingFormData)
+                setPendingFormData(null)
+              }
+              setLimitWarningOpen(false)
+              setAddOpen(true)
+            }}>
+              Back to Form
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={() => {
+                setLimitWarningOpen(false)
+                setPendingFormData(null)
+                window.location.href = '/pharmacy-dashboard/billing?tab=upgrade'
+              }}
+            >
+              <CreditCard className="h-4 w-4 mr-2" />
+              Upgrade Plan
+              <ArrowRight className="h-4 w-4 ml-2" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

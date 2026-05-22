@@ -162,6 +162,24 @@ export function useAdminSaasSubscriptions(status?: string) {
   })
 }
 
+// ─── Admin: all invoices ───────────────────────────────────
+
+export function useAdminSaasInvoices(params?: { status?: string; pharmacyId?: string }) {
+  return useQuery({
+    queryKey: ['saas', 'admin', 'invoices', params?.status, params?.pharmacyId],
+    queryFn: async () => {
+      const url = new URL('/api/saas/admin/invoices', window.location.origin)
+      if (params?.status) url.searchParams.set('status', params.status)
+      if (params?.pharmacyId) url.searchParams.set('pharmacy_id', params.pharmacyId)
+      const res = await fetch(url.toString())
+      if (!res.ok) throw new Error('Failed to load admin invoices')
+      const data = await res.json()
+      return (data.invoices ?? []) as import('@/lib/saas/types').SubscriptionInvoice[]
+    },
+    staleTime: 60 * 1000,
+  })
+}
+
 // ─── Admin: create plan ────────────────────────────────────
 export function useCreateSaasPlan() {
   const qc = useQueryClient()

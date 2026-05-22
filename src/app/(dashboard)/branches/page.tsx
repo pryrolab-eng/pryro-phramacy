@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -19,6 +19,7 @@ import {
   AlertTriangle, Loader2, RefreshCw, Lock, TrendingUp, CreditCard, ArrowRight,
 } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
+import { toast } from 'sonner'
 import { useSaasBranches, useCreateBranch, useSaasSubscription } from '@/hooks/useSaasSubscription'
 import type { Branch, BranchUsage } from '@/lib/saas/types'
 import { FeatureGate } from '@/components/feature-gate'
@@ -49,13 +50,7 @@ export default function BranchesPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [limitWarningOpen, setLimitWarningOpen] = useState(false)
   const [form, setForm] = useState({ name: '', address: '', phone: '', email: '' })
-  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const [pendingFormData, setPendingFormData] = useState<typeof form | null>(null)
-
-  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
-    setToast({ msg, type })
-    setTimeout(() => setToast(null), 4000)
-  }
 
   const branches: BranchWithUsage[] = branchesQuery.data ?? []
   const summary = subQuery.data
@@ -65,7 +60,7 @@ export default function BranchesPage() {
 
   const handleAddBranch = async () => {
     if (!form.name.trim()) {
-      showToast('Branch name is required', 'error')
+      toast.error('Branch name is required')
       return
     }
     // Check limit at save time — let the user fill the form first
@@ -84,9 +79,11 @@ export default function BranchesPage() {
       })
       setAddOpen(false)
       setForm({ name: '', address: '', phone: '', email: '' })
-      showToast('Branch created successfully')
+      toast.success('Branch created successfully')
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to create branch', 'error')
+      toast.error('Failed to create branch', {
+        description: err instanceof Error ? err.message : 'Please try again',
+      })
     }
   }
 
@@ -106,13 +103,6 @@ export default function BranchesPage() {
   return (
     <FeatureGate feature="multi_branch">
     <div className="p-6 space-y-6">
-      {/* Toast */}
-      {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-white text-sm font-medium ${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'}`}>
-          {toast.msg}
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>

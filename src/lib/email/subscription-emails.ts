@@ -2,7 +2,7 @@
 // Subscription lifecycle email templates + send helpers
 // ─────────────────────────────────────────────────────────────
 
-import { isSmtpConfigured, sendMail } from './mailer'
+import { isSmtpConfigured, sendMail, sendMailWithReplyTo } from './mailer'
 
 // ─── Shared layout ────────────────────────────────────────
 
@@ -204,6 +204,184 @@ export function subscriptionSuspendedEmailHtml(opts: {
     ${btn('View Billing →', opts.billingUrl, '#dc2626')}
   `
   return layout(`Subscription suspended — ${opts.pharmacyName}`, body)
+}
+
+// ─── Template: Staff member welcome ─────────────────────
+
+export function staffWelcomeEmailHtml(opts: {
+  staffName: string
+  pharmacyName: string
+  email: string
+  password: string
+  role: string
+  ownerName: string
+  loginUrl: string
+}): string {
+  const roleLabel = opts.role.charAt(0).toUpperCase() + opts.role.slice(1)
+  const body = `
+    <h2 style="margin:0 0 8px;color:#1e293b;font-size:20px;font-weight:700;">Welcome to ${opts.pharmacyName}, ${opts.staffName || 'Team Member'}!</h2>
+    <p style="margin:0 0 20px;color:#64748b;font-size:15px;">
+      You have been added as a <strong>${roleLabel}</strong> at <strong>${opts.pharmacyName}</strong>.
+      Below are your login credentials to access the pharmacy management system.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:0;margin-bottom:24px;">
+      <tr>
+        <td style="padding:20px 24px;">
+          <p style="margin:0 0 14px;font-size:13px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Your Login Credentials</p>
+          <table cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding:6px 0;color:#64748b;font-size:14px;width:90px;">Email</td>
+              <td style="padding:6px 0;font-size:14px;font-weight:600;color:#1e293b;">${opts.email}</td>
+            </tr>
+            <tr>
+              <td style="padding:6px 0;color:#64748b;font-size:14px;">Password</td>
+              <td style="padding:6px 0;">
+                <code style="background:#e2e8f0;padding:3px 10px;border-radius:5px;font-size:14px;font-weight:700;color:#1e293b;letter-spacing:1px;">${opts.password}</code>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:6px 0;color:#64748b;font-size:14px;">Role</td>
+              <td style="padding:6px 0;font-size:14px;font-weight:600;color:#1e293b;">${roleLabel}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    ${alertBox('🔒 For your security, please change your password immediately after your first login.', 'amber')}
+
+    <p style="color:#475569;font-size:14px;line-height:1.6;margin-top:20px;">
+      You can sign in to access the pharmacy dashboard, process sales, manage inventory, and more — depending on your role.
+    </p>
+    ${btn('Sign In Now →', opts.loginUrl)}
+    <p style="margin-top:24px;color:#94a3b8;font-size:12px;">
+      This email was sent by <strong>${opts.ownerName}</strong> via the Pryrox Pharmacy Platform.
+      If you have questions, reply to this email or contact your pharmacy manager directly.
+    </p>
+  `
+  return layout(`Welcome to ${opts.pharmacyName} — Your account is ready`, body)
+}
+
+// ─── Send helper: staff welcome ───────────────────────────
+
+export async function sendStaffWelcomeEmail(opts: {
+  to: string
+  staffName: string
+  pharmacyName: string
+  password: string
+  role: string
+  ownerName: string
+  ownerEmail: string
+}): Promise<boolean> {
+  if (!isSmtpConfigured()) {
+    console.warn('[sendStaffWelcomeEmail] SMTP not configured — skipping email')
+    return false
+  }
+  const loginUrl = `${BASE_URL}/sign-in`
+  try {
+    await sendMailWithReplyTo({
+      to: opts.to,
+      replyTo: opts.ownerEmail,
+      subject: `🏥 Welcome to ${opts.pharmacyName} — Your account credentials`,
+      html: staffWelcomeEmailHtml({
+        staffName: opts.staffName,
+        pharmacyName: opts.pharmacyName,
+        email: opts.to,
+        password: opts.password,
+        role: opts.role,
+        ownerName: opts.ownerName,
+        loginUrl,
+      }),
+      text: `Welcome to ${opts.pharmacyName}!\n\nYou have been added as ${opts.role}.\n\nEmail: ${opts.to}\nPassword: ${opts.password}\n\nSign in at: ${loginUrl}\n\nPlease change your password after first login.\n\n— ${opts.ownerName}`,
+    })
+    console.log(`[sendStaffWelcomeEmail] Email sent to ${opts.to}`)
+    return true
+  } catch (err) {
+    console.error('[sendStaffWelcomeEmail] Failed to send email:', err)
+    return false
+  }
+}
+
+export function pharmacyOwnerWelcomeEmailHtml(opts: {
+  ownerName: string
+  pharmacyName: string
+  email: string
+  password: string
+  loginUrl: string
+}): string {
+  const body = `
+    <h2 style="margin:0 0 8px;color:#1e293b;font-size:20px;font-weight:700;">Welcome to Pryrox, ${opts.ownerName || 'Pharmacy Owner'}!</h2>
+    <p style="margin:0 0 20px;color:#64748b;font-size:15px;">
+      Your pharmacy <strong>${opts.pharmacyName}</strong> has been registered on the Pryrox platform.
+      Here are your login credentials — please keep them safe.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:0;margin-bottom:24px;">
+      <tr>
+        <td style="padding:20px 24px;">
+          <p style="margin:0 0 14px;font-size:13px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">Your Login Credentials</p>
+          <table cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding:6px 0;color:#64748b;font-size:14px;width:90px;">Email</td>
+              <td style="padding:6px 0;font-size:14px;font-weight:600;color:#1e293b;">${opts.email}</td>
+            </tr>
+            <tr>
+              <td style="padding:6px 0;color:#64748b;font-size:14px;">Password</td>
+              <td style="padding:6px 0;">
+                <code style="background:#e2e8f0;padding:3px 10px;border-radius:5px;font-size:14px;font-weight:700;color:#1e293b;letter-spacing:1px;">${opts.password}</code>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    ${alertBox('🔒 For your security, please change your password immediately after your first login.', 'amber')}
+
+    <p style="color:#475569;font-size:14px;line-height:1.6;margin-top:20px;">
+      You can now sign in to manage your pharmacy, view inventory, process sales, and more.
+    </p>
+    ${btn('Sign In to Pryrox →', opts.loginUrl)}
+    <p style="margin-top:20px;color:#94a3b8;font-size:12px;">
+      If you have any questions, contact your platform administrator.
+    </p>
+  `
+  return layout(`Welcome to Pryrox — ${opts.pharmacyName}`, body)
+}
+
+// ─── Send helper: pharmacy owner welcome ─────────────────
+
+export async function sendPharmacyOwnerWelcomeEmail(opts: {
+  to: string
+  ownerName: string
+  pharmacyName: string
+  password: string
+}): Promise<boolean> {
+  if (!isSmtpConfigured()) {
+    console.warn('[sendPharmacyOwnerWelcomeEmail] SMTP not configured — skipping email')
+    return false
+  }
+  const loginUrl = `${BASE_URL}/sign-in`
+  try {
+    await sendMail({
+      to: opts.to,
+      subject: `🏥 Welcome to Pryrox — Your pharmacy account is ready`,
+      html: pharmacyOwnerWelcomeEmailHtml({
+        ownerName: opts.ownerName,
+        pharmacyName: opts.pharmacyName,
+        email: opts.to,
+        password: opts.password,
+        loginUrl,
+      }),
+      text: `Welcome to Pryrox! Your pharmacy "${opts.pharmacyName}" is ready.\n\nEmail: ${opts.to}\nPassword: ${opts.password}\n\nSign in at: ${loginUrl}\n\nPlease change your password after first login.`,
+    })
+    console.log(`[sendPharmacyOwnerWelcomeEmail] Email sent to ${opts.to}`)
+    return true
+  } catch (err) {
+    console.error('[sendPharmacyOwnerWelcomeEmail] Failed to send email:', err)
+    return false
+  }
 }
 
 // ─── Send helpers ─────────────────────────────────────────

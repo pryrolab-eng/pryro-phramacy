@@ -79,7 +79,7 @@ export async function getPharmacySubscriptions(
     .from('subscriptions')
     .select('*, plan:subscription_plans(*)')
     .eq('pharmacy_id', pharmacyId)
-    .in('status', ['active', 'pending'])
+    .in('status', ['active', 'trialing', 'pending'])
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -108,7 +108,7 @@ export async function getPharmacyMainSubscription(
     .select('*, plan:subscription_plans(*)')
     .eq('pharmacy_id', pharmacyId)
     .eq('subscription_type', 'main')
-    .eq('status', 'active')
+    .in('status', ['active', 'trialing'])
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -546,12 +546,14 @@ export async function getAllSubscriptions(
   admin: SupabaseClient,
   opts?: { status?: string; limit?: number; offset?: number }
 ) {
+  // Step 1: fetch subscriptions (base columns only — avoids 500 if newer
+  // columns like billing_period / trial_ends_at haven't been migrated yet).
   let query = admin
     .from('subscriptions')
     .select(`
-      *,
-      plan:subscription_plans(id, name, price, yearly_price, plan_type, billing_period, features),
-      pharmacy:pharmacies(id, name, email, owner_id)
+      id, pharmacy_id, plan_id,
+      status, is_active, current_period_start, current_period_end,
+      cancelled_at, created_at, updated_at
     `)
     .order('created_at', { ascending: false })
 
@@ -559,9 +561,65 @@ export async function getAllSubscriptions(
   if (opts?.limit) query = query.limit(opts.limit)
   if (opts?.offset) query = query.range(opts.offset, (opts.offset + (opts.limit ?? 20)) - 1)
 
-  const { data, error } = await query
-  if (error) throw new Error(`getAllSubscriptions: ${error.message}`)
-  return data ?? []
+  const { data: subs, error: subsErr } = await query
+  if (subsErr) throw new Error(`getAllSubscriptions: ${subsErr.message}`)
+  if (!subs || subs.length === 0) return []
+
+  // Step 2: fetch extended columns that may not exist on older DB instances.
+  // We do this in a separate query so a missing column only degrades gracefully.
+  const ids = subs.map((s: Record<string, unknown>) => s.id as string)
+
+  const { data: extended } = await admin
+    .from('subscriptions')
+    .select('id, branch_id, subscription_type, billing_period, trial_ends_at')
+    .in('id', ids)
+
+  const extMap = new Map<string, Record<string, unknown>>()
+  for (const row of extended ?? []) {
+    extMap.set(row.id as string, row as Record<string, unknown>)
+  }
+
+  // Step 3: fetch related plans (select only stable columns + optional newer ones).
+  const planIds = [...new Set(subs.map((s: Record<string, unknown>) => s.plan_id as string).filter(Boolean))]
+  let plans: Record<string, unknown>[] = []
+  if (planIds.length > 0) {
+    const { data: planData } = await admin
+      .from('subscription_plans')
+      .select('id, name, price, plan_type, billing_period, features, yearly_price')
+      .in('id', planIds)
+    plans = (planData ?? []) as Record<string, unknown>[]
+  }
+  const planMap = new Map<string, Record<string, unknown>>()
+  for (const p of plans) planMap.set(p.id as string, p)
+
+  // Step 4: fetch related pharmacies.
+  const pharmacyIds = [...new Set(subs.map((s: Record<string, unknown>) => s.pharmacy_id as string).filter(Boolean))]
+  let pharmacies: Record<string, unknown>[] = []
+  if (pharmacyIds.length > 0) {
+    const { data: pharmData } = await admin
+      .from('pharmacies')
+      .select('id, name, email, owner_id')
+      .in('id', pharmacyIds)
+    pharmacies = (pharmData ?? []) as Record<string, unknown>[]
+  }
+  const pharmacyMap = new Map<string, Record<string, unknown>>()
+  for (const ph of pharmacies) pharmacyMap.set(ph.id as string, ph)
+
+  // Step 5: merge everything.
+  return subs.map((row: Record<string, unknown>) => {
+    const ext = extMap.get(row.id as string) ?? {}
+    const plan = planMap.get(row.plan_id as string) ?? null
+    const pharmacy = pharmacyMap.get(row.pharmacy_id as string) ?? null
+    return {
+      ...row,
+      branch_id: ext.branch_id ?? null,
+      subscription_type: ext.subscription_type ?? 'main',
+      billing_period: ext.billing_period ?? 'monthly',
+      trial_ends_at: ext.trial_ends_at ?? null,
+      plan,
+      pharmacy,
+    }
+  })
 }
 
 export async function getAllPlans(admin: SupabaseClient): Promise<SubscriptionPlan[]> {

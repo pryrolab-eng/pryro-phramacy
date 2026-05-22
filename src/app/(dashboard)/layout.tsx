@@ -7,6 +7,7 @@ import { SuperadminSidebar } from '@/components/superadmin-sidebar'
 import { PharmacySidebar } from '@/components/pharmacy-sidebar'
 import { PharmacistSidebar } from '@/components/pharmacist-sidebar'
 import SubscriptionBlocker from '@/components/subscription-blocker'
+import { Toaster } from 'sonner'
 
 export default async function DashboardLayout({
   children,
@@ -54,7 +55,7 @@ export default async function DashboardLayout({
         .select('id, status')
         .eq('pharmacy_id', userProfile.pharmacy_id)
         .eq('subscription_type', 'main')
-        .eq('status', 'active')
+        .in('status', ['active', 'trialing'])
         .limit(1)
         .maybeSingle(),
       supabase
@@ -91,6 +92,7 @@ export default async function DashboardLayout({
           {children}
         </SidebarInset>
       </SidebarProvider>
+      <Toaster richColors position="top-right" />
     </PharmacyProvider>
   )
 }

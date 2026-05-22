@@ -14,25 +14,24 @@ export function isSmtpConfigured(): boolean {
 function getTransporter(): Transporter {
   if (!isSmtpConfigured()) {
     throw new Error(
-      "SMTP is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS in .env"
+      "SMTP is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS in .env.local"
     );
   }
 
-  if (!transporter) {
-    const port = Number(process.env.SMTP_PORT ?? 587);
-    const secure =
-      process.env.SMTP_SECURE === "true" || String(port) === "465";
+  // Always create a fresh transporter (avoids stale cached config after env changes)
+  const port = Number(process.env.SMTP_PORT ?? 587);
+  const secure =
+    process.env.SMTP_SECURE === "true" || String(port) === "465";
 
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port,
-      secure,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  }
+  transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port,
+    secure,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
 
   return transporter;
 }
@@ -56,6 +55,22 @@ export async function sendMail(options: SendMailOptions): Promise<void> {
   await transport.sendMail({
     from: getDefaultFromAddress(),
     to: options.to,
+    subject: options.subject,
+    html: options.html,
+    text: options.text,
+  });
+}
+
+export type SendMailWithReplyToOptions = SendMailOptions & {
+  replyTo?: string;
+};
+
+export async function sendMailWithReplyTo(options: SendMailWithReplyToOptions): Promise<void> {
+  const transport = getTransporter();
+  await transport.sendMail({
+    from: getDefaultFromAddress(),
+    to: options.to,
+    replyTo: options.replyTo,
     subject: options.subject,
     html: options.html,
     text: options.text,

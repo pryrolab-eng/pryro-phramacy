@@ -12,3 +12,7 @@ export { PlansTable } from './plans-table'
 export type { PlanTableRow } from './plans-table'
 
 export { AdminSubscribersTable } from './admin-subscribers-table'
+
+export { InvoicesTable } from './invoices-table'
+
+export { BillingStatCard } from './billing-stat-card'

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -118,8 +119,9 @@ export default function PharmacyManagementPage() {
   }
 
   const handleAddPharmacy = async () => {
+    const tid = toast.loading('Creating pharmacy and owner account…')
     try {
-      await createAdminPharmacy(newPharmacy as Record<string, unknown>)
+      const result = await createAdminPharmacy(newPharmacy as Record<string, unknown>)
       await queryClient.invalidateQueries({ queryKey: adminPharmaciesQueryKey })
       setIsAddingPharmacy(false)
       setNewPharmacy({
@@ -127,15 +129,33 @@ export default function PharmacyManagementPage() {
         owner_name: '', owner_email: '', owner_password: '', subscription_plan: 'free',
         insurance_providers: []
       })
-      alert('Pharmacy added successfully!')
+
+      if (result.emailSent) {
+        toast.success('Pharmacy created — welcome email sent', {
+          id: tid,
+          description: `Login credentials were emailed to ${result.owner.email}.`,
+          duration: 6000,
+        })
+      } else {
+        toast.success('Pharmacy created successfully', {
+          id: tid,
+          description: result.smtpConfigured
+            ? `Email delivery failed. Share credentials manually: ${result.owner.email}`
+            : `SMTP not configured. Share credentials manually with ${result.owner.email}.`,
+          duration: 8000,
+        })
+      }
     } catch (error) {
-      console.error('Error adding pharmacy:', error)
-      alert(error instanceof Error ? error.message : 'Error adding pharmacy. Please try again.')
+      toast.error('Failed to create pharmacy', {
+        id: tid,
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
     }
   }
 
   const handleEditPharmacy = async () => {
     if (!selectedPharmacy?.id) return
+    const tid = toast.loading('Saving changes…')
     try {
       await updateAdminPharmacy(
         selectedPharmacy.id,
@@ -144,22 +164,27 @@ export default function PharmacyManagementPage() {
       await queryClient.invalidateQueries({ queryKey: adminPharmaciesQueryKey })
       setIsEditingPharmacy(false)
       setSelectedPharmacy(null)
-      alert('Pharmacy updated successfully!')
+      toast.success('Pharmacy updated', { id: tid })
     } catch (error) {
-      console.error('Error updating pharmacy:', error)
-      alert(error instanceof Error ? error.message : 'Failed to update pharmacy')
+      toast.error('Failed to update pharmacy', {
+        id: tid,
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
     }
   }
 
   const handleDeletePharmacy = async (id: string) => {
     if (confirm('Are you sure you want to delete this pharmacy?')) {
+      const tid = toast.loading('Deleting pharmacy…')
       try {
         await deleteAdminPharmacy(id)
         await queryClient.invalidateQueries({ queryKey: adminPharmaciesQueryKey })
-        alert('Pharmacy deleted successfully!')
+        toast.success('Pharmacy deleted', { id: tid })
       } catch (error) {
-        console.error('Error deleting pharmacy:', error)
-        alert(error instanceof Error ? error.message : 'Failed to delete pharmacy')
+        toast.error('Failed to delete pharmacy', {
+          id: tid,
+          description: error instanceof Error ? error.message : 'Please try again.',
+        })
       }
     }
   }

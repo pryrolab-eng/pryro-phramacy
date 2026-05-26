@@ -45,28 +45,27 @@ export async function GET() {
     
     const stats = {
       totalProducts: totalProducts || 0,
-      lowStockItems: 0, // Will be calculated from stock-alerts API
+      lowStockItems: 0,
       todaySales: Math.round(todayTotal),
-      monthlyRevenue: Math.round(todayTotal * 30), // Estimate
+      monthlyRevenue: Math.round(todayTotal * 30),
       totalCustomers: totalCustomers || 0,
-      activeStaff: 8,
+      activeStaff: 0,
       pendingOrders: 0,
-      expiringProducts: 0 // Will be calculated from stock-alerts API
+      expiringProducts: 0,
     }
 
     return NextResponse.json(stats)
   } catch (error) {
-    // Fallback to mock data if database fails
-    const stats = {
-      totalProducts: 1250,
-      lowStockItems: 23,
-      todaySales: 145000,
-      monthlyRevenue: 3200000,
-      totalCustomers: 890,
-      activeStaff: 8,
-      pendingOrders: 12,
-      expiringProducts: 15
-    }
-    return NextResponse.json(stats)
+    console.error('GET /api/pharmacy/dashboard', error)
+    return NextResponse.json({
+      totalProducts: 0,
+      lowStockItems: 0,
+      todaySales: 0,
+      monthlyRevenue: 0,
+      totalCustomers: 0,
+      activeStaff: 0,
+      pendingOrders: 0,
+      expiringProducts: 0,
+    })
   }
 }

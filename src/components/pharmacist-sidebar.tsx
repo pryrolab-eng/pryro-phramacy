@@ -41,66 +41,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
-
-
-const pharmacistData = {
-  navMain: [
-    {
-      title: "Dashboard",
-      url: "/pharmacist-dashboard",
-      icon: LayoutDashboard,
-    },
-    {
-      title: "Prescriptions",
-      url: "/prescriptions",
-      icon: FileText,
-    },
-    {
-      title: "Inventory",
-      url: "/inventory",
-      icon: Package,
-    },
-    {
-      title: "POS",
-      url: "/pos",
-      icon: ShoppingCart,
-    },
-    {
-      title: "Customers",
-      url: "/customers",
-      icon: Users,
-    },
-    {
-      title: "Settings",
-      url: "/settings",
-      icon: Settings,
-    },
-  ],
-  profileActions: [
-    {
-      title: "Profile",
-      url: "/profile",
-      icon: User,
-    },
-    {
-      title: "Settings",
-      url: "/settings",
-      icon: Settings,
-    },
-    {
-      title: "Get Help",
-      url: "/help",
-      icon: HelpCircle,
-    },
-    {
-      title: "Search",
-      url: "/search",
-      icon: Search,
-    },
-  ],
-}
+import { PHARMACIST_NAV_ITEMS } from "@/lib/subscription/nav-config"
+import { usePharmacyEntitlements } from "@/hooks/usePharmacyEntitlements"
+import { NavEntitlementItem } from "@/components/subscription/nav-entitlement-item"
 
 export function PharmacistSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { can, entitlements } = usePharmacyEntitlements()
   const [userName, setUserName] = React.useState('Pharmacist')
   const [daysLeft, setDaysLeft] = React.useState<number | null>(null)
   const [isExpired, setIsExpired] = React.useState(false)
@@ -193,19 +139,16 @@ export function PharmacistSidebar({ ...props }: React.ComponentProps<typeof Side
           <SidebarGroupLabel>Pharmacist Tools</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {pharmacistData.navMain.map((item) => {
-                const isActive = pathname === item.url
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={item.url}>
-                        <item.icon />
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )
-              })}
+              {PHARMACIST_NAV_ITEMS.map((item) => (
+                <NavEntitlementItem
+                  key={item.title}
+                  item={item}
+                  pathname={pathname}
+                  allowed={can(item.featureKey)}
+                  isAccessAllowed={entitlements.isAccessAllowed}
+                  upgradeHref={`/pharmacy-dashboard/billing?upgrade=${encodeURIComponent(item.featureKey)}`}
+                />
+              ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

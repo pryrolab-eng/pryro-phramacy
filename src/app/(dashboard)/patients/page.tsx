@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { useCustomers } from '@/hooks/useCustomers'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -18,31 +19,14 @@ interface Patient {
 }
 
 export default function PatientsPage() {
-  const [patients, setPatients] = useState<Patient[]>([])
+  const customersQuery = useCustomers()
+  const patients = (customersQuery.data ?? []) as Patient[]
   const [searchTerm, setSearchTerm] = useState('')
-  const [loading, setLoading] = useState(true)
+  const loading = customersQuery.isPending
 
-  const fetchPatients = async () => {
-    setLoading(true)
-    try {
-      const response = await fetch('/api/customers')
-      const data = await response.json()
-      console.log('API Response:', { status: response.status, data })
-      if (response.ok) {
-        setPatients(Array.isArray(data) ? data : [])
-      } else {
-        console.error('API Error:', data)
-      }
-    } catch (error) {
-      console.error('Error fetching patients:', error)
-    } finally {
-      setLoading(false)
-    }
+  const fetchPatients = () => {
+    void customersQuery.refetch()
   }
-
-  useEffect(() => {
-    fetchPatients()
-  }, [])
 
   const filteredPatients = patients.filter(patient =>
     patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||

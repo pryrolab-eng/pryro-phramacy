@@ -1,13 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { usePharmacyStore } from '@/hooks/usePharmacyStore'
+import { useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
 import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
+import {
+  useInvalidatePharmacyDashboard,
+  usePharmacyDashboardStats,
+  usePharmacySalesChart,
+  useRecentPosSales,
+  useStockAlerts,
+  useCreatePharmacistMutation,
+  type PharmacyDashboardStats,
+} from '@/hooks'
+import { toast } from 'sonner'
 import { createClient } from '../../../../supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { SidebarTrigger } from "@/components/ui/sidebar"
-import { Spinner } from '@/components/ui/spinner'
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
@@ -20,195 +28,58 @@ import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Package, DollarSign, Users, AlertTriangle, TrendingUp, ShoppingCart, Calendar, Clock, Pill, Activity, Eye, MoreHorizontal, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { Package, DollarSign, Users, AlertTriangle, ShoppingCart, Calendar, Clock, Pill, Eye } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer, Area, AreaChart, BarChart, Bar, XAxis, CartesianGrid, LabelList, YAxis } from 'recharts'
 import { PharmacyRadialChart } from '@/components/pharmacy-radial-chart'
 import { PharmacyBarChart } from '@/components/pharmacy-bar-chart'
 import { PharmacyInventoryChart } from '@/components/pharmacy-inventory-chart'
 import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { BranchUsageWidget } from '@/components/branch-usage-widget'
+import { DashboardPanelEmpty } from '@/components/dashboard/dashboard-panel-empty'
+import { DashboardPanelSkeleton } from '@/components/dashboard/dashboard-panel-skeleton'
+import { Skeleton } from '@/components/ui/skeleton'
 
-interface PharmacyStats {
-  totalProducts: number
-  lowStockItems: number
-  todaySales: number
-  monthlyRevenue: number
-  totalCustomers: number
-  activeStaff: number
-  pendingOrders: number
-  expiringProducts: number
-}
-
-interface RecentSale {
-  id: string
-  customer: string
-  amount: number
-  items: number
-  time: string
-  payment_method: string
-}
-
-interface StockAlert {
-  id: string
-  product: string
-  current_stock: number
-  min_stock: number
-  category: string
-  expires_in: number
+const EMPTY_STATS: PharmacyDashboardStats = {
+  totalProducts: 0,
+  lowStockItems: 0,
+  todaySales: 0,
+  monthlyRevenue: 0,
+  totalCustomers: 0,
+  activeStaff: 0,
+  pendingOrders: 0,
+  expiringProducts: 0,
 }
 
 export default function PharmacyDashboard() {
-  const router = useRouter()
-  const { inventory, sales, alerts, stats, setInventory, addSale, setAlerts, setStats } = usePharmacyStore()
-  const [localStats, setLocalStats] = useState<PharmacyStats>({
-    totalProducts: 1250,
-    lowStockItems: 23,
-    todaySales: 145000,
-    monthlyRevenue: 3200000,
-    totalCustomers: 890,
-    activeStaff: 8,
-    pendingOrders: 12,
-    expiringProducts: 15
-  })
+  const statsQuery = usePharmacyDashboardStats()
+  const recentSalesQuery = useRecentPosSales()
+  const stockAlertsQuery = useStockAlerts()
+  const salesChartQuery = usePharmacySalesChart()
+  const { invalidateStats, invalidateRecentSales, invalidateStockAlerts } =
+    useInvalidatePharmacyDashboard()
 
-  // Real-time updates
+  const localStats = statsQuery.data ?? EMPTY_STATS
+  const recentSales = recentSalesQuery.data ?? []
+  const lowStockItems = stockAlertsQuery.data?.lowStock ?? []
+  const expiringItems = stockAlertsQuery.data?.expiring ?? []
+  const salesChartData = salesChartQuery.data ?? []
+
+  const overviewLoading =
+    statsQuery.isPending ||
+    recentSalesQuery.isPending ||
+    stockAlertsQuery.isPending ||
+    salesChartQuery.isPending
+
   useRealtimeUpdates((update) => {
     if (update.type === 'inventory_update') {
-      fetchStockAlerts()
+      void invalidateStockAlerts()
     }
     if (update.type === 'new_sale') {
-      fetchStats()
-      fetchRecentSales()
+      void invalidateStats()
+      void invalidateRecentSales()
     }
   })
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const response = await fetch('/api/pharmacy/dashboard')
-        if (response.ok) {
-          const data = await response.json()
-          setLocalStats(data)
-          setStats(data)
-        }
-      } catch (error) {
-        console.error('Error fetching stats:', error)
-      }
-    }
-    
-    const fetchRecentSales = async () => {
-      try {
-        const response = await fetch('/api/pos')
-        if (response.ok) {
-          const data = await response.json()
-          setRecentSales(data)
-        }
-      } catch (error) {
-        console.error('Error fetching recent sales:', error)
-      }
-    }
-    
-    const fetchStockAlerts = async () => {
-      try {
-        const response = await fetch('/api/stock-alerts')
-        if (response.ok) {
-          const data = await response.json()
-          setStockAlerts(data.all || [])
-          setLowStockItems(data.lowStock || [])
-          setExpiringItems(data.expiring || [])
-          setAlerts(data.all || [])
-        }
-      } catch (error) {
-        const mockData = [
-          { id: '1', product: 'Paracetamol 500mg', current_stock: 5, min_stock: 20, category: 'Pain Relief', expires_in: 30 },
-          { id: '2', product: 'Amoxicillin 250mg', current_stock: 8, min_stock: 25, category: 'Antibiotics', expires_in: 15 }
-        ]
-        setStockAlerts(mockData)
-        setLowStockItems(mockData.filter(item => item.current_stock <= item.min_stock))
-        setExpiringItems(mockData.filter(item => item.expires_in <= 60))
-        setAlerts(mockData)
-      }
-    }
-    
-    const fetchSalesChart = async () => {
-      try {
-        const response = await fetch('/api/pharmacy/sales-chart')
-        if (response.ok) {
-          const data = await response.json()
-          setSalesChartData(data)
-        }
-      } catch (error) {
-        console.error('Error fetching sales chart:', error)
-      }
-    }
-    
-    fetchStats()
-    fetchRecentSales()
-    fetchStockAlerts()
-    fetchSalesChart()
-  }, [])
-
-  const handleAddPharmacist = async () => {
-    try {
-      const credentials = {
-        email: newPharmacist.email,
-        password: newPharmacist.password,
-        name: newPharmacist.name
-      }
-      
-      // Get auth token from Supabase client
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      
-      if (!session?.access_token) {
-        alert('Please login first')
-        return
-      }
-      
-      // Get current user's pharmacy_id from pharmacy_users table
-      const { data: currentUser } = await supabase
-        .from('pharmacy_users')
-        .select('pharmacy_id')
-        .eq('user_id', session.user.id)
-        .single()
-      
-      const response = await fetch('/api/pharmacist', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({
-          email: newPharmacist.email,
-          password: newPharmacist.password,
-          full_name: newPharmacist.name,
-          phone: newPharmacist.phone,
-          role: 'pharmacist',
-          pharmacy_id: currentUser?.pharmacy_id
-        })
-      })
-      
-      const result = await response.json()
-      
-      if (response.ok) {
-        setIsAddingPharmacist(false)
-        setNewPharmacist({ name: '', email: '', phone: '', password: '' })
-        alert(`✅ Pharmacist Created Successfully!\n\n📧 SHARE THESE LOGIN CREDENTIALS:\n\nEmail: ${credentials.email}\nPassword: ${credentials.password}\n\n🔐 ${credentials.name} can now login and access the pharmacist dashboard.`)
-      } else {
-        console.error('API Error:', result)
-        alert(`❌ Failed: ${result.error}\n\nDetails: ${result.details || 'None'}\n\nAuth Error: ${result.authError || 'None'}`)
-      }
-    } catch (error) {
-      console.error('Error adding pharmacist:', error)
-      alert('Error adding pharmacist')
-    }
-  }
-
-  const [recentSales, setRecentSales] = useState<RecentSale[]>([])
-
-  const [stockAlerts, setStockAlerts] = useState<StockAlert[]>([])
-  const [lowStockItems, setLowStockItems] = useState<StockAlert[]>([])
-  const [expiringItems, setExpiringItems] = useState<StockAlert[]>([])
   const [isAddingPharmacist, setIsAddingPharmacist] = useState(false)
   const [newPharmacist, setNewPharmacist] = useState({
     name: '',
@@ -216,8 +87,68 @@ export default function PharmacyDashboard() {
     phone: '',
     password: ''
   })
-  const [loading, setLoading] = useState(false)
-  const [salesChartData, setSalesChartData] = useState([])
+
+  const createPharmacistMutation = useCreatePharmacistMutation()
+
+  const handleAddPharmacist = async () => {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.user) {
+      toast.error('Please sign in first')
+      return
+    }
+
+    const { data: currentUser } = await supabase
+      .from('pharmacy_users')
+      .select('pharmacy_id, pharmacies(name)')
+      .eq('user_id', session.user.id)
+      .single()
+
+    if (!currentUser?.pharmacy_id) {
+      toast.error('Pharmacy not found')
+      return
+    }
+
+    const pharmacyJoin = currentUser.pharmacies as
+      | { name?: string }
+      | { name?: string }[]
+      | null
+    const pharmacyName = Array.isArray(pharmacyJoin)
+      ? pharmacyJoin[0]?.name
+      : pharmacyJoin?.name
+
+    try {
+      const invitedEmail = newPharmacist.email
+      const result = await createPharmacistMutation.mutateAsync({
+        email: invitedEmail,
+        password: newPharmacist.password,
+        full_name: newPharmacist.name,
+        phone: newPharmacist.phone,
+        role: 'pharmacist',
+        pharmacy_id: currentUser.pharmacy_id,
+        pharmacy_name: pharmacyName,
+      })
+
+      setIsAddingPharmacist(false)
+      setNewPharmacist({ name: '', email: '', phone: '', password: '' })
+
+      if (result.emailSent) {
+        toast.success('Invitation sent', {
+          description: `Login instructions were emailed to ${invitedEmail}.`,
+        })
+      } else {
+        toast.warning('Pharmacist created', {
+          description:
+            result.emailError ??
+            'Account created but the invitation email could not be sent.',
+        })
+      }
+    } catch (error) {
+      toast.error('Could not add pharmacist', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    }
+  }
 
   const SalesChart = () => (
     <Card>
@@ -238,12 +169,6 @@ export default function PharmacyDashboard() {
         </ChartContainer>
       </CardContent>
     </Card>
-  )
-
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Spinner className="size-6" />
-    </div>
   )
 
   return (
@@ -316,12 +241,17 @@ export default function PharmacyDashboard() {
                 </div>
               </div>
               <DialogFooter>
-                <Button 
-                  onClick={handleAddPharmacist} 
-                  disabled={!newPharmacist.name || !newPharmacist.email || !newPharmacist.password}
+                <Button
+                  onClick={() => void handleAddPharmacist()}
+                  disabled={
+                    !newPharmacist.name ||
+                    !newPharmacist.email ||
+                    !newPharmacist.password ||
+                    createPharmacistMutation.isPending
+                  }
                   className="w-full"
                 >
-                  Add Pharmacist
+                  {createPharmacistMutation.isPending ? 'Sending…' : 'Add Pharmacist'}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -343,11 +273,20 @@ export default function PharmacyDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{localStats.todaySales.toLocaleString()} RWF</div>
-            <div className="flex items-center text-xs text-muted-foreground">
-              <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
-              +12% from yesterday
-            </div>
+            {overviewLoading ? (
+              <Skeleton className="h-8 w-32" />
+            ) : (
+              <div className="text-2xl font-bold">
+                {localStats.todaySales.toLocaleString()} RWF
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {overviewLoading
+                ? 'Loading…'
+                : localStats.todaySales === 0
+                  ? 'No sales recorded today'
+                  : 'Total for today'}
+            </p>
           </CardContent>
         </Card>
 
@@ -359,8 +298,14 @@ export default function PharmacyDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{localStats.totalProducts}</div>
-            <p className="text-xs text-muted-foreground">{localStats.lowStockItems} low stock</p>
+            {overviewLoading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
+              <div className="text-2xl font-bold">{localStats.totalProducts}</div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {overviewLoading ? 'Loading…' : `${lowStockItems.length} low stock`}
+            </p>
           </CardContent>
         </Card>
 
@@ -372,8 +317,14 @@ export default function PharmacyDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{localStats.totalCustomers}</div>
-            <p className="text-xs text-muted-foreground">{localStats.activeStaff} active staff</p>
+            {overviewLoading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
+              <div className="text-2xl font-bold">{localStats.totalCustomers}</div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {overviewLoading ? 'Loading…' : 'Unique customers'}
+            </p>
           </CardContent>
         </Card>
 
@@ -385,7 +336,11 @@ export default function PharmacyDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{lowStockItems.length}</div>
+            {overviewLoading ? (
+              <Skeleton className="h-8 w-12" />
+            ) : (
+              <div className="text-2xl font-bold">{lowStockItems.length}</div>
+            )}
             <p className="text-xs text-muted-foreground">Items below threshold</p>
           </CardContent>
         </Card>
@@ -398,7 +353,11 @@ export default function PharmacyDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{expiringItems.length}</div>
+            {overviewLoading ? (
+              <Skeleton className="h-8 w-12" />
+            ) : (
+              <div className="text-2xl font-bold">{expiringItems.length}</div>
+            )}
             <p className="text-xs text-muted-foreground">Within 60 days</p>
           </CardContent>
         </Card>
@@ -422,36 +381,50 @@ export default function PharmacyDashboard() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Recent Sales</CardTitle>
-                <Button variant="ghost" size="sm">
-                  <Eye className="h-4 w-4" />
+                <Button variant="ghost" size="sm" asChild>
+                  <a href="/sales" aria-label="View all sales">
+                    <Eye className="h-4 w-4" />
+                  </a>
                 </Button>
               </CardHeader>
               <CardContent>
-                <ScrollArea className="h-[300px]">
-                  <div className="space-y-3">
-                    {recentSales.map((sale) => (
-                      <div key={sale.id} className="flex items-center justify-between p-3 rounded-lg border">
-                        <div className="flex items-center space-x-3">
-                          <Avatar className="h-8 w-8">
-                            <AvatarFallback className="bg-green-100 text-green-600">
-                              {sale.customer.charAt(0)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="text-sm font-medium">{sale.customer}</p>
-                            <p className="text-xs text-muted-foreground">{sale.items} items • {sale.time}</p>
+                {overviewLoading ? (
+                  <DashboardPanelSkeleton rows={4} />
+                ) : recentSales.length === 0 ? (
+                  <DashboardPanelEmpty
+                    icon={ShoppingCart}
+                    title="No sales yet"
+                    description="Your latest transactions will show up here after you complete a sale at the POS."
+                    actionLabel="Open POS"
+                    actionHref="/pos"
+                  />
+                ) : (
+                  <ScrollArea className="h-[300px]">
+                    <div className="space-y-3">
+                      {recentSales.map((sale) => (
+                        <div key={sale.id} className="flex items-center justify-between p-3 rounded-lg border">
+                          <div className="flex items-center space-x-3">
+                            <Avatar className="h-8 w-8">
+                              <AvatarFallback className="bg-neutral-100 text-neutral-700">
+                                {sale.customer.charAt(0)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="text-sm font-medium">{sale.customer}</p>
+                              <p className="text-xs text-muted-foreground">{sale.items} items • {sale.time}</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-semibold">{sale.amount.toLocaleString()} RWF</p>
+                            <Badge variant={sale.payment_method === 'Insurance' ? 'secondary' : 'outline'} className="text-xs">
+                              {sale.payment_method}
+                            </Badge>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-semibold">{sale.amount.toLocaleString()} RWF</p>
-                          <Badge variant={sale.payment_method === 'Insurance' ? 'secondary' : 'outline'} className="text-xs">
-                            {sale.payment_method}
-                          </Badge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
               </CardContent>
             </Card>
 
@@ -459,40 +432,49 @@ export default function PharmacyDashboard() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Stock Alerts</CardTitle>
-                <Badge variant="destructive" className="text-xs">
-                  {lowStockItems.length}
+                <Badge
+                  variant={lowStockItems.length > 0 ? 'destructive' : 'secondary'}
+                  className="text-xs"
+                >
+                  {overviewLoading ? '…' : lowStockItems.length}
                 </Badge>
               </CardHeader>
               <CardContent>
-                <ScrollArea className="h-[300px]">
-                  <div className="space-y-3">
-                    {lowStockItems.map((alert) => (
-                      <div key={alert.id} className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50">
-                        <div className="flex items-center space-x-3">
-                          <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center">
-                            <Package className="h-4 w-4 text-amber-600" />
+                {overviewLoading ? (
+                  <DashboardPanelSkeleton rows={4} />
+                ) : lowStockItems.length === 0 ? (
+                  <DashboardPanelEmpty
+                    icon={Package}
+                    title="Stock levels look good"
+                    description="Nothing is below your minimum threshold right now. We'll list items here when reordering is needed."
+                    actionLabel="View inventory"
+                    actionHref="/inventory"
+                  />
+                ) : (
+                  <ScrollArea className="h-[300px]">
+                    <div className="space-y-3">
+                      {lowStockItems.map((alert) => (
+                        <div key={alert.id} className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50">
+                          <div className="flex items-center space-x-3">
+                            <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center">
+                              <Package className="h-4 w-4 text-amber-600" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium">{alert.product}</p>
+                              <p className="text-xs text-muted-foreground">{alert.category}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-sm font-medium">{alert.product}</p>
-                            <p className="text-xs text-muted-foreground">{alert.category}</p>
+                          <div className="text-right">
+                            <div className="text-xs font-medium text-amber-700">
+                              {alert.current_stock} / {alert.min_stock}
+                            </div>
+                            <Progress value={(alert.current_stock / alert.min_stock) * 100} className="w-16 h-2 mt-1" />
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-xs font-medium text-amber-700">
-                            {alert.current_stock} / {alert.min_stock}
-                          </div>
-                          <Progress value={(alert.current_stock / alert.min_stock) * 100} className="w-16 h-2 mt-1" />
-                        </div>
-                      </div>
-                    ))}
-                    {lowStockItems.length === 0 && (
-                      <div className="text-center py-8">
-                        <Package className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                        <p className="text-sm text-muted-foreground">All items adequately stocked</p>
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
               </CardContent>
             </Card>
 
@@ -501,39 +483,45 @@ export default function PharmacyDashboard() {
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
                 <Badge variant="outline" className="text-xs">
-                  {expiringItems.length}
+                  {overviewLoading ? '…' : expiringItems.length}
                 </Badge>
               </CardHeader>
               <CardContent>
-                <ScrollArea className="h-[300px]">
-                  <div className="space-y-3">
-                    {expiringItems.map((alert) => (
-                      <div key={alert.id} className="flex items-center justify-between p-3 rounded-lg border border-red-200 bg-red-50">
-                        <div className="flex items-center space-x-3">
-                          <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
-                            <Clock className="h-4 w-4 text-red-600" />
+                {overviewLoading ? (
+                  <DashboardPanelSkeleton rows={4} />
+                ) : expiringItems.length === 0 ? (
+                  <DashboardPanelEmpty
+                    icon={Clock}
+                    title="Nothing expiring soon"
+                    description="No batches are due within the next 60 days. Add inventory with expiry dates to track them here."
+                    actionLabel="Manage inventory"
+                    actionHref="/inventory"
+                  />
+                ) : (
+                  <ScrollArea className="h-[300px]">
+                    <div className="space-y-3">
+                      {expiringItems.map((alert) => (
+                        <div key={alert.id} className="flex items-center justify-between p-3 rounded-lg border border-red-200 bg-red-50">
+                          <div className="flex items-center space-x-3">
+                            <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
+                              <Clock className="h-4 w-4 text-red-600" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium">{alert.product}</p>
+                              <p className="text-xs text-muted-foreground">{alert.category}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-sm font-medium">{alert.product}</p>
-                            <p className="text-xs text-muted-foreground">{alert.category}</p>
+                          <div className="text-right">
+                            <Badge variant={alert.expires_in <= 30 ? 'destructive' : 'secondary'} className="text-xs">
+                              {alert.expires_in} days
+                            </Badge>
+                            <p className="text-xs text-muted-foreground mt-1">Stock: {alert.current_stock}</p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <Badge variant={alert.expires_in <= 30 ? 'destructive' : 'secondary'} className="text-xs">
-                            {alert.expires_in} days
-                          </Badge>
-                          <p className="text-xs text-muted-foreground mt-1">Stock: {alert.current_stock}</p>
-                        </div>
-                      </div>
-                    ))}
-                    {expiringItems.length === 0 && (
-                      <div className="text-center py-8">
-                        <Clock className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                        <p className="text-sm text-muted-foreground">No items expiring soon</p>
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
               </CardContent>
             </Card>
           </div>

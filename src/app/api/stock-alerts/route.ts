@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '../../../../supabase/server'
+import { firstRelation } from '@/lib/supabase/relation'
 
 export async function GET() {
   try {
@@ -40,15 +41,16 @@ export async function GET() {
 
     const currentDate = new Date()
     const formattedAlerts = inventory?.map(item => {
+      const medications = firstRelation(item.medications)
       const expiryDate = new Date(item.expiry_date)
       const daysToExpiry = Math.ceil((expiryDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24))
       
       return {
         id: item.id,
-        product: item.medications?.name || 'Unknown Product',
+        product: medications?.name || 'Unknown Product',
         current_stock: item.quantity_in_stock,
         min_stock: item.minimum_stock_level,
-        category: item.medications?.category || 'General',
+        category: medications?.category || 'General',
         expires_in: daysToExpiry
       }
     }) || []

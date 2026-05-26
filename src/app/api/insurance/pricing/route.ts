@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const insurancePrices = {
+const insurancePrices: Record<string, Record<string, number>> = {
   'MMI': { 'Amoxicillin 250mg': 500, 'Paracetamol 500mg': 300 },
   'RSSB': { 'Amoxicillin 250mg': 480, 'Paracetamol 500mg': 280 },
   'Radiant': { 'Amoxicillin 250mg': 520, 'Paracetamol 500mg': 320 }
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ price })
   }
   
-  return NextResponse.json(insurancePrices[insurance] || {})
+  return NextResponse.json(insurance ? (insurancePrices[insurance] || {}) : {})
 }
 
 export async function POST(request: NextRequest) {

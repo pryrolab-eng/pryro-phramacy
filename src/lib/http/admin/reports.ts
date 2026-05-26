@@ -33,7 +33,7 @@ export type AdminReportsSummary = {
 };
 
 export async function getAdminReportsSummary(): Promise<AdminReportsSummary> {
-  return fetchJson<AdminReportsSummary>("/api/admin/reports/summary");
+  return fetchJson<AdminReportsSummary>("/api/admin/reports-summary");
 }
 
 export async function uploadPlatformAdminReport(input: {

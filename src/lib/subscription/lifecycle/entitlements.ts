@@ -1,11 +1,23 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getBranchCapacity } from "../branch-addon-capacity";
+import { isEntitlementsEnforced } from "../feature-catalog";
+import { loadPlanFeatureKeys, listPlatformFeatures } from "../plan-features";
 import { SUBSCRIPTION_CURRENT_PLAN_EMBED } from "../embed-plan";
 import {
+  type EntitlementLimits,
   type EntitlementPlan,
+  type EntitlementUsage,
   type PharmacyEntitlements,
+  type PharmacyEntitlementsSnapshot,
   type ScheduledChangeInfo,
+  type WithinLimitResult,
 } from "./types";
+import { isBranchAddonCatalogName } from "../normalize-plan";
 import { normalizeLifecycleStatus, statusGrantsAccess } from "./status";
+
+const DEFAULT_MAX_USERS = 5;
+const DEFAULT_MAX_BRANCHES = 1;
+const DEFAULT_MONTHLY_TX = 500;
 
 type MainSubscriptionRow = {
   id: string;
@@ -23,9 +35,7 @@ type MainSubscriptionRow = {
   subscription_plans?: EntitlementPlan | EntitlementPlan[] | null;
 };
 
-function resolveJoinedPlan(
-  row: MainSubscriptionRow
-): EntitlementPlan | null {
+function resolveJoinedPlan(row: MainSubscriptionRow): EntitlementPlan | null {
   const joined = row.subscription_plans;
   if (!joined) return null;
   const plan = Array.isArray(joined) ? joined[0] : joined;
@@ -44,7 +54,7 @@ function resolveJoinedPlan(
 
 async function loadPlanById(
   admin: SupabaseClient,
-  planId: string
+  planId: string,
 ): Promise<EntitlementPlan | null> {
   const { data } = await admin
     .from("subscription_plans")
@@ -63,13 +73,123 @@ async function loadPlanById(
   };
 }
 
-/**
- * Single entitlement resolver — use for layouts, APIs, and gates.
- * Effective plan ignores next_plan_id until scheduled change is applied.
- */
+async function loadUsage(
+  admin: SupabaseClient,
+  pharmacyId: string,
+): Promise<EntitlementUsage> {
+  const [{ count: users }, { count: branches }] = await Promise.all([
+    admin
+      .from("pharmacy_users")
+      .select("id", { count: "exact", head: true })
+      .eq("pharmacy_id", pharmacyId)
+      .eq("is_active", true),
+    admin
+      .from("branches")
+      .select("id", { count: "exact", head: true })
+      .eq("pharmacy_id", pharmacyId)
+      .eq("is_active", true),
+  ]);
+  return {
+    activeUsers: users ?? 0,
+    activeBranches: branches ?? 0,
+  };
+}
+
+function buildLimits(
+  plan: EntitlementPlan | null,
+  totalBranchSlots: number,
+): EntitlementLimits {
+  return {
+    maxUsers: Number(plan?.max_users ?? DEFAULT_MAX_USERS),
+    maxBranches: Number(plan?.max_branches ?? DEFAULT_MAX_BRANCHES),
+    monthlyTxPerBranch: Number(plan?.monthly_tx_limit ?? DEFAULT_MONTHLY_TX),
+    totalBranchSlots,
+  };
+}
+
+function buildEntitlementHelpers(
+  featureKeys: string[],
+  limits: EntitlementLimits,
+  usage: EntitlementUsage,
+  isAccessAllowed: boolean,
+): Pick<PharmacyEntitlements, "can" | "withinLimit"> {
+  const keySet = new Set(featureKeys);
+  const enforced = isEntitlementsEnforced();
+
+  return {
+    can(featureKey: string) {
+      if (!enforced) return isAccessAllowed;
+      if (!isAccessAllowed) return false;
+      return keySet.has(featureKey);
+    },
+    withinLimit(limitKey: "users" | "branches" | "transactions") {
+      if (!enforced) {
+        return { allowed: true, current: 0, limit: 0 };
+      }
+      if (!isAccessAllowed) {
+        return {
+          allowed: false,
+          reason: "Subscription inactive",
+          current: 0,
+          limit: 0,
+        };
+      }
+      if (limitKey === "users") {
+        const current = usage.activeUsers;
+        const limit = limits.maxUsers;
+        if (current >= limit) {
+          return {
+            allowed: false,
+            reason: `Your plan allows up to ${limit} users.`,
+            current,
+            limit,
+          };
+        }
+        return { allowed: true, current, limit };
+      }
+      if (limitKey === "branches") {
+        const current = usage.activeBranches;
+        const limit = limits.totalBranchSlots;
+        if (current >= limit) {
+          return {
+            allowed: false,
+            reason: `Your plan allows up to ${limit} branches.`,
+            current,
+            limit,
+          };
+        }
+        return { allowed: true, current, limit };
+      }
+      return { allowed: true, current: 0, limit: limits.monthlyTxPerBranch };
+    },
+  };
+}
+
+function emptyEntitlements(pharmacyId: string): PharmacyEntitlements {
+  const limits = buildLimits(null, DEFAULT_MAX_BRANCHES);
+  const usage: EntitlementUsage = { activeUsers: 0, activeBranches: 0 };
+  const helpers = buildEntitlementHelpers([], limits, usage, false);
+  return {
+    pharmacyId,
+    effectivePlan: null,
+    effectivePlanLabel: "standard",
+    subscriptionId: null,
+    lifecycleStatus: null,
+    expiresAt: null,
+    isAccessAllowed: false,
+    isExpired: true,
+    daysRemaining: null,
+    scheduledChange: null,
+    featureKeys: [],
+    limits,
+    usage,
+    ...helpers,
+  };
+}
+
 export async function resolvePharmacyEntitlements(
   admin: SupabaseClient,
-  pharmacyId: string
+  pharmacyId: string,
 ): Promise<PharmacyEntitlements> {
   const { data: rows, error } = await admin
     .from("subscriptions")
@@ -90,45 +210,37 @@ export async function resolvePharmacyEntitlements(
       ${SUBSCRIPTION_CURRENT_PLAN_EMBED} (
         id, name, price, period, max_users, max_branches, monthly_tx_limit
       )
-    `
+    `,
     )
     .eq("pharmacy_id", pharmacyId)
     .eq("subscription_type", "main")
     .order("created_at", { ascending: false });
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 
   const candidates = (rows ?? []) as MainSubscriptionRow[];
+  const isMainTierSub = (r: MainSubscriptionRow) => {
+    const joined = resolveJoinedPlan(r);
+    if (joined && isBranchAddonCatalogName(joined.name)) return false;
+    return true;
+  };
 
   const main =
-    candidates.find((r) =>
-      statusGrantsAccess(
-        normalizeLifecycleStatus(r.status, {
-          is_active: r.is_active,
-          payment_method: r.payment_method,
-          pending_change_status: r.pending_change_status,
-        })
-      )
+    candidates.find(
+      (r) =>
+        isMainTierSub(r) &&
+        statusGrantsAccess(
+          normalizeLifecycleStatus(r.status, {
+            is_active: r.is_active,
+            payment_method: r.payment_method,
+            pending_change_status: r.pending_change_status,
+          }),
+        ),
     ) ??
-    candidates.find((r) => r.is_active) ??
+    candidates.find((r) => r.is_active && isMainTierSub(r)) ??
     null;
 
-  if (!main) {
-    return {
-      pharmacyId,
-      effectivePlan: null,
-      effectivePlanLabel: "standard",
-      subscriptionId: null,
-      lifecycleStatus: null,
-      expiresAt: null,
-      isAccessAllowed: false,
-      isExpired: true,
-      daysRemaining: null,
-      scheduledChange: null,
-    };
-  }
+  if (!main) return emptyEntitlements(pharmacyId);
 
   const lifecycleStatus = normalizeLifecycleStatus(main.status, {
     is_active: main.is_active,
@@ -137,14 +249,19 @@ export async function resolvePharmacyEntitlements(
   });
 
   let effectivePlan = resolveJoinedPlan(main);
+  if (effectivePlan && isBranchAddonCatalogName(effectivePlan.name)) {
+    effectivePlan = null;
+  }
   if (!effectivePlan && main.plan_id) {
     effectivePlan = await loadPlanById(admin, main.plan_id);
+    if (effectivePlan && isBranchAddonCatalogName(effectivePlan.name)) {
+      effectivePlan = null;
+    }
   }
 
   const expiresAt = main.expires_at;
   const now = Date.now();
-  const isExpired =
-    !expiresAt || new Date(expiresAt).getTime() <= now;
+  const isExpired = !expiresAt || new Date(expiresAt).getTime() <= now;
   const isAccessAllowed =
     statusGrantsAccess(lifecycleStatus) && !isExpired;
 
@@ -153,8 +270,8 @@ export async function resolvePharmacyEntitlements(
     daysRemaining = Math.max(
       0,
       Math.ceil(
-        (new Date(expiresAt).getTime() - now) / (1000 * 60 * 60 * 24)
-      )
+        (new Date(expiresAt).getTime() - now) / (1000 * 60 * 60 * 24),
+      ),
     );
   }
 
@@ -177,6 +294,22 @@ export async function resolvePharmacyEntitlements(
     }
   }
 
+  const [usage, capacity, featureKeys] = await Promise.all([
+    loadUsage(admin, pharmacyId),
+    getBranchCapacity(admin, pharmacyId),
+    effectivePlan?.id
+      ? loadPlanFeatureKeys(admin, effectivePlan.id)
+      : Promise.resolve([]),
+  ]);
+
+  const limits = buildLimits(effectivePlan, capacity.totalSlots);
+  const helpers = buildEntitlementHelpers(
+    featureKeys,
+    limits,
+    usage,
+    isAccessAllowed,
+  );
+
   return {
     pharmacyId,
     effectivePlan,
@@ -190,5 +323,71 @@ export async function resolvePharmacyEntitlements(
     isExpired,
     daysRemaining,
     scheduledChange,
+    featureKeys,
+    limits,
+    usage,
+    ...helpers,
   };
+}
+
+let routeFeatureMapCache: Record<string, string> | null = null;
+
+export async function getRouteFeatureMap(
+  admin: SupabaseClient,
+): Promise<Record<string, string>> {
+  if (routeFeatureMapCache) return routeFeatureMapCache;
+  const features = await listPlatformFeatures(admin);
+  const map: Record<string, string> = {};
+  for (const f of features) {
+    if (f.feature_type !== "boolean") continue;
+    for (const route of f.nav_routes) {
+      if (route) map[route] = f.key;
+    }
+  }
+  routeFeatureMapCache = map;
+  return map;
+}
+
+export async function toEntitlementsSnapshot(
+  admin: SupabaseClient,
+  ent: PharmacyEntitlements,
+): Promise<PharmacyEntitlementsSnapshot> {
+  const [routeFeatureMap, features] = await Promise.all([
+    getRouteFeatureMap(admin),
+    listPlatformFeatures(admin),
+  ]);
+  const featureLabels: Record<string, string> = {};
+  for (const f of features) {
+    featureLabels[f.key] = f.display_name;
+  }
+  return {
+    pharmacyId: ent.pharmacyId,
+    effectivePlan: ent.effectivePlan,
+    effectivePlanLabel: ent.effectivePlanLabel,
+    isAccessAllowed: ent.isAccessAllowed,
+    isExpired: ent.isExpired,
+    daysRemaining: ent.daysRemaining,
+    featureKeys: ent.featureKeys,
+    limits: ent.limits,
+    usage: ent.usage,
+    routeFeatureMap,
+    featureLabels,
+  };
+}
+
+export function featureForPath(
+  pathname: string,
+  routeFeatureMap: Record<string, string>,
+): string | null {
+  const normalized = pathname.split("?")[0].replace(/\/$/, "") || "/";
+  const entries = Object.entries(routeFeatureMap).sort(
+    (a, b) => b[0].length - a[0].length,
+  );
+  for (const [route, key] of entries) {
+    const r = route.replace(/\/$/, "") || "/";
+    if (normalized === r || normalized.startsWith(`${r}/`)) {
+      return key;
+    }
+  }
+  return null;
 }

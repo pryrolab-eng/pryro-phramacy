@@ -9,6 +9,7 @@ import {
   Receipt,
   Settings,
   Tag,
+  Layers,
 } from "lucide-react";
 
 export type AdminNavItem = {
@@ -24,6 +25,7 @@ export const ADMIN_SIDEBAR_NAV: AdminNavItem[] = [
   { title: "Categories", url: "/admin/categories", icon: Tag },
   { title: "Template Designer", url: "/admin/insurance-templates", icon: FileText },
   { title: "Subscriptions", url: "/admin/subscriptions", icon: CreditCard },
+  { title: "Features", url: "/admin/features", icon: Layers },
   { title: "Billing", url: "/admin/billing", icon: Receipt },
   { title: "Reports", url: "/admin/reports", icon: BarChart3 },
   { title: "Settings", url: "/admin/settings", icon: Settings },

@@ -1,6 +1,5 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import { Bar, BarChart, XAxis } from "recharts"
 
 import {
@@ -16,6 +15,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
+import { usePharmacyInventoryChart } from "@/hooks/usePharmacyDashboard"
 
 const chartConfig = {
   inStock: {
@@ -29,18 +29,9 @@ const chartConfig = {
 } satisfies ChartConfig
 
 export function PharmacyInventoryChart() {
-  const [chartData, setChartData] = useState([])
-  
-  useEffect(() => {
-    fetch('/api/pharmacy/inventory-chart')
-      .then(res => res.json())
-      .then(data => setChartData(data))
-      .catch(() => setChartData([
-        { month: "Jan", inStock: 850, lowStock: 45 },
-        { month: "Feb", inStock: 920, lowStock: 32 }
-      ]))
-  }, [])
-  
+  const chartQuery = usePharmacyInventoryChart()
+  const chartData = chartQuery.data ?? []
+
   return (
     <Card>
       <CardHeader>

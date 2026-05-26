@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../supabase/server'
+import { firstRelation } from '@/lib/supabase/relation'
 
 export async function GET(request: NextRequest) {
   try {
@@ -53,18 +54,21 @@ export async function GET(request: NextRequest) {
 
     console.log(`Found ${inventory?.length || 0} inventory items for pharmacy ${userPharmacy.pharmacy_id}`)
 
-    const formattedInventory = inventory?.map(item => ({
+    const formattedInventory = inventory?.map(item => {
+      const medications = firstRelation(item.medications)
+      return {
       id: item.id,
-      name: item.medications?.name || 'Unknown',
-      category: item.medications?.category || 'general',
+      name: medications?.name || 'Unknown',
+      category: medications?.category || 'general',
       stock: item.quantity_in_stock,
       minStock: item.minimum_stock_level,
       price: item.selling_price,
       expiryDate: item.expiry_date,
       batchNumber: item.batch_number,
-      medications: item.medications,
+      medications,
       pharmacy_id: item.pharmacy_id
-    })) || []
+    }
+    }) || []
 
     return NextResponse.json(formattedInventory)
   } catch (error) {
@@ -93,6 +97,19 @@ export async function POST(request: NextRequest) {
     if (pharmacyError || !userPharmacy) {
       console.error('Pharmacy not found for user:', user.id, pharmacyError)
       return NextResponse.json({ success: false, error: 'Pharmacy not found' })
+    }
+
+    const { guardPharmacyFeature, handleEntitlementRouteError } = await import(
+      '@/lib/subscription/api-guard'
+    )
+    try {
+      await guardPharmacyFeature(supabase, user.id, {
+        feature: 'inventory.access',
+      })
+    } catch (entErr) {
+      const res = handleEntitlementRouteError(entErr)
+      if (res) return res
+      throw entErr
     }
     
     const body = await request.json()

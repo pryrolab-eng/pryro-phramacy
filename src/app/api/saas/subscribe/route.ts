@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
       branch_id,
     })
 
-    const requiresPayment = subscription.status === 'pending_payment'
+    const requiresPayment = (subscription.status as string) === 'pending_payment'
 
     return NextResponse.json(
       {

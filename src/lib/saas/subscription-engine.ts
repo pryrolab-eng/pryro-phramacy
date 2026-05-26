@@ -9,6 +9,10 @@ import { createSubscriptionOrchestrator } from '@/lib/subscription/orchestrator'
 import { resolvePharmacyEntitlements } from '@/lib/subscription/lifecycle/entitlements'
 import { getBranchCapacity } from '@/lib/subscription/branch-addon-capacity'
 import { provisionBranchUsageForBranch } from '@/lib/subscription/provision-branch-usage'
+import {
+  periodLabelFromBilling,
+  type BillingPeriod,
+} from '@/lib/subscription/plan-period'
 import type {
   ActivateSubscriptionParams,
   Branch,
@@ -160,7 +164,7 @@ export async function getPharmacySubscriptionSummary(
   const branchCount = branches.length
   const addonSlots = branchSubs.filter((s) => {
     const st = s.status
-    return st === 'active' || st === 'pending_payment' || st === 'pending'
+    return st === 'active' || st === 'pending'
   }).length
   const branchLimit = mainPlanSlots + addonSlots
 
@@ -488,7 +492,7 @@ export async function createPlan(
     is_popular?: boolean
   }
 ): Promise<SubscriptionPlan> {
-  const period = input.billing_period === 'free' ? 'free' : `per ${input.billing_period.replace('ly', '')}`
+  const period = periodLabelFromBilling(input.billing_period as BillingPeriod)
   const { data, error } = await admin
     .from('subscription_plans')
     .insert({
@@ -529,9 +533,7 @@ export async function updatePlan(
 ): Promise<SubscriptionPlan> {
   const payload: Record<string, unknown> = { ...updates }
   if (updates.billing_period) {
-    payload.period = updates.billing_period === 'free'
-      ? 'free'
-      : `per ${updates.billing_period.replace('ly', '')}`
+    payload.period = periodLabelFromBilling(updates.billing_period as BillingPeriod)
   }
 
   const { data, error } = await admin

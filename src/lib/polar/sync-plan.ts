@@ -1,4 +1,5 @@
 import { getPolarClient, isPolarConfigured } from "./client";
+import type { PresentmentCurrency } from "@polar-sh/sdk/models/components/presentmentcurrency.js";
 
 export type PlanForPolarSync = {
   id: string;
@@ -23,8 +24,13 @@ function rwfPerUsd(): number {
   return Number.isFinite(n) && n > 0 ? n : 1300;
 }
 
-function polarCurrency(): string {
+/** Currency Polar charges on card (usd or rwf). Catalog prices stay in RWF. */
+export function getPolarPresentmentCurrency(): string {
   return (process.env.POLAR_CHECKOUT_CURRENCY ?? "usd").toLowerCase();
+}
+
+function polarCurrency(): string {
+  return getPolarPresentmentCurrency();
 }
 
 /** Polar product title — uses current plan name from DB (editable in admin). */
@@ -147,7 +153,7 @@ async function createPolarProduct(
     prices: [
       {
         amountType: "fixed",
-        priceCurrency: currency,
+        priceCurrency: currency as PresentmentCurrency,
         priceAmount,
       },
     ],

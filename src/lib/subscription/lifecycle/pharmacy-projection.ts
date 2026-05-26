@@ -24,11 +24,8 @@ export async function syncPharmacySubscriptionProjection(
     .update({
       subscription_plan: planEnum,
       subscription_expires_at: projection.expiresAt,
-      status: projection.accessAllowed
-        ? planEnum === "trial"
-          ? "trial"
-          : "active"
-        : "suspended",
+      /** Plan tier lives in subscription_plan + catalog — status is access only. */
+      status: projection.accessAllowed ? "active" : "suspended",
       updated_at: new Date().toISOString(),
     })
     .eq("id", pharmacyId);

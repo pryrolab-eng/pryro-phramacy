@@ -1,6 +1,5 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import { TrendingUp } from "lucide-react"
 import { LabelList, RadialBar, RadialBarChart } from "recharts"
 
@@ -18,6 +17,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
+import { usePharmacyCategorySalesChart } from "@/hooks/usePharmacyDashboard"
 
 const chartConfig = {
   sales: {
@@ -46,18 +46,9 @@ const chartConfig = {
 } satisfies ChartConfig
 
 export function PharmacyRadialChart() {
-  const [chartData, setChartData] = useState([])
-  
-  useEffect(() => {
-    fetch('/api/pharmacy/category-sales')
-      .then(res => res.json())
-      .then(data => setChartData(data))
-      .catch(() => setChartData([
-        { category: "prescription", sales: 275, fill: "var(--color-prescription)" },
-        { category: "otc", sales: 200, fill: "var(--color-otc)" }
-      ]))
-  }, [])
-  
+  const chartQuery = usePharmacyCategorySalesChart()
+  const chartData = chartQuery.data ?? []
+
   return (
     <Card className="flex flex-col">
       <CardHeader className="items-center pb-0">

@@ -4,7 +4,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
 import { createServiceClient } from '../../../../../supabase/service'
-import { getAllPlans, getActivePlans, createPlan } from '@/lib/saas/subscription-engine'
+import { createPlan, getActivePlans } from '@/lib/saas/subscription-engine'
+import {
+  findPlanNameConflict,
+  formatPlanNameConflictError,
+  normalizePlanType,
+} from '@/lib/subscription/plan-name-validation'
+import {
+  syncPlanFeatures,
+  syncPlanMarketingFeatures,
+  validateRequiredMainPlanKeys,
+} from '@/lib/subscription/plan-features'
 
 export async function GET() {
   try {
@@ -39,15 +49,46 @@ export async function POST(request: NextRequest) {
       name, price, billing_period, plan_type,
       max_branches, max_users, monthly_tx_limit,
       features, is_popular,
+      feature_keys: featureKeysBody,
+      featureKeys: featureKeysAlt,
     } = body
+    const featureKeys = Array.isArray(featureKeysBody)
+      ? featureKeysBody
+      : Array.isArray(featureKeysAlt)
+        ? featureKeysAlt
+        : []
 
     if (!name || price === undefined || !billing_period || !plan_type) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
     const admin = createServiceClient()
+    const planName = String(name).trim()
+    const { data: existing } = await admin
+      .from('subscription_plans')
+      .select('id, name, plan_type, is_active')
+      .eq('is_active', true)
+
+    const requestedType = normalizePlanType(plan_type)
+    const conflict = findPlanNameConflict(
+      (existing ?? []) as {
+        id: string
+        name: string
+        plan_type?: string | null
+        is_active?: boolean | null
+      }[],
+      planName,
+      requestedType,
+    )
+    if (conflict) {
+      return NextResponse.json(
+        { error: formatPlanNameConflictError(conflict, planName) },
+        { status: 409 },
+      )
+    }
+
     const plan = await createPlan(admin, {
-      name,
+      name: planName,
       price: Number(price),
       billing_period,
       plan_type,
@@ -58,7 +99,19 @@ export async function POST(request: NextRequest) {
       is_popular: Boolean(is_popular),
     })
 
-    return NextResponse.json({ plan }, { status: 201 })
+    if (featureKeys.length > 0 && requestedType === 'main') {
+      const validation = validateRequiredMainPlanKeys(featureKeys)
+      if (validation) {
+        return NextResponse.json({ error: validation }, { status: 400 })
+      }
+      await syncPlanFeatures(admin, plan.id as string, featureKeys)
+      await syncPlanMarketingFeatures(admin, plan.id as string, featureKeys)
+    }
+
+    return NextResponse.json(
+      { plan: { ...plan, feature_keys: featureKeys } },
+      { status: 201 },
+    )
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Failed to create plan'
     return NextResponse.json({ error: msg }, { status: 500 })

@@ -143,12 +143,18 @@ export async function POST(request: NextRequest) {
       if (itemsError) throw itemsError
 
       for (const item of items) {
-        await supabase
+        const { data: inv } = await supabase
           .from('inventory')
-          .update({ 
-            quantity_in_stock: supabase.raw('quantity_in_stock - ?', [item.quantity]) 
-          })
+          .select('quantity_in_stock')
           .eq('id', item.inventory_id)
+          .single()
+
+        if (inv) {
+          await supabase
+            .from('inventory')
+            .update({ quantity_in_stock: inv.quantity_in_stock - item.quantity })
+            .eq('id', item.inventory_id)
+        }
       }
     }
 

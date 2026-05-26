@@ -1,32 +1,27 @@
-'use client'
+"use client";
 
-import { useEffect, useState } from 'react'
+import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  getRealtimeUpdates,
+  realtimeKeys,
+  type RealtimeUpdate,
+} from "@/lib/http/realtime";
 
-interface RealtimeUpdate {
-  type: 'inventory_update' | 'new_sale' | 'stock_alert' | 'prescription_update'
-  data: any
-}
+export type { RealtimeUpdate } from "@/lib/http/realtime";
 
 export function useRealtimeUpdates(onUpdate: (update: RealtimeUpdate) => void) {
-  const [connected, setConnected] = useState(false)
+  const query = useQuery({
+    queryKey: realtimeKeys.updates(),
+    queryFn: getRealtimeUpdates,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+  });
 
   useEffect(() => {
-    // Simulate WebSocket with polling for now
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch('/api/realtime/updates')
-        if (response.ok) {
-          const updates = await response.json()
-          updates.forEach(onUpdate)
-          setConnected(true)
-        }
-      } catch (error) {
-        setConnected(false)
-      }
-    }, 5000) // Poll every 5 seconds
+    const updates = query.data ?? [];
+    updates.forEach(onUpdate);
+  }, [query.data, onUpdate]);
 
-    return () => clearInterval(interval)
-  }, [onUpdate])
-
-  return { connected }
+  return { connected: query.isSuccess && !query.isError };
 }

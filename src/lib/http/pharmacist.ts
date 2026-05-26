@@ -2,17 +2,20 @@ import { fetchJson } from "./client";
 
 export type CreatePharmacistInput = {
   email: string;
-  password: string;
+  password?: string;
   full_name: string;
   phone: string;
   role?: string;
   pharmacy_id: string;
+  pharmacy_name?: string;
 };
 
 type CreatePharmacistResponse = {
   success?: boolean;
   message?: string;
   userId?: string;
+  emailSent?: boolean;
+  emailError?: string;
   error?: string;
 };
 

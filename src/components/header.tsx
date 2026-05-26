@@ -101,7 +101,7 @@ export const HeroHeader = () => {
                                     asChild
                                     size="sm"
                                     className={cn(isScrolled ? 'lg:inline-flex' : 'hidden')}>
-                                    <Link href="#">
+                                    <Link href="/sign-up">
                                         <span>Get Started</span>
                                     </Link>
                                 </Button>

@@ -9,7 +9,7 @@ export interface PhoneNumberModel {
 }
 
 export class PhoneNumberValidator {
-  private static rwandaCarriers = {
+  private static rwandaCarriers: Record<string, string> = {
     '788': 'MTN',
     '789': 'MTN', 
     '790': 'MTN',

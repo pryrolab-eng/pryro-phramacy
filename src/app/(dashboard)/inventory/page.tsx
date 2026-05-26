@@ -1,9 +1,24 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
 import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
-import { createClient } from '../../../../supabase/client'
+import {
+  useAddInventoryProductMutation,
+  useAdjustInventoryMutation,
+  useCreateInventoryCategoryMutation,
+  useCreateInventorySupplierMutation,
+  useDeleteInventoryProductMutation,
+  useInventoryAnalytics,
+  useInventoryCategories,
+  useInventoryList,
+  useInventorySuppliers,
+  useInvalidateInventory,
+  usePurchaseInventoryMutation,
+  useTransferInventoryMutation,
+  useUpdateInventoryProductMutation,
+  type InventoryListRow,
+} from '@/hooks/useInventory'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -30,6 +45,9 @@ import { toast } from "@/components/ui/use-toast"
 import { Package, Plus, AlertTriangle, Calendar, Upload, Download, QrCode, Scan, Search, Filter, MoreHorizontal, Edit, Trash2, Eye, TrendingUp, TrendingDown } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
+import { FeatureGate } from '@/components/subscription/feature-gate'
+import { usePharmacyEntitlements } from '@/hooks/usePharmacyEntitlements'
+import { shouldHideLockedFeature } from '@/lib/subscription/nav-entitlement-display'
 import * as XLSX from 'xlsx'
 import JsBarcode from 'jsbarcode'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, AreaChart, Area } from 'recharts'
@@ -55,10 +73,67 @@ interface InventoryItem {
   notes: string
 }
 
+function toInventoryItem(row: InventoryListRow): InventoryItem {
+  return {
+    id: row.id,
+    productCode: '',
+    name: row.name,
+    category: row.category,
+    classificationCode: '',
+    barcode: '',
+    manufacturer: '',
+    purchasePrice: 0,
+    price: row.price,
+    stock: row.stock,
+    minStock: row.minStock,
+    batchNumber: row.batchNumber,
+    expiryDate: row.expiryDate,
+    trackByBatch: false,
+    vatRate: 'A',
+    stockLocation: 'main-store',
+    notes: '',
+  }
+}
+
 export default function InventoryPage() {
+  const { can } = usePharmacyEntitlements()
+  const showAnalyticsTab =
+    can('inventory.analytics') ||
+    !shouldHideLockedFeature('inventory.analytics', can)
   const { inventory, setInventory } = usePharmacyStore()
-  const [localInventory, setLocalInventory] = useState<InventoryItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const inventoryQuery = useInventoryList()
+  const analyticsQuery = useInventoryAnalytics()
+  const suppliersQuery = useInventorySuppliers()
+  const categoriesQuery = useInventoryCategories()
+  const invalidateInventory = useInvalidateInventory()
+
+  const addProductMutation = useAddInventoryProductMutation()
+  const addSupplierMutation = useCreateInventorySupplierMutation()
+  const adjustMutation = useAdjustInventoryMutation()
+  const purchaseMutation = usePurchaseInventoryMutation()
+  const transferMutation = useTransferInventoryMutation()
+  const deleteMutation = useDeleteInventoryProductMutation()
+  const updateMutation = useUpdateInventoryProductMutation()
+  const createCategoryMutation = useCreateInventoryCategoryMutation()
+
+  const localInventory = useMemo(
+    () => (inventoryQuery.data ?? []).map(toInventoryItem),
+    [inventoryQuery.data],
+  )
+  const loading =
+    inventoryQuery.isPending ||
+    analyticsQuery.isPending ||
+    suppliersQuery.isPending ||
+    categoriesQuery.isPending
+  const categories = (categoriesQuery.data ?? []) as Array<{ id: string; name: string }>
+  const suppliers = (suppliersQuery.data ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+  }))
+  const analyticsData = analyticsQuery.data ?? {
+    stockByCategory: [],
+    inventoryTrend: [],
+  }
   const [isAddingProduct, setIsAddingProduct] = useState(false)
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [previewData, setPreviewData] = useState<any[]>([])
@@ -68,7 +143,6 @@ export default function InventoryPage() {
   const [barcodeType, setBarcodeType] = useState('name')
   const [quickAddCategoryOpen, setQuickAddCategoryOpen] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
-  const [categories, setCategories] = useState<any[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [bulkMode, setBulkMode] = useState(false)
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
@@ -78,10 +152,8 @@ export default function InventoryPage() {
   const [adjustmentForm, setAdjustmentForm] = useState({ productId: '', quantity: '', reason: '', type: 'increase' })
   const [purchaseForm, setPurchaseForm] = useState({ productId: '', quantity: '', costPrice: '', supplier: '' })
   const [transferForm, setTransferForm] = useState({ productId: '', quantity: '', fromLocation: 'main-store', toLocation: '' })
-  const [suppliers, setSuppliers] = useState([])
   const [isAddingSupplier, setIsAddingSupplier] = useState(false)
   const [newSupplier, setNewSupplier] = useState({ name: '', contact: '', phone: '', email: '' })
-  const [analyticsData, setAnalyticsData] = useState({ stockByCategory: [], inventoryTrend: [] })
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [selectedItems, setSelectedItems] = useState<string[]>([])
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -109,114 +181,17 @@ export default function InventoryPage() {
     notes: ''
   })
 
-  // Real-time updates
+  useEffect(() => {
+    if (localInventory.length > 0) {
+      setInventory(localInventory)
+    }
+  }, [localInventory, setInventory])
+
   useRealtimeUpdates((update) => {
     if (update.type === 'inventory_update') {
-      fetchInventory()
+      void invalidateInventory.invalidateAll()
     }
   })
-
-  useEffect(() => {
-    fetchInventory()
-    fetchSuppliers()
-    fetchAnalytics()
-    fetchCategories()
-  }, [])
-  
-  const fetchCategories = async () => {
-    try {
-      const response = await fetch('/api/categories')
-      if (response.ok) {
-        const data = await response.json()
-        setCategories(data)
-      }
-    } catch (error) {
-      console.error('Error fetching categories:', error)
-    }
-  }
-  
-  const fetchAnalytics = async () => {
-    try {
-      const response = await fetch('/api/inventory/analytics')
-      if (response.ok) {
-        const data = await response.json()
-        setAnalyticsData(data)
-      }
-    } catch (error) {
-      console.error('Error fetching analytics:', error)
-    }
-  }
-
-  const fetchSuppliers = async () => {
-    try {
-      const response = await fetch('/api/inventory/suppliers')
-      if (response.ok) {
-        const data = await response.json()
-        setSuppliers(data)
-      }
-    } catch (error) {
-      console.error('Error fetching suppliers:', error)
-    }
-  }
-
-  const handleAddSupplier = async () => {
-    try {
-      const response = await fetch('/api/inventory/suppliers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSupplier)
-      })
-      
-      const result = await response.json()
-      
-      if (response.ok && result.success) {
-        toast({
-          title: "Success",
-          description: "Supplier added successfully"
-        })
-        await fetchSuppliers()
-        setIsAddingSupplier(false)
-        setNewSupplier({ name: '', contact: '', phone: '', email: '' })
-      } else {
-        toast({
-          title: "Error",
-          description: result.error || "Failed to add supplier",
-          variant: "destructive"
-        })
-      }
-    } catch (error) {
-      console.error('Error adding supplier:', error)
-      toast({
-        title: "Error",
-        description: "Failed to add supplier",
-        variant: "destructive"
-      })
-    }
-  }
-
-  const fetchInventory = async () => {
-    try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (user) {
-        const response = await fetch('/api/inventory', {
-          headers: {
-            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
-          }
-        })
-        if (response.ok) {
-          const data = await response.json()
-          setLocalInventory(data)
-          setInventory(data)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching inventory:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const handleAddProduct = async () => {
     try {
@@ -228,37 +203,23 @@ export default function InventoryPage() {
         return
       }
       
-      // Save to database via API
-      const response = await fetch('/api/inventory/add', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newProduct.name,
-          category: newProduct.category,
-          batch_number: newProduct.batchNumber || 'BATCH001',
-          quantity: parseInt(newProduct.stock) || 0,
-          unit_cost: parseFloat(newProduct.purchasePrice) || 0,
-          selling_price: parseFloat(newProduct.price) || 0,
-          minimum_stock_level: parseInt(newProduct.minStock) || 0,
-          expiry_date: newProduct.expiryDate || '2025-12-31'
-        })
+      await addProductMutation.mutateAsync({
+        name: newProduct.name,
+        category: newProduct.category,
+        batch_number: newProduct.batchNumber || 'BATCH001',
+        quantity: parseInt(newProduct.stock) || 0,
+        unit_cost: parseFloat(newProduct.purchasePrice) || 0,
+        selling_price: parseFloat(newProduct.price) || 0,
+        minimum_stock_level: parseInt(newProduct.minStock) || 0,
+        expiry_date: newProduct.expiryDate || '2025-12-31',
       })
-      
-      const result = await response.json()
-      console.log('API Response:', response.status, result)
-      
-      if (response.ok && result.success) {
-        // Refresh inventory from database
-        await fetchInventory()
-        setIsAddingProduct(false)
-        setNewProduct({ productCode: '', name: '', category: '', classificationCode: '', barcode: '', manufacturer: '', purchasePrice: '', price: '', stock: '', minStock: '', maxStock: '', batchNumber: '', expiryDate: '', trackByBatch: false, vatRate: 'A', stockLocation: 'main-store', notes: '' })
-        alert('✅ Product saved to database successfully!')
-      } else {
-        alert(`❌ Failed to save product: ${result.error || 'Unknown error'}`)
-      }
+
+      setIsAddingProduct(false)
+      setNewProduct({ productCode: '', name: '', category: '', classificationCode: '', barcode: '', manufacturer: '', purchasePrice: '', price: '', stock: '', minStock: '', maxStock: '', batchNumber: '', expiryDate: '', trackByBatch: false, vatRate: 'A', stockLocation: 'main-store', notes: '' })
+      alert('✅ Product saved to database successfully!')
     } catch (error) {
       console.error('Error saving product:', error)
-      alert('❌ Error saving product to database: ' + error.message)
+      alert('❌ Error saving product to database: ' + (error instanceof Error ? error.message : 'Unknown error'))
     }
   }
 
@@ -279,7 +240,7 @@ export default function InventoryPage() {
   }
 
   const exportToExcel = () => {
-    const worksheet = XLSX.utils.json_to_sheet(inventory.map(item => ({
+    const worksheet = XLSX.utils.json_to_sheet(localInventory.map(item => ({
       'Product Name': item.name,
       'Category': item.category,
       'Stock': item.stock,
@@ -344,31 +305,25 @@ export default function InventoryPage() {
   }
 
   const confirmImport = async () => {
+    const importCount = previewData.length
     try {
-      // Save each product to database
       for (const row of previewData) {
-        await fetch('/api/inventory/add', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: row['Product Name'],
-            category: row['Category'],
-            batch_number: row['Batch Number'],
-            quantity: row['Stock'],
-            unit_cost: 0,
-            selling_price: row['Price (RWF)'],
-            minimum_stock_level: row['Min Stock'],
-            expiry_date: row['Expiry Date']
-          })
+        await addProductMutation.mutateAsync({
+          name: row['Product Name'],
+          category: row['Category'],
+          batch_number: row['Batch Number'],
+          quantity: row['Stock'],
+          unit_cost: 0,
+          selling_price: row['Price (RWF)'],
+          minimum_stock_level: row['Min Stock'],
+          expiry_date: row['Expiry Date'],
         })
       }
-      
-      // Refresh inventory from database
-      await fetchInventory()
+
       setPreviewData([])
       setValidationErrors([])
       setIsImportDialogOpen(false)
-      alert(`✅ Successfully imported ${previewData.length} products to database!`)
+      alert(`✅ Successfully imported ${importCount} products to database!`)
     } catch (error) {
       console.error('Import error:', error)
       alert('❌ Failed to import products')
@@ -443,82 +398,72 @@ export default function InventoryPage() {
     }
   }
 
+  const handleAddSupplier = async () => {
+    try {
+      await addSupplierMutation.mutateAsync(newSupplier)
+      toast({
+        title: "Success",
+        description: "Supplier added successfully",
+      })
+      setIsAddingSupplier(false)
+      setNewSupplier({ name: '', contact: '', phone: '', email: '' })
+    } catch (error) {
+      console.error('Error adding supplier:', error)
+      toast({
+        title: "Error",
+        description:
+          error instanceof Error ? error.message : "Failed to add supplier",
+        variant: "destructive",
+      })
+    }
+  }
+
   const handleAdjustment = async () => {
     try {
-      const response = await fetch('/api/inventory/adjustment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          productId: adjustmentForm.productId, 
-          quantity: parseInt(adjustmentForm.quantity), 
-          reason: adjustmentForm.reason, 
-          adjustmentType: adjustmentForm.type 
-        })
+      await adjustMutation.mutateAsync({
+        productId: adjustmentForm.productId,
+        quantity: parseInt(adjustmentForm.quantity),
+        reason: adjustmentForm.reason,
+        adjustmentType: adjustmentForm.type,
       })
-      
-      const result = await response.json()
-      
-      if (response.ok && result.success) {
-        toast({
-          title: "Success",
-          description: "Stock adjusted successfully"
-        })
-        setAdjustmentDialogOpen(false)
-        setAdjustmentForm({ productId: '', quantity: '', reason: '', type: 'increase' })
-        await fetchInventory()
-      } else {
-        toast({
-          title: "Error",
-          description: result.error || "Failed to adjust stock",
-          variant: "destructive"
-        })
-      }
+      toast({
+        title: "Success",
+        description: "Stock adjusted successfully",
+      })
+      setAdjustmentDialogOpen(false)
+      setAdjustmentForm({ productId: '', quantity: '', reason: '', type: 'increase' })
     } catch (error) {
       console.error('Adjustment error:', error)
       toast({
         title: "Error",
-        description: "Failed to adjust stock",
-        variant: "destructive"
+        description:
+          error instanceof Error ? error.message : "Failed to adjust stock",
+        variant: "destructive",
       })
     }
   }
 
   const handlePurchase = async () => {
     try {
-      const response = await fetch('/api/inventory/purchase', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          productId: purchaseForm.productId, 
-          quantity: parseInt(purchaseForm.quantity), 
-          costPrice: parseFloat(purchaseForm.costPrice), 
-          supplier: purchaseForm.supplier 
-        })
+      await purchaseMutation.mutateAsync({
+        productId: purchaseForm.productId,
+        quantity: parseInt(purchaseForm.quantity),
+        costPrice: parseFloat(purchaseForm.costPrice),
+        supplier: purchaseForm.supplier,
       })
-      
-      const result = await response.json()
-      
-      if (response.ok && result.success) {
-        toast({
-          title: "Success",
-          description: "Stock purchased successfully"
-        })
-        setPurchaseDialogOpen(false)
-        setPurchaseForm({ productId: '', quantity: '', costPrice: '', supplier: '' })
-        await fetchInventory()
-      } else {
-        toast({
-          title: "Error",
-          description: result.error || "Failed to purchase stock",
-          variant: "destructive"
-        })
-      }
+      toast({
+        title: "Success",
+        description: "Stock purchased successfully",
+      })
+      setPurchaseDialogOpen(false)
+      setPurchaseForm({ productId: '', quantity: '', costPrice: '', supplier: '' })
     } catch (error) {
       console.error('Purchase error:', error)
       toast({
         title: "Error",
-        description: "Failed to purchase stock",
-        variant: "destructive"
+        description:
+          error instanceof Error ? error.message : "Failed to purchase stock",
+        variant: "destructive",
       })
     }
   }
@@ -546,35 +491,20 @@ export default function InventoryPage() {
         return
       }
 
-      const response = await fetch('/api/inventory/transfers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          productId: transferForm.productId,
-          product: product.name,
-          quantity: parseInt(transferForm.quantity), 
-          from: transferForm.fromLocation, 
-          to: transferForm.toLocation 
-        })
+      const result = await transferMutation.mutateAsync({
+        productId: transferForm.productId,
+        product: product.name,
+        quantity: parseInt(transferForm.quantity),
+        from: transferForm.fromLocation,
+        to: transferForm.toLocation,
       })
-      
-      const result = await response.json()
-      
-      if (response.ok && result.success) {
-        toast({
-          title: "Success",
-          description: `Transferred ${transferForm.quantity} units. New stock: ${result.newStock}`
-        })
-        setTransferDialogOpen(false)
-        setTransferForm({ productId: '', quantity: '', fromLocation: 'main-store', toLocation: '' })
-        await fetchInventory()
-      } else {
-        toast({
-          title: "Error",
-          description: result.error || "Failed to transfer stock",
-          variant: "destructive"
-        })
-      }
+
+      toast({
+        title: "Success",
+        description: `Transferred ${transferForm.quantity} units. New stock: ${result.newStock ?? 'updated'}`,
+      })
+      setTransferDialogOpen(false)
+      setTransferForm({ productId: '', quantity: '', fromLocation: 'main-store', toLocation: '' })
     } catch (error) {
       console.error('Transfer error:', error)
       toast({
@@ -634,70 +564,49 @@ export default function InventoryPage() {
 
   const handleDeleteProduct = async () => {
     if (!productToDelete) return
-    
+
     try {
-      const response = await fetch(`/api/inventory/${productToDelete}`, {
-        method: 'DELETE'
+      await deleteMutation.mutateAsync(productToDelete)
+      toast({
+        title: "Success",
+        description: "Product deleted successfully",
       })
-      
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: "Product deleted successfully"
-        })
-        await fetchInventory()
-        setDeleteDialogOpen(false)
-        setProductToDelete(null)
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to delete product",
-          variant: "destructive"
-        })
-      }
+      setDeleteDialogOpen(false)
+      setProductToDelete(null)
     } catch (error) {
       console.error('Delete error:', error)
       toast({
         title: "Error",
-        description: "Failed to delete product",
-        variant: "destructive"
+        description:
+          error instanceof Error ? error.message : "Failed to delete product",
+        variant: "destructive",
       })
     }
   }
 
   const handleEditProduct = async () => {
     try {
-      const response = await fetch(`/api/inventory/${editProduct.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      await updateMutation.mutateAsync({
+        id: editProduct.id,
+        body: {
           quantity: parseInt(editProduct.stock),
           selling_price: parseFloat(editProduct.price),
-          minimum_stock_level: parseInt(editProduct.minStock)
-        })
+          minimum_stock_level: parseInt(editProduct.minStock),
+        },
       })
-      
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: "Product updated successfully"
-        })
-        await fetchInventory()
-        setIsEditingProduct(false)
-        setEditProduct(null)
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to update product",
-          variant: "destructive"
-        })
-      }
+      toast({
+        title: "Success",
+        description: "Product updated successfully",
+      })
+      setIsEditingProduct(false)
+      setEditProduct(null)
     } catch (error) {
       console.error('Edit error:', error)
       toast({
         title: "Error",
-        description: "Failed to update product",
-        variant: "destructive"
+        description:
+          error instanceof Error ? error.message : "Failed to update product",
+        variant: "destructive",
       })
     }
   }
@@ -1030,34 +939,33 @@ export default function InventoryPage() {
               <Button onClick={async () => {
                 if (newCategoryName.trim()) {
                   try {
-                    const response = await fetch('/api/categories', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ name: newCategoryName.trim() })
-                    })
-                    const result = await response.json()
-                    if (response.ok && result.success) {
-                      await fetchCategories()
-                      setNewProduct({...newProduct, category: newCategoryName.trim()})
+                    const result = await createCategoryMutation.mutateAsync(
+                      newCategoryName.trim(),
+                    )
+                    if (result.success) {
+                      setNewProduct({ ...newProduct, category: newCategoryName.trim() })
                       setQuickAddCategoryOpen(false)
                       setNewCategoryName('')
                       toast({
                         title: "Success",
-                        description: "Category added successfully"
+                        description: "Category added successfully",
                       })
                     } else {
                       toast({
                         title: "Error",
                         description: result.error || "Failed to add category",
-                        variant: "destructive"
+                        variant: "destructive",
                       })
                     }
                   } catch (error) {
                     console.error('Error adding category:', error)
                     toast({
                       title: "Error",
-                      description: "Failed to add category",
-                      variant: "destructive"
+                      description:
+                        error instanceof Error
+                          ? error.message
+                          : "Failed to add category",
+                      variant: "destructive",
                     })
                   }
                 }
@@ -1069,9 +977,6 @@ export default function InventoryPage() {
         </Dialog>
         </div>
       </div>
-      
-      {/* Add missing state variable */}
-      {selectedCategory === undefined && setSelectedCategory('all')}
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
@@ -1152,7 +1057,9 @@ export default function InventoryPage() {
         <TabsList>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          {showAnalyticsTab ? (
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          ) : null}
           <TabsTrigger value="actions">Actions</TabsTrigger>
         </TabsList>
         
@@ -1400,6 +1307,7 @@ export default function InventoryPage() {
         </TabsContent>
         
         <TabsContent value="analytics" className="space-y-4">
+          <FeatureGate featureKey="inventory.analytics">
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
@@ -1441,6 +1349,7 @@ export default function InventoryPage() {
               </CardContent>
             </Card>
           </div>
+          </FeatureGate>
         </TabsContent>
         
         <TabsContent value="actions" className="space-y-4">
@@ -1713,7 +1622,7 @@ export default function InventoryPage() {
                 <div className="space-y-2">
                   <Label>Select Medicine</Label>
                   <Select value={selectedProduct?.id || ''} onValueChange={(value) => {
-                    const product = inventory.find(item => item.id === value)
+                    const product = localInventory.find(item => item.id === value)
                     setSelectedProduct(product || null)
                     if (product) generateBarcode()
                   }}>

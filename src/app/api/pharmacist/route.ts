@@ -1,55 +1,109 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { sendStaffInviteEmail } from '@/lib/email/staff-invite'
+import { createServiceClient } from '../../../../supabase/service'
+import {
+  entitlementErrorResponse,
+  requirePharmacyEntitlement,
+} from '@/lib/subscription/assert-entitlement'
+
+function generateTemporaryPassword(): string {
+  return (
+    Math.random().toString(36).slice(2, 6) +
+    Math.random().toString(36).slice(2, 6).toUpperCase() +
+    '!1'
+  )
+}
 
 export async function POST(request: Request) {
   try {
-    // Use service role for all operations
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
-    
+
     const body = await request.json()
-    
+
     if (!body.pharmacy_id) {
       return NextResponse.json({ error: 'pharmacy_id is required' }, { status: 400 })
     }
-    
-    // Create user in Supabase Auth
-    const { data: authUser, error: createUserError } = await supabase.auth.admin.createUser({
-      email: body.email,
-      password: body.password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: body.full_name,
-        phone: body.phone
-      }
+
+    const admin = createServiceClient()
+    await requirePharmacyEntitlement({
+      admin,
+      pharmacyId: body.pharmacy_id,
+      feature: 'staff.invite',
+      limit: 'users',
     })
-    
-    if (createUserError) throw createUserError
-    
-    // Add to pharmacy_users table
-    const { data: newUser, error: dbError } = await supabase
-      .from('pharmacy_users')
-      .insert({
-        pharmacy_id: body.pharmacy_id,
-        user_id: authUser.user.id,
-        role: body.role || 'pharmacist'
+
+    const email = String(body.email ?? '').trim().toLowerCase()
+    if (!email) {
+      return NextResponse.json({ error: 'email is required' }, { status: 400 })
+    }
+
+    const password =
+      typeof body.password === 'string' && body.password.trim().length >= 6
+        ? body.password.trim()
+        : generateTemporaryPassword()
+
+    const fullName =
+      String(body.full_name ?? '').trim() ||
+      email.split('@')[0]?.replace(/[._]/g, ' ') ||
+      'Team member'
+
+    const pharmacyName =
+      String(body.pharmacy_name ?? '').trim() || 'your pharmacy'
+
+    const role = String(body.role ?? 'pharmacist').trim() || 'pharmacist'
+
+    const { data: authUser, error: createUserError } =
+      await supabase.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          full_name: fullName,
+          phone: body.phone,
+        },
       })
-      .select()
-      .single()
-    
-    if (dbError) throw dbError
-    
-    return NextResponse.json({ 
-      success: true,
-      message: 'Pharmacist created successfully',
-      userId: authUser.user.id
+
+    if (createUserError) throw createUserError
+
+    const { error: dbError } = await supabase.from('pharmacy_users').insert({
+      pharmacy_id: body.pharmacy_id,
+      user_id: authUser.user.id,
+      role,
     })
-    
+
+    if (dbError) throw dbError
+
+    const emailResult = await sendStaffInviteEmail({
+      to: email,
+      fullName,
+      pharmacyName,
+      role,
+      temporaryPassword: password,
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: emailResult.ok
+        ? 'Team member created and invitation email sent'
+        : 'Team member created; invitation email could not be sent',
+      userId: authUser.user.id,
+      emailSent: emailResult.ok,
+      emailError: emailResult.ok ? undefined : emailResult.error,
+    })
   } catch (error) {
-    return NextResponse.json({ 
-      error: error.message || 'Failed to create pharmacist'
-    }, { status: 500 })
+    const mapped = entitlementErrorResponse(error)
+    if (mapped) {
+      return NextResponse.json(mapped.body, { status: mapped.status })
+    }
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : 'Failed to create pharmacist',
+      },
+      { status: 500 }
+    )
   }
 }

@@ -1,0 +1,33 @@
+/** Required boolean features for sellable main plans. */
+export const REQUIRED_MAIN_PLAN_FEATURE_KEYS = [
+  "app.dashboard",
+  "pos.access",
+] as const;
+
+export const LIMIT_FEATURE_KEYS = {
+  users: "limit.users",
+  branches: "limit.branches",
+  transactions: "limit.transactions_per_branch",
+} as const;
+
+export type LimitFeatureKey = keyof typeof LIMIT_FEATURE_KEYS;
+
+export const LIMIT_COLUMN_BY_KEY: Record<string, string> = {
+  [LIMIT_FEATURE_KEYS.users]: "max_users",
+  [LIMIT_FEATURE_KEYS.branches]: "max_branches",
+  [LIMIT_FEATURE_KEYS.transactions]: "monthly_tx_limit",
+};
+
+/** Routes always reachable when subscription is active (matches subscription-blocker). */
+export const ALWAYS_ALLOWED_ROUTES = [
+  "/settings",
+  "/pharmacy-dashboard/billing",
+  "/sign-in",
+  "/sign-out",
+];
+
+export function isEntitlementsEnforced(): boolean {
+  const flag = process.env.ENTITLEMENTS_ENFORCE;
+  if (flag === "false" || flag === "0") return false;
+  return true;
+}

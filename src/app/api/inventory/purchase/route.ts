@@ -10,12 +10,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { guardInventoryAccess, entitlementRouteResponse } = await import(
+      '@/lib/subscription/route-guards'
+    )
+    try {
+      await guardInventoryAccess(supabase, user.id)
+    } catch (entErr) {
+      const res = entitlementRouteResponse(entErr)
+      if (res) return res
+      throw entErr
+    }
+
     const { productId, quantity, costPrice, supplier } = await request.json()
     
     // Get current inventory item
     const { data: inventory, error: fetchError } = await supabase
       .from('inventory')
-      .select('quantity_in_stock')
+      .select('quantity_in_stock, unit_cost')
       .eq('id', productId)
       .single()
     

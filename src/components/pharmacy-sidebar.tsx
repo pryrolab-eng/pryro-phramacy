@@ -50,91 +50,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
-
-
-const pharmacyData = {
-  navMain: [
-    {
-      title: "Dashboard",
-      url: "/pharmacy-dashboard",
-      icon: LayoutDashboard,
-    },
-    {
-      title: "Inventory",
-      url: "/inventory",
-      icon: Package,
-    },
-    {
-      title: "POS",
-      url: "/pos",
-      icon: ShoppingCart,
-    },
-    {
-      title: "Sales",
-      url: "/sales",
-      icon: BarChart3,
-    },
-    {
-      title: "Customers",
-      url: "/customers",
-      icon: Users,
-    },
-    {
-      title: "Patients",
-      url: "/patients",
-      icon: UserPlus,
-    },
-    {
-      title: "Staff",
-      url: "/staff",
-      icon: UserCheck,
-    },
-    {
-      title: "Reports",
-      url: "/reports",
-      icon: FileText,
-    },
-    {
-      title: "Branches",
-      url: "/branches",
-      icon: Building2,
-    },
-    {
-      title: "Billing",
-      url: "/pharmacy-dashboard/billing",
-      icon: CreditCard,
-    },
-    {
-      title: "Settings",
-      url: "/settings",
-      icon: Settings,
-    },
-  ],
-  profileActions: [
-    {
-      title: "Profile",
-      url: "/profile",
-      icon: User,
-    },
-    {
-      title: "Settings",
-      url: "/settings",
-      icon: Settings,
-    },
-    {
-      title: "Get Help",
-      url: "/help",
-      icon: HelpCircle,
-    },
-    {
-      title: "Search",
-      url: "/search",
-      icon: Search,
-    },
-  ],
-}
+import { PHARMACY_NAV_ITEMS } from "@/lib/subscription/nav-config"
+import { usePharmacyEntitlements } from "@/hooks/usePharmacyEntitlements"
+import { NavEntitlementItem } from "@/components/subscription/nav-entitlement-item"
 
 export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { can, entitlements } = usePharmacyEntitlements()
   const [userName, setUserName] = React.useState('Pharmacy Owner')
   const [subscriptionPlan, setSubscriptionPlan] = React.useState('standard')
   const [daysLeft, setDaysLeft] = React.useState(15)
@@ -175,7 +96,7 @@ export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sideba
           if (userPharmacy) {
             const { data: pharmacy } = await supabase
               .from('pharmacies')
-              .select('subscription_plan, subscription_expires_at')
+              .select('subscription_plan, subscription_expires_at, status')
               .eq('id', userPharmacy.pharmacy_id)
               .single()
             
@@ -236,19 +157,16 @@ export function PharmacySidebar({ ...props }: React.ComponentProps<typeof Sideba
           <SidebarGroupLabel>Pharmacy Management</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {pharmacyData.navMain.map((item) => {
-                const isActive = pathname === item.url
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={item.url}>
-                        <item.icon />
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )
-              })}
+              {PHARMACY_NAV_ITEMS.map((item) => (
+                <NavEntitlementItem
+                  key={item.title}
+                  item={item}
+                  pathname={pathname}
+                  allowed={can(item.featureKey)}
+                  isAccessAllowed={entitlements.isAccessAllowed}
+                  upgradeHref={`/pharmacy-dashboard/billing?upgrade=${encodeURIComponent(item.featureKey)}`}
+                />
+              ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

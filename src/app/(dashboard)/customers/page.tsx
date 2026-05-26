@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
+import { useCreateCustomerMutation, useCustomers } from '@/hooks/useCustomers'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -26,15 +27,17 @@ interface Customer {
 }
 
 export default function CustomersPage() {
-  const [customers, setCustomers] = useState<Customer[]>([
-    { id: '1', name: 'Marie Uwimana', phone: '+250788123456', email: 'marie@email.com', dateOfBirth: '1985-03-15', allergies: 'Penicillin', insurance: 'RSSB', totalPurchases: 45000, lastVisit: '2024-12-01', status: 'active' },
-    { id: '2', name: 'Jean Baptiste', phone: '+250788123457', email: 'jean@email.com', dateOfBirth: '1978-07-22', allergies: 'None', insurance: 'MMI', totalPurchases: 23000, lastVisit: '2024-11-28', status: 'active' }
-  ])
-  const [stats, setStats] = useState({
-    totalCustomers: 0,
-    activeCustomers: 0,
-    newThisMonth: 0
-  })
+  const customersQuery = useCustomers()
+  const createCustomerMutation = useCreateCustomerMutation()
+  const customers = (customersQuery.data ?? []) as Customer[]
+  const stats = useMemo(
+    () => ({
+      totalCustomers: customers.length,
+      activeCustomers: customers.filter((c) => c.status === 'active').length,
+      newThisMonth: Math.floor(customers.length * 0.1),
+    }),
+    [customers],
+  )
   const [isAddingCustomer, setIsAddingCustomer] = useState(false)
   const [newCustomer, setNewCustomer] = useState({
     name: '',
@@ -44,58 +47,21 @@ export default function CustomersPage() {
     allergies: '',
     insurance: ''
   })
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    fetchCustomers()
-  }, [])
-
-  const fetchCustomers = async () => {
-    try {
-      setLoading(true)
-      const response = await fetch('/api/customers')
-      if (response.ok) {
-        const data = await response.json()
-        console.log('Fetched customers:', data)
-        setCustomers(data)
-        setStats({
-          totalCustomers: data.length,
-          activeCustomers: data.filter(c => c.status === 'active').length,
-          newThisMonth: Math.floor(data.length * 0.1)
-        })
-      }
-      setLoading(false)
-    } catch (error) {
-      console.error('Error fetching customers:', error)
-      setLoading(false)
-    }
-  }
+  const loading = customersQuery.isPending
 
   const handleAddCustomer = async () => {
     try {
-      const response = await fetch('/api/customers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCustomer)
-      })
-      
-      if (response.ok) {
-        const result = await response.json()
-        const customer: Customer = {
-          id: result.customer?.id || Date.now().toString(),
-          name: newCustomer.name,
-          phone: newCustomer.phone,
-          email: newCustomer.email || '',
-          dateOfBirth: newCustomer.dateOfBirth || '',
-          allergies: newCustomer.allergies || 'None',
-          insurance: newCustomer.insurance || '',
-          totalPurchases: 0,
-          lastVisit: new Date().toISOString().split('T')[0],
-          status: 'active'
-        }
-        await fetchCustomers() // Refresh the list
+      const result = await createCustomerMutation.mutateAsync(newCustomer)
+      if (result.success) {
         setIsAddingCustomer(false)
-        setNewCustomer({ name: '', phone: '', email: '', dateOfBirth: '', allergies: '', insurance: '' })
+        setNewCustomer({
+          name: '',
+          phone: '',
+          email: '',
+          dateOfBirth: '',
+          allergies: '',
+          insurance: '',
+        })
       }
     } catch (error) {
       console.error('Error adding customer:', error)
@@ -189,7 +155,7 @@ export default function CustomersPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-        <Button variant="outline" onClick={fetchCustomers}>
+        <Button variant="outline" onClick={() => void customersQuery.refetch()}>
           Refresh
         </Button>
       </div>

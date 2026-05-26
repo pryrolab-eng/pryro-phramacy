@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../supabase/server'
+import { createServiceClient } from '../../../../supabase/service'
+import { createBranch } from '@/lib/saas/subscription-engine'
+import {
+  entitlementErrorResponse,
+  requirePharmacyEntitlement,
+} from '@/lib/subscription/assert-entitlement'
+import { getRequestPharmacyId } from '@/lib/subscription/api-guard'
 
 export async function GET() {
   try {
@@ -12,17 +19,16 @@ export async function GET() {
 
     if (error) throw error
     
-    // Format for frontend compatibility
     const formattedBranches = branches?.map(b => ({
       id: b.id,
       name: b.name,
       location: b.address,
-      manager: b.manager_id, // You may want to join with users table
+      manager: b.manager_id,
       phone: b.phone,
-      email: b.phone, // branches table doesn't have email
+      email: b.phone,
       status: b.is_active ? 'active' : 'inactive',
-      staff_count: 0, // Calculate from staff table if needed
-      monthly_sales: 0, // Calculate from sales table if needed
+      staff_count: 0,
+      monthly_sales: 0,
       created_at: b.created_at
     })) || []
 
@@ -35,23 +41,41 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
-    const body = await request.json()
-    
-    const { data: branch, error } = await supabase
-      .from('branches')
-      .insert({
-        pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',
-        name: body.name,
-        address: body.location,
-        phone: body.phone,
-        is_active: true
-      })
-      .select()
-      .single()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
 
-    if (error) throw error
+    const pharmacyId = await getRequestPharmacyId(supabase, user.id)
+    if (!pharmacyId) {
+      return NextResponse.json({ success: false, error: 'Pharmacy not found' }, { status: 403 })
+    }
+
+    const admin = createServiceClient()
+    await requirePharmacyEntitlement({
+      admin,
+      pharmacyId,
+      feature: 'branches.create',
+      limit: 'branches',
+    })
+
+    const body = await request.json()
+    const branch = await createBranch(admin, pharmacyId, {
+      name: body.name,
+      address: body.location ?? body.address,
+      phone: body.phone,
+      email: body.email,
+    })
+
     return NextResponse.json({ success: true, branch })
   } catch (error) {
-    return NextResponse.json({ success: false, error: 'Failed to create branch' }, { status: 500 })
+    const mapped = entitlementErrorResponse(error)
+    if (mapped) {
+      return NextResponse.json(mapped.body, { status: mapped.status })
+    }
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Failed to create branch' },
+      { status: 500 },
+    )
   }
 }

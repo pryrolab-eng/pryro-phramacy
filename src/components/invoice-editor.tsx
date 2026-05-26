@@ -1,10 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  useInvoiceTemplate,
+  useUpdateInvoiceTemplateMutation,
+  type InvoiceTemplate,
+} from '@/hooks/useInvoiceTemplate'
 
 const FIELD_OPTIONS = {
   header: ['pharmacyName', 'pharmacyAddress', 'pharmacyPhone', 'pharmacyTIN', 'date', 'time', 'receiptNumber'],
@@ -12,8 +17,16 @@ const FIELD_OPTIONS = {
   product: ['name', 'batch', 'expiryDate', 'quantity', 'price', 'total', 'insuranceCoverage']
 }
 
+type InvoiceFieldSection = 'header' | 'patient' | 'product'
+
+function sectionFieldsKey(section: InvoiceFieldSection): `${InvoiceFieldSection}Fields` {
+  return `${section}Fields`
+}
+
 export function InvoiceEditor() {
-  const [template, setTemplate] = useState({
+  const templateQuery = useInvoiceTemplate()
+  const updateMutation = useUpdateInvoiceTemplateMutation()
+  const [template, setTemplate] = useState<InvoiceTemplate>({
     showLogo: true,
     headerFields: [],
     patientFields: [],
@@ -24,26 +37,26 @@ export function InvoiceEditor() {
   })
 
   useEffect(() => {
-    fetch('/api/pharmacy/invoice-template')
-      .then(res => res.json())
-      .then(setTemplate)
-  }, [])
+    if (templateQuery.data) {
+      setTemplate(templateQuery.data)
+    }
+  }, [templateQuery.data])
 
   const handleSave = async () => {
-    await fetch('/api/pharmacy/invoice-template', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(template)
-    })
+    await updateMutation.mutateAsync(template)
   }
 
-  const toggleField = (section: string, field: string) => {
-    setTemplate(prev => ({
-      ...prev,
-      [`${section}Fields`]: prev[`${section}Fields`].includes(field)
-        ? prev[`${section}Fields`].filter(f => f !== field)
-        : [...prev[`${section}Fields`], field]
-    }))
+  const toggleField = (section: InvoiceFieldSection, field: string) => {
+    setTemplate(prev => {
+      const key = sectionFieldsKey(section)
+      const fields = prev[key]
+      return {
+        ...prev,
+        [key]: fields.includes(field)
+          ? fields.filter(f => f !== field)
+          : [...fields, field]
+      }
+    })
   }
 
   return (
@@ -54,7 +67,7 @@ export function InvoiceEditor() {
         <div className="flex items-center space-x-2">
           <Checkbox 
             checked={template.showLogo} 
-            onCheckedChange={(checked) => setTemplate(prev => ({ ...prev, showLogo: checked }))}
+            onCheckedChange={(checked) => setTemplate(prev => ({ ...prev, showLogo: Boolean(checked) }))}
           />
           <Label>Show Logo</Label>
         </div>
@@ -108,7 +121,7 @@ export function InvoiceEditor() {
           <div className="flex items-center space-x-2">
             <Checkbox 
               checked={template.showTax} 
-              onCheckedChange={(checked) => setTemplate(prev => ({ ...prev, showTax: checked }))}
+              onCheckedChange={(checked) => setTemplate(prev => ({ ...prev, showTax: Boolean(checked) }))}
             />
             <Label>Show Tax Calculations</Label>
           </div>
@@ -116,7 +129,7 @@ export function InvoiceEditor() {
           <div className="flex items-center space-x-2">
             <Checkbox 
               checked={template.showInsuranceSplit} 
-              onCheckedChange={(checked) => setTemplate(prev => ({ ...prev, showInsuranceSplit: checked }))}
+              onCheckedChange={(checked) => setTemplate(prev => ({ ...prev, showInsuranceSplit: Boolean(checked) }))}
             />
             <Label>Show Insurance Split</Label>
           </div>
@@ -131,7 +144,9 @@ export function InvoiceEditor() {
           />
         </div>
 
-        <Button onClick={handleSave}>Save Template</Button>
+        <Button onClick={handleSave} disabled={updateMutation.isPending}>
+          {updateMutation.isPending ? 'Saving...' : 'Save Template'}
+        </Button>
       </div>
     </div>
   )

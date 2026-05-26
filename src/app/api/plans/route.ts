@@ -5,6 +5,7 @@ import { ensureDefaultSubscriptionPlans } from "@/lib/subscription/ensure-defaul
 import { normalizeSubscriptionPlanRow } from "@/lib/subscription/normalize-plan";
 import { dedupeSubscriptionPlansByName } from "@/lib/subscription/dedupe-plans";
 import { dedupeSubscriptionPlansInDb } from "@/lib/subscription/dedupe-plans-db";
+import { enrichPlansWithCatalogFeatures } from "@/lib/subscription/enrich-plans-catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -76,7 +77,12 @@ export async function GET(request: Request) {
       normalized = normalized.filter((p) => p.plan_type === planTypeFilter);
     }
 
-    return NextResponse.json(normalized, {
+    const withCatalog = await enrichPlansWithCatalogFeatures(
+      admin,
+      normalized.map((p) => ({ ...p, id: p.id })),
+    );
+
+    return NextResponse.json(withCatalog, {
       headers: {
         "Cache-Control": "no-store, max-age=0",
       },

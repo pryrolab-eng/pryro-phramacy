@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { useUsers, staffUsersQueryKey } from '@/hooks'
 import { createPharmacist } from '@/lib/http/pharmacist'
 import { deleteStaffMember, updateStaffMember, type StaffUser } from '@/lib/http/staff'
@@ -16,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { UserCog, Plus, Mail, Phone, Calendar } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
+import { FeatureGate } from '@/components/subscription/feature-gate'
 
 interface StaffMember {
   id: string
@@ -49,7 +51,10 @@ export default function StaffManagePage() {
   const [editingStaff, setEditingStaff] = useState<any>(null)
   const [isEditingStaff, setIsEditingStaff] = useState(false)
   const [pharmacyLoading, setPharmacyLoading] = useState(true)
-  const [userPharmacy, setUserPharmacy] = useState<any>(null)
+  const [userPharmacy, setUserPharmacy] = useState<{
+    pharmacy_id: string
+    pharmacy_name?: string
+  } | null>(null)
 
   useEffect(() => {
     void (async () => {
@@ -60,10 +65,23 @@ export default function StaffManagePage() {
         if (user) {
           const { data } = await supabase
             .from('pharmacy_users')
-            .select('pharmacy_id')
+            .select('pharmacy_id, pharmacies(name)')
             .eq('user_id', user.id)
             .single()
-          setUserPharmacy(data)
+          const row = data as {
+            pharmacy_id?: string
+            pharmacies?: { name?: string } | { name?: string }[] | null
+          } | null
+          const pharmacyJoin = row?.pharmacies
+          const pharmacyName = Array.isArray(pharmacyJoin)
+            ? pharmacyJoin[0]?.name
+            : pharmacyJoin?.name
+          if (row?.pharmacy_id) {
+            setUserPharmacy({
+              pharmacy_id: row.pharmacy_id,
+              pharmacy_name: pharmacyName,
+            })
+          }
         }
       } catch (error) {
         console.error('Error fetching pharmacy:', error)
@@ -76,31 +94,40 @@ export default function StaffManagePage() {
   const loading = usersQuery.isPending || pharmacyLoading
 
   const handleAddStaff = async () => {
+    if (!userPharmacy?.pharmacy_id) {
+      toast.error('Pharmacy not found')
+      return
+    }
     try {
-      const credentials = {
+      const result = await createPharmacist({
         email: newStaff.email,
-        password: newStaff.password,
-        name: newStaff.name
-      }
-
-      await createPharmacist({
-        email: newStaff.email,
-        password: newStaff.password,
+        password: newStaff.password.trim() || undefined,
         full_name: newStaff.name,
         phone: newStaff.phone,
-        role: 'pharmacist',
-        pharmacy_id: userPharmacy?.pharmacy_id
+        role: newStaff.role,
+        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_name: userPharmacy.pharmacy_name,
       })
 
       await queryClient.invalidateQueries({ queryKey: staffUsersQueryKey })
       setIsAddingStaff(false)
       setNewStaff({ name: '', email: '', phone: '', role: 'pharmacist', password: '' })
 
-      alert(`✅ Pharmacist Created Successfully!\n\n📧 SHARE THESE LOGIN CREDENTIALS:\n\nEmail: ${credentials.email}\nPassword: ${credentials.password}\n\n🔐 The pharmacist can now login at the sign-in page using these credentials.\n\n⚠️ Save these credentials to share with ${credentials.name}`)
+      if (result.emailSent) {
+        toast.success('Invitation sent', {
+          description: `Login instructions were emailed to ${newStaff.email}.`,
+        })
+      } else {
+        toast.warning('Staff member created', {
+          description:
+            result.emailError ??
+            'Account was created but the invitation email could not be sent. Check SMTP settings.',
+        })
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       console.error('Error adding pharmacist:', error)
-      alert(`❌ Failed to create pharmacist: ${message}\n\nPlease check:\n- Email is unique (not already used)\n- Password is at least 4 characters\n- All required fields are filled`)
+      toast.error('Could not add staff member', { description: message })
     }
   }
 
@@ -192,6 +219,7 @@ export default function StaffManagePage() {
             ) : null}
           </div>
         </div>
+        <FeatureGate featureKey="staff.invite" compact>
         <Dialog open={isAddingStaff} onOpenChange={setIsAddingStaff}>
           <DialogTrigger asChild>
             <Button>
@@ -202,7 +230,9 @@ export default function StaffManagePage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add New Pharmacist</DialogTitle>
-              <DialogDescription>Create a new pharmacist account for your pharmacy</DialogDescription>
+              <DialogDescription>
+                We email login instructions to the address below. Password is optional — leave blank to generate one automatically.
+              </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
@@ -231,23 +261,24 @@ export default function StaffManagePage() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="staff_password">Password</Label>
+                <Label htmlFor="staff_password">Password (optional)</Label>
                 <PasswordInput
                   id="staff_password"
                   value={newStaff.password}
                   onChange={(e) => setNewStaff({...newStaff, password: e.target.value})}
-                  placeholder="Any password (1+ characters)"
+                  placeholder="Auto-generated and emailed if empty"
                 />
               </div>
 
             </div>
             <DialogFooter>
-              <Button onClick={handleAddStaff} disabled={!newStaff.email || !newStaff.password || !newStaff.name}>
-                Add Pharmacist
+              <Button onClick={handleAddStaff} disabled={!newStaff.email || !newStaff.name}>
+                Send invitation
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </FeatureGate>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

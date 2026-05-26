@@ -1,22 +1,23 @@
-import { useEffect, useState } from 'react'
+"use client";
 
-interface Branding {
-  platformName: string
-  platformLogoUrl: string | null
-}
+import { useQuery } from "@tanstack/react-query";
+import {
+  getPlatformBranding,
+  platformBrandingKeys,
+  type PlatformBranding,
+} from "@/lib/http/platform-branding";
 
-export function useBranding(): Branding {
-  const [branding, setBranding] = useState<Branding>({
-    platformName: 'Pryrox',
-    platformLogoUrl: null,
-  })
+const DEFAULT_BRANDING: PlatformBranding = {
+  platformName: "Pryrox",
+  platformLogoUrl: null,
+};
 
-  useEffect(() => {
-    fetch('/api/branding')
-      .then((r) => r.json())
-      .then((data) => setBranding(data))
-      .catch(() => {})
-  }, [])
+export function useBranding(): PlatformBranding {
+  const query = useQuery({
+    queryKey: platformBrandingKeys.all,
+    queryFn: getPlatformBranding,
+    staleTime: 5 * 60 * 1000,
+  });
 
-  return branding
+  return query.data ?? DEFAULT_BRANDING;
 }

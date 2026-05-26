@@ -93,7 +93,7 @@ export const inventoryApi = {
   },
 
   async delete(id: string) {
-    const { error } = await supabase
+    const { error } = await supabase()
       .from('inventory')
       .delete()
       .eq('id', id)
@@ -113,7 +113,7 @@ export const salesApi = {
     batch_number?: string
     expiry_date?: string
   }>) {
-    const { data: saleData, error: saleError } = await supabase
+    const { data: saleData, error: saleError } = await supabase()
       .from('sales')
       .insert(sale)
       .select()
@@ -126,7 +126,7 @@ export const salesApi = {
       sale_id: saleData.id
     }))
 
-    const { error: itemsError } = await supabase
+    const { error: itemsError } = await supabase()
       .from('sale_items')
       .insert(saleItems)
     
@@ -169,7 +169,7 @@ export const customersApi = {
     return data
   },
 
-  async create(customer: Tables['customers']['Insert']) {
+  async create(customer: Record<string, unknown>) {
     const { data, error } = await supabase()
       .from('customers')
       .insert(customer)
@@ -180,7 +180,7 @@ export const customersApi = {
     return data
   },
 
-  async update(id: string, updates: Tables['customers']['Update']) {
+  async update(id: string, updates: Record<string, unknown>) {
     const { data, error } = await supabase()
       .from('customers')
       .update(updates)
@@ -196,7 +196,7 @@ export const customersApi = {
 // Pharmacy API
 export const pharmacyApi = {
   async getCurrent() {
-    const { data: user } = await supabase.auth.getUser()
+    const { data: user } = await supabase().auth.getUser()
     if (!user.user) throw new Error('Not authenticated')
 
     const { data, error } = await supabase()
@@ -262,7 +262,7 @@ export const notificationsApi = {
   },
 
   async markAsRead(id: string) {
-    const { error } = await supabase
+    const { error } = await supabase()
       .from('notifications')
       .update({ is_read: true })
       .eq('id', id)

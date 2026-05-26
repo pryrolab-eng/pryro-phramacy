@@ -71,6 +71,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Branch name is required' }, { status: 400 })
     }
 
+    const { requirePharmacyEntitlement, entitlementErrorResponse } = await import(
+      '@/lib/subscription/assert-entitlement'
+    )
+    try {
+      await requirePharmacyEntitlement({
+        admin,
+        pharmacyId: membership.pharmacy_id,
+        feature: 'branches.create',
+        limit: 'branches',
+      })
+    } catch (entErr) {
+      const mapped = entitlementErrorResponse(entErr)
+      if (mapped) {
+        return NextResponse.json(mapped.body, { status: mapped.status })
+      }
+      throw entErr
+    }
+
     const branch = await createBranch(admin, membership.pharmacy_id, {
       name: name.trim(),
       address,

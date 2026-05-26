@@ -1,57 +1,58 @@
-import { useState, useEffect } from 'react'
-import { dashboardApi, pharmacyApi } from '@/lib/api'
+"use client";
 
-export function usePharmacy() {
-  const [pharmacy, setPharmacy] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+import { pharmacyApi } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+import {
+  getPharmacyDashboardStats,
+  getRecentPosSales,
+  getStockAlerts,
+  pharmacyDashboardKeys,
+} from "@/lib/http/pharmacy-dashboard";
 
-  useEffect(() => {
-    async function fetchPharmacy() {
-      try {
-        const data = await pharmacyApi.getCurrent()
-        setPharmacy(data)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch pharmacy')
-      } finally {
-        setLoading(false)
-      }
-    }
+export const currentPharmacyQueryKey = ["pharmacy", "current"] as const;
 
-    fetchPharmacy()
-  }, [])
-
-  return { pharmacy, loading, error }
+export function usePharmacy(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: currentPharmacyQueryKey,
+    queryFn: () => pharmacyApi.getCurrent(),
+    enabled: options?.enabled ?? true,
+  });
 }
 
+/** @deprecated Prefer `usePharmacyDashboardStats`, `useStockAlerts`, `useRecentPosSales`. */
 export function useDashboard(pharmacyId?: string) {
-  const [stats, setStats] = useState<any>(null)
-  const [alerts, setAlerts] = useState<any[]>([])
-  const [recentSales, setRecentSales] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const enabled = Boolean(pharmacyId);
 
-  useEffect(() => {
-    if (!pharmacyId) return
+  const statsQuery = useQuery({
+    queryKey: pharmacyDashboardKeys.stats(),
+    queryFn: getPharmacyDashboardStats,
+    enabled,
+  });
 
-    async function fetchDashboard() {
-      try {
-        const response = await fetch('/api/dashboard')
-        if (!response.ok) throw new Error('Failed to fetch dashboard data')
-        
-        const data = await response.json()
-        setStats(data.stats)
-        setAlerts(data.alerts)
-        setRecentSales(data.recentSales)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch dashboard')
-      } finally {
-        setLoading(false)
-      }
-    }
+  const alertsQuery = useQuery({
+    queryKey: pharmacyDashboardKeys.stockAlerts(),
+    queryFn: getStockAlerts,
+    enabled,
+  });
 
-    fetchDashboard()
-  }, [pharmacyId])
+  const salesQuery = useQuery({
+    queryKey: pharmacyDashboardKeys.recentSales(),
+    queryFn: getRecentPosSales,
+    enabled,
+  });
 
-  return { stats, alerts, recentSales, loading, error }
+  return {
+    stats: statsQuery.data ?? null,
+    alerts: alertsQuery.data?.all ?? [],
+    recentSales: salesQuery.data ?? [],
+    loading:
+      statsQuery.isPending || alertsQuery.isPending || salesQuery.isPending,
+    error:
+      statsQuery.error ?? alertsQuery.error ?? salesQuery.error ?? null,
+    refetch: () => {
+      void statsQuery.refetch();
+      void alertsQuery.refetch();
+      void salesQuery.refetch();
+    },
+  };
 }

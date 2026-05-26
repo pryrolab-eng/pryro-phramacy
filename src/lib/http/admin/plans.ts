@@ -8,18 +8,36 @@ export type AdminSubscriptionPlanRow = Record<string, unknown> & {
   price?: number | string;
   period?: string;
   features?: unknown;
+  feature_keys?: string[];
   is_popular?: boolean;
   is_active?: boolean;
   /** Active rows in `subscriptions` whose `plan` matches this catalog name (case-insensitive). */
   active_subscriber_count?: number;
 };
 
-export async function getAdminPlans(): Promise<AdminSubscriptionPlanRow[]> {
+export type AdminPlansResponse = {
+  plans: AdminSubscriptionPlanRow[];
+  duplicateGroups: Array<{
+    key: string;
+    keeperId: string;
+    duplicateIds: string[];
+  }>;
+};
+
+export async function getAdminPlans(): Promise<AdminPlansResponse> {
   const data = await fetchJson<unknown>("/api/admin/plans");
-  if (!Array.isArray(data)) {
-    throw new Error("Invalid plans response");
+  if (Array.isArray(data)) {
+    return { plans: data as AdminSubscriptionPlanRow[], duplicateGroups: [] };
   }
-  return data as AdminSubscriptionPlanRow[];
+  if (
+    data &&
+    typeof data === "object" &&
+    "plans" in data &&
+    Array.isArray((data as AdminPlansResponse).plans)
+  ) {
+    return data as AdminPlansResponse;
+  }
+  throw new Error("Invalid plans response");
 }
 
 export type PolarSyncNote = {
@@ -91,11 +109,38 @@ export async function syncAllPlansToPolar(): Promise<{
   };
 }
 
+export async function fixAdminPlanCatalog(): Promise<{
+  mainPlansFixed: number;
+  addonsFixed: number;
+  message?: string;
+}> {
+  const data = await fetchJson<{
+    success: boolean;
+    mainPlansFixed?: number;
+    addonsFixed?: number;
+    message?: string;
+    error?: string;
+  }>("/api/admin/plans/fix-catalog", { method: "POST" });
+  ensureApiSuccess(data, "Failed to fix catalog types");
+  return {
+    mainPlansFixed: data.mainPlansFixed ?? 0,
+    addonsFixed: data.addonsFixed ?? 0,
+    message: data.message,
+  };
+}
+
+export type UpdateAdminPlanResponse = {
+  success: boolean;
+  plan?: AdminSubscriptionPlanRow;
+  polarSync?: PolarSyncNote;
+  error?: string;
+};
+
 export async function updateAdminPlan(
   id: string,
   body: Record<string, unknown>,
-): Promise<void> {
-  const data = await fetchJson<{ success: boolean; error?: string }>(
+): Promise<UpdateAdminPlanResponse> {
+  const data = await fetchJson<UpdateAdminPlanResponse>(
     `/api/admin/plans/${id}`,
     {
       method: "PUT",
@@ -104,4 +149,5 @@ export async function updateAdminPlan(
     },
   );
   ensureApiSuccess(data, "Failed to update plan");
+  return data;
 }

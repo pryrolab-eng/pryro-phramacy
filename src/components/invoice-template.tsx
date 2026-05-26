@@ -65,18 +65,24 @@ export function InvoiceTemplate({ data, template }: InvoiceTemplateProps) {
     footerText: ''
   }
 
-  const renderField = (field: string, value: any) => {
-    const labels = {
-      pharmacyName: 'Pharmacy',
-      pharmacyAddress: 'Adresse',
-      pharmacyPhone: 'Tél',
-      date: 'Date de création',
-      beneficialNumber: 'Beneficial N°',
-      beneficialName: 'Beneficial Names',
-      telephone: 'Telephone N°',
-      insuranceTIN: 'Insurance TIN N°'
-    }
-    return <p key={field}>{labels[field] || field}: {value}</p>
+  const fieldLabels: Record<string, string> = {
+    pharmacyName: 'Pharmacy',
+    pharmacyAddress: 'Adresse',
+    pharmacyPhone: 'Tél',
+    date: 'Date de création',
+    beneficialNumber: 'Beneficial N°',
+    beneficialName: 'Beneficial Names',
+    telephone: 'Telephone N°',
+    insuranceTIN: 'Insurance TIN N°'
+  }
+
+  const getScalarField = (field: string): string | number => {
+    const value = data[field as keyof InvoiceData]
+    return typeof value === 'string' || typeof value === 'number' ? value : ''
+  }
+
+  const renderField = (field: string) => {
+    return <p key={field}>{fieldLabels[field] || field}: {getScalarField(field)}</p>
   }
 
   return (
@@ -85,14 +91,14 @@ export function InvoiceTemplate({ data, template }: InvoiceTemplateProps) {
       <div className="text-center mb-6">
         <h1 className="text-xl font-bold">FACTURE DES MEDICAMENTS</h1>
         {config.headerFields.includes('pharmacyName') && <h2 className="text-lg font-semibold mt-2">{data.pharmacyName}</h2>}
-        {config.headerFields.map(field => renderField(field, data[field]))}
+        {config.headerFields.map(field => renderField(field))}
       </div>
 
       {/* Patient Info */}
       <div className="grid grid-cols-2 gap-6 mb-6">
         <div>
           <h3 className="font-bold mb-2">Informations du bénéficiaire</h3>
-          {config.patientFields.map(field => renderField(field, data[field]))}
+          {config.patientFields.map(field => renderField(field))}
         </div>
         
         <div>

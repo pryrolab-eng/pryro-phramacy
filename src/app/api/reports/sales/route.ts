@@ -10,6 +10,17 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { guardReportsAccess, entitlementRouteResponse } = await import(
+      '@/lib/subscription/route-guards'
+    )
+    try {
+      await guardReportsAccess(supabase, user.id)
+    } catch (entErr) {
+      const res = entitlementRouteResponse(entErr)
+      if (res) return res
+      throw entErr
+    }
+
     const { data: userPharmacy } = await supabase
       .from('pharmacy_users')
       .select('pharmacy_id')
@@ -29,8 +40,8 @@ export async function GET() {
       .gte('created_at', thirtyDaysAgo)
       .order('created_at', { ascending: true })
     
-    const dailySales = []
-    const dailyTotals = {}
+    const dailySales: Array<{ date: string; sales: number; orders: number }> = []
+    const dailyTotals: Record<string, number> = {}
     
     salesData?.forEach(sale => {
       const date = sale.created_at.split('T')[0]
@@ -38,7 +49,7 @@ export async function GET() {
     })
     
     Object.entries(dailyTotals).forEach(([date, sales]) => {
-      dailySales.push({ date, sales: Math.round(sales), orders: Math.floor(Math.random() * 50) + 100 })
+      dailySales.push({ date, sales: Math.round(Number(sales)), orders: Math.floor(Math.random() * 50) + 100 })
     })
     
     // Get top products
@@ -53,7 +64,7 @@ export async function GET() {
       .eq('sales.pharmacy_id', userPharmacy.pharmacy_id)
       .gte('sales.created_at', thirtyDaysAgo)
     
-    const productTotals = {}
+    const productTotals: Record<string, { sales: number; quantity: number }> = {}
     topProductsData?.forEach(item => {
       const name = item.medication_name
       if (!productTotals[name]) {
@@ -75,7 +86,7 @@ export async function GET() {
       .eq('pharmacy_id', userPharmacy.pharmacy_id)
       .gte('created_at', thirtyDaysAgo)
     
-    const paymentTotals = {}
+    const paymentTotals: Record<string, number> = {}
     let totalAmount = 0
     
     paymentData?.forEach(sale => {
@@ -89,8 +100,8 @@ export async function GET() {
     
     const paymentBreakdown = Object.entries(paymentTotals).map(([method, amount]) => ({
       method,
-      percentage: Math.round((amount / totalAmount) * 100) || 0,
-      amount: Math.round(amount)
+      percentage: Math.round((Number(amount) / totalAmount) * 100) || 0,
+      amount: Math.round(Number(amount))
     }))
     
     // Get active customers (unique customers in last 30 days)
@@ -120,7 +131,7 @@ export async function GET() {
       totalSales: 0,
       totalOrders: 0,
       activeCustomers: 0,
-      error: error.message
+      error: error instanceof Error ? error.message : 'Unknown error'
     })
   }
 }

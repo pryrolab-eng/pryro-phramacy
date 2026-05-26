@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useProcessPosSaleMutation } from '@/hooks/usePos'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -16,6 +17,7 @@ interface CartItem {
 }
 
 export function QuickPOS() {
+  const saleMutation = useProcessPosSaleMutation()
   const [isOpen, setIsOpen] = useState(false)
   const [cart, setCart] = useState<CartItem[]>([])
   const [selectedDrug, setSelectedDrug] = useState('')
@@ -56,21 +58,31 @@ export function QuickPOS() {
 
   const processSale = async () => {
     try {
-      const response = await fetch('/api/pos/sale', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: cart,
-          paymentMethod,
-          total
-        })
+      await saleMutation.mutateAsync({
+        customer: {
+          name: '',
+          phone: '',
+          insuranceNumber: '',
+          insuranceType: '',
+          coveragePercent: 0,
+        },
+        items: cart.map((item) => ({
+          ...item,
+          stock: 999,
+          batch: '',
+          expiryDate: '',
+          daysToExpiry: 999,
+        })),
+        subtotal: total,
+        insuranceCoverage: 0,
+        patientAmount: total,
+        paymentMethod,
+        cashAmount: total,
+        insuranceAmount: 0,
       })
-
-      if (response.ok) {
-        setCart([])
-        setPaymentMethod('')
-        setIsOpen(false)
-      }
+      setCart([])
+      setPaymentMethod('')
+      setIsOpen(false)
     } catch (error) {
       console.error('Sale failed:', error)
     }

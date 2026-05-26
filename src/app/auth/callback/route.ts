@@ -24,33 +24,42 @@ export async function GET(request: NextRequest) {
 
   const { supabase, withCookies } = createRouteHandlerClient(request);
 
+  let authFailed = false;
+  let authErrorMessage =
+    "Could not sign you in. Your link may have expired — try signing in again.";
+
   if (token_hash && type) {
     const { error } = await supabase.auth.verifyOtp({
       token_hash,
       type: type as EmailOtpType,
     });
     if (error) {
+      authFailed = true;
+      authErrorMessage = error.message;
       const isRecovery = type === "recovery" || redirect_to?.includes("reset-password");
-      return redirectWithError(
-        requestUrl,
-        isRecovery ? "/forgot-password" : "/sign-in",
-        error.message,
-        withCookies
-      );
+      if (isRecovery) {
+        return redirectWithError(
+          requestUrl,
+          "/forgot-password",
+          error.message,
+          withCookies,
+        );
+      }
     }
   } else if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
+      authFailed = true;
+      authErrorMessage = error.message;
       const isRecovery = redirect_to?.includes("reset-password");
-      const message = isRecovery
-        ? "This reset link is invalid or was opened in a different browser. Request a new link and open it in the same browser where you requested it."
-        : error.message;
-      return redirectWithError(
-        requestUrl,
-        isRecovery ? "/forgot-password" : "/sign-in",
-        message,
-        withCookies
-      );
+      if (isRecovery) {
+        return redirectWithError(
+          requestUrl,
+          "/forgot-password",
+          "This reset link is invalid or was opened in a different browser. Request a new link and open it in the same browser where you requested it.",
+          withCookies,
+        );
+      }
     }
   }
 
@@ -58,10 +67,18 @@ export async function GET(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const redirectTo =
-    redirect_to || (user ? "/onboarding" : "/sign-in");
+  if (authFailed || !user) {
+    return redirectWithError(
+      requestUrl,
+      "/sign-in",
+      authErrorMessage,
+      withCookies,
+    );
+  }
+
+  const redirectTo = redirect_to || "/onboarding";
 
   return withCookies(
-    NextResponse.redirect(new URL(redirectTo, requestUrl.origin))
+    NextResponse.redirect(new URL(redirectTo, requestUrl.origin)),
   );
 }

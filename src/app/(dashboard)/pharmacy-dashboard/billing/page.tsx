@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -22,11 +23,15 @@ import {
   useSaasSubscription,
   useSaasPlans,
   useSaasInvoices,
-  useSubscribeToPlan,
   useCancelSubscription,
+  useGenerateSaasInvoiceMutation,
 } from '@/hooks/useSaasSubscription'
 import { BranchAddonCheckoutDialog } from '@/components/subscription/branch-addon-checkout-dialog'
+import { SubscriptionPlanManagement } from '@/components/subscription/subscription-plan-management'
+import { PlanFeatureList } from '@/components/subscription/plan-feature-list'
 import type { SubscriptionPlan, SubscriptionInvoice } from '@/lib/saas/types'
+import { UpgradeFeatureBanner } from '@/components/subscription/upgrade-feature-banner'
+import { usePharmacyEntitlements } from '@/hooks/usePharmacyEntitlements'
 
 // ─── Helpers ──────────────────────────────────────────────
 
@@ -44,18 +49,33 @@ function planBadgeColor(planType: string) {
 // ─── Page ─────────────────────────────────────────────────
 
 export default function PharmacyBillingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <Spinner className="size-6" />
+        </div>
+      }
+    >
+      <PharmacyBillingPageContent />
+    </Suspense>
+  )
+}
+
+function PharmacyBillingPageContent() {
+  const searchParams = useSearchParams()
+  const { can } = usePharmacyEntitlements()
+  const [activeTab, setActiveTab] = useState('plan')
   const subQuery = useSaasSubscription()
   const plansQuery = useSaasPlans()
   const invoicesQuery = useSaasInvoices()
-  const subscribe = useSubscribeToPlan()
   const cancel = useCancelSubscription()
+  const generateInvoice = useGenerateSaasInvoiceMutation()
 
-  const [upgradeTarget, setUpgradeTarget] = useState<SubscriptionPlan | null>(null)
   const [addonPlanTarget, setAddonPlanTarget] = useState<SubscriptionPlan | null>(null)
   const [addonCheckoutOpen, setAddonCheckoutOpen] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
-  const [generatingInvoice, setGeneratingInvoice] = useState(false)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -63,35 +83,12 @@ export default function PharmacyBillingPage() {
   }
 
   const summary = subQuery.data
-  const mainPlans = (plansQuery.data ?? []).filter(
-    (p) => p.plan_type === 'main' && p.is_active
-  )
   const addonPlans = (plansQuery.data ?? []).filter(
     (p) => p.plan_type === 'branch_addon' && p.is_active
   )
   const invoices = invoicesQuery.data ?? []
   const mainSlots = summary?.main_plan_branch_slots ?? summary?.branch_limit ?? 0
   const addonCount = summary?.addon_subscription_count ?? 0
-
-  const handleSubscribe = async (plan: SubscriptionPlan) => {
-    try {
-      const result = await subscribe.mutateAsync({
-        plan_id: plan.id,
-        subscription_type: 'main',
-      })
-      setUpgradeTarget(null)
-      if (result.requiresPayment) {
-        showToast(
-          'Plan selected — complete payment in Settings → Billing to activate.',
-          'error'
-        )
-        return
-      }
-      showToast(`Subscribed to ${plan.name} successfully`)
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Subscription failed', 'error')
-    }
-  }
 
   const openAddonCheckout = (plan: SubscriptionPlan) => {
     setAddonPlanTarget(plan)
@@ -110,19 +107,31 @@ export default function PharmacyBillingPage() {
   }
 
   const handleGenerateInvoice = async () => {
-    setGeneratingInvoice(true)
     try {
-      const res = await fetch('/api/saas/invoice', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      void invoicesQuery.refetch()
+      await generateInvoice.mutateAsync(undefined)
       showToast('Invoice generated')
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to generate invoice', 'error')
-    } finally {
-      setGeneratingInvoice(false)
     }
   }
+
+  const generatingInvoice = generateInvoice.isPending
+
+  const renewDate = summary?.main_subscription?.current_period_end
+    ? new Date(summary.main_subscription.current_period_end)
+    : null
+  const daysUntilRenew = renewDate
+    ? Math.ceil((renewDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null
+  const showRenewBanner =
+    daysUntilRenew != null && daysUntilRenew <= 7 && daysUntilRenew >= 0
+
+  useEffect(() => {
+    const upgrade = searchParams.get('upgrade')
+    if (upgrade && !can(upgrade)) {
+      setActiveTab('upgrade')
+    }
+  }, [searchParams, can])
 
   if (subQuery.isPending || plansQuery.isPending) {
     return (
@@ -186,7 +195,33 @@ export default function PharmacyBillingPage() {
         />
       </div>
 
-      <Tabs defaultValue="plan">
+      <UpgradeFeatureBanner onViewPlans={() => setActiveTab('upgrade')} />
+
+      {showRenewBanner && (
+        <Card className="border-amber-200 bg-amber-50/50">
+          <CardContent className="pt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-start gap-2 text-sm text-amber-900">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              <p>
+                Your plan renews on {renewDate?.toLocaleDateString()} ({daysUntilRenew}{' '}
+                day{daysUntilRenew !== 1 ? 's' : ''} left). Manual renewal is required — choose
+                your plan below to pay for the next period.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                document.querySelector<HTMLButtonElement>('[data-value="upgrade"]')?.click()
+              }
+            >
+              Renew / change plan
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="plan">Current Plan</TabsTrigger>
           <TabsTrigger value="upgrade">Main plans</TabsTrigger>
@@ -377,23 +412,11 @@ export default function PharmacyBillingPage() {
 
         {/* ── Main plans tab ── */}
         <TabsContent value="upgrade" className="mt-6 space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Paid main plans require checkout in{' '}
-            <a href="/settings" className="text-blue-600 underline">
-              Settings → Billing
-            </a>{' '}
-            for card or mobile money. Free plans activate here instantly.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {mainPlans.map(plan => (
-              <PlanCard
-                key={plan.id}
-                plan={plan}
-                isCurrent={summary?.main_subscription?.plan_id === plan.id}
-                onSelect={() => setUpgradeTarget(plan)}
-              />
-            ))}
-          </div>
+          <SubscriptionPlanManagement
+            checkoutReturnContext="billing"
+            showBranchAddons={false}
+            onPlanChanged={() => void subQuery.refetch()}
+          />
         </TabsContent>
 
         {/* ── Branch add-ons tab ── */}
@@ -480,31 +503,6 @@ export default function PharmacyBillingPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Upgrade confirm dialog */}
-      <AlertDialog open={!!upgradeTarget} onOpenChange={o => !o && setUpgradeTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Subscribe to {upgradeTarget?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {upgradeTarget?.price === 0
-                ? 'This is a free plan.'
-                : `You will be charged RWF ${Number(upgradeTarget?.price ?? 0).toLocaleString()} per ${upgradeTarget?.billing_period}.`}
-              {' '}Your current plan will be cancelled immediately.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => upgradeTarget && void handleSubscribe(upgradeTarget)}
-              disabled={subscribe.isPending}
-            >
-              {subscribe.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Confirm
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       <BranchAddonCheckoutDialog
         open={addonCheckoutOpen}
         onOpenChange={setAddonCheckoutOpen}
@@ -517,7 +515,6 @@ export default function PharmacyBillingPage() {
         }}
       />
 
-      {/* Cancel confirm dialog */}
       <AlertDialog open={!!cancelTarget} onOpenChange={o => !o && setCancelTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -682,14 +679,7 @@ function PlanCard({
             <div className="text-muted-foreground">Tx/mo</div>
           </div>
         </div>
-        <ul className="space-y-1">
-          {plan.features.map((f, i) => (
-            <li key={i} className="flex items-center gap-2 text-sm">
-              <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
-              {f}
-            </li>
-          ))}
-        </ul>
+        <PlanFeatureList features={plan.features} maxVisible={5} dense className="min-h-0" />
         <Button
           className="w-full"
           variant={isCurrent ? 'outline' : 'default'}

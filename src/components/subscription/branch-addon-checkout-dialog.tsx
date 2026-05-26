@@ -27,6 +27,7 @@ import {
   startKpaySubscriptionCheckout,
   startPolarSubscriptionCheckout,
 } from '@/lib/subscription/checkout-client'
+import { usePolarConfig } from '@/hooks/useOnboarding'
 
 export type BranchAddonCheckoutMode = 'new_branch' | 'existing_branch'
 
@@ -69,20 +70,14 @@ export function BranchAddonCheckoutDialog({
   const [paymentMethod, setPaymentMethod] = useState<'kpay' | 'polar'>('kpay')
   const [phone, setPhone] = useState(customerPhone)
   const [email, setEmail] = useState(customerEmail)
-  const [polarEnabled, setPolarEnabled] = useState(false)
+  const polarConfigQuery = usePolarConfig()
+  const polarEnabled = Boolean(polarConfigQuery.data?.enabled)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (initialPlanId) setSelectedPlanId(initialPlanId)
   }, [initialPlanId])
-
-  useEffect(() => {
-    fetch('/api/polar/config')
-      .then((r) => r.json())
-      .then((d) => setPolarEnabled(Boolean(d?.enabled)))
-      .catch(() => setPolarEnabled(false))
-  }, [])
 
   useEffect(() => {
     if (open) {

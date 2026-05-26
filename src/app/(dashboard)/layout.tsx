@@ -7,6 +7,7 @@ import { SuperadminSidebar } from '@/components/superadmin-sidebar'
 import { PharmacySidebar } from '@/components/pharmacy-sidebar'
 import { PharmacistSidebar } from '@/components/pharmacist-sidebar'
 import SubscriptionBlocker from '@/components/subscription-blocker'
+import { FeatureRouteGuard } from '@/components/subscription/feature-route-guard'
 import { createServiceClient } from '../../../supabase/service'
 import { resolvePharmacyEntitlements } from '@/lib/subscription/lifecycle/entitlements'
 
@@ -74,7 +75,11 @@ export default async function DashboardLayout({
         {getSidebar()}
         <SidebarInset>
           <SubscriptionBlocker isExpired={isSubscriptionExpired} userRole={userRole} />
-          {children}
+          {!isPlatformAdmin ? (
+            <FeatureRouteGuard>{children}</FeatureRouteGuard>
+          ) : (
+            children
+          )}
         </SidebarInset>
       </SidebarProvider>
     </PharmacyProvider>

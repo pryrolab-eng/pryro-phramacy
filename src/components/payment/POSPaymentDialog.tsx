@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { PaymentForm } from '@/components/payment/PaymentForm'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { useToast } from '@/hooks/use-toast'
+import { useToast } from '@/components/ui/use-toast'
+import { pollKpayTransactionStatus } from '@/hooks/useKpay'
 
 interface POSPaymentDialogProps {
   open: boolean
@@ -37,8 +38,7 @@ export function POSPaymentDialog({
     const checkInterval = setInterval(async () => {
       setChecking(true)
       try {
-        const response = await fetch(`/api/kpay/status?transactionId=${transaction.id}`)
-        const data = await response.json()
+        const data = await pollKpayTransactionStatus(transaction.id)
 
         if (data.transaction.status === 'completed') {
           clearInterval(checkInterval)

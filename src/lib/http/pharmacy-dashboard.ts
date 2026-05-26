@@ -1,0 +1,173 @@
+import { fetchJson } from "./client";
+
+export type PharmacyDashboardStats = {
+  totalProducts: number;
+  lowStockItems: number;
+  todaySales: number;
+  monthlyRevenue: number;
+  totalCustomers: number;
+  activeStaff: number;
+  pendingOrders: number;
+  expiringProducts: number;
+};
+
+export type RecentSaleRow = {
+  id: string;
+  customer: string;
+  amount: number;
+  items: number;
+  time: string;
+  payment_method: string;
+};
+
+export type StockAlertRow = {
+  id: string;
+  product: string;
+  current_stock: number;
+  min_stock: number;
+  category: string;
+  expires_in: number;
+};
+
+export type StockAlertsResponse = {
+  all: StockAlertRow[];
+  lowStock: StockAlertRow[];
+  expiring: StockAlertRow[];
+};
+
+export type SalesChartPoint = {
+  month: string;
+  revenue: number;
+};
+
+export type WeeklySalesChartPoint = {
+  date: string;
+  prescription: number;
+  otc: number;
+};
+
+export type CategorySalesChartPoint = {
+  category: string;
+  sales: number;
+  fill: string;
+};
+
+export type InventoryChartPoint = {
+  month: string;
+  inStock: number;
+  lowStock: number;
+};
+
+export const pharmacyDashboardKeys = {
+  all: ["pharmacy", "dashboard"] as const,
+  stats: () => [...pharmacyDashboardKeys.all, "stats"] as const,
+  recentSales: () => [...pharmacyDashboardKeys.all, "recent-sales"] as const,
+  stockAlerts: () => [...pharmacyDashboardKeys.all, "stock-alerts"] as const,
+  salesChart: () => [...pharmacyDashboardKeys.all, "sales-chart"] as const,
+  weeklySales: () => [...pharmacyDashboardKeys.all, "weekly-sales"] as const,
+  categorySales: () => [...pharmacyDashboardKeys.all, "category-sales"] as const,
+  inventoryChart: () => [...pharmacyDashboardKeys.all, "inventory-chart"] as const,
+};
+
+const EMPTY_STATS: PharmacyDashboardStats = {
+  totalProducts: 0,
+  lowStockItems: 0,
+  todaySales: 0,
+  monthlyRevenue: 0,
+  totalCustomers: 0,
+  activeStaff: 0,
+  pendingOrders: 0,
+  expiringProducts: 0,
+};
+
+const EMPTY_STOCK_ALERTS: StockAlertsResponse = {
+  all: [],
+  lowStock: [],
+  expiring: [],
+};
+
+export async function getPharmacyDashboardStats(): Promise<PharmacyDashboardStats> {
+  try {
+    return await fetchJson<PharmacyDashboardStats>("/api/pharmacy/dashboard");
+  } catch {
+    return EMPTY_STATS;
+  }
+}
+
+export async function getRecentPosSales(): Promise<RecentSaleRow[]> {
+  try {
+    return await fetchJson<RecentSaleRow[]>("/api/pos");
+  } catch {
+    return [];
+  }
+}
+
+export async function getStockAlerts(): Promise<StockAlertsResponse> {
+  try {
+    return await fetchJson<StockAlertsResponse>("/api/stock-alerts");
+  } catch {
+    return EMPTY_STOCK_ALERTS;
+  }
+}
+
+export async function getPharmacySalesChart(): Promise<SalesChartPoint[]> {
+  try {
+    return await fetchJson<SalesChartPoint[]>("/api/pharmacy/sales-chart");
+  } catch {
+    return [];
+  }
+}
+
+const FALLBACK_WEEKLY_SALES: WeeklySalesChartPoint[] = [
+  { date: "Mon", prescription: 450, otc: 300 },
+  { date: "Tue", prescription: 380, otc: 420 },
+];
+
+const FALLBACK_CATEGORY_SALES: CategorySalesChartPoint[] = [
+  { category: "prescription", sales: 275, fill: "var(--color-prescription)" },
+  { category: "otc", sales: 200, fill: "var(--color-otc)" },
+];
+
+const FALLBACK_INVENTORY_CHART: InventoryChartPoint[] = [
+  { month: "Jan", inStock: 850, lowStock: 45 },
+  { month: "Feb", inStock: 920, lowStock: 32 },
+];
+
+export async function getPharmacyWeeklySalesChart(): Promise<WeeklySalesChartPoint[]> {
+  try {
+    const data = await fetchJson<WeeklySalesChartPoint[]>(
+      "/api/pharmacy/weekly-sales",
+    );
+    return Array.isArray(data) && data.length > 0 ? data : FALLBACK_WEEKLY_SALES;
+  } catch {
+    return FALLBACK_WEEKLY_SALES;
+  }
+}
+
+export async function getPharmacyCategorySalesChart(): Promise<
+  CategorySalesChartPoint[]
+> {
+  try {
+    const data = await fetchJson<CategorySalesChartPoint[]>(
+      "/api/pharmacy/category-sales",
+    );
+    return Array.isArray(data) && data.length > 0
+      ? data
+      : FALLBACK_CATEGORY_SALES;
+  } catch {
+    return FALLBACK_CATEGORY_SALES;
+  }
+}
+
+export async function getPharmacyInventoryChart(): Promise<InventoryChartPoint[]> {
+  try {
+    const data = await fetchJson<InventoryChartPoint[]>(
+      "/api/pharmacy/inventory-chart",
+    );
+    return Array.isArray(data) && data.length > 0
+      ? data
+      : FALLBACK_INVENTORY_CHART;
+  } catch {
+    return FALLBACK_INVENTORY_CHART;
+  }
+}

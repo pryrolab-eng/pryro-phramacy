@@ -1,9 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
 import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
-import { createClient } from '../../../../supabase/client'
+import {
+  useInvalidatePharmacistDashboard,
+  usePharmacistActivities,
+  usePharmacistChartData,
+  usePharmacistDashboardStats,
+  usePharmacistPrescriptions,
+  usePharmacistStockAlerts,
+  useProcessPharmacistPrescriptionMutation,
+  useTrackPharmacistActivityMutation,
+  type PharmacistActivity,
+  type PharmacistStats,
+  type PendingPrescription,
+} from '@/hooks/usePharmacistDashboard'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -17,41 +29,13 @@ import { useRouter } from 'next/navigation'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { LoadingState, LoadingCard } from '@/components/loading-state'
 import { Spinner } from '@/components/ui/spinner'
+import type { StockAlertRow } from '@/lib/http/pharmacy-dashboard'
 import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
-
-interface PharmacistStats {
-  prescriptionsToday: number
-  customersServed: number
-  averageWaitTime: number
-  completedSales: number
-  pendingPrescriptions: number
-  consultationsGiven: number
-  inventoryChecks: number
-  alertsHandled: number
-}
-
-interface PendingPrescription {
-  id: string
-  patient: string
-  doctor: string
-  medications: string[]
-  priority: 'high' | 'medium' | 'low'
-  time: string
-  insurance: string
-}
-
-interface RecentActivity {
-  id: string
-  type: 'sale' | 'consultation' | 'prescription' | 'inventory'
-  description: string
-  time: string
-  status: 'completed' | 'pending'
-}
 
 interface StockAlert {
   id: string
@@ -70,205 +54,116 @@ interface ExpirationAlert {
   quantity: number
 }
 
+function toStockAlert(row: StockAlertRow): StockAlert {
+  return {
+    id: row.id,
+    drugName: row.product,
+    currentStock: row.current_stock,
+    minStock: row.min_stock,
+    status: row.current_stock <= 0 ? 'out' : 'low',
+  }
+}
+
+function toExpirationAlert(row: StockAlertRow): ExpirationAlert {
+  return {
+    id: row.id,
+    drugName: row.product,
+    batchNumber: '',
+    expiryDate: '',
+    daysUntilExpiry: row.expires_in,
+    quantity: row.current_stock,
+  }
+}
+
 export default function PharmacistDashboard() {
   const router = useRouter()
-  const { inventory, sales, alerts, setInventory, addSale, setAlerts } = usePharmacyStore()
-  const [stats, setStats] = useState<PharmacistStats>({
+  const { setAlerts } = usePharmacyStore()
+  const invalidate = useInvalidatePharmacistDashboard()
+
+  const statsQuery = usePharmacistDashboardStats()
+  const prescriptionsQuery = usePharmacistPrescriptions()
+  const stockAlertsQuery = usePharmacistStockAlerts()
+  const activitiesQuery = usePharmacistActivities()
+  const chartQuery = usePharmacistChartData()
+  const trackActivityMutation = useTrackPharmacistActivityMutation()
+  const prescriptionActionMutation = useProcessPharmacistPrescriptionMutation()
+
+  const stats: PharmacistStats = statsQuery.data ?? {
     prescriptionsToday: 0,
     customersServed: 0,
-    averageWaitTime: 8,
+    averageWaitTime: 0,
     completedSales: 0,
     pendingPrescriptions: 0,
     consultationsGiven: 0,
-    inventoryChecks: 3,
-    alertsHandled: 5
-  })
-
-  const [pendingPrescriptions, setPendingPrescriptions] = useState<PendingPrescription[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [loadingStates, setLoadingStates] = useState({
-    stats: true,
-    prescriptions: true,
-    alerts: true,
-    activities: true,
-    charts: true
-  })
-
-  // Real-time updates
-  useRealtimeUpdates((update) => {
-    if (update.type === 'inventory_update') {
-      fetchStockAlerts()
-    }
-    if (update.type === 'new_sale') {
-      fetchDashboardStats()
-      fetchRecentActivities()
-    }
-  })
+    inventoryChecks: 0,
+    alertsHandled: 0,
+  }
+  const pendingPrescriptions: PendingPrescription[] =
+    prescriptionsQuery.data ?? []
+  const recentActivities: PharmacistActivity[] = activitiesQuery.data ?? []
+  const chartData = chartQuery.data ?? []
 
   useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true)
-      try {
-        // Parallel loading with 2-second timeout
-        await Promise.race([
-          Promise.all([
-            fetchDashboardStats(),
-            fetchPendingPrescriptions(),
-            fetchStockAlerts(),
-            fetchRecentActivities(),
-            fetchChartData()
-          ]),
-          new Promise(resolve => setTimeout(resolve, 2000)) // Max 2 seconds
-        ])
-      } catch (error) {
-        console.log('Using fallback data')
-      } finally {
-        setIsLoading(false)
-      }
-    }
-    loadData()
-  }, [])
+    const data = stockAlertsQuery.data
+    if (data) setAlerts(data.all ?? [])
+  }, [stockAlertsQuery.data, setAlerts])
 
-  const fetchRecentActivities = async () => {
-    try {
-      setLoadingStates(prev => ({ ...prev, activities: true }))
-      const response = await fetch('/api/pharmacist/activities')
-      if (response.ok) {
-        const data = await response.json()
-        setRecentActivities(data)
-      }
-    } catch (error) {
-      console.error('Error fetching activities:', error)
-    } finally {
-      setLoadingStates(prev => ({ ...prev, activities: false }))
-    }
+  const stockAlerts = (stockAlertsQuery.data?.lowStock ?? []).map(toStockAlert)
+  const expirationAlerts = (stockAlertsQuery.data?.expiring ?? []).map(
+    toExpirationAlert,
+  )
+
+  const loadingStates = {
+    stats: statsQuery.isPending,
+    prescriptions: prescriptionsQuery.isPending,
+    alerts: stockAlertsQuery.isPending,
+    activities: activitiesQuery.isPending,
+    charts: chartQuery.isPending,
   }
 
-  const fetchChartData = async () => {
-    try {
-      setLoadingStates(prev => ({ ...prev, charts: true }))
-      const response = await fetch('/api/pharmacist/chart-data')
-      if (response.ok) {
-        const data = await response.json()
-        setChartData(data)
-      }
-    } catch (error) {
-      console.error('Error fetching chart data:', error)
-    } finally {
-      setLoadingStates(prev => ({ ...prev, charts: false }))
-    }
-  }
+  const isLoading =
+    statsQuery.isPending ||
+    prescriptionsQuery.isPending ||
+    stockAlertsQuery.isPending ||
+    activitiesQuery.isPending ||
+    chartQuery.isPending
 
-  const fetchDashboardStats = async () => {
-    try {
-      setLoadingStates(prev => ({ ...prev, stats: true }))
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 1000) // 1 second timeout
-      
-      const response = await fetch('/api/pharmacist/dashboard', {
-        signal: controller.signal
-      })
-      clearTimeout(timeoutId)
-      
-      if (response.ok) {
-        const data = await response.json()
-        setStats(data)
-      }
-    } catch (error) {
-      // Fast fallback to mock data
-      setStats({
-        prescriptionsToday: 12,
-        customersServed: 45,
-        averageWaitTime: 8,
-        completedSales: 23,
-        pendingPrescriptions: 5,
-        consultationsGiven: 18,
-        inventoryChecks: 3,
-        alertsHandled: 5
-      })
-    } finally {
-      setLoadingStates(prev => ({ ...prev, stats: false }))
+  useRealtimeUpdates((update) => {
+    if (update.type === 'inventory_update') {
+      void invalidate.invalidateStockAlerts()
     }
-  }
+    if (update.type === 'new_sale') {
+      void invalidate.invalidateStats()
+      void invalidate.invalidateActivities()
+    }
+  })
 
-  const fetchPendingPrescriptions = async () => {
-    try {
-      setLoadingStates(prev => ({ ...prev, prescriptions: true }))
-      const response = await fetch('/api/pharmacist/prescriptions')
-      if (response.ok) {
-        const data = await response.json()
-        setPendingPrescriptions(data)
-      }
-    } catch (error) {
-      console.error('Error fetching prescriptions:', error)
-    } finally {
-      setLoadingStates(prev => ({ ...prev, prescriptions: false }))
-    }
-  }
-
-  const fetchStockAlerts = async () => {
-    try {
-      setLoadingStates(prev => ({ ...prev, alerts: true }))
-      const response = await fetch('/api/stock-alerts')
-      if (response.ok) {
-        const data = await response.json()
-        setStockAlerts(data.lowStock || [])
-        setExpirationAlerts(data.expiring || [])
-        setAlerts(data.all || [])
-      }
-    } catch (error) {
-      console.error('Error fetching stock alerts:', error)
-    } finally {
-      setLoadingStates(prev => ({ ...prev, alerts: false }))
-    }
-  }
-
-  const trackActivity = async (type: string, data: any) => {
-    try {
-      await fetch('/api/pharmacist/track-activity', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, data })
-      })
-    } catch (error) {
-      console.error('Error tracking activity:', error)
-    }
+  const trackActivity = (type: string, data: Record<string, unknown>) => {
+    trackActivityMutation.mutate({ type, data })
   }
 
   const handleInventoryCheck = (inventoryId: string) => {
     trackActivity('inventory_check', { inventoryId, checkType: 'manual' })
-    fetchDashboardStats()
   }
 
-  const handleAlertAction = (alertType: string, referenceId: string, action: string) => {
+  const handleAlertAction = (
+    alertType: string,
+    referenceId: string,
+    action: string,
+  ) => {
     trackActivity('alert_action', { alertType, referenceId, action })
-    fetchDashboardStats()
   }
 
-  const handlePrescriptionAction = async (prescriptionId: string, action: string) => {
+  const handlePrescriptionAction = async (
+    prescriptionId: string,
+    action: string,
+  ) => {
     try {
-      await fetch('/api/pharmacist/prescriptions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prescriptionId, action })
-      })
-      fetchPendingPrescriptions()
-      fetchDashboardStats()
+      await prescriptionActionMutation.mutateAsync({ prescriptionId, action })
     } catch (error) {
       console.error('Error processing prescription:', error)
     }
   }
-
-
-
-  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([])
-
-  const [stockAlerts, setStockAlerts] = useState<StockAlert[]>([])
-  const [expirationAlerts, setExpirationAlerts] = useState<ExpirationAlert[]>([])
-
-
-
-  const [chartData, setChartData] = useState([])
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {

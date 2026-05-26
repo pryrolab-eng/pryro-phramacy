@@ -1,4 +1,5 @@
 import type { DisplaySubscriptionPlan } from "./normalize-plan";
+import { canonicalPlanName } from "./plan-name-validation";
 
 export function normalizePlanName(name: string): string {
   return String(name ?? "").trim().toLowerCase();
@@ -17,7 +18,7 @@ type PlanRow = {
 
 function planDedupeKey(plan: Pick<PlanRow, "name" | "plan_type">): string {
   const type = String(plan.plan_type ?? "main").trim().toLowerCase();
-  return `${normalizePlanName(plan.name)}::${type === "branch_addon" ? "branch_addon" : "main"}`;
+  return `${canonicalPlanName(plan.name)}::${type === "branch_addon" ? "branch_addon" : "main"}`;
 }
 
 /** Prefer row with Polar link, then most recently updated, then oldest created. */
@@ -53,7 +54,7 @@ export function dedupeSubscriptionPlansByName<T extends PlanRow>(plans: T[]): T[
   }
 
   const result: T[] = [];
-  for (const group of byName.values()) {
+  for (const group of Array.from(byName.values())) {
     group.sort(comparePlanRows);
     result.push(group[0]);
   }
@@ -93,7 +94,7 @@ export function findDuplicatePlanGroups<T extends PlanRow>(
   }
 
   const groups: PlanDuplicateGroup[] = [];
-  for (const [key, list] of byKey) {
+  for (const [key, list] of Array.from(byKey.entries())) {
     if (list.length <= 1) continue;
     list.sort(comparePlanRows);
     const keeper = list[0];

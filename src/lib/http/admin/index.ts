@@ -41,3 +41,11 @@ export {
   updateAdminSystemSettings,
   type AdminSystemSettingsResponse,
 } from "./system-settings";
+export {
+  adminFeaturesQueryKey,
+  createAdminFeature,
+  getAdminFeatures,
+  updateAdminFeature,
+  type UpsertPlatformFeatureInput,
+} from "./features";
+export type { PlatformFeatureRow } from "@/lib/subscription/plan-features";

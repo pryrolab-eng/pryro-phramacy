@@ -16,7 +16,7 @@ export async function GET() {
       .eq('medications.pharmacy_id', 'userPharmacy.pharmacy_id')
     
     // Group by month
-    const monthlyData = {}
+    const monthlyData: Record<string, { inStock: number; lowStock: number }> = {}
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
     
     inventoryData?.forEach(item => {

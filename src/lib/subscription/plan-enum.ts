@@ -2,9 +2,21 @@ export type SubscriptionPlanEnum = "trial" | "standard" | "premium";
 
 export function planNameToEnum(name: string): SubscriptionPlanEnum {
   const n = (name || "").toLowerCase();
+  if (n.includes("branch add") || n.includes("branch_addon") || n.includes("extra branch")) {
+    return "trial";
+  }
   if (n.includes("premium")) return "premium";
   if (n.includes("standard")) return "standard";
-  if (n.includes("basic") || n.includes("free")) return "trial";
+  /** $0 catalog tiers (Free, Free Trial, Starter at price 0). */
+  if (
+    n.includes("starter") ||
+    n.includes("stater") ||
+    n.includes("free") ||
+    n.includes("trial") ||
+    n.includes("basic")
+  ) {
+    return "trial";
+  }
   return "trial";
 }
 

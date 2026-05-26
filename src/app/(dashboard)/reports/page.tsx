@@ -31,6 +31,11 @@ import { Input } from "@/components/ui/input"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Spinner } from '@/components/ui/spinner'
 import { TrendingUp, TrendingDown, DollarSign, Package, Users, ShoppingCart, RefreshCw, Download } from "lucide-react"
+import {
+  useInvalidateReports,
+  useReportsInventory,
+  useReportsSales,
+} from "@/hooks/useReports"
 
 const inventoryData = [
   { date: "2024-04-01", lowStock: 12, expiring: 8, totalItems: 1250 },
@@ -104,67 +109,83 @@ const inventoryConfig = {
   },
 } satisfies ChartConfig
 
+interface DailySale {
+  date: string
+  sales?: number
+  orders?: number
+}
+
+interface TopProduct {
+  name: string
+  quantity: number
+  sales: number
+}
+
+interface PaymentBreakdownItem {
+  method: string
+  amount: number
+  percentage: number
+}
+
+interface ReportsData {
+  dailySales: DailySale[]
+  topProducts: TopProduct[]
+  paymentBreakdown: PaymentBreakdownItem[]
+  totalSales: number
+  totalOrders: number
+  activeCustomers: number
+}
+
+interface InventoryAlert {
+  date: string
+  lowStock?: number
+  expiring?: number
+  totalItems?: number
+}
+
 export default function ReportsPage() {
   const [timeRange, setTimeRange] = React.useState("30d")
-  const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
   const [startDate, setStartDate] = React.useState("")
   const [endDate, setEndDate] = React.useState("")
   const [reportType, setReportType] = React.useState("all")
-  const [reportsData, setReportsData] = React.useState({
+  const salesReportQuery = useReportsSales()
+  const inventoryReportQuery = useReportsInventory()
+  const invalidateReports = useInvalidateReports()
+
+  const reportsData: ReportsData = salesReportQuery.data ?? {
     dailySales: [],
     topProducts: [],
     paymentBreakdown: [],
     totalSales: 0,
     totalOrders: 0,
-    activeCustomers: 0
-  })
-  const [inventoryData, setInventoryData] = React.useState([])
-  
+    activeCustomers: 0,
+  }
+  const inventoryData: InventoryAlert[] =
+    inventoryReportQuery.data?.inventoryAlerts ?? []
+
   React.useEffect(() => {
-    fetchReportsData()
-    // Real-time updates every 30 seconds
-    const interval = setInterval(fetchReportsData, 30000)
-    return () => clearInterval(interval)
-  }, [])
-  
-  const fetchReportsData = async () => {
-    try {
-      setLoading(true)
+    if (salesReportQuery.isSuccess) {
+      setLastUpdated(new Date())
       setError(null)
-      const [salesResponse, inventoryResponse] = await Promise.all([
-        fetch('/api/reports/sales'),
-        fetch('/api/reports/inventory')
-      ])
-      
-      console.log('Sales API Status:', salesResponse.status)
-      console.log('Inventory API Status:', inventoryResponse.status)
-      
-      if (salesResponse.ok) {
-        const salesData = await salesResponse.json()
-        console.log('Sales Data:', salesData)
-        setReportsData(salesData)
-        setLastUpdated(new Date())
-      } else if (salesResponse.status === 401) {
-        setError('Please log in to view reports')
-      } else {
-        const error = await salesResponse.json()
-        console.error('Sales API Error:', error)
-        setError('Failed to load sales data')
-      }
-      
-      if (inventoryResponse.ok) {
-        const invData = await inventoryResponse.json()
-        console.log('Inventory Data:', invData)
-        setInventoryData(invData.inventoryAlerts || [])
-      }
-    } catch (error) {
-      console.error('Error fetching reports data:', error)
-      setError('Failed to load reports. Please try again.')
-    } finally {
-      setLoading(false)
     }
+    if (salesReportQuery.isError) {
+      setError("Failed to load reports. Please try again.")
+    }
+  }, [salesReportQuery.isSuccess, salesReportQuery.isError])
+
+  const loading = salesReportQuery.isPending || inventoryReportQuery.isPending
+
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      void invalidateReports()
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [invalidateReports])
+
+  const fetchReportsData = () => {
+    void invalidateReports()
   }
 
   const filteredData = reportsData.dailySales.filter((item) => {

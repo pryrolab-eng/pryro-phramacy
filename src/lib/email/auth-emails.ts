@@ -72,12 +72,19 @@ async function generateLinkAndSend(
     redirectOverride ??
     (type === "recovery" ? recoveryRedirectUrl(redirectTo) : callbackUrl(redirectTo));
 
-  const { data, error } = await admin.auth.admin.generateLink({
-    type,
-    email,
-    password: type === "signup" ? password : undefined,
-    options: { redirectTo: redirect },
-  });
+  const { data, error } =
+    type === "signup"
+      ? await admin.auth.admin.generateLink({
+          type: "signup",
+          email,
+          password: password ?? "",
+          options: { redirectTo: redirect },
+        })
+      : await admin.auth.admin.generateLink({
+          type: "recovery",
+          email,
+          options: { redirectTo: redirect },
+        });
 
   if (error || !data?.properties?.action_link) {
     return {

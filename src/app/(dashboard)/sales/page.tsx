@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, type ReactNode } from 'react'
+import { useSalesAnalytics, useSalesList } from '@/hooks/useSales'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -46,7 +47,16 @@ const hourlyChartConfig = {
   },
 } satisfies ChartConfig
 
-function WeeklySalesChart({ data }) {
+interface AnalyticsData {
+  weeklySales: Array<{ day?: string; sales: number }>
+  paymentBreakdown: Array<{ method: string; percentage: number }>
+  hourlySales: Array<{ hour?: string; sales: number }>
+  monthlyComparison: Array<{ month?: string; sales: number }>
+  customerDistribution: Array<{ name: string; value: number }>
+  topCategories: Array<{ name: string; value: number; color: string }>
+}
+
+function WeeklySalesChart({ data }: { data: Array<{ day?: string; sales: number }> }) {
   const weeklyData = data.length > 0 ? data : [
     { day: "Mon", sales: 120000 },
     { day: "Tue", sales: 135000 },
@@ -102,7 +112,7 @@ function WeeklySalesChart({ data }) {
                 offset={12}
                 className="fill-foreground"
                 fontSize={12}
-                formatter={(value) => `${(value / 1000).toFixed(0)}k`}
+                formatter={(value: number) => `${(value / 1000).toFixed(0)}k`}
               />
             </Line>
           </LineChart>
@@ -112,7 +122,7 @@ function WeeklySalesChart({ data }) {
   )
 }
 
-function HourlySalesChart({ data }) {
+function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number }> }) {
   const hourlyData = data?.length > 0 ? data : [
     { hour: '8AM', sales: 5000 },
     { hour: '9AM', sales: 8000 },
@@ -169,7 +179,7 @@ function HourlySalesChart({ data }) {
                 offset={12}
                 className="fill-foreground"
                 fontSize={12}
-                formatter={(value) => `${(value / 1000).toFixed(0)}k`}
+                formatter={(value: number) => `${(value / 1000).toFixed(0)}k`}
               />
             </Line>
           </LineChart>
@@ -180,76 +190,36 @@ function HourlySalesChart({ data }) {
 }
 
 export default function SalesPage() {
-  const [sales, setSales] = useState<Sale[]>([])
+  const salesQuery = useSalesList()
+  const analyticsQuery = useSalesAnalytics()
   const [filteredSales, setFilteredSales] = useState<Sale[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedPeriod, setSelectedPeriod] = useState('today')
-  const [stats, setStats] = useState({
+
+  const sales = salesQuery.data?.sales ?? []
+  const stats = salesQuery.data?.stats ?? {
     todayTotal: 0,
     weekTotal: 0,
     monthTotal: 0,
-    totalSales: 0
-  })
-  const [analyticsData, setAnalyticsData] = useState({
-    weeklySales: [],
-    paymentBreakdown: [],
-    hourlySales: [],
-    monthlyComparison: [],
-    customerDistribution: [],
-    topCategories: []
-  })
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    fetchSales()
-    fetchAnalytics()
-  }, [])
-  
-  const fetchAnalytics = async () => {
-    try {
-      const response = await fetch('/api/sales/analytics')
-      if (response.ok) {
-        const data = await response.json()
-        setAnalyticsData(data)
-      }
-    } catch (error) {
-      console.error('Error fetching analytics:', error)
-    }
+    totalSales: 0,
   }
+  const analyticsData: AnalyticsData = useMemo(
+    () =>
+      analyticsQuery.data ?? {
+        weeklySales: [],
+        paymentBreakdown: [],
+        hourlySales: [],
+        monthlyComparison: [],
+        customerDistribution: [],
+        topCategories: [],
+      },
+    [analyticsQuery.data],
+  )
+  const loading = salesQuery.isPending
 
   useEffect(() => {
     filterSales()
   }, [sales, searchTerm, selectedPeriod])
-
-  const fetchSales = async () => {
-    try {
-      setLoading(true)
-      console.log('Fetching sales from /api/sales...')
-      const response = await fetch('/api/sales')
-      console.log('Sales API response status:', response.status)
-      if (response.ok) {
-        const data = await response.json()
-        console.log('Sales data received:', data)
-        setSales(data.sales)
-        setStats(data.stats)
-      } else {
-        console.error('Sales API failed:', response.status)
-      }
-    } catch (error) {
-      console.error('Error fetching sales:', error)
-      const mockSales = [
-        { id: '1', customer: 'Marie Uwimana', amount: 15000, items: 3, date: '2024-12-01', paymentMethod: 'Cash', status: 'completed' },
-        { id: '2', customer: 'Jean Baptiste', amount: 8500, items: 2, date: '2024-12-01', paymentMethod: 'Mobile Money', status: 'completed' },
-        { id: '3', customer: 'Grace Mukamana', amount: 25000, items: 5, date: '2024-12-01', paymentMethod: 'Insurance', status: 'completed' },
-        { id: '4', customer: 'Paul Nkurunziza', amount: 12000, items: 2, date: '2024-12-01', paymentMethod: 'Card', status: 'completed' },
-        { id: '5', customer: 'Alice Uwera', amount: 18500, items: 4, date: '2024-11-30', paymentMethod: 'Cash', status: 'completed' }
-      ]
-      setSales(mockSales)
-      setStats({ todayTotal: 70500, weekTotal: 456000, monthTotal: 1890000, totalSales: 156 })
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const filterSales = () => {
     let filtered = sales
@@ -395,13 +365,13 @@ export default function SalesPage() {
               <CardContent>
                 <div className="space-y-3">
                   {analyticsData.paymentBreakdown.map((payment, index) => {
-                    const icons = {
+                    const icons: Record<string, ReactNode> = {
                       cash: <Banknote className="h-4 w-4 text-green-600" />,
                       mobile_money: <CreditCard className="h-4 w-4 text-blue-600" />,
                       insurance: <Users className="h-4 w-4 text-purple-600" />,
                       card: <CreditCard className="h-4 w-4 text-orange-600" />
                     }
-                    const labels = {
+                    const labels: Record<string, string> = {
                       cash: 'Cash',
                       mobile_money: 'Mobile Money',
                       insurance: 'Insurance',

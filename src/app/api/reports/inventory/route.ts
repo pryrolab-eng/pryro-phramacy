@@ -10,6 +10,17 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { guardReportsAccess, entitlementRouteResponse } = await import(
+      '@/lib/subscription/route-guards'
+    )
+    try {
+      await guardReportsAccess(supabase, user.id)
+    } catch (entErr) {
+      const res = entitlementRouteResponse(entErr)
+      if (res) return res
+      throw entErr
+    }
+
     const { data: userPharmacy } = await supabase
       .from('pharmacy_users')
       .select('pharmacy_id')
@@ -34,8 +45,8 @@ export async function GET() {
       .gte('created_at', new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString())
       .order('created_at', { ascending: true })
     
-    const dailyAlerts = []
-    const dailyData = {}
+    const dailyAlerts: Array<{ date: string; lowStock: number; expiring: number; totalItems: number }> = []
+    const dailyData: Record<string, { lowStock: number; expiring: number; totalItems: number }> = {}
     
     inventoryData?.forEach(item => {
       const date = item.created_at.split('T')[0]

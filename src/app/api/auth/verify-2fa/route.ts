@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
+import { createServiceClient } from '../../../../../supabase/server'
 import { authenticator } from 'otplib'
-import { cookies } from 'next/headers'
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,23 +10,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing parameters' }, { status: 400 })
     }
 
-    // Use service role to query without auth
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        cookies: {
-          async getAll() {
-            return (await cookies()).getAll()
-          },
-          async setAll(cookiesToSet) {
-            cookiesToSet.forEach(async ({ name, value, options }) => {
-              (await cookies()).set(name, value, options)
-            })
-          },
-        },
-      }
-    )
+    const supabase = createServiceClient()
 
     // Get pending session
     const { data: session, error: sessionError } = await supabase

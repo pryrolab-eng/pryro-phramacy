@@ -7,3 +7,17 @@ export async function getPharmacyCategoriesCatalog(): Promise<unknown[]> {
   const data = await fetchJson<unknown>("/api/categories");
   return Array.isArray(data) ? data : [];
 }
+
+type CreateCategoryResponse = {
+  success: boolean;
+  error?: string;
+};
+
+/** `POST /api/categories` — create a pharmacy category. */
+export async function createPharmacyCategory(name: string): Promise<CreateCategoryResponse> {
+  return fetchJson<CreateCategoryResponse>("/api/categories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name.trim() }),
+  });
+}

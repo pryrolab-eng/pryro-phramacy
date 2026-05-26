@@ -2,7 +2,30 @@
 
 import { useState, useEffect } from 'react'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
-import { createClient } from '../../../../supabase/client'
+import {
+  checkPosTransactionAllowed,
+  getInsurancePricing,
+  useAnalyzeCartSafetyMutation,
+  useCustomerSearch,
+  useHoldPosSaleMutation,
+  useIncrementBranchUsageMutation,
+  useInsuranceLookupMutation,
+  useInsuranceProcessMutation,
+  usePosCategories,
+  usePosCustomerLookupMutation,
+  usePosFastMoving,
+  usePosPriceCheckMutation,
+  usePosProducts,
+  useProcessPosReturnMutation,
+  useProcessPosSaleMutation,
+  useQuickAddPosEntityMutation,
+  useQuickAddPosPatientMutation,
+  useSaasBranches,
+  useVoidPosSaleMutation,
+  type PosCartItem,
+  type PosCustomer,
+  type PosProduct,
+} from '@/hooks/usePos'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,29 +37,12 @@ import { InsuranceSelector } from '@/components/insurance-selector'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
+import { FeatureGate } from '@/components/subscription/feature-gate'
+import { usePharmacyEntitlements } from '@/hooks/usePharmacyEntitlements'
 
-interface Product {
-  id: string
-  name: string
-  price: number
-  stock: number
-  batch: string
-  expiryDate: string
-  daysToExpiry: number
-  barcode?: string
-}
-
-interface CartItem extends Product {
-  quantity: number
-}
-
-interface Customer {
-  name: string
-  phone: string
-  insuranceNumber: string
-  insuranceType: string
-  coveragePercent: number
-}
+type Product = PosProduct
+type CartItem = PosCartItem
+type Customer = PosCustomer
 
 interface InsurancePricing {
   drugId: string
@@ -49,12 +55,19 @@ interface InsurancePricing {
 }
 
 export default function POSPage() {
-  const [products, setProducts] = useState<Product[]>([])
-  const [fastMoving, setFastMoving] = useState<Product[]>([])
+  const { can } = usePharmacyEntitlements()
+  const productsQuery = usePosProducts()
+  const fastMovingQuery = usePosFastMoving()
+  const categoriesQuery = usePosCategories()
+  const products = productsQuery.data ?? []
+  const fastMoving = fastMovingQuery.data ?? []
+  const categories = (categoriesQuery.data ?? []) as Array<{ id: string; name: string }>
+
   const [cart, setCart] = useState<CartItem[]>([])
-  const [categories, setCategories] = useState<any[]>([])
   const [customer, setCustomer] = useState<Customer>({ name: '', phone: '', insuranceNumber: '', insuranceType: '', coveragePercent: 0 })
-  const [customerSuggestions, setCustomerSuggestions] = useState<any[]>([])
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('')
+  const customerSearchResult = useCustomerSearch(customerSearchQuery)
+  const customerSuggestions = customerSearchResult.data ?? []
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
@@ -72,97 +85,33 @@ export default function POSPage() {
   const [aiSafetyOpen, setAiSafetyOpen] = useState(false)
   const [aiSafetyResult, setAiSafetyResult] = useState<any>(null)
   const [aiSafetyLoading, setAiSafetyLoading] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const loading =
+    productsQuery.isPending || fastMovingQuery.isPending || categoriesQuery.isPending
+
+  const saleMutation = useProcessPosSaleMutation()
+  const holdSaleMutation = useHoldPosSaleMutation()
+  const voidSaleMutation = useVoidPosSaleMutation()
+  const customerLookupMutation = usePosCustomerLookupMutation()
+  const priceCheckMutation = usePosPriceCheckMutation()
+  const quickAddPatientMutation = useQuickAddPosPatientMutation()
+  const quickAddEntityMutation = useQuickAddPosEntityMutation()
+  const returnMutation = useProcessPosReturnMutation()
+  const aiSafetyMutation = useAnalyzeCartSafetyMutation()
+  const insuranceLookupMutation = useInsuranceLookupMutation()
+  const insuranceProcessMutation = useInsuranceProcessMutation()
+  const incrementUsageMutation = useIncrementBranchUsageMutation()
 
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true)
-      // Clear any existing data first
-      setProducts([])
-      setFastMoving([])
-      
-      await Promise.all([
-        fetchProducts(),
-        fetchFastMoving(),
-        fetchCategories()
-      ])
-      setLoading(false)
-    }
-    loadData()
-    
-    // Add F2 keyboard shortcut for Process Sale
     const handleKeyPress = (event: KeyboardEvent) => {
       if (event.key === 'F2' && cart.length > 0 && paymentMethod) {
         event.preventDefault()
         processSale()
       }
     }
-    
+
     window.addEventListener('keydown', handleKeyPress)
     return () => window.removeEventListener('keydown', handleKeyPress)
   }, [cart, paymentMethod])
-
-  const fetchProducts = async () => {
-    try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (user) {
-        const response = await fetch('/api/pos/products', {
-          headers: {
-            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
-          }
-        })
-        if (response.ok) {
-          const data = await response.json()
-          setProducts(data)
-          return
-        }
-      }
-    } catch (error) {
-      console.error('Failed to fetch products:', error)
-    }
-    // Empty fallback - no shared mock data
-    console.log('No products loaded - API may not be implemented')
-    setProducts([])
-  }
-
-  const fetchFastMoving = async () => {
-    try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (user) {
-        const response = await fetch('/api/pos/products?fastMoving=true', {
-          headers: {
-            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
-          }
-        })
-        if (response.ok) {
-          const data = await response.json()
-          setFastMoving(data)
-          return
-        }
-      }
-    } catch (error) {
-      console.error('Failed to fetch fast moving products:', error)
-    }
-    // Empty fallback - no shared mock data  
-    console.log('No fast moving products loaded - API may not be implemented')
-    setFastMoving([])
-  }
-
-  const fetchCategories = async () => {
-    try {
-      const response = await fetch('/api/categories')
-      if (response.ok) {
-        const data = await response.json()
-        setCategories(data)
-      }
-    } catch (error) {
-      console.error('Failed to fetch categories:', error)
-    }
-  }
   
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || p.barcode?.includes(searchTerm)
@@ -234,26 +183,24 @@ export default function POSPage() {
     return getSubtotal()
   }
 
-  const searchCustomers = async (query: string) => {
+  const searchCustomers = (query: string) => {
+    setCustomerSearchQuery(query)
     if (query.length < 2) {
       setShowCustomerSuggestions(false)
-      setCustomerSuggestions([])
       return
     }
-    
-    try {
-      const response = await fetch(`/api/customers?q=${encodeURIComponent(query)}`)
-      if (response.ok) {
-        const customers = await response.json()
-        setCustomerSuggestions(customers)
-        setShowCustomerSuggestions(customers.length > 0)
-      }
-    } catch (error) {
-      console.error('Customer search error:', error)
-      setCustomerSuggestions([])
-      setShowCustomerSuggestions(false)
-    }
+    setShowCustomerSuggestions(true)
   }
+
+  useEffect(() => {
+    if (customerSearchQuery.length < 2) {
+      setShowCustomerSuggestions(false)
+      return
+    }
+    if (!customerSearchResult.isFetching) {
+      setShowCustomerSuggestions((customerSuggestions.length ?? 0) > 0)
+    }
+  }, [customerSearchQuery, customerSearchResult.isFetching, customerSuggestions.length])
 
   const selectCustomer = (selectedCustomer: any) => {
     setCustomer({
@@ -268,21 +215,18 @@ export default function POSPage() {
 
   const fetchInsurancePricing = async (drugId: string, insuranceType: string) => {
     try {
-      const response = await fetch(`/api/insurance/pricing?insurance=${insuranceType}&product=${encodeURIComponent(drugId)}`)
-      if (response.ok) {
-        const data = await response.json()
-        if (data.price) {
-          const mockPricing = {
-            drugId,
-            insuranceType,
-            retailPrice: 1000, // Mock retail price
-            insurancePrice: data.price,
-            coveragePercent: customer.coveragePercent,
-            insurancePays: Math.round(data.price * (customer.coveragePercent / 100)),
-            patientPays: Math.round(data.price * (1 - customer.coveragePercent / 100))
-          }
-          setInsurancePricing(prev => ({ ...prev, [drugId]: mockPricing }))
+      const data = await getInsurancePricing(insuranceType, drugId)
+      if (data.price) {
+        const mockPricing = {
+          drugId,
+          insuranceType,
+          retailPrice: 1000,
+          insurancePrice: data.price,
+          coveragePercent: customer.coveragePercent,
+          insurancePays: Math.round(data.price * (customer.coveragePercent / 100)),
+          patientPays: Math.round(data.price * (1 - customer.coveragePercent / 100)),
         }
+        setInsurancePricing((prev) => ({ ...prev, [drugId]: mockPricing }))
       }
     } catch (error) {
       console.error('Failed to fetch insurance pricing:', error)
@@ -297,55 +241,12 @@ export default function POSPage() {
   const [txBlocked, setTxBlocked] = useState<{ reason: string; message: string } | null>(null)
   const [currentBranchId, setCurrentBranchId] = useState<string | null>(null)
 
-  // Load the current branch_id for this user on mount
+  const branchesQuery = useSaasBranches()
+
   useEffect(() => {
-    const loadBranchId = async () => {
-      try {
-        const res = await fetch('/api/saas/branches')
-        if (res.ok) {
-          const data = await res.json()
-          // Use the first active branch for this user's session
-          const firstBranch = (data.branches ?? [])[0]
-          if (firstBranch?.id) setCurrentBranchId(firstBranch.id)
-        }
-      } catch {
-        // non-fatal — POS still works without branch tracking
-      }
-    }
-    void loadBranchId()
-  }, [])
-
-  const checkTransactionAllowed = async (): Promise<boolean> => {
-    if (!currentBranchId) return true // no branch context → allow (graceful degradation)
-    try {
-      const res = await fetch(`/api/saas/usage/check?branch_id=${currentBranchId}`)
-      if (!res.ok) return true // API error → allow (don't block sales on infra issues)
-      const data = await res.json()
-      if (!data.allowed) {
-        setTxBlocked({
-          reason: data.reason ?? 'limit_reached',
-          message: data.message ?? 'Transaction limit reached for this branch.',
-        })
-        return false
-      }
-      return true
-    } catch {
-      return true // network error → allow
-    }
-  }
-
-  const incrementTransactionCount = async () => {
-    if (!currentBranchId) return
-    try {
-      await fetch('/api/saas/usage/increment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ branch_id: currentBranchId }),
-      })
-    } catch {
-      // non-fatal
-    }
-  }
+    const firstBranch = branchesQuery.data?.branches?.[0]
+    if (firstBranch?.id) setCurrentBranchId(firstBranch.id)
+  }, [branchesQuery.data])
 
   const processSale = async () => {
     if (cart.length === 0) {
@@ -358,9 +259,14 @@ export default function POSPage() {
       return
     }
 
-    // ── Transaction gate: check before sale ──
-    const allowed = await checkTransactionAllowed()
-    if (!allowed) return // txBlocked state is set — UI will show the blocker
+    const gate = await checkPosTransactionAllowed(currentBranchId)
+    if (!gate.allowed) {
+      setTxBlocked({
+        reason: gate.reason ?? 'limit_reached',
+        message: gate.message ?? 'Transaction limit reached for this branch.',
+      })
+      return
+    }
 
     const saleData = {
       customer,
@@ -375,23 +281,17 @@ export default function POSPage() {
     
     try {
       console.log('Processing sale...', saleData)
-      
-      // Save to database
-      const response = await fetch('/api/pos/sale', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(saleData)
-      })
-      
-      const result = await response.json()
-      console.log('Sale API response:', result)
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to save sale')
-      }
 
-      // ── Increment usage counter after successful sale ──
-      await incrementTransactionCount()
+      const result = await saleMutation.mutateAsync(saleData)
+      console.log('Sale API response:', result)
+
+      if (currentBranchId) {
+        try {
+          await incrementUsageMutation.mutateAsync(currentBranchId)
+        } catch {
+          // non-fatal
+        }
+      }
       
       const receiptNumber = result.receiptNumber || `RCP-${Date.now()}`
       
@@ -422,7 +322,7 @@ export default function POSPage() {
       
     } catch (error) {
       console.error('Sale processing error:', error)
-      alert(`Error: ${error.message}\n\nSale may not have been saved to database.`)
+      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}\n\nSale may not have been saved to database.`)
     }
   }
 
@@ -458,7 +358,7 @@ export default function POSPage() {
             <span>PRICE</span>
             <span>TOTAL</span>
           </div>
-          ${items.map(item => `
+          ${items.map((item: { name: string; quantity: number; price: number }) => `
             <div style="display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 12px;">
               <span style="flex: 2;">${item.name}</span>
               <span style="width: 30px; text-align: center;">${item.quantity}</span>
@@ -698,45 +598,45 @@ export default function POSPage() {
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <div className="text-xs text-[10px]">
-                      <InsuranceSelector
-                        value={customer.insuranceType || 'cash'}
-                        onValueChange={(insuranceType) => {
-                        const coverageMap = { RAMA: 100, MMI: 85, RSSB: 90, Radiant: 80 }
-                        const coverage = coverageMap[insuranceType as keyof typeof coverageMap] || 0
-                        const finalInsuranceType = insuranceType === 'cash' ? '' : insuranceType
-                        setCustomer({ ...customer, insuranceType: finalInsuranceType, coveragePercent: coverage })
-                        
-                        // Show insurance interface for any insurance selection
-                        if (finalInsuranceType) {
-                          setInsuranceInterfaceOpen(true)
-                        }
-                        
-                        // Fetch pricing for all cart items
-                        if (finalInsuranceType) {
-                          cart.forEach(item => fetchInsurancePricing(item.id, finalInsuranceType))
-                        } else {
-                          setInsurancePricing({})
-                        }
-                      }}
-                      coveragePercent={customer.coveragePercent}
-                      />
+                <FeatureGate featureKey="pos.insurance" compact>
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <div className="text-xs text-[10px]">
+                        <InsuranceSelector
+                          value={customer.insuranceType || 'cash'}
+                          onValueChange={(insuranceType) => {
+                          const coverageMap = { RAMA: 100, MMI: 85, RSSB: 90, Radiant: 80 }
+                          const coverage = coverageMap[insuranceType as keyof typeof coverageMap] || 0
+                          const finalInsuranceType = insuranceType === 'cash' ? '' : insuranceType
+                          setCustomer({ ...customer, insuranceType: finalInsuranceType, coveragePercent: coverage })
+                          
+                          if (finalInsuranceType) {
+                            setInsuranceInterfaceOpen(true)
+                          }
+                          
+                          if (finalInsuranceType) {
+                            cart.forEach(item => fetchInsurancePricing(item.id, finalInsuranceType))
+                          } else {
+                            setInsurancePricing({})
+                          }
+                        }}
+                        coveragePercent={customer.coveragePercent}
+                        />
+                      </div>
                     </div>
+                    <Button size="icon" variant="outline" onClick={() => setQuickAddDialog('insurance')}>
+                      <Plus className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <Button size="icon" variant="outline" onClick={() => setQuickAddDialog('insurance')}>
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-                {customer.insuranceType && (
-                  <Input
-                    placeholder="Insurance number (optional)"
-                    value={customer.insuranceNumber}
-                    onChange={(e) => setCustomer({ ...customer, insuranceNumber: e.target.value })}
-                    className="mt-2"
-                  />
-                )}
+                  {customer.insuranceType && (
+                    <Input
+                      placeholder="Insurance number (optional)"
+                      value={customer.insuranceNumber}
+                      onChange={(e) => setCustomer({ ...customer, insuranceNumber: e.target.value })}
+                      className="mt-2"
+                    />
+                  )}
+                </FeatureGate>
               </div>
 
               {/* Cart Items */}
@@ -775,7 +675,7 @@ export default function POSPage() {
                   <span>Subtotal:</span>
                   <span>{getSubtotal().toLocaleString()} RWF</span>
                 </div>
-                {customer.insuranceType && (
+                {can('pos.insurance') && customer.insuranceType && (
                   <>
                     <div className="flex justify-between text-green-600 text-xs">
                       <span>{customer.insuranceType} Covers:</span>
@@ -846,12 +746,16 @@ export default function POSPage() {
                   <SelectItem value="cash">Cash</SelectItem>
                   <SelectItem value="card">Card</SelectItem>
                   <SelectItem value="mobile">Mobile Money</SelectItem>
-                  <SelectItem value="insurance">Insurance Only</SelectItem>
-                  <SelectItem value="split">Split Payment</SelectItem>
+                  {can('pos.insurance') ? (
+                    <>
+                      <SelectItem value="insurance">Insurance Only</SelectItem>
+                      <SelectItem value="split">Split Payment</SelectItem>
+                    </>
+                  ) : null}
                 </SelectContent>
               </Select>
 
-              {paymentMethod === 'split' && (
+              {can('pos.insurance') && paymentMethod === 'split' && (
                 <div className="space-y-2">
                   <Input
                     placeholder="Cash amount"
@@ -923,12 +827,7 @@ export default function POSPage() {
                 Returns
               </Button>
               <Button variant="outline" className="h-6 px-2 text-[10px]" onClick={async () => {
-                const response = await fetch('/api/pos/hold-sale', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ cart, customer })
-                })
-                const data = await response.json()
+                const data = await holdSaleMutation.mutateAsync({ cart, customer })
                 alert(data.success ? 'Sale held successfully!' : 'Failed to hold sale')
               }}>
                 Hold
@@ -936,8 +835,7 @@ export default function POSPage() {
               <Button variant="outline" className="h-6 px-2 text-[10px]" onClick={async () => {
                 const phone = prompt('Enter customer phone:')
                 if (phone) {
-                  const response = await fetch(`/api/pos/customer-lookup?phone=${phone}`)
-                  const customers = await response.json()
+                  const customers = await customerLookupMutation.mutateAsync(phone)
                   alert(customers.length ? `Found: ${customers[0].name}` : 'Customer not found')
                 }
               }}>
@@ -946,9 +844,8 @@ export default function POSPage() {
               <Button variant="outline" className="h-6 px-2 text-[10px]" onClick={async () => {
                 const query = prompt('Enter product name or barcode:')
                 if (query) {
-                  const response = await fetch(`/api/pos/price-check?q=${query}`)
-                  const products = await response.json()
-                  alert(products.length ? `${products[0].name}: ${products[0].price} RWF` : 'Product not found')
+                  const found = await priceCheckMutation.mutateAsync(query)
+                  alert(found.length ? `${found[0].name}: ${found[0].price} RWF` : 'Product not found')
                 }
               }}>
                 Price
@@ -956,12 +853,10 @@ export default function POSPage() {
               <Button variant="outline" className="h-6 px-2 text-[10px] col-span-2" onClick={async () => {
                 const saleId = prompt('Enter sale ID to void:')
                 if (saleId) {
-                  const response = await fetch('/api/pos/void-sale', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ saleId, reason: 'User requested' })
+                  const data = await voidSaleMutation.mutateAsync({
+                    saleId,
+                    reason: 'User requested',
                   })
-                  const data = await response.json()
                   alert(data.success ? 'Sale voided successfully!' : 'Failed to void sale')
                 }
               }}>
@@ -974,6 +869,7 @@ export default function POSPage() {
       </div>
 
       {/* Insurance Interface Dialog */}
+      <FeatureGate featureKey="pos.insurance" hideWhenLocked>
       <Dialog open={insuranceInterfaceOpen} onOpenChange={setInsuranceInterfaceOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -1092,42 +988,38 @@ export default function POSPage() {
               }}>SAVE DRAFT</Button>
               <Button variant="outline" onClick={async () => {
                 try {
-                  const response = await fetch('/api/insurance/lookup', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ insuranceNumber: customer.insuranceNumber })
-                  })
-                  const result = await response.json()
+                  const result = await insuranceLookupMutation.mutateAsync(
+                    customer.insuranceNumber,
+                  )
                   if (result.success) {
-                    alert(`Approval granted: ${result.insuranceType} - ${result.coveragePercent}% coverage`)
+                    alert(
+                      `Approval granted: ${result.insuranceType} - ${result.coveragePercent}% coverage`,
+                    )
                   } else {
                     alert('Insurance verification failed')
                   }
-                } catch (error) {
+                } catch {
                   alert('Approval request sent successfully!')
                 }
               }}>REQUEST APPROVAL</Button>
               <Button onClick={async () => {
                 try {
-                  const response = await fetch('/api/insurance/process', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      insuranceType: customer.insuranceType,
-                      patientId: customer.insuranceNumber,
-                      totalAmount: getSubtotal(),
-                      insuranceCoverage: getInsuranceCoverage(),
-                      patientCopay: getPatientAmount()
-                    })
+                  const result = await insuranceProcessMutation.mutateAsync({
+                    insuranceType: customer.insuranceType,
+                    patientId: customer.insuranceNumber,
+                    totalAmount: getSubtotal(),
+                    insuranceCoverage: getInsuranceCoverage(),
+                    patientCopay: getPatientAmount(),
                   })
-                  const result = await response.json()
-                  if (result.success) {
-                    alert(`Insurance processed! Claim ID: ${result.claim.claimId}\nApproval Code: ${result.claim.approvalCode}`)
+                  if (result.success && result.claim) {
+                    alert(
+                      `Insurance processed! Claim ID: ${result.claim.claimId}\nApproval Code: ${result.claim.approvalCode}`,
+                    )
                     setInsuranceInterfaceOpen(false)
                   } else {
                     alert('Insurance processing failed')
                   }
-                } catch (error) {
+                } catch {
                   alert('Insurance claim processed successfully!')
                   setInsuranceInterfaceOpen(false)
                 }
@@ -1137,7 +1029,6 @@ export default function POSPage() {
         </DialogContent>
       </Dialog>
 
-      {/* RAMA Beneficiary Dialog */}
       <Dialog open={ramaBeneficiaryOpen} onOpenChange={setRamaBeneficiaryOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -1231,6 +1122,7 @@ export default function POSPage() {
           </div>
         </DialogContent>
       </Dialog>
+      </FeatureGate>
 
       {/* Minimalist Right-side Alerts Panel */}
       {alertsOpen && (
@@ -1479,9 +1371,9 @@ export default function POSPage() {
             <Button onClick={async () => {
               if (quickAddDialog === 'patient') {
                 const form = document.querySelector('form')
-                const patientName = form?.querySelector('input[name="patientName"]')?.value?.trim()
-                const phoneNumber = form?.querySelector('input[name="phoneNumber"]')?.value?.trim()
-                const insuranceNumber = form?.querySelector('input[name="insuranceNumber"]')?.value?.trim()
+                const patientName = (form?.querySelector('input[name="patientName"]') as HTMLInputElement | null)?.value?.trim()
+                const phoneNumber = (form?.querySelector('input[name="phoneNumber"]') as HTMLInputElement | null)?.value?.trim()
+                const insuranceNumber = (form?.querySelector('input[name="insuranceNumber"]') as HTMLInputElement | null)?.value?.trim()
                 
                 if (!patientName || !phoneNumber) {
                   alert('Patient name and phone number are required')
@@ -1489,33 +1381,29 @@ export default function POSPage() {
                 }
                 
                 try {
-                  const response = await fetch('/api/pos/quick-add-patient', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ patientName, phoneNumber, insuranceNumber })
+                  const result = await quickAddPatientMutation.mutateAsync({
+                    patientName,
+                    phoneNumber,
+                    insuranceNumber,
                   })
-                  const result = await response.json()
-                  
-                  if (result.success) {
+
+                  if (result.success && result.customer) {
                     alert('Patient added successfully!')
                     setQuickAddDialog(null)
                     form?.reset()
-                    
-                    // Automatically populate customer field
+
                     setCustomer({
                       name: result.customer.name,
                       phone: result.customer.phone,
                       insuranceNumber: result.customer.insurance_number || '',
                       insuranceType: result.customer.insurance_number ? 'RSSB' : '',
-                      coveragePercent: result.customer.insurance_number ? 90 : 0
+                      coveragePercent: result.customer.insurance_number ? 90 : 0,
                     })
-                    
-                    // Add to suggestions for immediate search availability
-                    setCustomerSuggestions(prev => [result.customer, ...prev])
+                    setCustomerSearchQuery(result.customer.phone)
                   } else {
                     alert(result.error || 'Failed to add patient')
                   }
-                } catch (error) {
+                } catch {
                   alert('Patient added successfully!')
                   setQuickAddDialog(null)
                   form?.reset()
@@ -1524,7 +1412,8 @@ export default function POSPage() {
               }
               
               // Handle other dialogs
-              const form = document.querySelector('form')
+              const form = document.querySelector('form') as HTMLFormElement | null
+              if (!form) return
               const formData = new FormData(form)
               const data = Object.fromEntries(formData)
               
@@ -1535,26 +1424,19 @@ export default function POSPage() {
               
               if (endpoint) {
                 try {
-                  const response = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
+                  const result = await quickAddEntityMutation.mutateAsync({
+                    endpoint: endpoint as '/api/pos/quick-add-drug' | '/api/pos/quick-add-insurance' | '/api/pos/quick-add-category',
+                    body: data,
                   })
-                  const result = await response.json()
                   alert(result.success ? 'Added successfully!' : result.error)
                   if (result.success) {
                     setQuickAddDialog(null)
                     form?.reset()
-                    // Refresh categories if category was added
-                    if (quickAddDialog === 'category') {
-                      await fetchCategories()
-                    }
-                    // Refresh page to reload insurance options
                     if (quickAddDialog === 'insurance') {
                       window.location.reload()
                     }
                   }
-                } catch (error) {
+                } catch {
                   alert('Added successfully!')
                   setQuickAddDialog(null)
                   form?.reset()
@@ -1612,19 +1494,14 @@ export default function POSPage() {
               </Button>
               <Button onClick={async () => {
                 try {
-                  const response = await fetch('/api/pos/returns', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      sale_id: 'temp-sale-id',
-                      reason: 'Customer request',
-                      refund_amount: 0
-                    })
+                  const result = await returnMutation.mutateAsync({
+                    sale_id: 'temp-sale-id',
+                    reason: 'Customer request',
+                    refund_amount: 0,
                   })
-                  const result = await response.json()
                   alert(result.success ? 'Return processed successfully!' : result.error)
                   if (result.success) setReturnsDialogOpen(false)
-                } catch (error) {
+                } catch {
                   alert('Return processed successfully!')
                   setReturnsDialogOpen(false)
                 }
@@ -1682,12 +1559,12 @@ export default function POSPage() {
           style={{
             transform: 'translate(0, 0)'
           }}
-          onMouseDown={(e) => {
+          onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => {
             const dialog = e.currentTarget
             const startX = e.clientX - dialog.offsetLeft
             const startY = e.clientY - dialog.offsetTop
             
-            const handleMouseMove = (e) => {
+            const handleMouseMove = (e: MouseEvent) => {
               dialog.style.left = (e.clientX - startX) + 'px'
               dialog.style.top = (e.clientY - startY) + 'px'
               dialog.style.right = 'auto'
@@ -1733,18 +1610,13 @@ export default function POSPage() {
                   onClick={async () => {
                     setAiSafetyLoading(true)
                     try {
-                      const response = await fetch('/api/ai-safety', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ items: cart })
-                      })
-                      const data = await response.json()
-                      if (data.success) {
+                      const data = await aiSafetyMutation.mutateAsync(cart)
+                      if (data.success && data.result) {
                         setAiSafetyResult(data.result)
                       } else {
                         alert('Analysis failed')
                       }
-                    } catch (error) {
+                    } catch {
                       alert('Analysis failed')
                     }
                     setAiSafetyLoading(false)

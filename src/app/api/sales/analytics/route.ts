@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
+import { firstRelation } from '@/lib/supabase/relation'
 
 export async function GET() {
   try {
@@ -41,7 +42,7 @@ export async function GET() {
       .eq('pharmacy_id', userPharmacy.pharmacy_id)
       .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
     
-    const dailyTotals = {}
+    const dailyTotals: Record<string, number> = {}
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     
     weeklyData?.forEach(sale => {
@@ -62,7 +63,7 @@ export async function GET() {
       .eq('pharmacy_id', userPharmacy.pharmacy_id)
       .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
     
-    const paymentTotals = {}
+    const paymentTotals: Record<string, number> = {}
     let totalAmount = 0
     
     paymentData?.forEach(sale => {
@@ -74,7 +75,7 @@ export async function GET() {
     
     const paymentBreakdown = Object.entries(paymentTotals).map(([method, amount]) => ({
       method,
-      percentage: Math.round((amount / totalAmount) * 100) || 0
+      percentage: Math.round((Number(amount) / totalAmount) * 100) || 0
     }))
     
     // Get today's hourly sales
@@ -85,7 +86,7 @@ export async function GET() {
       .eq('pharmacy_id', userPharmacy.pharmacy_id)
       .gte('created_at', today)
     
-    const hourlyTotals = {}
+    const hourlyTotals: Record<number, number> = {}
     todayData?.forEach(sale => {
       const hour = new Date(sale.created_at).getHours()
       hourlyTotals[hour] = (hourlyTotals[hour] || 0) + parseFloat(sale.total_amount)
@@ -128,10 +129,10 @@ export async function GET() {
       .lt('created_at', currentMonthStart.toISOString())
     
     // Group by weeks
-    const getWeekNumber = (date) => Math.ceil(new Date(date).getDate() / 7)
+    const getWeekNumber = (date: string) => Math.ceil(new Date(date).getDate() / 7)
     
-    const currentWeeks = {}
-    const previousWeeks = {}
+    const currentWeeks: Record<number, number> = {}
+    const previousWeeks: Record<number, number> = {}
     
     currentMonthData?.forEach(sale => {
       const week = getWeekNumber(sale.created_at)
@@ -161,11 +162,13 @@ export async function GET() {
       .eq('sales.pharmacy_id', userPharmacy.pharmacy_id)
       .gte('sales.created_at', monthAgo)
     
-    const categoryTotals = {}
+    const categoryTotals: Record<string, number> = {}
     let totalCategoryAmount = 0
     
     categoryData?.forEach(item => {
-      const category = item.inventory?.medications?.category || 'other'
+      const inventory = firstRelation(item.inventory)
+      const medications = firstRelation(inventory?.medications)
+      const category = medications?.category || 'other'
       const amount = parseFloat(item.total_price)
       categoryTotals[category] = (categoryTotals[category] || 0) + amount
       totalCategoryAmount += amount
@@ -174,7 +177,7 @@ export async function GET() {
     const topCategories = Object.entries(categoryTotals)
       .map(([name, value]) => ({
         name: name.charAt(0).toUpperCase() + name.slice(1),
-        value: Math.round((value / totalCategoryAmount) * 100) || 0,
+        value: Math.round((Number(value) / totalCategoryAmount) * 100) || 0,
         color: name === 'prescription' ? 'bg-red-500' :
                name === 'otc' ? 'bg-green-500' :
                name === 'supplement' ? 'bg-blue-500' : 'bg-yellow-500'

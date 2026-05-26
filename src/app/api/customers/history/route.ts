@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const customerHistory = {
+const customerHistory: Record<string, Array<{ id: string; date: string; items: string[]; amount: number; paymentMethod: string }>> = {
   'CUST001': [
     { id: '1', date: '2024-01-10', items: ['Paracetamol 500mg', 'Vitamin C'], amount: 15000, paymentMethod: 'Cash' },
     { id: '2', date: '2024-01-15', items: ['Amoxicillin 250mg'], amount: 12000, paymentMethod: 'Insurance' }

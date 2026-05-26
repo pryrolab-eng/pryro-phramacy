@@ -26,6 +26,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { guardInventoryAccess, entitlementRouteResponse } = await import(
+      '@/lib/subscription/route-guards'
+    )
+    try {
+      await guardInventoryAccess(supabase, user.id)
+    } catch (entErr) {
+      const res = entitlementRouteResponse(entErr)
+      if (res) return res
+      throw entErr
+    }
+
     // Get user's pharmacy_id
     const { data: userPharmacy } = await supabase
       .from('pharmacy_users')

@@ -29,7 +29,7 @@ export async function GET() {
       .gte('created_at', new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000).toISOString())
     
     // Group by month
-    const monthlyData = {}
+    const monthlyData: Record<string, number> = {}
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     
     salesData?.forEach(sale => {
@@ -39,7 +39,7 @@ export async function GET() {
     
     const chartData = Object.entries(monthlyData).map(([month, revenue]) => ({
       month,
-      revenue: Math.round(revenue)
+      revenue: Math.round(Number(revenue))
     }))
     
     return NextResponse.json(chartData)

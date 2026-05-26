@@ -5,3 +5,4 @@ export {
   sendSignupConfirmationEmail,
   type AuthEmailResult,
 } from "./auth-emails";
+export { sendStaffInviteEmail, type StaffInviteEmailResult } from "./staff-invite";

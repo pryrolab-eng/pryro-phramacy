@@ -186,7 +186,7 @@ export default function Sidebar() {
   }
 
   const handleSignOut = async () => {
-    sessionStorage.removeItem('userRole')
+    sessionStorage.removeItem('userRole');
     (await createClient()).auth.signOut()
     router.push('/sign-in')
   }

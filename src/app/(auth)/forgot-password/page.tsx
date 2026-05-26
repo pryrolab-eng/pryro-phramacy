@@ -1,29 +1,9 @@
-import { FormMessage, Message } from "@/components/form-message";
-import { Logo } from "@/components/logo";
-import { AuthBrandingLogo, AuthBrandingFooter, AuthBrandingName } from "@/components/auth-branding";
+import { AuthBrandingLogo, AuthBrandingFooter } from "@/components/auth-branding";
+import { AuthIntentShell } from "@/components/auth/auth-intent-shell";
 import { ForgotPasswordForm } from "@/components/forgot-password-form";
 import Link from "next/link";
 
-export default async function ForgotPassword(props: {
-  searchParams: Promise<Message>;
-}) {
-  const searchParams = await props.searchParams;
-
-  if ("message" in searchParams) {
-    return (
-      <div className="flex h-screen w-full flex-1 items-center justify-center p-4 sm:max-w-md">
-        <FormMessage message={searchParams} />
-      </div>
-    );
-  }
-
-  const initialMessage =
-    "error" in searchParams
-      ? { error: searchParams.error }
-      : "success" in searchParams
-        ? { success: searchParams.success }
-        : undefined;
-
+export default async function ForgotPassword() {
   return (
     <div className="flex min-h-screen bg-white">
       {/* Top-left logo */}
@@ -48,11 +28,13 @@ export default async function ForgotPassword(props: {
 
           <h1 className="text-3xl font-bold text-gray-900">Forgot Password</h1>
           <p className="mt-2 text-sm text-gray-500">
-            Enter your email and we'll send you a reset link.
+            Enter your email and we&apos;ll send you a reset link.
           </p>
 
+          <AuthIntentShell source="sign-in" />
+
           <div className="mt-8">
-            <ForgotPasswordForm initialMessage={initialMessage} />
+            <ForgotPasswordForm />
           </div>
         </div>
       </div>
@@ -66,7 +48,7 @@ export default async function ForgotPassword(props: {
         <div className="relative z-10 flex w-full flex-col items-center justify-center gap-6 px-12">
           <div className="w-64 text-center">
             <h2 className="text-2xl font-bold text-white leading-snug">Secure Account Recovery</h2>
-            <p className="mt-2 text-sm text-gray-400">We'll send a secure link to your email to reset your password safely.</p>
+            <p className="mt-2 text-sm text-gray-400">We&apos;ll send a secure link to your email to reset your password safely.</p>
           </div>
 
           <div className="flex w-64 flex-wrap justify-center gap-2">

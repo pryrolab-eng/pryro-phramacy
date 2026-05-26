@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
 import { createRouteHandlerClient } from "../../../../../supabase/route-handler";
 import { createServiceClient } from "../../../../../supabase/service";
+import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
 
-export type OnboardingStep = 1 | 2 | 3;
+export type OnboardingStep = 1 | 2 | 3 | 4 | 5;
 
 export async function GET(request: NextRequest) {
   const { supabase, json } = createRouteHandlerClient(request);
@@ -20,11 +21,28 @@ export async function GET(request: NextRequest) {
 
   const { data: membership } = await admin
     .from("pharmacy_users")
-    .select("pharmacy_id")
+    .select("pharmacy_id, role")
     .eq("user_id", user.id)
     .eq("is_active", true)
     .limit(1)
     .maybeSingle();
+
+  const isPlatformAdmin = await resolveIsAppPlatformAdmin(
+    supabase,
+    user.id,
+    membership?.role,
+  );
+
+  if (isPlatformAdmin) {
+    return json({
+      step: 1 as OnboardingStep,
+      pharmacy: null,
+      pendingPlan: null,
+      completed: false,
+      isPlatformAdmin: true,
+      redirect: "/admin",
+    });
+  }
 
   let pharmacyId = membership?.pharmacy_id;
 
@@ -56,6 +74,7 @@ export async function GET(request: NextRequest) {
       pharmacy: null,
       pendingPlan: null,
       completed: false,
+      needsPharmacyProfile: true,
     });
   }
 
@@ -77,11 +96,11 @@ export async function GET(request: NextRequest) {
 
   if (activeSub) {
     return json({
-      step: 3 as OnboardingStep,
+      step: 4 as OnboardingStep,
       pharmacy,
       pendingPlan: null,
-      completed: true,
-      redirect: "/dashboard",
+      completed: false,
+      subscriptionActive: true,
     });
   }
 

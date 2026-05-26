@@ -14,6 +14,17 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { guardInventoryAccess, entitlementRouteResponse } = await import(
+      '@/lib/subscription/route-guards'
+    )
+    try {
+      await guardInventoryAccess(supabase, user.id)
+    } catch (entErr) {
+      const res = entitlementRouteResponse(entErr)
+      if (res) return res
+      throw entErr
+    }
+
     const body = await request.json()
 
     const { error } = await supabase
@@ -45,6 +56,17 @@ export async function DELETE(
     
     if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { guardInventoryAccess, entitlementRouteResponse } = await import(
+      '@/lib/subscription/route-guards'
+    )
+    try {
+      await guardInventoryAccess(supabase, user.id)
+    } catch (entErr) {
+      const res = entitlementRouteResponse(entErr)
+      if (res) return res
+      throw entErr
     }
 
     const { error } = await supabase

@@ -42,3 +42,73 @@ export async function createInsuranceProvider(
   ensureApiSuccess(data, "Failed to add insurance provider");
   return data;
 }
+
+export const insurancePosKeys = {
+  pricing: (insurance: string, product: string) =>
+    ["insurance", "pricing", insurance, product] as const,
+};
+
+export type InsurancePricingResponse = { price: number | null };
+
+export async function getInsurancePricing(
+  insurance: string,
+  product: string,
+): Promise<InsurancePricingResponse> {
+  return fetchJson<InsurancePricingResponse>(
+    `/api/insurance/pricing?insurance=${encodeURIComponent(insurance)}&product=${encodeURIComponent(product)}`,
+  );
+}
+
+export type UploadInsurancePricingInput = {
+  insurance: string;
+  priceList: Record<string, number>;
+};
+
+export async function uploadInsurancePricing(
+  body: UploadInsurancePricingInput,
+): Promise<void> {
+  await fetchJson("/api/insurance/pricing", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export type InsuranceLookupResult = {
+  success: boolean;
+  insuranceType?: string;
+  coveragePercent?: number;
+};
+
+export async function lookupInsurance(
+  insuranceNumber: string,
+): Promise<InsuranceLookupResult> {
+  return fetchJson<InsuranceLookupResult>("/api/insurance/lookup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ insuranceNumber }),
+  });
+}
+
+export type InsuranceProcessPayload = {
+  insuranceType: string;
+  patientId: string;
+  totalAmount: number;
+  insuranceCoverage: number;
+  patientCopay: number;
+};
+
+export type InsuranceProcessResult = {
+  success: boolean;
+  claim?: { claimId: string; approvalCode: string };
+};
+
+export async function processInsuranceClaim(
+  payload: InsuranceProcessPayload,
+): Promise<InsuranceProcessResult> {
+  return fetchJson<InsuranceProcessResult>("/api/insurance/process", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}

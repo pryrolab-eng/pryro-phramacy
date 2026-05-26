@@ -2,14 +2,43 @@
 
 /** Prefer `import { … } from "@/hooks"` for shared client hooks. */
 
-export { usePharmacy, useDashboard } from "./usePharmacy";
+export {
+  pharmacyDashboardKeys,
+  useInvalidatePharmacyDashboard,
+  usePharmacyCategorySalesChart,
+  usePharmacyDashboardOverviewLoading,
+  usePharmacyDashboardStats,
+  usePharmacyInventoryChart,
+  usePharmacySalesChart,
+  usePharmacyWeeklySalesChart,
+  useRecentPosSales,
+  useStockAlerts,
+  type CategorySalesChartPoint,
+  type InventoryChartPoint,
+  type PharmacyDashboardStats,
+  type RecentSaleRow,
+  type SalesChartPoint,
+  type StockAlertRow,
+  type StockAlertsResponse,
+  type WeeklySalesChartPoint,
+} from "./usePharmacyDashboard";
+export { useBranding } from "./useBranding";
+export { useCreatePharmacistMutation } from "./useCreatePharmacist";
 export { PharmacyProvider, usePharmacyStore } from "./usePharmacyStore";
 export { useRealtimeUpdates } from "./useRealtimeUpdates";
 export {
   insuranceProvidersQueryKey,
   useInsuranceProviders,
+  useUploadInsurancePricingMutation,
   type InsuranceProviderRow,
 } from "./useInsuranceProviders";
+export {
+  useInvoiceTemplate,
+  useUpdateInvoiceTemplateMutation,
+  type InvoiceTemplate,
+} from "./useInvoiceTemplate";
+export { useSendRecoveryEmailMutation, useVerify2FAMutation } from "./useAuth";
+export { usePublicMainPlans } from "./usePlans";
 export { useIsMobile } from "./use-mobile";
 export { adminCategoriesQueryKey, useAdminCategories } from "./useAdminCategories";
 export { useAdminDashboardData } from "./useAdminDashboardData";
@@ -17,17 +46,32 @@ export {
   adminPharmaciesQueryKey,
   useAdminPharmacies,
 } from "./useAdminPharmacies";
+export {
+  adminPharmacyDetailQueryKey,
+  useAdminPharmacyDetail,
+} from "./useAdminPharmacyDetail";
 export { adminPlansQueryKey, useAdminPlans } from "./useAdminPlans";
+export {
+  useAdminFeatures,
+  useCreateAdminFeatureMutation,
+  useUpdateAdminFeatureMutation,
+} from "./useAdminFeatures";
+export {
+  usePharmacyEntitlements,
+  type PharmacyEntitlementsSnapshot,
+} from "./usePharmacyEntitlements";
 export {
   adminTransactionsQueryKey,
   useAdminTransactions,
 } from "./useAdminTransactions";
+export { adminBillingQueryKey, useAdminBilling } from "./useAdminBilling";
 export {
   adminReportsSummaryQueryKey,
   useAdminReportsSummary,
   type AdminReportsSummary,
   type ExportableReport,
 } from "./useAdminReportsSummary";
+export { usePlatformChartData } from "./usePlatformChartData";
 export { useUploadPlatformAdminReportMutation } from "./useUploadPlatformAdminReportMutation";
 export {
   adminSystemSettingsQueryKey,
@@ -41,3 +85,132 @@ export {
   type StockLocationRow,
 } from "./useStockLocations";
 export { staffUsersQueryKey, useUsers, type StaffUser } from "./useUsers";
+export {
+  checkPosTransactionAllowed,
+  posKeys,
+  useAnalyzeCartSafetyMutation,
+  useCustomerSearch,
+  useHoldPosSaleMutation,
+  useIncrementBranchUsageMutation,
+  useInsuranceLookupMutation,
+  useInsuranceProcessMutation,
+  usePosCategories,
+  usePosCustomerLookupMutation,
+  usePosFastMoving,
+  usePosPriceCheckMutation,
+  usePosProducts,
+  useProcessPosReturnMutation,
+  useProcessPosSaleMutation,
+  useQuickAddPosEntityMutation,
+  useQuickAddPosPatientMutation,
+  useSaasBranches,
+  useVoidPosSaleMutation,
+  getInsurancePricing,
+  type PosCartItem,
+  type PosCustomer,
+  type PosProduct,
+} from "./usePos";
+export {
+  inventoryKeys,
+  useAddInventoryProductMutation,
+  useAdjustInventoryMutation,
+  useCreateInventoryCategoryMutation,
+  useCreateInventorySupplierMutation,
+  useDeleteInventoryProductMutation,
+  useInventoryAnalytics,
+  useInventoryCategories,
+  useInventoryList,
+  useInventorySuppliers,
+  useInvalidateInventory,
+  usePurchaseInventoryMutation,
+  useTransferInventoryMutation,
+  useUpdateInventoryProductMutation,
+  type InventoryListRow,
+} from "./useInventory";
+export {
+  billingKeys,
+  pharmacyBrandingKeys,
+  pharmacySettingsKeys,
+  settingsApiKeysQueryKey,
+  settingsSecurityKeys,
+  useAddIpWhitelistMutation,
+  useBillingInfo,
+  useCreateSettingsApiKeyMutation,
+  useCreateSettingsLocationMutation,
+  useInvalidatePharmacySettingsPage,
+  useIpWhitelist,
+  usePharmacyBranding,
+  usePharmacySettingsInfo,
+  useRemoveIpWhitelistMutation,
+  useSecuritySettings,
+  useSetTwoFaEnabledMutation,
+  useSettingsApiKeys,
+  useSettingsStockLocations,
+  useSetupTwoFaMutation,
+  useTwoFaStatus,
+  useUpdatePharmacyBrandingMutation,
+  useUpdatePharmacySettingsMutation,
+  useUpdateSecuritySettingsMutation,
+  useUpdateSettingsApiKeyMutation,
+  useUploadPharmacyLogoMutation,
+  useVerifyTwoFaMutation,
+} from "./usePharmacySettingsPage";
+export {
+  pharmacistDashboardKeys,
+  useInvalidatePharmacistDashboard,
+  usePharmacistActivities,
+  usePharmacistChartData,
+  usePharmacistDashboardStats,
+  usePharmacistPrescriptions,
+  usePharmacistStockAlerts,
+  useProcessPharmacistPrescriptionMutation,
+  useTrackPharmacistActivityMutation,
+  type PharmacistStats,
+  type PendingPrescription,
+} from "./usePharmacistDashboard";
+export {
+  useOnboardingPlans,
+  useOnboardingStatus,
+  usePolarConfig,
+  useSubmitOnboardingPharmacyMutation,
+  useUpgradeSubscriptionMutation,
+  useValidatePhoneMutation as useValidatePhoneOnboardingMutation,
+} from "./useOnboarding";
+export {
+  useCancelScheduledChangeMutation,
+  useInvalidateSubscriptionManagement,
+  usePharmacySubscriptionPlan,
+  usePlanLimitsQuery,
+  usePolarConfigEnabled,
+  useScheduleDowngradeMutation,
+  useScheduledChangeQuery,
+  useSubscriptionPlansCatalog,
+  useSubscriptionStatusQuery,
+  useValidatePhoneMutation,
+} from "./useSubscriptionManagement";
+export { usePaymentSuccessStatus } from "./usePaymentSuccessStatus";
+export {
+  salesKeys,
+  useSalesAnalytics,
+  useSalesList,
+  type SaleRow,
+} from "./useSales";
+export {
+  reportsKeys,
+  useInvalidateReports,
+  useReportsInventory,
+  useReportsSales,
+} from "./useReports";
+export {
+  prescriptionsKeys,
+  useCreatePrescriptionMutation,
+  usePrescriptions,
+  useUpdatePrescriptionMutation,
+  type PrescriptionRow,
+} from "./usePrescriptions";
+export {
+  customersKeys,
+  useCreateCustomerMutation,
+  useCustomers,
+  type CustomerRow,
+} from "./useCustomers";

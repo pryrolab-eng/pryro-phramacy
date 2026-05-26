@@ -1,6 +1,5 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import { Bar, BarChart, XAxis } from "recharts"
 
 import {
@@ -16,6 +15,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
+import { usePharmacyWeeklySalesChart } from "@/hooks/usePharmacyDashboard"
 
 const chartConfig = {
   prescription: {
@@ -29,18 +29,9 @@ const chartConfig = {
 } satisfies ChartConfig
 
 export function PharmacyBarChart() {
-  const [chartData, setChartData] = useState([])
-  
-  useEffect(() => {
-    fetch('/api/pharmacy/weekly-sales')
-      .then(res => res.json())
-      .then(data => setChartData(data))
-      .catch(() => setChartData([
-        { date: "Mon", prescription: 450, otc: 300 },
-        { date: "Tue", prescription: 380, otc: 420 }
-      ]))
-  }, [])
-  
+  const chartQuery = usePharmacyWeeklySalesChart()
+  const chartData = chartQuery.data ?? []
+
   return (
     <Card>
       <CardHeader>

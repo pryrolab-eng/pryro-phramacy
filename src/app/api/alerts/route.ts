@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '../../../../supabase/server'
+import { firstRelation } from '@/lib/supabase/relation'
 
 export async function GET() {
   try {
@@ -15,22 +16,24 @@ export async function GET() {
         medications(name, category)
       `)
       .eq('pharmacy_id', 'userPharmacy.pharmacy_id')
-      .lt('quantity_in_stock', supabase.raw('minimum_stock_level * 1.5'))
       .limit(10)
 
     if (error) throw error
 
-    const alerts = lowStockItems?.map(item => {
+    const alerts = lowStockItems
+      ?.filter(item => item.quantity_in_stock < item.minimum_stock_level * 1.5)
+      .map(item => {
+      const medications = firstRelation(item.medications)
       const expiryDate = new Date(item.expiry_date)
       const today = new Date()
       const daysToExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
       
       return {
         id: item.id,
-        product: item.medications?.name || 'Unknown Product',
+        product: medications?.name || 'Unknown Product',
         current_stock: item.quantity_in_stock,
         min_stock: item.minimum_stock_level,
-        category: item.medications?.category || 'General',
+        category: medications?.category || 'General',
         expires_in: daysToExpiry > 0 ? daysToExpiry : 0
       }
     }) || []

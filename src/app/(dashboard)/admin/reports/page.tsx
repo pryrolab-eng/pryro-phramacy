@@ -2,23 +2,52 @@
 
 import { type FormEvent, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { BarChart3, Download, FileStack, TrendingUp, Users, Building2, DollarSign, Upload, Receipt } from "lucide-react";
-import { Spinner } from '@/components/ui/spinner';
-import { useAdminReportsSummary, useUploadPlatformAdminReportMutation } from '@/hooks';
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  BarChart3,
+  Building2,
+  DollarSign,
+  Receipt,
+  TrendingUp,
+  Upload,
+  Users,
+} from 'lucide-react'
 
-function formatRwf(amount: number): string {
-  if (amount >= 1_000_000) return `RWF ${(amount / 1_000_000).toFixed(1)}M`
-  if (amount >= 1_000) return `RWF ${Math.round(amount / 1_000)}K`
-  return `RWF ${amount.toLocaleString()}`
+import { AdminPageHeader } from '@/components/admin/admin-page-header'
+import {
+  adminReportsExportColumns,
+} from '@/components/admin/admin-reports-export-columns'
+import {
+  adminReportsPlanColumns,
+  type PlanBreakdownRow,
+} from '@/components/admin/admin-reports-plan-columns'
+import { PlatformAnalyticsChart } from '@/components/admin/platform-analytics-chart'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { DataTable } from '@/components/ui/data-table'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Spinner } from '@/components/ui/spinner'
+import {
+  adminReportsSummaryQueryKey,
+  useAdminReportsSummary,
+  usePlatformChartData,
+  useUploadPlatformAdminReportMutation,
+} from '@/hooks'
+
+import { formatMoney, getPlatformCurrency } from '@/lib/platform-currency'
+
+function formatPlatformMoney(amount: number): string {
+  const c = getPlatformCurrency()
+  if (amount >= 1_000_000) return `${c} ${(amount / 1_000_000).toFixed(1)}M`
+  if (amount >= 1_000) return `${c} ${Math.round(amount / 1_000)}K`
+  return formatMoney(amount, c)
 }
 
 export default function ReportsPage() {
+  const queryClient = useQueryClient()
   const reportsQuery = useAdminReportsSummary()
+  const chart = usePlatformChartData({ months: 12 })
   const uploadMutation = useUploadPlatformAdminReportMutation()
   const fileRef = useRef<HTMLInputElement>(null)
   const [reportName, setReportName] = useState('')
@@ -32,37 +61,55 @@ export default function ReportsPage() {
   const pendingPaymentCount = reportsQuery.data?.pendingPaymentCount ?? 0
   const activePharmacies = reportsQuery.data?.activePharmacies ?? 0
   const totalUsers = reportsQuery.data?.totalUsers ?? 0
-  const revenueData = reportsQuery.data?.revenueData ?? []
   const planBreakdown = reportsQuery.data?.planBreakdown ?? []
   const exportableReports = reportsQuery.data?.exportableReports ?? []
+
+  const breakdownDenominator = useMemo(() => {
+    const fromPlans = planBreakdown.reduce((s, p) => s + p.revenue, 0)
+    if (fromPlans > 0) return fromPlans
+    if (totalRevenue > 0) return totalRevenue
+    return 1
+  }, [planBreakdown, totalRevenue])
+
+  const planTableRows = useMemo((): PlanBreakdownRow[] => {
+    return planBreakdown.map((plan) => ({
+      plan_name: plan.plan_name,
+      subscribers: plan.subscribers,
+      revenue: plan.revenue,
+      sharePct: Math.round((plan.revenue / breakdownDenominator) * 100),
+    }))
+  }, [planBreakdown, breakdownDenominator])
+
+  const planColumns = useMemo(() => adminReportsPlanColumns(), [])
+  const exportColumns = useMemo(() => adminReportsExportColumns(), [])
 
   const metrics = useMemo(
     () => [
       {
-        title: "Cash collected",
-        value: formatRwf(totalRevenue),
+        title: 'Cash collected',
+        value: formatPlatformMoney(totalRevenue),
         caption:
           totalRevenue > 0
-            ? `${completedPaymentCount} completed payment(s) — KPay & Polar`
-            : "No completed payments yet — use Billing to sync or check transactions",
+            ? `${completedPaymentCount} completed payment(s)`
+            : 'No completed payments — check Billing',
         icon: DollarSign,
       },
       {
-        title: "Est. monthly recurring",
-        value: formatRwf(estimatedMrr),
-        caption: "Active subscriptions × plan catalog price (not cash)",
+        title: 'Est. monthly recurring',
+        value: formatPlatformMoney(estimatedMrr),
+        caption: 'Active subscriptions × catalog price',
         icon: TrendingUp,
       },
       {
-        title: "Active Pharmacies",
+        title: 'Active pharmacies',
         value: activePharmacies.toString(),
-        caption: "Pharmacies with status active or trial",
+        caption: 'Status active or trial',
         icon: Building2,
       },
       {
-        title: "Total Users",
+        title: 'Total users',
         value: totalUsers.toString(),
-        caption: "Total users in the database",
+        caption: 'All platform users',
         icon: Users,
       },
     ],
@@ -73,41 +120,7 @@ export default function ReportsPage() {
       activePharmacies,
       totalUsers,
     ],
-  );
-
-  const planRevenueTotal = useMemo(
-    () => planBreakdown.reduce((sum, p) => sum + p.revenue, 0),
-    [planBreakdown],
   )
-  const subscriberTotal = useMemo(
-    () => planBreakdown.reduce((sum, p) => sum + p.subscribers, 0),
-    [planBreakdown],
-  )
-
-  /** Payment-backed months when available; otherwise one bar from active subscription MRR. */
-  const revenueChartSeries = useMemo(() => {
-    if (revenueData.length > 0) {
-      return revenueData.map((d) => ({ ...d, source: "payments" as const }))
-    }
-    if (planRevenueTotal > 0) {
-      return [
-        {
-          month: "Current",
-          revenue: planRevenueTotal,
-          pharmacies: subscriberTotal,
-          source: "subscriptions" as const,
-        },
-      ]
-    }
-    return []
-  }, [revenueData, planRevenueTotal, subscriberTotal])
-
-  const breakdownDenominator = useMemo(() => {
-    const fromPlans = planBreakdown.reduce((s, p) => s + p.revenue, 0)
-    if (fromPlans > 0) return fromPlans
-    if (totalRevenue > 0) return totalRevenue
-    return 1
-  }, [planBreakdown, totalRevenue])
 
   const handleUploadReport = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -130,6 +143,9 @@ export default function ReportsPage() {
           setReportDescription('')
           setReportCategory('')
           if (fileRef.current) fileRef.current.value = ''
+          void queryClient.invalidateQueries({
+            queryKey: adminReportsSummaryQueryKey,
+          })
         },
         onError: (err) => {
           setUploadError(err instanceof Error ? err.message : 'Upload failed')
@@ -138,349 +154,210 @@ export default function ReportsPage() {
     )
   }
 
-  if (reportsQuery.isPending) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Spinner className="size-6" />
-    </div>
-  )
+  const pageLoading = reportsQuery.isPending || chart.loading
+  const pageError =
+    reportsQuery.isError && reportsQuery.error instanceof Error
+      ? reportsQuery.error.message
+      : chart.error
 
-  if (reportsQuery.isError) {
+  if (pageLoading) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center p-6">
+        <Spinner className="size-6" />
+      </div>
+    )
+  }
+
+  if (pageError && !reportsQuery.data) {
     return (
       <div className="p-6 max-w-7xl mx-auto">
         <p className="text-destructive" role="alert">
-          {reportsQuery.error instanceof Error
-            ? reportsQuery.error.message
-            : 'Could not load reports.'}
+          {pageError}
         </p>
       </div>
     )
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <AdminPageHeader
+        title={
+          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
+            <BarChart3 className="h-8 w-8 text-primary" />
+            Business Reports &amp; Analytics
+          </h1>
+        }
+        description="Platform revenue, subscriptions, and downloadable exports"
+        actions={
+          <Button variant="outline" asChild>
+            <Link href="/admin/billing">
+              <Receipt className="mr-2 h-4 w-4" />
+              Billing
+            </Link>
+          </Button>
+        }
+      />
 
+      {totalRevenue === 0 && (estimatedMrr > 0 || pendingPaymentCount > 0) ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+          <p className="font-medium">
+            Cash collected is RWF 0, but you have active subscriptions.
+          </p>
+          <p className="mt-1 text-amber-900/90 dark:text-amber-200/90">
+            The chart shows estimated MRR when payment history is empty.
+            {pendingPaymentCount > 0
+              ? ` ${pendingPaymentCount} payment(s) are pending.`
+              : ' Sync completed payments from Billing if needed.'}
+          </p>
+        </div>
+      ) : null}
 
-        <div className="max-w-7xl mx-auto">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-2">
-              <BarChart3 className="h-8 w-8 text-blue-600" />
-              Business Reports & Analytics
-            </h1>
-            <p className="text-gray-600">View business analytics and performance metrics</p>
-          </div>
-
-          {totalRevenue === 0 && (estimatedMrr > 0 || pendingPaymentCount > 0) ? (
-            <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-              <p className="font-medium">Cash collected is RWF 0, but you have active subscriptions.</p>
-              <p className="mt-1 text-amber-900/90">
-                The chart below shows <strong>estimated</strong> monthly recurring (MRR), not money received.
-                {pendingPaymentCount > 0
-                  ? ` ${pendingPaymentCount} payment(s) are still pending or processing.`
-                  : ' If customers paid via Polar/KPay, open Billing and click “Sync invoices from payments”.'}
-              </p>
-              <Button variant="outline" size="sm" className="mt-3 bg-white" asChild>
-                <Link href="/admin/billing">
-                  <Receipt className="h-4 w-4 mr-2" />
-                  Open Billing &amp; transactions
-                </Link>
-              </Button>
-            </div>
-          ) : null}
-
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
-            {metrics.map((metric) => (
-              <Card key={metric.title}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">{metric.title}</CardTitle>
-                  <metric.icon className="h-4 w-4" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{metric.value}</div>
-                  <p className="text-xs text-muted-foreground mt-1 leading-snug">
-                    {metric.caption}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle>Revenue Analytics</CardTitle>
-              <CardDescription>
-                Monthly <strong>cash collected</strong> from completed payments (empty until Billing has completed transactions)
-              </CardDescription>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {metrics.map((metric) => (
+          <Card key={metric.title}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">{metric.title}</CardTitle>
+              <metric.icon className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="min-h-48 space-y-6">
-                {revenueData.length === 0 ? (
-                  <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
-                    <p className="font-medium text-foreground">
-                      No revenue history to chart yet
-                    </p>
+              <div className="text-2xl font-bold">{metric.value}</div>
+              <p className="text-xs text-muted-foreground mt-1 leading-snug">
+                {metric.caption}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
-                  </div>
-                ) : (
-                  revenueData.map((data, index) => {
-                    const maxRevenue = Math.max(
-                      ...revenueData.map((d) => d.revenue),
-                      1,
-                    );
-                    const width = (data.revenue / maxRevenue) * 100;
-                    return (
-                      <div
-                        key={`${data.month}-${index}`}
-                        className="flex items-center space-x-4"
-                      >
-                        <div className="w-28 shrink-0 text-sm font-medium">
-                          {data.month}
-                        </div>
-                        <div className="flex flex-1 items-center space-x-4">
-                          <div className="flex-1">
-                            <div className="flex h-1 w-full items-center rounded bg-gray-200">
-                              <div
-                                className="h-1 rounded bg-gray-800 transition-all duration-500"
-                                style={{ width: `${width}%` }}
-                              />
-                            </div>
-                          </div>
-                          <div className="w-16 text-xs font-medium">
-                            {formatRwf(data.revenue)}
-                          </div>
-                          <div className="w-20 text-right">
-                            <div className="text-sm font-semibold">
-                              {data.pharmacies}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              pharmacies
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
+      <Card>
+        <CardHeader>
+          <CardTitle>Revenue &amp; growth</CardTitle>
+          <CardDescription>
+            Same chart as the platform dashboard — monthly cash collected and
+            pharmacy activity. Use line view for trends; bar view for sign-ups.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {!chart.hasChartActivity ? (
+            <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+              No pharmacies or payments to chart yet.
+            </div>
+          ) : (
+            <PlatformAnalyticsChart
+              data={chart.chartData}
+              hasPaymentHistory={chart.hasPaymentHistory}
+              variant="line"
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Plan breakdown</CardTitle>
+            <CardDescription>
+              Estimated recurring revenue by plan (active subscriptions × catalog
+              price).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DataTable
+              columns={planColumns}
+              data={planTableRows}
+              pagination={planTableRows.length > 8}
+              pageSize={8}
+              emptyMessage="No subscription data available."
+              enableSorting
+              initialSorting={[{ id: 'revenue', desc: true }]}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Stored exports</CardTitle>
+            <CardDescription>
+              Upload a file for admins or download a previous export (links expire
+              after one hour).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form
+              onSubmit={handleUploadReport}
+              className="space-y-3 rounded-lg border bg-muted/15 p-4"
+            >
+              <p className="text-sm font-medium">Add export</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="report-file">File</Label>
+                  <Input
+                    id="report-file"
+                    ref={fileRef}
+                    type="file"
+                    required
+                    className="cursor-pointer"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="report-name">Display name (optional)</Label>
+                  <Input
+                    id="report-name"
+                    value={reportName}
+                    onChange={(ev) => setReportName(ev.target.value)}
+                    placeholder="Defaults to file name"
+                  />
+                </div>
+                <div className="grid gap-2 sm:col-span-2">
+                  <Label htmlFor="report-desc">Description (optional)</Label>
+                  <Input
+                    id="report-desc"
+                    value={reportDescription}
+                    onChange={(ev) => setReportDescription(ev.target.value)}
+                    placeholder="Short summary"
+                  />
+                </div>
+                <div className="grid gap-2 sm:col-span-2">
+                  <Label htmlFor="report-cat">Category (optional)</Label>
+                  <Input
+                    id="report-cat"
+                    value={reportCategory}
+                    onChange={(ev) => setReportCategory(ev.target.value)}
+                    placeholder="e.g. Financial"
+                  />
+                </div>
               </div>
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            <Card>
-              <CardHeader>
-                <CardTitle>Revenue Chart</CardTitle>
-                <CardDescription>
-                  {revenueData.length > 0
-                    ? "Completed payments aggregated by calendar month."
-                    : planRevenueTotal > 0
-                      ? "No payment history yet — bar shows estimated recurring revenue from active subscription plans."
-                      : "Add completed payments or active subscriptions to see revenue here."}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {revenueChartSeries.length === 0 ? (
-                  <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
-                    <p className="font-medium text-foreground">Nothing to chart yet</p>
-                    <p className="mt-2">
-                      This chart uses payment rows by month, or your current subscription mix when
-                      payments are empty.
-                    </p>
-                  </div>
-                ) : (
-                <div className="space-y-4">
-                  {revenueChartSeries.map((data, index) => {
-                    const maxRev = Math.max(
-                      ...revenueChartSeries.map((d) => d.revenue),
-                      1,
-                    )
-                    const barPct = (data.revenue / maxRev) * 100
-                    return (
-                    <div key={`${data.month}-chart-${index}`} className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-20 shrink-0 text-sm font-medium">{data.month}</div>
-                        <div className="flex-1">
-                          <div className="w-full bg-gray-200 rounded h-2">
-                            <div 
-                              className="bg-gray-800 h-2 rounded transition-all duration-300"
-                              style={{ width: `${barPct}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-semibold">{formatRwf(data.revenue)}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {data.source === "payments"
-                            ? `${data.pharmacies} pharmacies`
-                            : `${data.pharmacies} active subscriptions`}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                  })}
-                </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Revenue Breakdown</CardTitle>
-                <CardDescription>
-                  Estimated recurring revenue by plan (active subscriptions × plan price).
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {planBreakdown.length > 0 ? planBreakdown.map((plan) => {
-                    const percentage = ((plan.revenue / breakdownDenominator) * 100).toFixed(0)
-                    return (
-                      <div key={plan.plan_name} className="flex items-center justify-between p-4 border rounded-lg">
-                        <div>
-                          <p className="font-medium">{plan.plan_name}</p>
-                          <p className="text-sm text-muted-foreground">{plan.subscribers} subscribers</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-semibold">RWF {plan.revenue.toLocaleString()}</p>
-                          <p className="text-xs text-muted-foreground">{percentage}% of total</p>
-                        </div>
-                      </div>
-                    )
-                  }) : (
-                    <p className="text-sm text-muted-foreground text-center py-4">No subscription data available</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Available Reports</CardTitle>
-              <CardDescription>
-                Upload a file to store it for admins, or download a previously stored export.
-                Signed links expire after one hour.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <form
-                onSubmit={handleUploadReport}
-                className="space-y-3 rounded-lg border bg-muted/15 p-4"
-              >
-                <p className="text-sm font-medium">Add export</p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <Label htmlFor="report-file">File</Label>
-                    <Input
-                      id="report-file"
-                      ref={fileRef}
-                      type="file"
-                      required
-                      className="cursor-pointer"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="report-name">Display name (optional)</Label>
-                    <Input
-                      id="report-name"
-                      value={reportName}
-                      onChange={(ev) => setReportName(ev.target.value)}
-                      placeholder="Defaults to file name"
-                    />
-                  </div>
-                  <div className="grid gap-2 sm:col-span-2">
-                    <Label htmlFor="report-desc">Description (optional)</Label>
-                    <Input
-                      id="report-desc"
-                      value={reportDescription}
-                      onChange={(ev) => setReportDescription(ev.target.value)}
-                      placeholder="Short summary"
-                    />
-                  </div>
-                  <div className="grid gap-2 sm:col-span-2">
-                    <Label htmlFor="report-cat">Category (optional)</Label>
-                    <Input
-                      id="report-cat"
-                      value={reportCategory}
-                      onChange={(ev) => setReportCategory(ev.target.value)}
-                      placeholder="e.g. Financial"
-                    />
-                  </div>
-                </div>
-                {uploadError ? (
-                  <p className="text-sm text-destructive" role="alert">
-                    {uploadError}
-                  </p>
-                ) : null}
-                <Button type="submit" disabled={uploadMutation.isPending}>
-                  {uploadMutation.isPending ? (
-                    <>
-                      <Spinner className="mr-2 h-4 w-4" />
-                      Uploading…
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="mr-2 h-4 w-4" />
-                      Upload
-                    </>
-                  )}
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  Max 25 MB. Apply latest Supabase migrations so the{" "}
-                  <code className="rounded bg-muted px-1">platform_admin_reports</code> table and{" "}
-                  <code className="rounded bg-muted px-1">platform-reports</code> bucket exist.
+              {uploadError ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {uploadError}
                 </p>
-              </form>
+              ) : null}
+              <Button type="submit" disabled={uploadMutation.isPending}>
+                {uploadMutation.isPending ? (
+                  <>
+                    <Spinner className="mr-2 h-4 w-4" />
+                    Uploading…
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Upload
+                  </>
+                )}
+              </Button>
+            </form>
 
-              {exportableReports.length > 0 ? (
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  {exportableReports.map((report) => (
-                    <div key={report.id} className="rounded-lg border p-4">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <h3 className="font-medium">{report.name}</h3>
-                        {report.category ? (
-                          <Badge variant="outline">{report.category}</Badge>
-                        ) : null}
-                      </div>
-                      {report.description ? (
-                        <p className="mb-3 text-sm text-muted-foreground">{report.description}</p>
-                      ) : null}
-                      <div className="flex items-center justify-between gap-2">
-                        {report.lastGenerated ? (
-                          <p className="text-xs text-muted-foreground">
-                            Last generated: {report.lastGenerated}
-                          </p>
-                        ) : (
-                          <span />
-                        )}
-                        {report.downloadUrl ? (
-                          <Button size="sm" asChild>
-                            <a href={report.downloadUrl} rel="noopener noreferrer">
-                              <Download className="mr-2 h-4 w-4" />
-                              Download
-                            </a>
-                          </Button>
-                        ) : (
-                          <Button size="sm" disabled title="No file URL yet">
-                            Download
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div
-                  className="flex min-h-[12rem] items-center justify-center rounded-lg border border-dashed bg-muted/20 text-muted-foreground"
-                  role="status"
-                  aria-label="No downloadable reports yet"
-                >
-                  <FileStack className="h-14 w-14 stroke-[1.1]" aria-hidden />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
+            <DataTable
+              columns={exportColumns}
+              data={exportableReports}
+              pagination={exportableReports.length > 5}
+              pageSize={5}
+              emptyMessage="No downloadable reports yet. Upload a file above."
+              enableSorting
+            />
+          </CardContent>
+        </Card>
+      </div>
     </div>
-  );
+  )
 }

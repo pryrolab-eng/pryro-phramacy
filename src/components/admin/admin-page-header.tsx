@@ -1,4 +1,4 @@
-﻿import type { ReactNode } from 'react'
+﻿import { isValidElement, type ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -7,6 +7,16 @@ type AdminPageHeaderProps = {
   description?: ReactNode
   actions?: ReactNode
   className?: string
+}
+
+function renderTitle(title: ReactNode) {
+  if (typeof title === 'string') {
+    return <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
+  }
+  if (isValidElement(title) && title.type === 'h1') {
+    return title
+  }
+  return title
 }
 
 /** Consistent admin page title row (sidebar trigger is in AdminShell layout). */
@@ -20,7 +30,7 @@ export function AdminPageHeader({
     <div className={cn('mb-8', className)}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">{title}</div>
+          <div className="flex flex-wrap items-center gap-2">{renderTitle(title)}</div>
           {description ? (
             <p className="mt-1 text-sm text-muted-foreground">{description}</p>
           ) : null}

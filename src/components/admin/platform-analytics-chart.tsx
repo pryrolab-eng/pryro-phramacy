@@ -8,6 +8,8 @@ import {
   BarChart,
   Brush,
   CartesianGrid,
+  Line,
+  LineChart,
   XAxis,
   YAxis,
 } from 'recharts'
@@ -22,6 +24,7 @@ import {
   ChartTooltipContent,
 } from '@/components/ui/chart'
 import type { PlatformChartPoint } from '@/lib/admin/chart-series'
+import { cn } from '@/lib/utils'
 
 type ChartMetric = 'revenue' | 'pharmacies' | 'both'
 type ChartRange = '6' | '12'
@@ -46,11 +49,16 @@ function formatRwf(value: number) {
 type PlatformAnalyticsChartProps = {
   data: PlatformChartPoint[]
   hasPaymentHistory: boolean
+  /** `area` matches the dashboard default; `line` uses stroke-only lines (reports page). */
+  variant?: 'area' | 'line'
+  className?: string
 }
 
 export function PlatformAnalyticsChart({
   data,
   hasPaymentHistory,
+  variant = 'area',
+  className,
 }: PlatformAnalyticsChartProps) {
   const [range, setRange] = useState<ChartRange>('6')
   const [metric, setMetric] = useState<ChartMetric>('both')
@@ -66,8 +74,62 @@ export function PlatformAnalyticsChart({
     ? 'Revenue from completed payments. Drag the brush to focus a period.'
     : 'No payments yet — pharmacy bars show new sign-ups per month.'
 
+  const useLine = variant === 'line'
+
+  const revenueSeries =
+    metric === 'pharmacies' ? null : useLine ? (
+      <Line
+        yAxisId="revenue"
+        type="monotone"
+        dataKey="revenue"
+        stroke="var(--color-revenue)"
+        strokeWidth={2}
+        dot={{ r: 3, fill: 'var(--color-revenue)' }}
+        activeDot={{ r: 5 }}
+      />
+    ) : (
+      <Area
+        yAxisId="revenue"
+        type="monotone"
+        dataKey="revenue"
+        stroke="var(--color-revenue)"
+        fill="url(#adminFillRevenue)"
+        strokeWidth={2}
+        dot={{ r: 3, fill: 'var(--color-revenue)' }}
+        activeDot={{ r: 5 }}
+      />
+    )
+
+  const pharmaciesSeries =
+    metric === 'both' ? (
+      useLine ? (
+        <Line
+          yAxisId="pharmacies"
+          type="monotone"
+          dataKey="pharmacies"
+          stroke="var(--color-pharmacies)"
+          strokeWidth={2}
+          dot={{ r: 3, fill: 'var(--color-pharmacies)' }}
+          activeDot={{ r: 5 }}
+        />
+      ) : (
+        <Area
+          yAxisId="pharmacies"
+          type="monotone"
+          dataKey="pharmacies"
+          stroke="var(--color-pharmacies)"
+          fill="url(#adminFillPharmacies)"
+          strokeWidth={2}
+          dot={{ r: 3, fill: 'var(--color-pharmacies)' }}
+          activeDot={{ r: 5 }}
+        />
+      )
+    ) : null
+
+  const ChartRoot = useLine ? LineChart : AreaChart
+
   return (
-    <div className="space-y-4 px-2 pb-4 pt-2 sm:px-6">
+    <div className={cn('space-y-4 px-2 pb-4 pt-2 sm:px-6', className)}>
       <p className="text-sm text-muted-foreground">{description}</p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -160,17 +222,19 @@ export function PlatformAnalyticsChart({
             ) : null}
           </BarChart>
         ) : (
-          <AreaChart data={visibleData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-            <defs>
-              <linearGradient id="adminFillRevenue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--color-revenue)" stopOpacity={0.35} />
-                <stop offset="95%" stopColor="var(--color-revenue)" stopOpacity={0.02} />
-              </linearGradient>
-              <linearGradient id="adminFillPharmacies" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--color-pharmacies)" stopOpacity={0.25} />
-                <stop offset="95%" stopColor="var(--color-pharmacies)" stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
+          <ChartRoot data={visibleData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+            {!useLine ? (
+              <defs>
+                <linearGradient id="adminFillRevenue" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--color-revenue)" stopOpacity={0.35} />
+                  <stop offset="95%" stopColor="var(--color-revenue)" stopOpacity={0.02} />
+                </linearGradient>
+                <linearGradient id="adminFillPharmacies" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--color-pharmacies)" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="var(--color-pharmacies)" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+            ) : null}
             <CartesianGrid vertical={false} />
             <XAxis
               dataKey="axisLabel"
@@ -216,35 +280,13 @@ export function PlatformAnalyticsChart({
                 />
               }
             />
-            {(metric === 'revenue' || metric === 'both') && (
-              <Area
-                yAxisId="revenue"
-                type="monotone"
-                dataKey="revenue"
-                stroke="var(--color-revenue)"
-                fill="url(#adminFillRevenue)"
-                strokeWidth={2}
-                dot={{ r: 3, fill: 'var(--color-revenue)' }}
-                activeDot={{ r: 5 }}
-              />
-            )}
-            {metric === 'both' && (
-              <Area
-                yAxisId="pharmacies"
-                type="monotone"
-                dataKey="pharmacies"
-                stroke="var(--color-pharmacies)"
-                fill="url(#adminFillPharmacies)"
-                strokeWidth={2}
-                dot={{ r: 3, fill: 'var(--color-pharmacies)' }}
-                activeDot={{ r: 5 }}
-              />
-            )}
+            {(metric === 'revenue' || metric === 'both') && revenueSeries}
+            {pharmaciesSeries}
             <ChartLegend content={<ChartLegendContent />} />
             {showBrush ? (
               <Brush dataKey="axisLabel" height={28} stroke="hsl(var(--border))" />
             ) : null}
-          </AreaChart>
+          </ChartRoot>
         )}
       </ChartContainer>
     </div>

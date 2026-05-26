@@ -1,6 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import {
+  useCreatePrescriptionMutation,
+  usePrescriptions,
+  useUpdatePrescriptionMutation,
+} from '@/hooks/usePrescriptions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -38,9 +43,12 @@ interface Prescription {
 }
 
 export default function PrescriptionsPage() {
-  const [prescriptions, setPrescriptions] = useState<Prescription[]>([])
+  const prescriptionsQuery = usePrescriptions()
+  const createPrescriptionMutation = useCreatePrescriptionMutation()
+  const updatePrescriptionMutation = useUpdatePrescriptionMutation()
+  const prescriptions = (prescriptionsQuery.data ?? []) as Prescription[]
   const [filteredPrescriptions, setFilteredPrescriptions] = useState<Prescription[]>([])
-  const [loading, setLoading] = useState(true)
+  const loading = prescriptionsQuery.isPending
   const [isAddingPrescription, setIsAddingPrescription] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -53,34 +61,8 @@ export default function PrescriptionsPage() {
   })
 
   useEffect(() => {
-    fetchPrescriptions()
-  }, [])
-
-  useEffect(() => {
     filterPrescriptions()
   }, [prescriptions, searchTerm, statusFilter])
-
-  const fetchPrescriptions = async () => {
-    try {
-      const response = await fetch('/api/prescriptions')
-      if (response.ok) {
-        const data = await response.json()
-        setPrescriptions(data)
-      } else {
-        // Mock data for demo
-        const mockData = [
-          { id: '1', patient: 'Marie Uwimana', doctor: 'Dr. Kagame', medications: ['Paracetamol 500mg', 'Amoxicillin 250mg'], priority: 'high', status: 'pending', time: '10:30 AM', insurance: 'RSSB', created_at: '2024-12-01' },
-          { id: '2', patient: 'Jean Baptiste', doctor: 'Dr. Mukamana', medications: ['Ibuprofen 400mg'], priority: 'medium', status: 'completed', time: '11:15 AM', insurance: 'MMI', created_at: '2024-12-01' },
-          { id: '3', patient: 'Grace Mukamana', doctor: 'Dr. Nkurunziza', medications: ['Vitamin C 1000mg', 'Zinc 15mg'], priority: 'low', status: 'dispensed', time: '09:45 AM', insurance: 'None', created_at: '2024-12-01' }
-        ]
-        setPrescriptions(mockData)
-      }
-    } catch (error) {
-      console.error('Error fetching prescriptions:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const filterPrescriptions = () => {
     let filtered = prescriptions
@@ -102,21 +84,19 @@ export default function PrescriptionsPage() {
 
   const handleAddPrescription = async () => {
     try {
-      const response = await fetch('/api/prescriptions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...newPrescription,
-          medications: newPrescription.medications.split(',').map(m => m.trim())
-        })
+      await createPrescriptionMutation.mutateAsync({
+        ...newPrescription,
+        medications: newPrescription.medications.split(',').map((m) => m.trim()),
       })
-      
-      if (response.ok) {
-        await fetchPrescriptions()
-        setIsAddingPrescription(false)
-        setNewPrescription({ patient: '', doctor: '', medications: '', priority: 'medium', insurance: '' })
-        alert('Prescription added successfully!')
-      }
+      setIsAddingPrescription(false)
+      setNewPrescription({
+        patient: '',
+        doctor: '',
+        medications: '',
+        priority: 'medium',
+        insurance: '',
+      })
+      alert('Prescription added successfully!')
     } catch (error) {
       console.error('Error adding prescription:', error)
     }
@@ -124,15 +104,7 @@ export default function PrescriptionsPage() {
 
   const updatePrescriptionStatus = async (id: string, status: string) => {
     try {
-      const response = await fetch(`/api/prescriptions/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
-      })
-      
-      if (response.ok) {
-        await fetchPrescriptions()
-      }
+      await updatePrescriptionMutation.mutateAsync({ id, body: { status } })
     } catch (error) {
       console.error('Error updating prescription:', error)
     }
@@ -344,7 +316,7 @@ export default function PrescriptionsPage() {
                           <p className="text-xs text-muted-foreground">Dr. {prescription.doctor}</p>
                         </div>
                         <div className="text-right">
-                          <Badge className={getPriorityColor(prescription.priority)} className="text-xs">
+                          <Badge className={`${getPriorityColor(prescription.priority)} text-xs`}>
                             {prescription.priority}
                           </Badge>
                           <Button size="sm" className="mt-1" onClick={() => updatePrescriptionStatus(prescription.id, 'completed')}>

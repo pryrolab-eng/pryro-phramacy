@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     console.error('Quick add drug error:', error)
     return NextResponse.json({ 
       error: 'Failed to add drug', 
-      details: error.message 
+      details: error instanceof Error ? error.message : 'Unknown error' 
     }, { status: 500 })
   }
 }

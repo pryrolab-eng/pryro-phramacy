@@ -587,7 +587,7 @@ export class SubscriptionOrchestrator {
       return { ok: true, alreadyActive: true };
     }
 
-    if (status !== "pending_payment" && status !== "pending") {
+    if (status !== "pending_payment") {
       return {
         ok: false,
         error: `Cannot activate subscription in status: ${status}`,

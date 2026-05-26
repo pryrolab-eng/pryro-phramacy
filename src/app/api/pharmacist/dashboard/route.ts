@@ -70,7 +70,7 @@ export async function GET(request: Request) {
     ).length || 0
     
     // Calculate actual average wait time
-    const avgWaitTime = processingTimes?.length > 0 
+    const avgWaitTime = processingTimes && processingTimes.length > 0 
       ? Math.round(processingTimes.reduce((sum, p) => sum + p.processing_time_minutes, 0) / processingTimes.length)
       : 8 // fallback
     

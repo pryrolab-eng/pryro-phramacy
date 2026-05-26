@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { phoneNumber, cardNumber, expiryMonth, expiryYear, cvv, holderName } = body
 
-    const results = {}
+    const results: Record<string, unknown> = {}
 
     if (phoneNumber) {
       const phoneValidation = PhoneNumberValidator.validate(phoneNumber)

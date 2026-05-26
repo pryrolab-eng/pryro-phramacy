@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
+import {
+  guardPharmacyFeature,
+  handleEntitlementRouteError,
+} from '@/lib/subscription/api-guard'
+import {
+  entitlementRouteResponse,
+  guardPosInsurance,
+} from '@/lib/subscription/route-guards'
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,18 +18,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user's pharmacy_id
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!userPharmacy) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
-    }
-    
     const body = await request.json()
+    const branchId =
+      typeof body.branch_id === 'string' ? body.branch_id : body.branchId
+
+    const { pharmacyId: pharmacy_id } = await guardPharmacyFeature(
+      supabase,
+      user.id,
+      {
+        feature: 'pos.access',
+        branchId: branchId ?? undefined,
+        consumeTransaction: Boolean(branchId),
+      },
+    )
     console.log('Sale data received:', body)
     
     const { 
@@ -34,6 +43,21 @@ export async function POST(request: NextRequest) {
       cashAmount, 
       insuranceAmount 
     } = body
+
+    const usesInsurance =
+      (customer?.insuranceType && customer.insuranceType !== 'cash') ||
+      Number(insuranceCoverage) > 0 ||
+      Number(insuranceAmount) > 0
+
+    if (usesInsurance) {
+      try {
+        await guardPosInsurance(supabase, user.id)
+      } catch (entErr) {
+        const res = entitlementRouteResponse(entErr)
+        if (res) return res
+        throw entErr
+      }
+    }
     
     // Get insurance provider ID if insurance is used
     let insuranceProviderId = null
@@ -42,7 +66,7 @@ export async function POST(request: NextRequest) {
         .from('insurance_providers')
         .select('id')
         .eq('name', customer.insuranceType)
-        .eq('pharmacy_id', userPharmacy.pharmacy_id)
+        .eq('pharmacy_id', pharmacy_id)
         .single()
       
       insuranceProviderId = insuranceProvider?.id
@@ -52,7 +76,7 @@ export async function POST(request: NextRequest) {
     const { data: sale, error: saleError } = await supabase
       .from('sales')
       .insert({
-        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_id,
         cashier_id: user.id,
         customer_name: customer?.name || 'Walk-in Customer',
         customer_phone: customer?.phone || null,
@@ -119,7 +143,7 @@ export async function POST(request: NextRequest) {
       const { error: claimError } = await supabase
         .from('insurance_claims')
         .insert({
-          pharmacy_id: userPharmacy.pharmacy_id,
+          pharmacy_id,
           sale_id: sale.id,
           insurance_provider_id: insuranceProviderId,
           patient_name: customer?.name || 'Unknown',
@@ -141,11 +165,13 @@ export async function POST(request: NextRequest) {
       message: 'Sale processed successfully'
     })
   } catch (error) {
+    const entitlement = handleEntitlementRouteError(error)
+    if (entitlement) return entitlement
     console.error('Sale processing error:', error)
     return NextResponse.json({ 
       success: false,
       error: 'Failed to process sale',
-      details: error.message 
+      details: error instanceof Error ? error.message : 'Unknown error' 
     }, { status: 500 })
   }
 }

@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     const { data: insurance } = await supabase
       .from('insurance_providers')
       .select('*')
-      .where('name', 'ilike', `%${insuranceType}%`)
+      .ilike('name', `%${insuranceType}%`)
       .single()
 
     // Generate receipt number

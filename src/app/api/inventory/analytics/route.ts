@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
+import { firstRelation } from '@/lib/supabase/relation'
 
 export async function GET() {
   try {
@@ -39,9 +40,10 @@ export async function GET() {
       .eq('pharmacy_id', userPharmacy.pharmacy_id)
       .eq('medications.pharmacy_id', userPharmacy.pharmacy_id)
     
-    const categoryStats = {}
+    const categoryStats: Record<string, { stock: number; value: number }> = {}
     categoryData?.forEach(item => {
-      const category = item.medications?.category || 'other'
+      const medications = firstRelation(item.medications)
+      const category = medications?.category || 'other'
       if (!categoryStats[category]) {
         categoryStats[category] = { stock: 0, value: 0 }
       }

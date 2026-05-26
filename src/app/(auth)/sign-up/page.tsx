@@ -1,36 +1,24 @@
-import { FormMessage, Message } from "@/components/form-message";
 import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
-import { Logo, LogoIcon } from "@/components/logo";
-import { AuthBrandingLogo, AuthBrandingFooter, AuthBrandingName } from "@/components/auth-branding";
+import { AuthBrandingLogo, AuthBrandingFooter } from "@/components/auth-branding";
+import { AuthIntentShell } from "@/components/auth/auth-intent-shell";
 import Link from "next/link";
-import { signUpAction, signInWithGoogleAction } from "@/app/actions";
+import { Suspense } from "react";
+import { signUpAction } from "@/app/actions";
 import { UrlProvider } from "@/components/url-provider";
+import { SignInLink } from "@/components/auth/sign-in-link";
 
-export default async function Signup(props: { searchParams: Promise<Message> }) {
-  const searchParams = await props.searchParams;
-
-  if ("message" in searchParams) {
-    return (
-      <div className="flex h-screen w-full flex-1 items-center justify-center p-4 sm:max-w-md">
-        <FormMessage message={searchParams} />
-      </div>
-    );
-  }
-
+export default async function Signup() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 lg:p-8">
       <div className="flex w-full max-w-5xl flex-col lg:flex-row relative bg-white rounded-3xl shadow-2xl overflow-hidden min-h-[650px]">
-        
-        {/* Top-left logo (Left side of screen) */}
         <div className="absolute top-8 left-8 z-20 lg:[&_span.text-foreground]:!text-white">
           <Link href="/">
             <AuthBrandingLogo />
           </Link>
         </div>
 
-        {/* Back button (Left side of screen) */}
         <div className="absolute top-20 left-8 z-20 mt-2">
           <Link
             href="/"
@@ -42,21 +30,17 @@ export default async function Signup(props: { searchParams: Promise<Message> }) 
           </Link>
         </div>
 
-        {/* Left — black panel (hidden on mobile) */}
         <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gray-950">
           <div className="absolute -top-20 -right-20 h-72 w-72 rounded-full bg-white/5" />
           <div className="absolute bottom-10 -left-16 h-56 w-56 rounded-full bg-white/5" />
           <div className="absolute top-1/2 right-0 h-40 w-40 rounded-full bg-white/5" />
 
           <div className="relative z-10 flex w-full flex-col items-center justify-center gap-6 px-12">
-
-            {/* Headline */}
             <div className="w-64 text-center">
               <h2 className="text-2xl font-bold text-white leading-snug">Pharmacy Management Made Simple</h2>
               <p className="mt-2 text-sm text-gray-400">Pryrox helps pharmacies manage inventory, sales, prescriptions, and staff — all in one place.</p>
             </div>
 
-            {/* Feature pills */}
             <div className="flex w-64 flex-wrap justify-center gap-2">
               {["POS & Sales", "Inventory", "Prescriptions", "Insurance", "Reports", "Multi-Branch"].map((f) => (
                 <span key={f} className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white border border-white/20">
@@ -64,15 +48,11 @@ export default async function Signup(props: { searchParams: Promise<Message> }) 
                 </span>
               ))}
             </div>
-
           </div>
 
-          {/* Footer */}
           <AuthBrandingFooter />
-
         </div>
 
-        {/* Right — form */}
         <div className="flex w-full flex-col justify-center px-8 py-12 lg:w-1/2 lg:px-16 xl:px-20 pt-32 lg:pt-12 relative">
           <div className="mx-auto w-full max-w-md">
             <h1 className="text-3xl font-bold text-gray-900">Sign Up</h1>
@@ -80,9 +60,10 @@ export default async function Signup(props: { searchParams: Promise<Message> }) 
               Create your account to get started
             </p>
 
+            <AuthIntentShell source="sign-up" />
+
             <UrlProvider>
               <form className="mt-8 space-y-5">
-                {/* Full Name */}
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -99,7 +80,6 @@ export default async function Signup(props: { searchParams: Promise<Message> }) 
                   />
                 </div>
 
-                {/* Email */}
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -116,7 +96,6 @@ export default async function Signup(props: { searchParams: Promise<Message> }) 
                   />
                 </div>
 
-                {/* Password */}
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 z-10">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -129,11 +108,9 @@ export default async function Signup(props: { searchParams: Promise<Message> }) 
                     placeholder="Password"
                     minLength={6}
                     required
-                    className="w-full border-0 border-b border-gray-200 rounded-none bg-transparent pl-9 pb-2 pt-2 text-sm placeholder:text-gray-400 focus-visible:ring-0 focus-visible:border-blue-500 transition-colors"
+                    className="w-full border-0 border-b border-gray-200 rounded-none bg-transparent pl-9 pr-10 pb-2 pt-2 text-sm placeholder:text-gray-400 focus-visible:ring-0 focus-visible:border-blue-500 transition-colors"
                   />
                 </div>
-
-                <FormMessage message={searchParams} />
 
                 <div className="pt-2">
                   <SubmitButton
@@ -150,9 +127,9 @@ export default async function Signup(props: { searchParams: Promise<Message> }) 
 
                 <p className="text-sm text-gray-500">
                   Already have an account?{" "}
-                  <Link href="/sign-in" className="font-medium text-blue-600 hover:underline">
-                    Sign in
-                  </Link>
+                  <Suspense fallback={<Link href="/sign-in" className="font-medium text-blue-600 hover:underline">Sign in</Link>}>
+                    <SignInLink className="font-medium text-blue-600 hover:underline" />
+                  </Suspense>
                 </p>
               </form>
             </UrlProvider>
@@ -162,3 +139,5 @@ export default async function Signup(props: { searchParams: Promise<Message> }) 
     </div>
   );
 }
+
+

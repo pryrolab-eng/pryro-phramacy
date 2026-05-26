@@ -10,6 +10,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' })
     }
 
+    const { guardInventoryAccess, entitlementRouteResponse } = await import(
+      '@/lib/subscription/route-guards'
+    )
+    try {
+      await guardInventoryAccess(supabase, user.id)
+    } catch (entErr) {
+      const res = entitlementRouteResponse(entErr)
+      if (res) return res
+      throw entErr
+    }
+
     // Get user's pharmacy_id
     const { data: userPharmacy } = await supabase
       .from('pharmacy_users')
@@ -25,7 +36,7 @@ export async function POST(request: NextRequest) {
     console.log('Received data:', body)
     
     // Map category to enum value
-    const categoryMap = {
+    const categoryMap: Record<string, string> = {
       'Pain Relief': 'otc',
       'Antibiotics': 'prescription', 
       'Vitamins': 'supplement',
@@ -125,7 +136,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
       success: false, 
       error: 'Failed to add medication',
-      details: error.message 
+      details: error instanceof Error ? error.message : 'Unknown error'
     })
   }
 }

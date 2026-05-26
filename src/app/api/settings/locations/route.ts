@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
+import { resolveIsAppPlatformAdmin } from '@/lib/platform-admin'
 
 const DEFAULT_LOCATIONS = [
   { id: '1', name: 'Main Store', description: 'Primary location', is_active: true },
@@ -28,9 +29,13 @@ export async function GET() {
       .select('pharmacy_id')
       .eq('user_id', user.id)
       .eq('is_active', true)
-      .single()
+      .maybeSingle()
 
-    if (!userPharmacy) {
+    if (!userPharmacy?.pharmacy_id) {
+      const isPlatformAdmin = await resolveIsAppPlatformAdmin(supabase, user.id, null)
+      if (isPlatformAdmin) {
+        return NextResponse.json(DEFAULT_LOCATIONS)
+      }
       return NextResponse.json({ success: false, error: 'Pharmacy not found' }, { status: 404 })
     }
 
@@ -71,9 +76,20 @@ export async function POST(request: NextRequest) {
       .select('pharmacy_id')
       .eq('user_id', user.id)
       .eq('is_active', true)
-      .single()
+      .maybeSingle()
 
-    if (!userPharmacy) {
+    if (!userPharmacy?.pharmacy_id) {
+      const isPlatformAdmin = await resolveIsAppPlatformAdmin(supabase, user.id, null)
+      if (isPlatformAdmin) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'Platform admins see default location templates only. Stock locations are managed per pharmacy in pharmacy settings.',
+          },
+          { status: 400 },
+        )
+      }
       return NextResponse.json({ success: false, error: 'Pharmacy not found' }, { status: 404 })
     }
 

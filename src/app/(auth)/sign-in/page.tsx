@@ -1,35 +1,19 @@
-import { signInAction, signInWithGoogleAction } from "@/app/actions";
-import { FormMessage, Message } from "@/components/form-message";
+import { signInAction } from "@/app/actions";
 import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
-import { Logo, LogoIcon } from "@/components/logo";
-import { AuthBrandingLogo, AuthBrandingFooter, AuthBrandingName } from "@/components/auth-branding";
+import { AuthBrandingLogo, AuthBrandingFooter } from "@/components/auth-branding";
+import { AuthIntentShell } from "@/components/auth/auth-intent-shell";
 import Link from "next/link";
+import { Suspense } from "react";
+import { SignUpLink } from "@/components/auth/sign-up-link";
 
 interface LoginProps {
-  searchParams: Promise<Message & { error?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }
 
 export default async function SignInPage({ searchParams }: LoginProps) {
-  const params = await searchParams;
-
-  let errorMessage = "";
-  if (params.error === "no-pharmacy") {
-    errorMessage = "No pharmacy access found. Please contact support.";
-  } else if (params.error === "setup-failed") {
-    errorMessage = "Account setup failed. Please try again.";
-  } else if (params.error === "no-pharmacy-access") {
-    errorMessage = "You don't have access to any pharmacy. Please contact your administrator.";
-  }
-
-  if ("message" in params) {
-    return (
-      <div className="flex h-screen w-full flex-1 items-center justify-center p-4 sm:max-w-md">
-        <FormMessage message={params} />
-      </div>
-    );
-  }
+  await searchParams;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 lg:p-8">
@@ -58,6 +42,8 @@ export default async function SignInPage({ searchParams }: LoginProps) {
             <p className="mt-2 text-sm text-gray-500">
               Welcome back to your pharmacy platform
             </p>
+
+            <AuthIntentShell source="sign-in" />
 
             <form className="mt-8 space-y-5" action={signInAction}>
               {/* Email */}
@@ -89,7 +75,7 @@ export default async function SignInPage({ searchParams }: LoginProps) {
                   name="password"
                   placeholder="Password"
                   required
-                  className="w-full border-0 border-b border-gray-200 rounded-none bg-transparent pl-9 pb-2 pt-2 text-sm placeholder:text-gray-400 focus-visible:ring-0 focus-visible:border-blue-500 transition-colors"
+                  className="w-full border-0 border-b border-gray-200 rounded-none bg-transparent pl-9 pr-10 pb-2 pt-2 text-sm placeholder:text-gray-400 focus-visible:ring-0 focus-visible:border-blue-500 transition-colors"
                 />
               </div>
 
@@ -98,13 +84,6 @@ export default async function SignInPage({ searchParams }: LoginProps) {
                   Forgot Password?
                 </Link>
               </div>
-
-              {errorMessage && (
-                <div className="border-l-4 border-red-500 pl-3 text-sm text-red-600">
-                  {errorMessage}
-                </div>
-              )}
-              <FormMessage message={params} />
 
               <div className="pt-2">
                 <SubmitButton
@@ -120,10 +99,10 @@ export default async function SignInPage({ searchParams }: LoginProps) {
               </div>
 
               <p className="text-sm text-gray-500">
-                Don't have an account?{" "}
-                <Link href="/sign-up" className="font-medium text-blue-600 hover:underline">
-                  Sign up
-                </Link>
+                Don&apos;t have an account?{" "}
+                <Suspense fallback={<Link href="/sign-up" className="font-medium text-blue-600 hover:underline">Sign up</Link>}>
+                  <SignUpLink className="font-medium text-blue-600 hover:underline" />
+                </Suspense>
               </p>
             </form>
           </div>

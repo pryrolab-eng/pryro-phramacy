@@ -1,29 +1,66 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError } from "@/lib/http/client";
+import { toast } from "sonner";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Check, ChevronRight, CreditCard, Loader2, Smartphone } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Check,
+  CreditCard,
+  Loader2,
+  Lock,
+  Mail,
+  Plus,
+  Shield,
+  Smartphone,
+  Users,
+  X,
+} from "lucide-react";
+import {
+  OnboardingShell,
+  OnboardingStepNav,
+} from "@/components/onboarding/onboarding-shell";
+import { PharmacyBrandPreview } from "@/components/onboarding/pharmacy-brand-preview";
+import { PlanFeatureList } from "@/components/subscription/plan-feature-list";
+import type { OnboardingStepId } from "@/components/onboarding/onboarding-stepper";
+import { createPharmacist } from "@/lib/http/pharmacist";
+import {
+  useOnboardingPlans,
+  useOnboardingStatus,
+  usePolarConfig,
+  useSubmitOnboardingPharmacyMutation,
+  useUpgradeSubscriptionMutation,
+  useValidatePhoneMutation,
+} from "@/hooks/useOnboarding";
+import {
+  matchPlanByIntent,
+} from "@/lib/onboarding/intent";
+import {
+  captureIntentFromPlanSelection,
+  clearOnboardingIntent,
+  readOnboardingIntent,
+} from "@/lib/onboarding/intent-client";
 import {
   createPendingSubscription,
   pollKpayTransaction,
-  startKpaySubscriptionCheckout,
   startPolarSubscriptionCheckout,
 } from "@/lib/subscription/checkout-client";
+import {
+  startKpaySubscriptionCheckout,
+  type KpayCheckoutResponse,
+} from "@/lib/http/subscription";
 
 type PlanRow = {
   id: string;
@@ -33,14 +70,6 @@ type PlanRow = {
   features: string[] | null;
   is_popular?: boolean | null;
 };
-
-const STEPS = [
-  { id: 1, title: "Pharmacy", description: "Your business details" },
-  { id: 2, title: "Plan", description: "Choose a subscription" },
-  { id: 3, title: "Checkout", description: "Pay or start free" },
-] as const;
-
-type OnboardingStep = 1 | 2 | 3;
 
 type PharmacySnapshot = {
   id?: string;
@@ -52,15 +81,42 @@ type PharmacySnapshot = {
   email?: string | null;
 };
 
+type TeamInviteRow = {
+  id: string;
+  email: string;
+  role: string;
+};
+
 const ONBOARDING_STEP_KEY = "pryrox_onboarding_step";
+
+function onboardingDoneKey(pharmacyId: string) {
+  return `pryrox_onboarding_done_${pharmacyId}`;
+}
+
+function newInviteRow(): TeamInviteRow {
+  return { id: crypto.randomUUID(), email: "", role: "" };
+}
+
+function displayPrice(plan: PlanRow, annual: boolean) {
+  const monthly = Number(plan.price);
+  if (!annual || monthly === 0) return monthly;
+  return Math.round(monthly * 12 * 0.8);
+}
+
+function periodLabel(plan: PlanRow, annual: boolean) {
+  if (Number(plan.price) === 0) return plan.period;
+  return annual ? "per year (billed annually)" : "per month";
+}
 
 export default function OnboardingForm() {
   const router = useRouter();
-  const [step, setStep] = useState<OnboardingStep>(1);
+  const searchParams = useSearchParams();
+  const [step, setStep] = useState<OnboardingStepId>(1);
   const [initializing, setInitializing] = useState(true);
   const [pharmacySaved, setPharmacySaved] = useState(false);
+  const [pharmacyId, setPharmacyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [billingAnnual, setBillingAnnual] = useState(false);
 
   const [pharmacy, setPharmacy] = useState({
     name: "",
@@ -71,64 +127,142 @@ export default function OnboardingForm() {
     email: "",
   });
 
-  const [plans, setPlans] = useState<PlanRow[]>([]);
-  const [plansLoading, setPlansLoading] = useState(false);
   const [plansError, setPlansError] = useState<string | null>(null);
+  const plansQuery = useOnboardingPlans({
+    enabled: step >= 2 && step <= 3 && !initializing,
+  });
+  const plans = (plansQuery.data ?? []) as PlanRow[];
+  const plansLoading = plansQuery.isPending || plansQuery.isFetching;
+  const submitPharmacyMutation = useSubmitOnboardingPharmacyMutation();
+  const upgradeSubscriptionMutation = useUpgradeSubscriptionMutation();
+  const validatePhoneMutation = useValidatePhoneMutation();
+  const polarConfigQuery = usePolarConfig();
   const [selectedPlan, setSelectedPlan] = useState<PlanRow | null>(null);
   const [paymentPhone, setPaymentPhone] = useState("");
   const [paymentEmail, setPaymentEmail] = useState("");
-  const [polarEnabled, setPolarEnabled] = useState(false);
+  const polarEnabled = Boolean(polarConfigQuery.data?.enabled);
   const [paymentChannel, setPaymentChannel] = useState<"kpay" | "polar">("kpay");
 
-  const progress = step === 1 ? 15 : step === 2 ? 50 : 100;
+  const [invites, setInvites] = useState<TeamInviteRow[]>([
+    newInviteRow(),
+    newInviteRow(),
+  ]);
 
-  const loadPlans = useCallback(async () => {
-    setPlansLoading(true);
-    setPlansError(null);
-    try {
-      const res = await fetch("/api/plans", { credentials: "include" });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(
-          typeof data?.error === "string" ? data.error : "Failed to load plans"
-        );
-      }
-      const list = (Array.isArray(data) ? (data as PlanRow[]) : []).filter(
-        (p) => (p as { plan_type?: string }).plan_type !== "branch_addon"
-      );
-      if (list.length === 0) {
-        throw new Error("No subscription plans are available. Please try again.");
-      }
-      setPlans(list);
-    } catch (err) {
-      setPlans([]);
-      setPlansError(
-        err instanceof Error ? err.message : "Could not load plans."
-      );
-    } finally {
-      setPlansLoading(false);
+  const applyPlanIntent = useCallback((list: PlanRow[]) => {
+    const intent = readOnboardingIntent();
+    if (!intent) return;
+
+    const match = matchPlanByIntent(list, intent);
+    if (match) {
+      setSelectedPlan(match);
+      setBillingAnnual(intent.billing === "annual");
     }
   }, []);
 
+  const goToStep = useCallback((next: OnboardingStepId) => {
+    setStep(next);
+    sessionStorage.setItem(ONBOARDING_STEP_KEY, String(next));
+  }, []);
+
+  const markWizardComplete = useCallback(
+    (id: string | null) => {
+      if (id) {
+        localStorage.setItem(onboardingDoneKey(id), "1");
+      }
+      sessionStorage.removeItem(ONBOARDING_STEP_KEY);
+    },
+    [],
+  );
+
+  const finishOnboarding = useCallback(() => {
+    markWizardComplete(pharmacyId);
+    clearOnboardingIntent();
+    router.push("/dashboard");
+    router.refresh();
+  }, [markWizardComplete, pharmacyId, router]);
+
+  const selectPlan = (plan: PlanRow) => {
+    setSelectedPlan(plan);
+    captureIntentFromPlanSelection({
+      planId: plan.id,
+      planName: plan.name,
+      billing: billingAnnual ? "annual" : "monthly",
+    });
+  };
+
+  const setBilling = (annual: boolean) => {
+    setBillingAnnual(annual);
+    if (selectedPlan) {
+      captureIntentFromPlanSelection({
+        planId: selectedPlan.id,
+        planName: selectedPlan.name,
+        billing: annual ? "annual" : "monthly",
+      });
+    }
+  };
+
   useEffect(() => {
+    if (plansQuery.isError) {
+      setPlansError(
+        plansQuery.error instanceof Error
+          ? plansQuery.error.message
+          : "Could not load plans.",
+      );
+      return;
+    }
+    if (plansQuery.isSuccess) {
+      setPlansError(null);
+      if (plans.length === 0) {
+        setPlansError("No subscription plans are available. Please try again.");
+      } else {
+        applyPlanIntent(plans);
+      }
+    }
+  }, [plansQuery.isError, plansQuery.isSuccess, plansQuery.error, plans, applyPlanIntent]);
+
+  const statusQuery = useOnboardingStatus();
+  const resumeRan = useRef(false);
+
+  useEffect(() => {
+    if (statusQuery.isPending || resumeRan.current) return;
+    resumeRan.current = true;
+
     const resume = async () => {
       try {
-        const res = await fetch("/api/onboarding/status", {
-          credentials: "include",
-        });
-        const data = await res.json();
+        const queryStep = searchParams.get("step");
+        const celebrateStep =
+          queryStep === "4" ? (4 as OnboardingStepId) : null;
 
-        if (!res.ok) {
-          setError(data.error || "Could not load your progress.");
+        if (statusQuery.isError) {
+          if (
+            statusQuery.error instanceof ApiError &&
+            statusQuery.error.status === 401
+          ) {
+            router.replace("/sign-in");
+            return;
+          }
+          toast.error(
+            "We couldn't load your setup progress. Try refreshing, or continue by filling in your pharmacy profile below.",
+          );
+          setStep(1);
+          setInitializing(false);
           return;
         }
 
-        if (data.redirect === "/dashboard" || data.completed) {
-          router.replace("/dashboard");
+        const data = statusQuery.data;
+        if (!data) {
+          setStep(1);
+          setInitializing(false);
+          return;
+        }
+
+        if (data.isPlatformAdmin || data.redirect === "/admin") {
+          router.replace("/admin");
           return;
         }
 
         const ph = data.pharmacy as PharmacySnapshot | null;
+        if (ph?.id) setPharmacyId(ph.id);
         if (ph?.name) {
           setPharmacy({
             name: ph.name ?? "",
@@ -141,11 +275,35 @@ export default function OnboardingForm() {
           setPharmacySaved(true);
         }
 
-        let resumeStep = (data.step as OnboardingStep) ?? 1;
+        if (ph?.id && localStorage.getItem(onboardingDoneKey(ph.id)) === "1") {
+          router.replace("/dashboard");
+          return;
+        }
+
+        if (data.subscriptionActive && ph?.id) {
+          let resumeStep: OnboardingStepId = celebrateStep ?? 4;
+          const stored = sessionStorage.getItem(ONBOARDING_STEP_KEY);
+          if (stored === "5") resumeStep = 5;
+          setStep(resumeStep);
+          sessionStorage.setItem(ONBOARDING_STEP_KEY, String(resumeStep));
+          setInitializing(false);
+          return;
+        }
+
+        if (data.redirect === "/dashboard" || data.completed) {
+          router.replace("/dashboard");
+          return;
+        }
+
+        let resumeStep = (data.step as OnboardingStepId) ?? 1;
+        if (celebrateStep) resumeStep = celebrateStep;
 
         const storedStep = sessionStorage.getItem(ONBOARDING_STEP_KEY);
         if (ph?.name && storedStep === "3" && resumeStep === 2) {
           resumeStep = 3;
+        }
+        if (storedStep === "4" || storedStep === "5") {
+          resumeStep = Number(storedStep) as OnboardingStepId;
         }
 
         if (data.pendingPlan) {
@@ -157,7 +315,11 @@ export default function OnboardingForm() {
         sessionStorage.setItem(ONBOARDING_STEP_KEY, String(resumeStep));
 
         if (resumeStep >= 2) {
-          await loadPlans();
+          try {
+            await plansQuery.refetch();
+          } catch {
+            toast.error("Could not load plans. You can retry on the plan step.");
+          }
         }
 
         if (ph?.email || ph?.phone) {
@@ -165,70 +327,48 @@ export default function OnboardingForm() {
           setPaymentPhone(ph.phone ?? "");
         }
       } catch {
-        setError("Could not load your progress. Please refresh the page.");
+        setStep(1);
+        toast.info(
+          "Set up your pharmacy profile below to get started. Platform administrators should sign in and open the admin dashboard.",
+        );
       } finally {
         setInitializing(false);
       }
     };
 
     void resume();
-  }, [loadPlans, router]);
+  }, [plansQuery, router, searchParams, statusQuery.data, statusQuery.error, statusQuery.isError, statusQuery.isPending]);
 
   useEffect(() => {
-    if (step >= 2 && plans.length === 0 && !initializing) {
-      void loadPlans();
-    }
-  }, [step, plans.length, loadPlans, initializing]);
-
-  useEffect(() => {
-    fetch("/api/polar/config")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.enabled) setPolarEnabled(true);
-      })
-      .catch(() => {});
-  }, []);
-
-  const goToStep = (next: OnboardingStep) => {
-    setStep(next);
-    sessionStorage.setItem(ONBOARDING_STEP_KEY, String(next));
-  };
-
-  const finishOnboarding = () => {
-    sessionStorage.removeItem(ONBOARDING_STEP_KEY);
-    router.push("/dashboard");
-    router.refresh();
-  };
+    if (plans.length > 0) applyPlanIntent(plans);
+  }, [plans, applyPlanIntent]);
 
   const submitPharmacy = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setLoading(true);
+        setLoading(true);
     try {
-      const res = await fetch("/api/onboarding/pharmacy", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(pharmacy),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Could not save pharmacy.");
+      const data = await submitPharmacyMutation.mutateAsync(pharmacy);
+      if (data.error) {
+        toast.error(data.error || "Could not save pharmacy.");
         return;
       }
+      if (data.pharmacyId) setPharmacyId(data.pharmacyId);
       setPharmacySaved(true);
       goToStep(2);
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : "Something went wrong. Please try again.";
+      toast.error(message);
     } finally {
       setLoading(false);
     }
   };
 
   const continueToCheckout = () => {
-    setError(null);
-    if (!selectedPlan) {
-      setError("Please select a plan.");
+        if (!selectedPlan) {
+      toast.error("Please select a plan.");
       return;
     }
     setPaymentEmail((prev) => prev || pharmacy.email);
@@ -238,22 +378,22 @@ export default function OnboardingForm() {
 
   const completeFreePlan = async () => {
     if (!selectedPlan) return;
-    setError(null);
-    setLoading(true);
+        setLoading(true);
     try {
-      const res = await fetch("/api/subscriptions/upgrade", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId: selectedPlan.name }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Could not activate plan.");
+      const data = await upgradeSubscriptionMutation.mutateAsync(
+        selectedPlan.name,
+      );
+      if (data.error) {
+        toast.error(data.error || "Could not activate plan.");
         return;
       }
-      finishOnboarding();
-    } catch {
-      setError("Something went wrong. Please try again.");
+      goToStep(4);
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : "Something went wrong. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
@@ -262,19 +402,18 @@ export default function OnboardingForm() {
   const payForPlan = async () => {
     if (!selectedPlan) return;
     if (!paymentEmail.trim()) {
-      setError("Enter an email for your receipt.");
+      toast.error("Enter an email for your receipt.");
       return;
     }
     if (paymentChannel === "kpay" && !paymentPhone.trim()) {
-      setError("Enter your MTN / Airtel number for Mobile Money.");
+      toast.error("Enter your MTN / Airtel number for Mobile Money.");
       return;
     }
 
-    setError(null);
-    setLoading(true);
+        setLoading(true);
     try {
       const subscription = await createPendingSubscription(
-        selectedPlan.id || selectedPlan.name
+        selectedPlan.id || selectedPlan.name,
       );
 
       if (paymentChannel === "polar") {
@@ -291,24 +430,19 @@ export default function OnboardingForm() {
         return;
       }
 
-      const phoneValidation = await fetch("/api/test-validation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber: paymentPhone }),
-      });
-      const phoneResult = await phoneValidation.json();
+      const phoneResult = await validatePhoneMutation.mutateAsync(paymentPhone);
       if (!phoneResult.phone?.isValid) {
-        setError("Enter a valid Rwanda phone number (e.g. 0788123456).");
+        toast.error("Enter a valid Rwanda phone number (e.g. 0788123456).");
         return;
       }
 
-      const paymentData = await startKpaySubscriptionCheckout({
+      const paymentData: KpayCheckoutResponse = await startKpaySubscriptionCheckout({
         plan: selectedPlan,
         subscriptionId: subscription.id,
         customerName: pharmacy.name || "Pharmacy owner",
-        customerPhone: phoneResult.phone.formatted,
+        customerPhone: phoneResult.phone.formatted ?? paymentPhone,
         customerEmail: paymentEmail,
-        bankId: phoneResult.phone.kpayBankId,
+        bankId: phoneResult.phone.kpayBankId ?? "63510",
       });
 
       if (paymentData.success && paymentData.transaction?.checkoutUrl) {
@@ -320,111 +454,160 @@ export default function OnboardingForm() {
       if (paymentData.success && paymentData.transaction?.id) {
         pollKpayTransaction(
           paymentData.transaction.id,
-          () => {
-            sessionStorage.removeItem(ONBOARDING_STEP_KEY);
-            finishOnboarding();
-          },
-          (msg) => setError(msg)
+          () => goToStep(4),
+          (msg) => toast.error(msg),
         );
       } else {
-        setError(
+        toast.error(
           paymentData.kpayResponse?.statusdesc ||
-            "Payment could not be started."
+            "Payment could not be started.",
         );
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      toast.error(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setLoading(false);
     }
   };
 
+  const submitInvites = async () => {
+    const rows = invites.filter((r) => r.email.trim());
+    if (rows.length === 0) {
+      finishOnboarding();
+      return;
+    }
+    if (!pharmacyId) {
+      toast.error("Pharmacy not found. Continue to the dashboard.");
+      return;
+    }
+
+    setLoading(true);
+    const created: string[] = [];
+    const emailFailed: string[] = [];
+    const failures: string[] = [];
+
+    for (const row of rows) {
+      if (!row.role) {
+        failures.push(`${row.email}: select a role`);
+        continue;
+      }
+      const local = row.email.split("@")[0] || "Team member";
+      try {
+        const result = await createPharmacist({
+          pharmacy_id: pharmacyId,
+          email: row.email.trim(),
+          full_name: local.replace(/[._]/g, " "),
+          phone: pharmacy.phone || "0780000000",
+          role: row.role,
+          pharmacy_name: pharmacy.name || "Your pharmacy",
+        });
+        if (result.emailSent) {
+          created.push(row.email.trim());
+        } else {
+          emailFailed.push(
+            `${row.email}: account created but email not sent${result.emailError ? ` (${result.emailError})` : ""}`,
+          );
+        }
+      } catch (err) {
+        failures.push(
+          `${row.email}: ${err instanceof Error ? err.message : "failed"}`,
+        );
+      }
+    }
+
+    setLoading(false);
+
+    if (failures.length > 0) {
+      toast.error("Some invites could not be created", {
+        description: failures.join("\n"),
+      });
+      if (created.length === 0 && emailFailed.length === 0) return;
+    }
+
+    if (emailFailed.length > 0) {
+      toast.warning("Invites created — email not sent", {
+        description: emailFailed.join("\n"),
+        duration: 10000,
+      });
+    }
+
+    if (created.length > 0) {
+      toast.success(
+        created.length === 1 ? "Invitation sent" : "Invitations sent",
+        {
+          description:
+            created.length === 1
+              ? `We emailed login instructions to ${created[0]}.`
+              : `We emailed login instructions to ${created.length} team members.`,
+        },
+      );
+    }
+
+    finishOnboarding();
+  };
+
   if (initializing) {
     return (
-      <div className="min-h-screen bg-background px-4 py-10 flex flex-col items-center justify-center gap-3">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">Loading your progress…</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-neutral-50">
+        <Loader2 className="h-8 w-8 animate-spin text-neutral-900" />
+        <p className="text-sm text-neutral-500">Loading your progress…</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background px-4 py-10">
-      <div className="mx-auto max-w-3xl space-y-8">
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Set up your pharmacy
-          </h1>
-          <p className="text-sm text-muted-foreground max-w-lg mx-auto">
-            A few quick steps to create your tenant, pick a plan, and start
-            using Pryrox.
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex justify-between text-xs text-muted-foreground px-1">
-            {STEPS.map((s) => {
-              const done = s.id < step || (s.id === 1 && pharmacySaved);
-              return (
-                <span
-                  key={s.id}
-                  className={
-                    step === s.id
-                      ? "text-primary font-medium"
-                      : done
-                        ? "text-primary/70"
-                        : undefined
-                  }
-                >
-                  {done ? "✓ " : ""}
-                  {s.id}. {s.title}
-                </span>
-              );
-            })}
+    <OnboardingShell
+      step={step}
+      showSkip={step === 5}
+      onSkip={finishOnboarding}
+      skipLabel="Skip for now"
+    >
+      {step === 1 && (
+        <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-10">
+          <div className="mb-8 space-y-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 sm:text-3xl">
+              Pharmacy profile
+            </h1>
+            <p className="max-w-xl text-sm text-neutral-500">
+              Tell us about your pharmacy to personalize your dashboard
+              experience. This profile is required for pharmacy owners and
+              staff.
+            </p>
+            <div className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs text-neutral-600">
+              <Shield className="h-3.5 w-3.5" />
+              Secure setup for regulated healthcare data
+            </div>
           </div>
-          <Progress value={progress} className="h-2" />
-        </div>
 
-        {error && (
-          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {error}
-          </div>
-        )}
-
-        {step === 1 && pharmacySaved && (
-          <div className="rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
-            Your pharmacy is already saved. Continue to choose a plan, or
-            update details below and save again.
-          </div>
-        )}
-
-        {step === 1 && (
-          <Card className="border-border shadow-sm">
-            <CardHeader>
-              <CardTitle>Pharmacy details</CardTitle>
-              <CardDescription>
-                This is how your business appears in Pryrox. You can edit
-                this later in Settings.
-              </CardDescription>
-            </CardHeader>
-            <form onSubmit={submitPharmacy}>
-              <CardContent className="space-y-4">
+          <form onSubmit={submitPharmacy}>
+            <div className="grid gap-10 lg:grid-cols-2">
+              <div className="space-y-5">
                 <div className="space-y-2">
                   <Label htmlFor="ph-name">Pharmacy name</Label>
                   <Input
                     id="ph-name"
                     required
+                    className="border-neutral-200"
                     value={pharmacy.name}
                     onChange={(e) =>
                       setPharmacy((p) => ({ ...p, name: e.target.value }))
                     }
-                    placeholder="e.g. City Pharmacy Kigali"
+                    placeholder="e.g. Apex Pharmacy"
                   />
+                  <p className="text-xs text-neutral-500">
+                    Shown on invoices and patient-facing records.
+                  </p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="ph-license">License number (optional)</Label>
+                  <Label htmlFor="ph-license" className="flex items-baseline gap-1.5">
+                    Registration number
+                    <span className="text-xs font-normal text-neutral-400">
+                      (optional)
+                    </span>
+                  </Label>
                   <Input
                     id="ph-license"
+                    className="border-neutral-200"
                     value={pharmacy.license_number}
                     onChange={(e) =>
                       setPharmacy((p) => ({
@@ -432,53 +615,70 @@ export default function OnboardingForm() {
                         license_number: e.target.value,
                       }))
                     }
-                    placeholder="Official license if you have one"
+                    placeholder="PH-2024-XXXX"
                   />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="ph-city">City</Label>
-                    <Input
-                      id="ph-city"
-                      required
-                      value={pharmacy.city}
-                      onChange={(e) =>
-                        setPharmacy((p) => ({ ...p, city: e.target.value }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="ph-phone">Phone</Label>
-                    <Input
-                      id="ph-phone"
-                      required
-                      type="tel"
-                      value={pharmacy.phone}
-                      onChange={(e) =>
-                        setPharmacy((p) => ({ ...p, phone: e.target.value }))
-                      }
-                      placeholder="+250 ..."
-                    />
-                  </div>
+                  <p className="text-xs text-neutral-500">
+                    Official license number from the Ministry of Health.
+                  </p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="ph-address">Address (optional)</Label>
+                  <Label htmlFor="ph-city">City</Label>
                   <Input
+                    id="ph-city"
+                    required
+                    className="border-neutral-200"
+                    value={pharmacy.city}
+                    onChange={(e) =>
+                      setPharmacy((p) => ({ ...p, city: e.target.value }))
+                    }
+                    placeholder="e.g. Kigali"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ph-address" className="flex items-baseline gap-1.5">
+                    Address
+                    <span className="text-xs font-normal text-neutral-400">
+                      (optional)
+                    </span>
+                  </Label>
+                  <Textarea
                     id="ph-address"
+                    className="min-h-[88px] border-neutral-200"
                     value={pharmacy.address}
                     onChange={(e) =>
-                      setPharmacy((p) => ({
-                        ...p,
-                        address: e.target.value,
-                      }))
+                      setPharmacy((p) => ({ ...p, address: e.target.value }))
                     }
+                    placeholder="KN 3 Rd, Kigali, Rwanda"
+                  />
+                  <p className="text-xs text-neutral-500">
+                    Physical location of your main branch.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ph-phone">Primary phone</Label>
+                  <Input
+                    id="ph-phone"
+                    required
+                    type="tel"
+                    className="border-neutral-200"
+                    value={pharmacy.phone}
+                    onChange={(e) =>
+                      setPharmacy((p) => ({ ...p, phone: e.target.value }))
+                    }
+                    placeholder="+250 7XX XXX XXX"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="ph-email">Business email</Label>
+                  <Label htmlFor="ph-email" className="flex items-baseline gap-1.5">
+                    Business email
+                    <span className="text-xs font-normal text-neutral-400">
+                      (optional)
+                    </span>
+                  </Label>
                   <Input
                     id="ph-email"
                     type="email"
+                    className="border-neutral-200"
                     value={pharmacy.email}
                     onChange={(e) =>
                       setPharmacy((p) => ({ ...p, email: e.target.value }))
@@ -486,245 +686,386 @@ export default function OnboardingForm() {
                     placeholder="contact@yourpharmacy.rw"
                   />
                 </div>
-              </CardContent>
-                <CardFooter className="flex justify-end gap-2 border-t bg-muted/30">
-                  {pharmacySaved ? (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => goToStep(2)}
-                    >
-                      Continue to plan
-                      <ChevronRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  ) : null}
-                  <Button type="submit" disabled={loading}>
-                    {loading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Saving…
-                      </>
-                    ) : pharmacySaved ? (
-                      "Save changes"
-                    ) : (
-                      <>
-                        Continue
-                        <ChevronRight className="ml-2 h-4 w-4" />
-                      </>
-                    )}
-                  </Button>
-                </CardFooter>
-            </form>
-          </Card>
-        )}
-
-        {step === 2 && (
-          <div className="space-y-6">
-            <Card className="border-border shadow-sm">
-              <CardHeader>
-                <CardTitle>Choose a plan</CardTitle>
-                <CardDescription>
-                  Plans are managed by Pryrox. Pick the tier that fits you;
-                  you can change later from Settings.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {plansLoading ? (
-                  <div className="flex flex-col items-center gap-2 py-8 text-sm text-muted-foreground">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    Loading plans…
-                  </div>
-                ) : plansError ? (
-                  <div className="space-y-3 py-6 text-center">
-                    <p className="text-sm text-destructive">{plansError}</p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void loadPlans()}
-                    >
-                      Retry
-                    </Button>
-                  </div>
-                ) : plans.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    No plans available.
-                  </p>
-                ) : (
-                  <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-3">
-                    {plans.map((plan) => {
-                      const selected = selectedPlan?.id === plan.id;
-                      return (
-                        <button
-                          type="button"
-                          key={plan.id}
-                          onClick={() => setSelectedPlan(plan)}
-                          className={`text-left rounded-lg border p-4 transition-all hover:border-primary/50 ${
-                            selected
-                              ? "border-primary ring-2 ring-primary/20 bg-card"
-                              : "border-border bg-card"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <span className="font-semibold">{plan.name}</span>
-                            {plan.is_popular ? (
-                              <Badge variant="secondary">Popular</Badge>
-                            ) : null}
-                          </div>
-                          <p className="text-2xl font-bold">
-                            {Number(plan.price).toLocaleString()}{" "}
-                            <span className="text-sm font-normal text-muted-foreground">
-                              RWF
-                            </span>
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {plan.period}
-                          </p>
-                          <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
-                            {(plan.features || []).slice(0, 4).map((f) => (
-                              <li key={f} className="flex gap-2">
-                                <Check className="h-4 w-4 shrink-0 text-primary" />
-                                {f}
-                              </li>
-                            ))}
-                          </ul>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-              <CardFooter className="flex justify-between border-t bg-muted/30">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => goToStep(1)}
-                  >
-                    Back
-                  </Button>
-                <Button type="button" onClick={continueToCheckout}>
-                  Continue
-                  <ChevronRight className="ml-2 h-4 w-4" />
-                </Button>
-              </CardFooter>
-            </Card>
-          </div>
-        )}
-
-        {step === 3 && selectedPlan && (
-          <Card className="border-border shadow-sm">
-            <CardHeader>
-              <CardTitle>Checkout</CardTitle>
-              <CardDescription>
-                {selectedPlan.price === 0
-                  ? "Start on this plan at no charge. You can upgrade anytime."
-                  : "Pay with Mobile Money (Rwanda) or card via Polar checkout."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="rounded-md border bg-muted/20 p-4 text-sm">
-                <p className="font-medium">{selectedPlan.name}</p>
-                <p className="text-muted-foreground">
-                  {Number(selectedPlan.price).toLocaleString()} RWF —{" "}
-                  {selectedPlan.period}
-                </p>
               </div>
 
-              {selectedPlan.price === 0 ? null : (
-                <div className="space-y-4 max-w-md">
-                  {polarEnabled ? (
-                    <RadioGroup
-                      value={paymentChannel}
-                      onValueChange={(v) =>
-                        setPaymentChannel(v as "kpay" | "polar")
-                      }
-                      className="grid gap-2"
-                    >
-                      <Label className="flex items-center gap-3 rounded-md border p-3 cursor-pointer">
-                        <RadioGroupItem value="kpay" id="pay-kpay" />
-                        <Smartphone className="h-4 w-4" />
-                        <span className="text-sm">Mobile Money (KPay)</span>
-                      </Label>
-                      <Label className="flex items-center gap-3 rounded-md border p-3 cursor-pointer">
-                        <RadioGroupItem value="polar" id="pay-polar" />
-                        <CreditCard className="h-4 w-4" />
-                        <span className="text-sm">Card / international (Polar)</span>
-                      </Label>
-                    </RadioGroup>
-                  ) : null}
-                  {paymentChannel === "kpay" ? (
-                  <div className="space-y-2">
-                    <Label htmlFor="pay-phone">MTN / Airtel number</Label>
-                    <Input
-                      id="pay-phone"
-                      type="tel"
-                      value={paymentPhone}
-                      onChange={(e) => setPaymentPhone(e.target.value)}
-                      placeholder="0788123456"
-                    />
-                  </div>
-                  ) : null}
-                  <div className="space-y-2">
-                    <Label htmlFor="pay-email">Email for receipt</Label>
-                    <Input
-                      id="pay-email"
-                      type="email"
-                      value={paymentEmail}
-                      onChange={(e) => setPaymentEmail(e.target.value)}
-                    />
-                  </div>
-                </div>
-              )}
-            </CardContent>
-            <CardFooter className="flex flex-wrap justify-between gap-2 border-t bg-muted/30">
-              <Button
+              <PharmacyBrandPreview
+                name={pharmacy.name}
+                city={pharmacy.city}
+                address={pharmacy.address}
+                phone={pharmacy.phone}
+                email={pharmacy.email}
+                licenseNumber={pharmacy.license_number}
+                className="lg:pt-8"
+              />
+            </div>
+
+            <OnboardingStepNav
+              primaryType="submit"
+              primaryLabel={pharmacySaved ? "Continue" : "Continue"}
+              onPrimary={() => {}}
+              primaryLoading={loading}
+              primaryDisabled={loading}
+            />
+          </form>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="space-y-8">
+          <div className="text-center space-y-3">
+            <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 sm:text-3xl">
+              Select your Pryrox plan
+            </h1>
+            <p className="mx-auto max-w-lg text-sm text-neutral-500">
+              Choose the right level of operational power for your pharmacy.
+              Upgrade or downgrade at any time.
+            </p>
+            <div className="inline-flex items-center rounded-full border border-neutral-200 bg-white p-1 text-sm">
+              <button
                 type="button"
-                variant="ghost"
-                onClick={() => goToStep(2)}
-                disabled={loading}
+                onClick={() => setBilling(false)}
+                className={`rounded-full px-4 py-1.5 transition-colors ${
+                  !billingAnnual
+                    ? "bg-neutral-900 text-white"
+                    : "text-neutral-600"
+                }`}
               >
-                Back
-              </Button>
-              <div className="flex gap-2">
-                {selectedPlan.price === 0 ? (
-                  <Button
-                    type="button"
-                    onClick={() => void completeFreePlan()}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      "Start with this plan"
-                    )}
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    onClick={() => void payForPlan()}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : paymentChannel === "polar" ? (
-                      "Pay with card"
-                    ) : (
-                      "Pay with Mobile Money"
-                    )}
-                  </Button>
-                )}
-              </div>
-            </CardFooter>
-          </Card>
-        )}
+                Monthly
+              </button>
+              <button
+                type="button"
+                onClick={() => setBilling(true)}
+                className={`rounded-full px-4 py-1.5 transition-colors ${
+                  billingAnnual
+                    ? "bg-neutral-900 text-white"
+                    : "text-neutral-600"
+                }`}
+              >
+                Annually
+                <span className="ml-1 text-xs opacity-80">−20%</span>
+              </button>
+            </div>
+          </div>
 
-        <p className="text-center text-xs text-muted-foreground">
-          Wrong account?{" "}
-          <Link href="/sign-in" className="underline hover:text-foreground">
-            Back to sign in
-          </Link>
-        </p>
-      </div>
-    </div>
+          {plansLoading ? (
+            <div className="flex flex-col items-center gap-2 py-16 text-sm text-neutral-500">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              Loading plans…
+            </div>
+          ) : plansError ? (
+            <div className="space-y-3 py-12 text-center">
+              <p className="text-sm text-neutral-700">{plansError}</p>
+              <button
+                type="button"
+                onClick={() => void plansQuery.refetch()}
+                className="text-sm underline"
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-3">
+              {plans.map((plan) => {
+                const selected = selectedPlan?.id === plan.id;
+                const popular = Boolean(plan.is_popular);
+                const price = displayPrice(plan, billingAnnual);
+
+                return (
+                  <button
+                    key={plan.id}
+                    type="button"
+                    onClick={() => selectPlan(plan)}
+                    className={`relative flex flex-col rounded-xl border bg-white p-6 text-left transition-all ${
+                      selected || popular
+                        ? "border-neutral-900 shadow-md"
+                        : "border-neutral-200 hover:border-neutral-400"
+                    }`}
+                  >
+                    {popular ? (
+                      <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full border border-neutral-900 bg-white px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+                        Recommended
+                      </span>
+                    ) : null}
+                    <p className="font-semibold text-neutral-900">{plan.name}</p>
+                    <p className="mt-2 text-3xl font-bold text-neutral-900">
+                      {price.toLocaleString()}
+                      <span className="ml-1 text-sm font-normal text-neutral-500">
+                        RWF
+                      </span>
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      {periodLabel(plan, billingAnnual)}
+                    </p>
+                    <div className="mt-4 flex-1">
+                      <PlanFeatureList
+                        features={plan.features || []}
+                        maxVisible={4}
+                        dense
+                      />
+                    </div>
+                    <span
+                      className={`mt-6 block rounded-md py-2.5 text-center text-sm font-medium ${
+                        selected || popular
+                          ? "bg-neutral-900 text-white"
+                          : "border border-neutral-300 text-neutral-900"
+                      }`}
+                    >
+                      Select {plan.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <p className="flex items-center justify-center gap-2 text-xs text-neutral-500">
+            <Lock className="h-3.5 w-3.5" />
+            Secure payment via KPay or card. Cancel anytime.
+          </p>
+
+          <OnboardingStepNav
+            onBack={() => goToStep(1)}
+            primaryLabel="Continue"
+            onPrimary={continueToCheckout}
+            primaryDisabled={!selectedPlan || plansLoading}
+          />
+        </div>
+      )}
+
+      {step === 3 && selectedPlan && (
+        <div className="mx-auto max-w-lg rounded-xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-10">
+          <h1 className="text-2xl font-semibold text-neutral-900">Checkout</h1>
+          <p className="mt-2 text-sm text-neutral-500">
+            {selectedPlan.price === 0
+              ? "Start on this plan at no charge. You can upgrade anytime."
+              : "Complete payment to activate your subscription."}
+          </p>
+
+          <div className="mt-6 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm">
+            <p className="font-medium text-neutral-900">{selectedPlan.name}</p>
+            <p className="text-neutral-500">
+              {Number(selectedPlan.price).toLocaleString()} RWF —{" "}
+              {selectedPlan.period}
+            </p>
+          </div>
+
+          {selectedPlan.price === 0 ? null : (
+            <div className="mt-6 space-y-4">
+              {polarEnabled ? (
+                <RadioGroup
+                  value={paymentChannel}
+                  onValueChange={(v) =>
+                    setPaymentChannel(v as "kpay" | "polar")
+                  }
+                  className="grid gap-2"
+                >
+                  <Label className="flex cursor-pointer items-center gap-3 rounded-md border border-neutral-200 p-3">
+                    <RadioGroupItem value="kpay" id="pay-kpay" />
+                    <Smartphone className="h-4 w-4" />
+                    <span className="text-sm">Mobile Money (KPay)</span>
+                  </Label>
+                  <Label className="flex cursor-pointer items-center gap-3 rounded-md border border-neutral-200 p-3">
+                    <RadioGroupItem value="polar" id="pay-polar" />
+                    <CreditCard className="h-4 w-4" />
+                    <span className="text-sm">Card / international (Polar)</span>
+                  </Label>
+                </RadioGroup>
+              ) : null}
+              {paymentChannel === "kpay" ? (
+                <div className="space-y-2">
+                  <Label htmlFor="pay-phone">MTN / Airtel number</Label>
+                  <Input
+                    id="pay-phone"
+                    type="tel"
+                    className="border-neutral-200"
+                    value={paymentPhone}
+                    onChange={(e) => setPaymentPhone(e.target.value)}
+                    placeholder="0788123456"
+                  />
+                </div>
+              ) : null}
+              <div className="space-y-2">
+                <Label htmlFor="pay-email">Email for receipt</Label>
+                <Input
+                  id="pay-email"
+                  type="email"
+                  className="border-neutral-200"
+                  value={paymentEmail}
+                  onChange={(e) => setPaymentEmail(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
+          <OnboardingStepNav
+            onBack={() => goToStep(2)}
+            primaryLabel={
+              selectedPlan.price === 0
+                ? "Start with this plan"
+                : paymentChannel === "polar"
+                  ? "Pay with card"
+                  : "Pay with Mobile Money"
+            }
+            onPrimary={() => {
+              if (selectedPlan.price === 0) void completeFreePlan();
+              else void payForPlan();
+            }}
+            primaryLoading={loading}
+            primaryDisabled={loading}
+          />
+        </div>
+      )}
+
+      {step === 4 && (
+        <div className="mx-auto max-w-lg rounded-xl border border-neutral-200 bg-white p-8 text-center shadow-sm sm:p-12">
+          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border-2 border-neutral-900">
+            <Check className="h-8 w-8 text-neutral-900" strokeWidth={2} />
+          </div>
+          <h1 className="text-2xl font-semibold text-neutral-900">
+            You&apos;re live
+          </h1>
+          <p className="mt-3 text-sm text-neutral-500">
+            {pharmacy.name || "Your pharmacy"} is set up on Pryrox. You can
+            invite your team next, or go straight to the dashboard.
+          </p>
+          <ul className="mt-8 space-y-3 text-left text-sm text-neutral-700">
+            {[
+              "Pharmacy profile saved",
+              selectedPlan
+                ? `${selectedPlan.name} plan ready`
+                : "Subscription active",
+              "Dashboard and POS available",
+            ].map((item) => (
+              <li key={item} className="flex items-center gap-3">
+                <Check className="h-4 w-4 shrink-0 text-neutral-900" />
+                {item}
+              </li>
+            ))}
+          </ul>
+          <OnboardingStepNav
+            onBack={() => goToStep(3)}
+            primaryLabel="Invite team"
+            onPrimary={() => goToStep(5)}
+          />
+          <button
+            type="button"
+            onClick={finishOnboarding}
+            className="mt-4 w-full text-sm text-neutral-500 underline-offset-4 hover:text-neutral-900 hover:underline"
+          >
+            Go to dashboard now
+          </button>
+        </div>
+      )}
+
+      {step === 5 && (
+        <div className="mx-auto max-w-2xl rounded-xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-10">
+          <div className="mb-8 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-neutral-200 bg-neutral-50">
+              <Users className="h-6 w-6 text-neutral-700" />
+            </div>
+            <h1 className="text-2xl font-semibold text-neutral-900">
+              Invite team
+            </h1>
+            <p className="mt-2 text-sm text-neutral-500">
+              Add your team by email. Each person receives login instructions in
+              their inbox — no passwords to copy manually.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <div className="grid grid-cols-[1fr_140px_32px] gap-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+              <span>Email address</span>
+              <span>Role</span>
+              <span />
+            </div>
+            {invites.map((row) => (
+              <div
+                key={row.id}
+                className="grid grid-cols-[1fr_140px_32px] items-center gap-2"
+              >
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                  <Input
+                    type="email"
+                    className="border-neutral-200 pl-9"
+                    placeholder="name@example.com"
+                    value={row.email}
+                    onChange={(e) =>
+                      setInvites((list) =>
+                        list.map((r) =>
+                          r.id === row.id
+                            ? { ...r, email: e.target.value }
+                            : r,
+                        ),
+                      )
+                    }
+                  />
+                </div>
+                <Select
+                  value={row.role || undefined}
+                  onValueChange={(v) =>
+                    setInvites((list) =>
+                      list.map((r) =>
+                        r.id === row.id ? { ...r, role: v } : r,
+                      ),
+                    )
+                  }
+                >
+                  <SelectTrigger className="border-neutral-200">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pharmacist">Pharmacist</SelectItem>
+                    <SelectItem value="staff">Staff</SelectItem>
+                  </SelectContent>
+                </Select>
+                <button
+                  type="button"
+                  aria-label="Remove row"
+                  onClick={() =>
+                    setInvites((list) =>
+                      list.length > 1
+                        ? list.filter((r) => r.id !== row.id)
+                        : list,
+                    )
+                  }
+                  className="flex h-9 w-9 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                setInvites((list) => [...list, newInviteRow()])
+              }
+              className="inline-flex items-center gap-1 text-sm text-neutral-600 hover:text-neutral-900"
+            >
+              <Plus className="h-4 w-4" />
+              Add another team member
+            </button>
+          </div>
+
+          <OnboardingStepNav
+            onBack={() => goToStep(4)}
+            primaryLabel="Finish setup"
+            onPrimary={() => void submitInvites()}
+            primaryLoading={loading}
+            primaryDisabled={loading}
+          />
+        </div>
+      )}
+
+      <p className="mt-8 text-center text-xs text-neutral-500">
+        Wrong account?{" "}
+        <Link
+          href="/sign-in"
+          className="underline underline-offset-2 hover:text-neutral-900"
+        >
+          Back to sign in
+        </Link>
+      </p>
+    </OnboardingShell>
   );
 }

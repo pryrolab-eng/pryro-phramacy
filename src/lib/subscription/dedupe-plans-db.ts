@@ -3,7 +3,7 @@ import {
   comparePlanRows,
   findDuplicatePlanGroups,
 } from "./dedupe-plans";
-import { normalizePlanNameForCatalog } from "./normalize-plan";
+import { canonicalPlanName } from "./plan-name-validation";
 
 export type DedupePlansDbResult = {
   deactivated: number;
@@ -39,7 +39,7 @@ export async function dedupeSubscriptionPlansInDb(
     const rows = (plans ?? []).filter(
       (p) =>
         p.is_active !== false &&
-        normalizePlanNameForCatalog(p.name) === groupName &&
+        canonicalPlanName(p.name) === groupName &&
         (String(p.plan_type ?? "main").trim().toLowerCase() === "branch_addon"
           ? "branch_addon"
           : "main") === (groupType === "branch_addon" ? "branch_addon" : "main")

@@ -7,17 +7,18 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'
+import { useInitiateKpayPaymentMutation } from '@/hooks/useKpay'
 
 interface PaymentFormProps {
   amount: number
   saleId?: string
   subscriptionId?: string
-  onSuccess?: (transaction: any) => void
+  onSuccess?: (transaction: unknown) => void
   onError?: (error: string) => void
 }
 
 export function PaymentForm({ amount, saleId, subscriptionId, onSuccess, onError }: PaymentFormProps) {
-  const [loading, setLoading] = useState(false)
+  const initiateMutation = useInitiateKpayPaymentMutation()
   const [formData, setFormData] = useState({
     customerName: '',
     customerPhone: '',
@@ -50,40 +51,30 @@ export function PaymentForm({ amount, saleId, subscriptionId, onSuccess, onError
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
 
     try {
-      const response = await fetch('/api/kpay/initiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount,
-          saleId,
-          subscriptionId,
-          ...formData,
-          details: saleId ? 'Pharmacy sale payment' : 'Subscription payment'
-        })
+      const data = await initiateMutation.mutateAsync({
+        amount,
+        saleId,
+        subscriptionId,
+        ...formData,
+        details: saleId ? 'Pharmacy sale payment' : 'Subscription payment',
       })
 
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Payment failed')
-      }
-
-      if (data.success && data.transaction.checkoutUrl) {
+      if (data.success && data.transaction?.checkoutUrl) {
         window.location.href = data.transaction.checkoutUrl
       } else if (data.success) {
         onSuccess?.(data.transaction)
       } else {
-        throw new Error(data.kpayResponse?.statusdesc || 'Payment failed')
+        throw new Error(data.error || data.kpayResponse?.statusdesc || 'Payment failed')
       }
-    } catch (error: any) {
-      onError?.(error.message)
-    } finally {
-      setLoading(false)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Payment failed'
+      onError?.(message)
     }
   }
+
+  const loading = initiateMutation.isPending
 
   return (
     <Card>

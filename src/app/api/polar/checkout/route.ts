@@ -6,6 +6,7 @@ import {
   isPolarConfigured,
   polarSuccessUrl,
 } from "@/lib/polar/client";
+import { polarTransactionAmounts } from "@/lib/polar/payment-record";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -109,6 +110,10 @@ export async function POST(request: NextRequest) {
     });
 
     const refid = `polar-${checkout.id}`;
+    const { amount, currency, paymentDetailsSuffix } = polarTransactionAmounts(
+      Number(plan.price),
+    );
+
     const { data: transaction, error: txError } = await admin
       .from("payment_transactions")
       .insert({
@@ -117,13 +122,13 @@ export async function POST(request: NextRequest) {
         kpay_refid: refid,
         polar_checkout_id: checkout.id,
         payment_provider: "polar",
-        amount: plan.price,
-        currency: "USD",
+        amount,
+        currency,
         payment_method: "polar",
         customer_name: customerName,
         customer_email: customerEmail,
         customer_phone: body.customerPhone || null,
-        payment_details: `${plan.name} subscription (Polar)`,
+        payment_details: `${plan.name} subscription — ${paymentDetailsSuffix}`,
         status: "pending",
         kpay_checkout_url: checkout.url,
       })

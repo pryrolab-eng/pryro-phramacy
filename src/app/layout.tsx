@@ -5,6 +5,7 @@ import Script from "next/script";
 import { QueryProvider } from "@/components/query-provider";
 import { TempoInit } from "@/components/tempo-init";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -29,6 +30,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <QueryProvider>{children}</QueryProvider>
+          <Toaster />
         </ThemeProvider>
         <TempoInit />
       </body>

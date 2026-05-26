@@ -1,3 +1,5 @@
+import { normalizePlanPeriodLabel } from "./plan-period";
+
 export type PlanType = "main" | "branch_addon";
 
 /** Catalog names that must never be sold as branch add-ons. */
@@ -23,11 +25,28 @@ export function normalizePlanNameForCatalog(name: string): string {
   return String(name ?? "").trim().toLowerCase();
 }
 
+/** True for per-branch products — never a pharmacy's main subscription tier. */
+export function isBranchAddonCatalogName(name: string | null | undefined): boolean {
+  const key = normalizePlanNameForCatalog(String(name ?? ""));
+  return BRANCH_ADDON_PLAN_NAMES.has(key) || key.includes("branch add");
+}
+
+export function isMainTierCatalogRow(row: {
+  name?: string | null;
+  plan_type?: string | null;
+}): boolean {
+  const planType = String(row.plan_type ?? "main").trim().toLowerCase();
+  if (planType === "branch_addon") return false;
+  if (isBranchAddonCatalogName(row.name)) return false;
+  return true;
+}
+
 export type DisplaySubscriptionPlan = {
   id: string;
   name: string;
   price: number;
   period: string;
+  billing_period?: string;
   features: string[];
   is_popular: boolean;
   plan_type: PlanType;
@@ -73,11 +92,19 @@ export function normalizeSubscriptionPlanRow(
     }
   }
 
+  const price = Number(row.price ?? 0);
+  const billing_period = String(row.billing_period ?? "monthly");
+
   return {
     id: String(row.id ?? ""),
     name: String(row.name ?? ""),
-    price: Number(row.price ?? 0),
-    period: String(row.period ?? "per month"),
+    price,
+    billing_period,
+    period: normalizePlanPeriodLabel(
+      String(row.period ?? "per month"),
+      billing_period,
+      price,
+    ),
     features,
     is_popular: Boolean(row.is_popular),
     plan_type: planTypeFromRow(row),

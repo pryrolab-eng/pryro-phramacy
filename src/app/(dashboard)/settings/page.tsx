@@ -1,6 +1,29 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import {
+  useAddIpWhitelistMutation,
+  useBillingInfo,
+  useCreateSettingsApiKeyMutation,
+  useCreateSettingsLocationMutation,
+  useInvalidatePharmacySettingsPage,
+  useIpWhitelist,
+  usePharmacyBranding,
+  usePharmacySettingsInfo,
+  useRemoveIpWhitelistMutation,
+  useSecuritySettings,
+  useSetTwoFaEnabledMutation,
+  useSettingsApiKeys,
+  useSettingsStockLocations,
+  useSetupTwoFaMutation,
+  useTwoFaStatus,
+  useUpdatePharmacyBrandingMutation,
+  useUpdatePharmacySettingsMutation,
+  useUpdateSecuritySettingsMutation,
+  useUpdateSettingsApiKeyMutation,
+  useUploadPharmacyLogoMutation,
+  useVerifyTwoFaMutation,
+} from '@/hooks/usePharmacySettingsPage'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -9,58 +32,15 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Progress } from "@/components/ui/progress"
 import { Switch } from "@/components/ui/switch"
-import { Settings, CreditCard, Users, Building2, Check, Globe, DollarSign, ArrowUpRight, Shield, Bell, Download, Edit, Save, X, Zap, BarChart3, Database, Key, Webhook, Monitor, Palette, FileText, AlertTriangle, Clock, Plus, Loader2 } from 'lucide-react'
+import { Settings, CreditCard, Users, Building2, Check, Globe, DollarSign, ArrowUpRight, Shield, Bell, Download, Edit, Save, X, Zap, BarChart3, Database, Key, Webhook, Monitor, Palette, FileText, AlertTriangle, Clock, Plus } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
 import { ResponsiveContainer, LineChart, Line } from 'recharts'
-import {
-  cancelScheduledChange,
-  createPendingSubscription,
-  fetchScheduledChange,
-  pollKpayTransaction,
-  scheduleSubscriptionDowngrade,
-  startKpaySubscriptionCheckout,
-  startPolarSubscriptionCheckout,
-  type ScheduledChangeResponse,
-} from '@/lib/subscription/checkout-client'
-import { fallbackPlansForDisplay } from '@/lib/subscription/default-plans'
-import { normalizeSubscriptionPlanRow } from '@/lib/subscription/normalize-plan'
-import { BranchAddonCheckoutDialog } from '@/components/subscription/branch-addon-checkout-dialog'
-import type { SubscriptionPlan as SaasSubscriptionPlan } from '@/lib/saas/types'
-
-interface SubscriptionPlan {
-  id: string
-  name: string
-  price: number
-  features: string[]
-  current: boolean
-  plan_type: 'main' | 'branch_addon'
-  monthly_tx_limit: number
-}
-
-function toSaasAddonPlan(plan: SubscriptionPlan): SaasSubscriptionPlan {
-  return {
-    id: plan.id,
-    name: plan.name,
-    price: plan.price,
-    period: 'per month',
-    billing_period: 'monthly',
-    plan_type: 'branch_addon',
-    max_branches: 1,
-    max_users: 0,
-    monthly_tx_limit: plan.monthly_tx_limit,
-    features: plan.features,
-    is_popular: false,
-    is_active: true,
-    created_at: '',
-    updated_at: '',
-  }
-}
+import { planDisplayName } from '@/lib/admin/plan-stats'
+import { SubscriptionPlanManagement } from '@/components/subscription/subscription-plan-management'
 
 export default function SettingsPage() {
   const [currentPlan, setCurrentPlan] = useState('standard')
@@ -79,98 +59,59 @@ export default function SettingsPage() {
   const [isAddApiKeyOpen, setIsAddApiKeyOpen] = useState(false)
   const [isEditApiKeyOpen, setIsEditApiKeyOpen] = useState(false)
   const [isIpWhitelistOpen, setIsIpWhitelistOpen] = useState(false)
-  const [ipWhitelist, setIpWhitelist] = useState<any[]>([])
   const [newIp, setNewIp] = useState({ ip: '', description: '' })
-  const [ipWhitelistEnabled, setIpWhitelistEnabled] = useState(false)
-  const [is2FAEnabled, setIs2FAEnabled] = useState(false)
   const [is2FASetupOpen, setIs2FASetupOpen] = useState(false)
   const [qrCode, setQrCode] = useState('')
   const [backupCodes, setBackupCodes] = useState<string[]>([])
   const [verifyCode, setVerifyCode] = useState('')
   const [setupStep, setSetupStep] = useState<'qr' | 'verify' | 'backup'>('qr')
-  const [isUpgradeDialogOpen, setIsUpgradeDialogOpen] = useState(false)
-  const [isDowngradeDialogOpen, setIsDowngradeDialogOpen] = useState(false)
-  const [isUpgradePaymentLoading, setIsUpgradePaymentLoading] = useState(false)
-  const [isSchedulingDowngrade, setIsSchedulingDowngrade] = useState(false)
-  const [selectedUpgradePlan, setSelectedUpgradePlan] = useState<SubscriptionPlan | null>(null)
-  const [selectedDowngradePlan, setSelectedDowngradePlan] = useState<SubscriptionPlan | null>(null)
-  const [scheduledChange, setScheduledChange] = useState<ScheduledChangeResponse['scheduledChange']>(null)
-  const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null)
-  const [planLimitsHint, setPlanLimitsHint] = useState<string | null>(null)
-  const [polarEnabled, setPolarEnabled] = useState(false)
-  const [upgradePaymentData, setUpgradePaymentData] = useState({
-    paymentMethod: 'kpay',
-    phone: '',
-    email: ''
-  })
   const [branding, setBranding] = useState({
     logoUrl: '',
     primaryColor: '#3b82f6',
     customDomain: ''
   })
   const [logoFile, setLogoFile] = useState<File | null>(null)
-  const [uploadingLogo, setUploadingLogo] = useState(false)
 
-  const fetchIpWhitelist = async () => {
-    try {
-      const response = await fetch('/api/settings/security/ip-whitelist/manage')
-      if (response.ok) {
-        const data = await response.json()
-        setIpWhitelist(data.ips || [])
-      }
-    } catch (error) {
-      console.error('Error fetching IP whitelist:', error)
-    }
-  }
+  const settingsQuery = usePharmacySettingsInfo()
+  const brandingQuery = usePharmacyBranding()
+  const billingQuery = useBillingInfo()
+  const securityQuery = useSecuritySettings()
+  const twoFaQuery = useTwoFaStatus()
+  const ipWhitelistQuery = useIpWhitelist({ enabled: isIpWhitelistOpen })
+  const apiKeysQuery = useSettingsApiKeys()
+  const locationsQuery = useSettingsStockLocations()
+  const invalidateSettings = useInvalidatePharmacySettingsPage()
 
-  const fetchSecuritySettings = async () => {
-    try {
-      const response = await fetch('/api/settings/security')
-      if (response.ok) {
-        const data = await response.json()
-        setIpWhitelistEnabled(data.ip_whitelist_enabled || false)
-      }
-    } catch (error) {
-      console.error('Error fetching security settings:', error)
-    }
-  }
+  const updateSettingsMutation = useUpdatePharmacySettingsMutation()
+  const updateBrandingMutation = useUpdatePharmacyBrandingMutation()
+  const uploadLogoMutation = useUploadPharmacyLogoMutation()
+  const updateSecurityMutation = useUpdateSecuritySettingsMutation()
+  const setTwoFaMutation = useSetTwoFaEnabledMutation()
+  const addIpMutation = useAddIpWhitelistMutation()
+  const removeIpMutation = useRemoveIpWhitelistMutation()
+  const setupTwoFaMutation = useSetupTwoFaMutation()
+  const verifyTwoFaMutation = useVerifyTwoFaMutation()
+  const createApiKeyMutation = useCreateSettingsApiKeyMutation()
+  const updateApiKeyMutation = useUpdateSettingsApiKeyMutation()
+  const createLocationMutation = useCreateSettingsLocationMutation()
 
-  const fetch2FAStatus = async () => {
-    try {
-      const response = await fetch('/api/settings/security/2fa')
-      if (response.ok) {
-        const data = await response.json()
-        setIs2FAEnabled(data.enabled || false)
-      }
-    } catch (error) {
-      console.error('Error fetching 2FA status:', error)
-    }
-  }
+  const ipWhitelist = ipWhitelistQuery.data?.ips ?? []
+  const apiKeys = apiKeysQuery.data ?? []
+  const stockLocations = locationsQuery.data ?? []
+  const ipWhitelistEnabled =
+    securityQuery.data?.ip_whitelist_enabled ?? false
+  const is2FAEnabled = twoFaQuery.data?.enabled ?? false
+  const uploadingLogo = uploadLogoMutation.isPending
 
   const toggleIpWhitelist = async (enabled: boolean) => {
     try {
-      const response = await fetch('/api/settings/security', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ip_whitelist_enabled: enabled })
-      })
-      if (response.ok) {
-        setIpWhitelistEnabled(enabled)
-      }
+      await updateSecurityMutation.mutateAsync({ ip_whitelist_enabled: enabled })
     } catch (error) {
       console.error('Error updating IP whitelist setting:', error)
     }
   }
-
-  useEffect(() => {
-    if (isIpWhitelistOpen) {
-      fetchIpWhitelist()
-    }
-  }, [isIpWhitelistOpen])
   const [selectedApiKey, setSelectedApiKey] = useState<any>(null)
   const [newApiKey, setNewApiKey] = useState({ name: '', key: '' })
-  const [apiKeys, setApiKeys] = useState<any[]>([])
-  const [stockLocations, setStockLocations] = useState([])
   const [newLocation, setNewLocation] = useState({ name: '', description: '' })
   const [editInfo, setEditInfo] = useState({
     name: '',
@@ -180,342 +121,59 @@ export default function SettingsPage() {
     currency: 'RWF',
     language: 'en'
   })
-  const [billingInfo, setBillingInfo] = useState({
-    nextBilling: '',
-    amount: 0,
-    paymentMethod: 'Not set',
-    emailReceiptsEnabled: false,
-    invoices: [] as Array<{
-      id: string
-      date: string
-      amount: number
-      status: string
-      planName?: string
-      provider?: string
-      invoiceNumber?: string
-    }>
-  })
-
-  const fetchBillingInfo = async () => {
-    try {
-      const response = await fetch('/api/invoices')
-      if (response.ok) {
-        const data = await response.json()
-        const history = data.history ?? data.invoices ?? []
-        setBillingInfo({
-          nextBilling: data.nextBilling || new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-          amount: data.amount || 0,
-          paymentMethod: data.paymentMethod || 'Not set',
-          emailReceiptsEnabled: Boolean(data.emailReceiptsEnabled),
-          invoices: history
-        })
-      } else {
-        console.error('Failed to fetch billing info')
-      }
-    } catch (error) {
-      console.error('Error fetching billing info:', error)
-    }
-  }
-
-  const fetchBranding = async () => {
-    try {
-      const response = await fetch('/api/pharmacy/branding')
-      if (response.ok) {
-        const data = await response.json()
-        setBranding(data)
-      }
-    } catch (error) {
-      console.error('Error fetching branding:', error)
-    }
-  }
-
-  const handleLogoUpload = async (file: File) => {
-    setUploadingLogo(true)
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      
-      const response = await fetch('/api/pharmacy/branding/upload', {
-        method: 'POST',
-        body: formData
-      })
-      
-      if (response.ok) {
-        const data = await response.json()
-        setBranding({...branding, logoUrl: data.url})
-        alert('Logo uploaded successfully!')
-      } else {
-        alert('Failed to upload logo')
-      }
-    } catch (error) {
-      console.error('Error uploading logo:', error)
-      alert('Failed to upload logo')
-    } finally {
-      setUploadingLogo(false)
-    }
-  }
-
-  const handleSaveBranding = async () => {
-    try {
-      const response = await fetch('/api/pharmacy/branding', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(branding)
-      })
-      
-      if (response.ok) {
-        alert('Branding updated successfully!')
-      } else {
-        alert('Failed to update branding')
-      }
-    } catch (error) {
-      console.error('Error updating branding:', error)
-      alert('Failed to update branding')
-    }
-  }
-
-  const [plans, setPlans] = useState<SubscriptionPlan[]>([])
-  const [addonPlans, setAddonPlans] = useState<SubscriptionPlan[]>([])
-  const [addonCheckoutOpen, setAddonCheckoutOpen] = useState(false)
-  const [addonPlanTarget, setAddonPlanTarget] = useState<SubscriptionPlan | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    fetch('/api/polar/config')
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.enabled) setPolarEnabled(true)
-      })
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true)
-      await Promise.all([
-        fetchPharmacyInfo(),
-        fetchPlans(),
-        fetchStockLocations(),
-        fetchApiKeys(),
-        fetchSecuritySettings(),
-        fetch2FAStatus(),
-        fetchBillingInfo(),
-        fetchBranding(),
-        fetchScheduledChangeState(),
-        fetchPlanLimitsHint(),
-      ])
-      setLoading(false)
-    }
-    loadData()
-  }, [])
-
-  useEffect(() => {
-    const onFocus = () => {
-      void fetchPharmacyInfo()
-      void fetchPlans()
-      void fetchScheduledChangeState()
-    }
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [currentPlan])
-
-  const mapCatalogRow = (row: Record<string, unknown>): SubscriptionPlan => {
-    const plan = normalizeSubscriptionPlanRow(row)
+  const billingInfo = useMemo(() => {
+    const data = billingQuery.data
+    const history = data?.history ?? data?.invoices ?? []
     return {
-      id: plan.id,
-      name: plan.name,
-      price: plan.price,
-      current: currentPlan === plan.name.toLowerCase(),
-      features: plan.features,
-      plan_type: plan.plan_type,
-      monthly_tx_limit: plan.monthly_tx_limit,
+      nextBilling:
+        data?.nextBilling ||
+        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split('T')[0],
+      amount: data?.amount || 0,
+      paymentMethod: data?.paymentMethod || 'Not set',
+      emailReceiptsEnabled: Boolean(data?.emailReceiptsEnabled),
+      invoices: history as Array<{
+        id: string
+        date: string
+        amount: number
+        status: string
+        planName?: string
+        provider?: string
+        invoiceNumber?: string
+      }>,
     }
-  }
-
-  const applyCatalogPlans = (rows: Record<string, unknown>[]) => {
-    const mapped = rows.map(mapCatalogRow)
-    setPlans(
-      mapped.filter((p) => p.plan_type === 'main')
-    )
-    setAddonPlans(
-      mapped.filter((p) => p.plan_type === 'branch_addon')
-    )
-  }
-
-  const fetchPlans = async () => {
-    try {
-      const response = await fetch(`/api/plans?_=${Date.now()}`, {
-        cache: 'no-store',
-      })
-      if (response.ok) {
-        const data = await response.json()
-        applyCatalogPlans(Array.isArray(data) ? data : [])
-      } else {
-        console.error('Failed to fetch plans, using defaults')
-        const fallback = fallbackPlansForDisplay().map((plan) => ({
-          id: plan.id,
-          name: plan.name,
-          price: plan.price,
-          current: currentPlan === plan.name.toLowerCase(),
-          features: plan.features,
-          plan_type: 'main' as const,
-          monthly_tx_limit: plan.monthly_tx_limit ?? 0,
-        }))
-        setPlans(fallback)
-        setAddonPlans([])
-      }
-    } catch (error) {
-      console.error('Error fetching plans:', error)
-      const fallback = fallbackPlansForDisplay().map((plan) => ({
-        id: plan.id,
-        name: plan.name,
-        price: plan.price,
-        current: currentPlan === plan.name.toLowerCase(),
-        features: plan.features,
-        plan_type: 'main' as const,
-        monthly_tx_limit: plan.monthly_tx_limit ?? 0,
-      }))
-      setPlans(fallback)
-      setAddonPlans([])
-    }
-  }
+  }, [billingQuery.data])
 
   useEffect(() => {
-    if (plans.length > 0) {
-      setPlans(plans.map(plan => ({
-        ...plan,
-        current: currentPlan === plan.name.toLowerCase()
-      })))
+    if (brandingQuery.data) {
+      setBranding(brandingQuery.data)
     }
-  }, [currentPlan])
+  }, [brandingQuery.data])
 
-  const fetchScheduledChangeState = async () => {
-    try {
-      const [scheduledData, statusRes] = await Promise.all([
-        fetchScheduledChange(),
-        fetch('/api/subscriptions/status', {
-          credentials: 'include',
-          cache: 'no-store',
-        }),
-      ])
-      setScheduledChange(scheduledData.scheduledChange)
-      if (statusRes.ok) {
-        const status = await statusRes.json()
-        setSubscriptionExpiresAt(status.expiresAt ?? null)
-        if (status.scheduledChange) {
-          setScheduledChange(status.scheduledChange)
-        }
+  useEffect(() => {
+    if (settingsQuery.data) {
+      const data = settingsQuery.data
+      const info = {
+        name: data.name ?? '',
+        license: data.license ?? '',
+        location: data.location ?? '',
+        phone: data.phone ?? '',
+        email: data.email ?? '',
+        currency: data.currency || 'RWF',
+        language: data.language || 'en',
       }
-    } catch {
-      setScheduledChange(null)
-    }
-  }
-
-  const fetchPlanLimitsHint = async () => {
-    try {
-      const res = await fetch('/api/subscriptions/plan-limits', {
-        credentials: 'include',
-        cache: 'no-store',
+      setPharmacyInfo(info)
+      setEditInfo({
+        name: data.name,
+        location: data.location,
+        phone: data.phone,
+        email: data.email,
+        currency: data.currency || 'RWF',
+        language: data.language || 'en',
       })
-      if (!res.ok) return
-      const data = await res.json()
-      if (data.canAddUser?.overLimit) {
-        setPlanLimitsHint(data.canAddUser.reason)
-      } else {
-        setPlanLimitsHint(null)
-      }
-    } catch {
-      setPlanLimitsHint(null)
-    }
-  }
-
-  const currentPlanPrice = () => {
-    const current = plans.find((p) => p.current)
-    return current?.price ?? 0
-  }
-
-  const isPlanUpgrade = (plan: SubscriptionPlan) =>
-    plan.price > currentPlanPrice()
-
-  const isPlanDowngrade = (plan: SubscriptionPlan) =>
-    plan.price < currentPlanPrice()
-
-  const formatEffectiveDate = (iso: string) => {
-    const d = new Date(iso)
-    if (Number.isNaN(d.getTime())) return iso
-    return d.toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    })
-  }
-
-  const getDowngradeEffectiveDateLabel = (): string | null => {
-    if (subscriptionExpiresAt) {
-      return formatEffectiveDate(subscriptionExpiresAt)
-    }
-    if (scheduledChange?.effectiveAt) {
-      return formatEffectiveDate(scheduledChange.effectiveAt)
-    }
-    if (billingInfo.nextBilling) {
-      const parsed = new Date(billingInfo.nextBilling)
-      if (!Number.isNaN(parsed.getTime())) {
-        return formatEffectiveDate(parsed.toISOString())
-      }
-      return billingInfo.nextBilling
-    }
-    return null
-  }
-
-  const fetchSubscriptionExpiry = async () => {
-    try {
-      const res = await fetch('/api/subscriptions/status', {
-        credentials: 'include',
-        cache: 'no-store',
-      })
-      if (res.ok) {
-        const status = await res.json()
-        if (status.expiresAt) {
-          setSubscriptionExpiresAt(status.expiresAt)
-        }
-        if (status.scheduledChange) {
-          setScheduledChange(status.scheduledChange)
-        }
-      }
-    } catch {
-      /* keep existing state */
-    }
-  }
-
-  const fetchPharmacyInfo = async () => {
-    try {
-      const response = await fetch('/api/pharmacy/settings')
-      if (response.ok) {
-        const data = await response.json()
-        const info = {
-          name: data.name,
-          license: data.license,
-          location: data.location,
-          phone: data.phone,
-          email: data.email
-        }
-        setPharmacyInfo(info)
-        setEditInfo({
-          name: data.name,
-          location: data.location,
-          phone: data.phone,
-          email: data.email,
-          currency: data.currency || 'RWF',
-          language: data.language || 'en'
-        })
-        setCurrentPlan(data.subscription)
-        if (data.subscriptionExpiresAt) {
-          setSubscriptionExpiresAt(data.subscriptionExpiresAt)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching pharmacy info:', error)
-      // Mock data for demo
+      setCurrentPlan(data.subscription)
+    } else if (settingsQuery.isError) {
       setPharmacyInfo({
         name: 'Pryrox Pharmacy',
         license: 'PH-2024-001',
@@ -523,7 +181,7 @@ export default function SettingsPage() {
         phone: '+250788123456',
         email: 'info@pryrox.com',
         currency: 'RWF',
-        language: 'en'
+        language: 'en',
       })
       setEditInfo({
         name: 'Pryrox Pharmacy',
@@ -531,251 +189,75 @@ export default function SettingsPage() {
         phone: '+250788123456',
         email: 'info@pryrox.com',
         currency: 'RWF',
-        language: 'en'
+        language: 'en',
       })
+    }
+  }, [settingsQuery.data, settingsQuery.isError])
+
+  const loading =
+    settingsQuery.isPending ||
+    brandingQuery.isPending ||
+    billingQuery.isPending ||
+    securityQuery.isPending ||
+    twoFaQuery.isPending ||
+    apiKeysQuery.isPending ||
+    locationsQuery.isPending
+
+  useEffect(() => {
+    const onFocus = () => {
+      void invalidateSettings()
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [invalidateSettings])
+
+  const handleLogoUpload = async (file: File) => {
+    try {
+      const data = await uploadLogoMutation.mutateAsync(file)
+      setBranding({ ...branding, logoUrl: data.url })
+      alert('Logo uploaded successfully!')
+    } catch (error) {
+      console.error('Error uploading logo:', error)
+      alert('Failed to upload logo')
+    }
+  }
+
+  const handleSaveBranding = async () => {
+    try {
+      await updateBrandingMutation.mutateAsync(branding)
+      alert('Branding updated successfully!')
+    } catch (error) {
+      console.error('Error updating branding:', error)
+      alert('Failed to update branding')
     }
   }
 
   const handleSaveEdit = async () => {
     try {
-      const response = await fetch('/api/pharmacy/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editInfo)
-      })
-      
-      if (response.ok) {
-        setPharmacyInfo({...pharmacyInfo, ...editInfo})
-        setIsEditing(false)
-        alert('Information updated successfully!')
-      }
+      await updateSettingsMutation.mutateAsync(editInfo)
+      setPharmacyInfo({ ...pharmacyInfo, ...editInfo })
+      setIsEditing(false)
+      alert('Information updated successfully!')
     } catch (error) {
       console.error('Error updating pharmacy info:', error)
     }
   }
 
-  const handlePlanChange = async (planIdOrName: string) => {
-    const plan = plans.find(
-      (p) => p.id === planIdOrName || p.name === planIdOrName
-    )
-    if (!plan) {
-      alert('Plan not found. Please refresh the page and try again.')
-      return
-    }
-
-    if (plan.current) return
-
-    if (plan.plan_type === 'branch_addon') {
-      setAddonPlanTarget(plan)
-      setAddonCheckoutOpen(true)
-      return
-    }
-
-    if (plan.price === currentPlanPrice()) {
-      alert('You are already on this plan tier.')
-      return
-    }
-
-    if (isPlanDowngrade(plan)) {
-      setSelectedDowngradePlan(plan)
-      void fetchSubscriptionExpiry()
-      setIsDowngradeDialogOpen(true)
-      return
-    }
-
-    await handleUpgrade(plan)
-  }
-
-  const confirmScheduleDowngrade = async () => {
-    if (!selectedDowngradePlan) return
-    setIsSchedulingDowngrade(true)
-    try {
-      const result = await scheduleSubscriptionDowngrade(
-        selectedDowngradePlan.id || selectedDowngradePlan.name
-      )
-      setIsDowngradeDialogOpen(false)
-      setSelectedDowngradePlan(null)
-      await fetchScheduledChangeState()
-      await fetchPharmacyInfo()
-      const effective = formatEffectiveDate(result.effectiveAt)
-      const currentName = result.currentPlan.name
-      alert(
-        `Your ${currentName} plan remains active until ${effective}.\nYour plan will change to ${result.scheduledPlan.name} on renewal.`
-      )
-    } catch (error) {
-      alert(
-        error instanceof Error
-          ? error.message
-          : 'Could not schedule downgrade.'
-      )
-    } finally {
-      setIsSchedulingDowngrade(false)
-    }
-  }
-
-  const handleCancelScheduledDowngrade = async () => {
-    try {
-      await cancelScheduledChange()
-      setScheduledChange(null)
-      alert('Scheduled downgrade canceled.')
-    } catch (error) {
-      alert(
-        error instanceof Error ? error.message : 'Could not cancel scheduled change.'
-      )
-    }
-  }
-
-  const handleUpgrade = async (plan: SubscriptionPlan) => {
-    // Paid plan - open payment dialog (upgrades only; free→paid and paid→higher)
-    setSelectedUpgradePlan(plan)
-    setUpgradePaymentData({
-      paymentMethod: 'kpay',
-      phone: pharmacyInfo.phone || '',
-      email: pharmacyInfo.email || ''
-    })
-    setIsUpgradeDialogOpen(true)
-  }
-
-  const processUpgradePayment = async () => {
-    if (!selectedUpgradePlan) return
-
-    const plan = selectedUpgradePlan
-    const { paymentMethod, phone, email } = upgradePaymentData
-
-    if (!email) {
-      alert('Please enter your email.')
-      return
-    }
-    if (paymentMethod === 'kpay' && !phone) {
-      alert('Please enter your Mobile Money number.')
-      return
-    }
-
-    setIsUpgradePaymentLoading(true)
-    try {
-      const subscription = await createPendingSubscription(plan.id || plan.name)
-
-      if (paymentMethod === 'polar') {
-        const polar = await startPolarSubscriptionCheckout({
-          planId: plan.id || plan.name,
-          subscriptionId: subscription.id,
-          customerEmail: email,
-          customerName: pharmacyInfo.name || 'Pharmacy Customer',
-          customerPhone: phone,
-          returnContext: 'settings',
-        })
-        setIsUpgradeDialogOpen(false)
-        window.location.href = polar.checkoutUrl
-        return
-      }
-
-      const phoneValidation = await fetch('/api/test-validation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber: phone }),
-      })
-      const phoneResult = await phoneValidation.json()
-
-      if (!phoneResult.phone?.isValid) {
-        alert('Please enter a valid Rwanda phone number (e.g. 0788123456)')
-        return
-      }
-
-      const paymentData = await startKpaySubscriptionCheckout({
-        plan,
-        subscriptionId: subscription.id,
-        customerName: pharmacyInfo.name || 'Pharmacy Customer',
-        customerPhone: phoneResult.phone.formatted,
-        customerEmail: email,
-        bankId: phoneResult.phone.kpayBankId,
-      })
-
-      setIsUpgradeDialogOpen(false)
-
-      if (paymentData.success && paymentData.transaction?.checkoutUrl) {
-        window.location.href = paymentData.transaction.checkoutUrl
-        return
-      }
-
-      if (paymentData.success && paymentData.transaction?.id) {
-        alert(
-          `Payment initiated! Check your phone (${phoneResult.phone.formatted}) for the prompt.`
-        )
-        pollKpayTransaction(
-          paymentData.transaction.id,
-          async () => {
-            setCurrentPlan(plan.name.toLowerCase())
-            await fetchPharmacyInfo()
-            await fetchBillingInfo()
-            alert(`Payment successful! You are now on the ${plan.name} plan.`)
-          },
-          (msg) => alert(msg)
-        )
-      } else {
-        alert(
-          paymentData.kpayResponse?.statusdesc ||
-            'Payment failed. Please try again.'
-        )
-      }
-    } catch (error) {
-      console.error('Upgrade error:', error)
-      alert(
-        error instanceof Error
-          ? error.message
-          : 'An error occurred while processing your upgrade.'
-      )
-    } finally {
-      setIsUpgradePaymentLoading(false)
-    }
-  }
-
-  const fetchStockLocations = async () => {
-    try {
-      const response = await fetch('/api/settings/locations')
-      if (response.ok) {
-        const data = await response.json()
-        setStockLocations(data)
-      }
-    } catch (error) {
-      console.error('Error fetching locations:', error)
-    }
-  }
-
-  const fetchApiKeys = async () => {
-    try {
-      const response = await fetch('/api/settings/api-keys')
-      if (response.ok) {
-        const data = await response.json()
-        setApiKeys(data)
-      }
-    } catch (error) {
-      console.error('Error fetching API keys:', error)
-    }
-  }
-
   const handleAddLocation = async () => {
     try {
-      const response = await fetch('/api/settings/locations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newLocation)
-      })
-      
-      const result = await response.json()
-      
-      if (response.ok && result.success) {
-        await fetchStockLocations()
-        setIsAddLocationOpen(false)
-        setNewLocation({ name: '', description: '' })
-        alert('Location added successfully!')
-      } else {
-        alert(result.error || 'Failed to add location')
-      }
+      await createLocationMutation.mutateAsync(newLocation)
+      setIsAddLocationOpen(false)
+      setNewLocation({ name: '', description: '' })
+      alert('Location added successfully!')
     } catch (error) {
       console.error('Error adding location:', error)
-      alert('Failed to add location')
+      alert(
+        error instanceof Error ? error.message : 'Failed to add location',
+      )
     }
   }
+
+  const activePlanLabel = planDisplayName(currentPlan)
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen">
@@ -815,7 +297,7 @@ export default function SettingsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold capitalize">{currentPlan}</div>
+            <div className="text-2xl font-bold">{activePlanLabel}</div>
             <div className="h-8 mt-2 drop-shadow-md">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={[{v:20000},{v:22000},{v:25000},{v:25000},{v:25000},{v:25000}]}>
@@ -825,7 +307,9 @@ export default function SettingsPage() {
             </div>
             <div className="flex items-center text-xs text-muted-foreground mt-1">
               <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
-              {plans.find(p => p.name.toLowerCase() === currentPlan)?.price.toLocaleString()} RWF/month
+              {billingInfo.amount > 0
+                ? `${billingInfo.amount.toLocaleString()} RWF/month`
+                : 'Manage plan in Billing tab'}
             </div>
           </CardContent>
         </Card>
@@ -1065,25 +549,14 @@ export default function SettingsPage() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between p-3 border rounded-lg">
                     <div>
-                      <p className="font-medium capitalize">{currentPlan} Plan</p>
+                      <p className="font-medium">{activePlanLabel} Plan</p>
                       <p className="text-sm text-muted-foreground">
-                        {plans.find(p => p.name.toLowerCase() === currentPlan)?.price.toLocaleString()} RWF/month
+                        {billingInfo.amount > 0
+                          ? `${billingInfo.amount.toLocaleString()} RWF/month`
+                          : 'See plans below'}
                       </p>
                     </div>
                     <Badge>Active</Badge>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium mb-2">Features included:</p>
-                    <ScrollArea className="h-32">
-                      <ul className="text-sm text-muted-foreground space-y-1">
-                        {plans.find(p => p.name.toLowerCase() === currentPlan)?.features.map((feature, index) => (
-                          <li key={index} className="flex items-center">
-                            <Check className="h-3 w-3 mr-2 text-green-600" />
-                            {feature}
-                          </li>
-                        ))}
-                      </ul>
-                    </ScrollArea>
                   </div>
                   <Button variant="outline" onClick={() => setIsBillingOpen(true)} className="w-full">
                     <CreditCard className="mr-2 h-4 w-4" />
@@ -1154,6 +627,16 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </div>
+
+          <SubscriptionPlanManagement
+            customerName={pharmacyInfo.name || 'Pharmacy customer'}
+            customerEmail={pharmacyInfo.email}
+            customerPhone={pharmacyInfo.phone}
+            checkoutReturnContext="settings"
+            onPlanChanged={() => {
+              void invalidateSettings()
+            }}
+          />
         </TabsContent>
         
         <TabsContent value="notifications" className="space-y-4">
@@ -1373,14 +856,11 @@ export default function SettingsPage() {
                       setIs2FASetupOpen(true)
                     } else {
                       if (confirm('Disable 2FA? This will make your account less secure.')) {
-                        const response = await fetch('/api/settings/security/2fa', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ enabled: false })
-                        })
-                        if (response.ok) {
-                          setIs2FAEnabled(false)
+                        try {
+                          await setTwoFaMutation.mutateAsync(false)
                           alert('2FA disabled')
+                        } catch {
+                          alert('Failed to disable 2FA')
                         }
                       }
                     }
@@ -1793,24 +1273,17 @@ export default function SettingsPage() {
             <Button onClick={async () => {
               if (newApiKey.name && newApiKey.key) {
                 try {
-                  const response = await fetch('/api/settings/api-keys', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newApiKey)
-                  })
-                  const result = await response.json()
-                  if (response.ok && result.success) {
-                    await fetchApiKeys()
-                    setIsAddApiKeyOpen(false)
-                    setNewApiKey({ name: '', key: '' })
-                    alert('API Key added successfully!')
-                  } else {
-                    console.error('API Error:', result)
-                    alert(result.error || 'Failed to add API key. Please check console for details.')
-                  }
+                  await createApiKeyMutation.mutateAsync(newApiKey)
+                  setIsAddApiKeyOpen(false)
+                  setNewApiKey({ name: '', key: '' })
+                  alert('API Key added successfully!')
                 } catch (error) {
                   console.error('Error adding API key:', error)
-                  alert('Network error: Failed to add API key. Please try again.')
+                  alert(
+                    error instanceof Error
+                      ? error.message
+                      : 'Failed to add API key. Please try again.',
+                  )
                 }
               }
             }} disabled={!newApiKey.name || !newApiKey.key}>
@@ -1860,22 +1333,16 @@ export default function SettingsPage() {
             <Button variant="outline" onClick={() => setIsEditApiKeyOpen(false)}>Cancel</Button>
             <Button onClick={async () => {
               try {
-                const response = await fetch('/api/settings/api-keys', {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(selectedApiKey)
-                })
-                const result = await response.json()
-                if (response.ok && result.success) {
-                  await fetchApiKeys()
-                  setIsEditApiKeyOpen(false)
-                  alert('API Key updated successfully!')
-                } else {
-                  alert(result.error || 'Failed to update API key')
-                }
+                await updateApiKeyMutation.mutateAsync(selectedApiKey)
+                setIsEditApiKeyOpen(false)
+                alert('API Key updated successfully!')
               } catch (error) {
                 console.error('Error updating API key:', error)
-                alert('Failed to update API key')
+                alert(
+                  error instanceof Error
+                    ? error.message
+                    : 'Failed to update API key',
+                )
               }
             }}>
               Save Changes
@@ -1906,15 +1373,9 @@ export default function SettingsPage() {
             <Button onClick={async () => {
               if (newIp.ip) {
                 try {
-                  const response = await fetch('/api/settings/security/ip-whitelist/manage', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newIp)
-                  })
-                  const result = await response.json()
-                  if (response.ok && result.success) {
+                  const result = await addIpMutation.mutateAsync(newIp)
+                  if (result.success) {
                     setNewIp({ ip: '', description: '' })
-                    await fetchIpWhitelist()
                     alert('IP added successfully!')
                   } else {
                     alert(result.error || 'Failed to add IP')
@@ -1939,15 +1400,8 @@ export default function SettingsPage() {
                       </div>
                       <Button variant="outline" size="sm" onClick={async () => {
                         try {
-                          const response = await fetch('/api/settings/security/ip-whitelist/manage', {
-                            method: 'DELETE',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ id: ip.id })
-                          })
-                          if (response.ok) {
-                            await fetchIpWhitelist()
-                            alert('IP removed successfully!')
-                          }
+                          await removeIpMutation.mutateAsync(ip.id)
+                          alert('IP removed successfully!')
                         } catch (error) {
                           console.error('Error removing IP:', error)
                         }
@@ -1991,16 +1445,15 @@ export default function SettingsPage() {
                 ) : (
                   <Button onClick={async () => {
                     try {
-                      const response = await fetch('/api/settings/security/2fa/setup', { method: 'POST' })
-                      const data = await response.json()
-                      if (response.ok) {
-                        setQrCode(data.qrCode)
-                        setBackupCodes(data.backupCodes)
-                      } else {
-                        alert(data.error || 'Failed to generate QR code')
-                      }
+                      const data = await setupTwoFaMutation.mutateAsync()
+                      setQrCode(data.qrCode)
+                      setBackupCodes(data.backupCodes)
                     } catch (err) {
-                      alert('Failed to generate QR code')
+                      alert(
+                        err instanceof Error
+                          ? err.message
+                          : 'Failed to generate QR code',
+                      )
                     }
                   }} className="w-full">
                     Generate QR Code
@@ -2022,19 +1475,12 @@ export default function SettingsPage() {
                 </div>
                 <Button onClick={async () => {
                   try {
-                    const response = await fetch('/api/settings/security/2fa/verify', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ token: verifyCode })
-                    })
-                    if (response.ok) {
-                      setSetupStep('backup')
-                    } else {
-                      const data = await response.json()
-                      alert(data.error || 'Invalid code')
-                    }
+                    await verifyTwoFaMutation.mutateAsync(verifyCode)
+                    setSetupStep('backup')
                   } catch (err) {
-                    alert('Verification failed')
+                    alert(
+                      err instanceof Error ? err.message : 'Verification failed',
+                    )
                   }
                 }} disabled={verifyCode.length !== 6} className="w-full">
                   Verify
@@ -2055,7 +1501,7 @@ export default function SettingsPage() {
                   Save these codes. Each can be used once if you lose access to your authenticator.
                 </p>
                 <Button onClick={() => {
-                  setIs2FAEnabled(true)
+                  void twoFaQuery.refetch()
                   setIs2FASetupOpen(false)
                   setSetupStep('qr')
                   setQrCode('')
@@ -2070,344 +1516,7 @@ export default function SettingsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={isUpgradeDialogOpen}
-        onOpenChange={(open) => {
-          if (isUpgradePaymentLoading) return
-          setIsUpgradeDialogOpen(open)
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Upgrade to {selectedUpgradePlan?.name} Plan</DialogTitle>
-            <DialogDescription>
-              {isUpgradePaymentLoading
-                ? 'Starting payment — please wait…'
-                : 'Complete payment to upgrade your subscription'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex justify-between items-center">
-                <span className="font-medium">Plan:</span>
-                <span className="text-lg font-bold">{selectedUpgradePlan?.name}</span>
-              </div>
-              <div className="flex justify-between items-center mt-2">
-                <span className="font-medium">Amount:</span>
-                <span className="text-2xl font-bold text-blue-600">
-                  {selectedUpgradePlan?.price.toLocaleString()} RWF
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">Billed monthly</p>
-            </div>
 
-            <div className="space-y-3">
-              <div className="grid gap-2">
-                <Label>Payment Method</Label>
-                <Select 
-                  value={upgradePaymentData.paymentMethod} 
-                  onValueChange={(value) => setUpgradePaymentData({...upgradePaymentData, paymentMethod: value})}
-                  disabled={isUpgradePaymentLoading}
-                >
-                  <SelectTrigger disabled={isUpgradePaymentLoading}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="kpay">Mobile Money — KPay (Rwanda)</SelectItem>
-                    {polarEnabled ? (
-                      <SelectItem value="polar">Card / international — Polar</SelectItem>
-                    ) : null}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {upgradePaymentData.paymentMethod === 'kpay' ? (
-                <div className="grid gap-2">
-                  <Label>Phone Number</Label>
-                  <Input
-                    placeholder="0788123456"
-                    value={upgradePaymentData.phone}
-                    disabled={isUpgradePaymentLoading}
-                    onChange={(e) => setUpgradePaymentData({...upgradePaymentData, phone: e.target.value})}
-                  />
-                </div>
-              ) : null}
-
-              <div className="grid gap-2">
-                <Label>Email</Label>
-                <Input
-                  type="email"
-                  placeholder="your@email.com"
-                  value={upgradePaymentData.email}
-                  disabled={isUpgradePaymentLoading}
-                  onChange={(e) => setUpgradePaymentData({...upgradePaymentData, email: e.target.value})}
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setIsUpgradeDialogOpen(false)}
-                disabled={isUpgradePaymentLoading}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => void processUpgradePayment()}
-                disabled={
-                  isUpgradePaymentLoading ||
-                  !upgradePaymentData.email ||
-                  (upgradePaymentData.paymentMethod === 'kpay' &&
-                    !upgradePaymentData.phone)
-                }
-                className="flex-1"
-              >
-                {isUpgradePaymentLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing…
-                  </>
-                ) : (
-                  <>
-                    <CreditCard className="mr-2 h-4 w-4" />
-                    Pay Now
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {scheduledChange && (
-        <Card className="border-amber-200 bg-amber-50/50">
-          <CardHeader>
-            <CardTitle className="text-sm">Scheduled plan change</CardTitle>
-            <CardDescription>
-              Your current plan stays active until renewal. The change applies automatically.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Current plan</TableHead>
-                  <TableHead>Scheduled plan</TableHead>
-                  <TableHead>Effective date</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell className="font-medium capitalize">
-                    {scheduledChange.currentPlan?.name ?? currentPlan}
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {scheduledChange.targetPlan.name}
-                  </TableCell>
-                  <TableCell>
-                    {formatEffectiveDate(scheduledChange.effectiveAt)}
-                  </TableCell>
-                  <TableCell className="text-right space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void handleCancelScheduledDowngrade()}
-                    >
-                      Cancel
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-            {planLimitsHint && (
-              <p className="text-xs text-amber-800 mt-3 flex items-start gap-2">
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                {planLimitsHint}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      <Dialog open={isDowngradeDialogOpen} onOpenChange={setIsDowngradeDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Downgrade</DialogTitle>
-            <DialogDescription asChild>
-              <div className="space-y-4 text-sm text-muted-foreground">
-                {selectedDowngradePlan && (
-                  <>
-                    <div className="rounded-lg border bg-muted/50 px-4 py-3">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Plan change takes effect on
-                      </p>
-                      <p className="mt-1 text-lg font-semibold text-foreground flex items-center gap-2">
-                        <Clock className="h-4 w-4 shrink-0" />
-                        {getDowngradeEffectiveDateLabel() ?? (
-                          <span className="text-base font-normal">
-                            Loading billing period…
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                    <p>
-                      Your{' '}
-                      <span className="font-medium text-foreground">
-                        {scheduledChange?.currentPlan?.name ??
-                          plans.find((p) => p.current)?.name ??
-                          currentPlan}
-                      </span>{' '}
-                      plan stays active until then. On that date it changes to{' '}
-                      <span className="font-medium text-foreground">
-                        {selectedDowngradePlan.name}
-                      </span>
-                      . You keep your current features until the change applies.
-                    </p>
-                    {scheduledChange?.effectiveAt && (
-                      <p className="text-xs">
-                        Confirming will replace your previous scheduled change (
-                        {scheduledChange.targetPlan.name}).
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setIsDowngradeDialogOpen(false)}
-              disabled={isSchedulingDowngrade}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => void confirmScheduleDowngrade()}
-              disabled={isSchedulingDowngrade}
-            >
-              {isSchedulingDowngrade ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Scheduling…
-                </>
-              ) : (
-                'Confirm downgrade'
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Main subscription plans</CardTitle>
-          <CardDescription>Upgrade or schedule a downgrade for your pharmacy&apos;s primary plan</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            {plans.map((plan) => (
-              <div key={plan.id || plan.name} className={`border rounded-lg p-6 ${plan.current ? 'border-blue-500 bg-blue-50' : ''}`}>
-                <div className="text-center mb-4">
-                  <h3 className="font-semibold text-lg">{plan.name}</h3>
-                  <div className="text-3xl font-bold text-blue-600">{plan.price.toLocaleString()} RWF</div>
-                  <p className="text-sm text-muted-foreground">per month</p>
-                </div>
-                <ScrollArea className="h-32 mb-4">
-                  <ul className="space-y-2">
-                    {plan.features.map((feature, index) => (
-                      <li key={index} className="flex items-center text-sm">
-                        <Check className="h-3 w-3 mr-2 text-green-600" />
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-                </ScrollArea>
-                {plan.current ? (
-                  <Button disabled className="w-full">
-                    <Check className="mr-2 h-4 w-4" />
-                    Current Plan
-                  </Button>
-                ) : (
-                  <Button 
-                    onClick={() => void handlePlanChange(plan.id || plan.name)}
-                    variant={isPlanUpgrade(plan) ? 'default' : 'outline'}
-                    className="w-full"
-                    data-plan={plan.name}
-                  >
-                    <ArrowUpRight className="mr-2 h-4 w-4" />
-                    {isPlanUpgrade(plan)
-                      ? 'Upgrade'
-                      : 'Downgrade'}
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {addonPlans.length > 0 && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Building2 className="h-4 w-4" />
-              Branch add-ons
-            </CardTitle>
-            <CardDescription>
-              Extra branch locations billed separately — not a change to your main plan.
-              Purchase when you need more locations than your plan includes.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-3">
-              {addonPlans.map((plan) => (
-                <div key={plan.id} className="border rounded-lg p-6 border-dashed">
-                  <div className="text-center mb-4">
-                    <Badge variant="secondary" className="mb-2">Add-on</Badge>
-                    <h3 className="font-semibold text-lg">{plan.name}</h3>
-                    <div className="text-3xl font-bold text-blue-600">{plan.price.toLocaleString()} RWF</div>
-                    <p className="text-sm text-muted-foreground">per month · one branch</p>
-                  </div>
-                  {plan.monthly_tx_limit > 0 && (
-                    <p className="text-sm text-muted-foreground text-center mb-4">
-                      {plan.monthly_tx_limit.toLocaleString()} transactions / month
-                    </p>
-                  )}
-                  <Button
-                    className="w-full"
-                    onClick={() => {
-                      setAddonPlanTarget(plan)
-                      setAddonCheckoutOpen(true)
-                    }}
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add branch with this plan
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <BranchAddonCheckoutDialog
-        open={addonCheckoutOpen}
-        onOpenChange={setAddonCheckoutOpen}
-        addonPlans={addonPlans.map(toSaasAddonPlan)}
-        mode="new_branch"
-        initialPlanId={addonPlanTarget?.id}
-        customerEmail={pharmacyInfo.email}
-        customerPhone={pharmacyInfo.phone}
-        customerName={pharmacyInfo.name || 'Pharmacy customer'}
-        onSuccess={() => {
-          void fetchPlans()
-          alert('Branch add-on purchased successfully')
-        }}
-      />
     </div>
   )
 }

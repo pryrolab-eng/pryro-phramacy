@@ -420,7 +420,9 @@ export default function AdminSettingsPage() {
                 <Building2 className="h-5 w-5" />
                 Stock Locations
               </CardTitle>
-              <CardDescription>Manage warehouse and branch locations</CardDescription>
+              <CardDescription>
+                Default templates for new pharmacies. Per-pharmacy locations are managed in pharmacy settings.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">

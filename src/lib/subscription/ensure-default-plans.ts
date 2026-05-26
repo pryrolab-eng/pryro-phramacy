@@ -30,6 +30,11 @@ export async function ensureDefaultSubscriptionPlans(
     missing.map((plan) => ({
       ...plan,
       is_active: true,
+      plan_type: "main",
+      billing_period: plan.price === 0 ? "free" : "monthly",
+      max_branches: 1,
+      max_users: 5,
+      monthly_tx_limit: 500,
     }))
   );
 

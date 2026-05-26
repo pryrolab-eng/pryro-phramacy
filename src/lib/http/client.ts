@@ -30,7 +30,10 @@ function errorMessageFromBody(data: unknown, fallback: string): string {
  * `fetch` then `res.json()`, throwing {@link ApiError} when `!res.ok`.
  */
 export async function fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const res = await fetch(input, init);
+  const res = await fetch(input, {
+    cache: "no-store",
+    ...init,
+  });
   let data: unknown = {};
   try {
     data = await res.json();

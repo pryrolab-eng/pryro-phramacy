@@ -192,11 +192,10 @@ function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number
 export default function SalesPage() {
   const salesQuery = useSalesList()
   const analyticsQuery = useSalesAnalytics()
-  const [filteredSales, setFilteredSales] = useState<Sale[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedPeriod, setSelectedPeriod] = useState('today')
 
-  const sales = salesQuery.data?.sales ?? []
+  const sales = useMemo(() => salesQuery.data?.sales ?? [], [salesQuery.data])
   const stats = salesQuery.data?.stats ?? {
     todayTotal: 0,
     weekTotal: 0,
@@ -217,25 +216,21 @@ export default function SalesPage() {
   )
   const loading = salesQuery.isPending
 
-  useEffect(() => {
-    filterSales()
-  }, [sales, searchTerm, selectedPeriod])
-
-  const filterSales = () => {
+  const filteredSales = useMemo(() => {
     let filtered = sales
-    
+
     if (searchTerm) {
-      filtered = filtered.filter(sale => 
+      filtered = filtered.filter(sale =>
         sale.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
         sale.paymentMethod.toLowerCase().includes(searchTerm.toLowerCase())
       )
     }
-    
+
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
     const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
-    
+
     if (selectedPeriod === 'today') {
       filtered = filtered.filter(sale => new Date(sale.date) >= today)
     } else if (selectedPeriod === 'week') {
@@ -243,9 +238,9 @@ export default function SalesPage() {
     } else if (selectedPeriod === 'month') {
       filtered = filtered.filter(sale => new Date(sale.date) >= monthAgo)
     }
-    
-    setFilteredSales(filtered)
-  }
+
+    return filtered
+  }, [sales, searchTerm, selectedPeriod])
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen">

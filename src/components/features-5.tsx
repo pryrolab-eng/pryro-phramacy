@@ -4,7 +4,7 @@ import PolarPricing from '@/components/polar-pricing'
 const integrations = [
     { name: 'KPay', description: 'Accept mobile money and card payments directly at the counter.', icon: '💳' },
     { name: 'RSSB Insurance', description: 'Automatically calculate how much insurance covers for each medicine.', icon: '🏥' },
-    { name: 'Supabase', description: 'Your data is saved instantly and stays safe — always up to date.', icon: '⚡' },
+    { name: 'Secure Cloud Storage', description: 'Your data is encrypted, backed up automatically, and always up to date.', icon: '🔒' },
 ]
 
 export default function FeaturesSection() {

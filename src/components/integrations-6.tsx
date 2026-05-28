@@ -14,9 +14,9 @@ const integrations = [
         icon: '🏥',
     },
     {
-        name: 'Supabase',
-        description: 'Real-time database, auth, and secure storage.',
-        icon: '⚡',
+        name: 'Secure Cloud Storage',
+        description: 'Encrypted, real-time data sync with automatic backups.',
+        icon: '🔒',
     },
 ]
 

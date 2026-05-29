@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../../supabase/server'
 
 export async function GET() {
@@ -10,20 +11,12 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!userPharmacy) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 404 })
-    }
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
     const { data: apiKeys, error } = await supabase
       .from('api_keys')
       .select('*')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .order('created_at', { ascending: false })
 
     if (error) throw error
@@ -43,16 +36,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: userPharmacy, error: pharmacyError } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (pharmacyError || !userPharmacy) {
-      console.error('Pharmacy lookup error:', pharmacyError)
-      return NextResponse.json({ success: false, error: 'Pharmacy not found' }, { status: 404 })
-    }
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
     const body = await request.json()
     
@@ -63,7 +47,7 @@ export async function POST(request: NextRequest) {
     const { data: apiKey, error } = await supabase
       .from('api_keys')
       .insert({
-        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_id: pharmacyId,
         name: body.name,
         key_hash: body.key,
         key_prefix: body.key.substring(0, 8),

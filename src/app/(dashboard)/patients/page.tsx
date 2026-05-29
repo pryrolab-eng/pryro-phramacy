@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Users, UserPlus, Calendar, Search, RefreshCw } from 'lucide-react'
+import { DashboardPageHeader, DashboardPageShell } from '@/components/dashboard'
 
 interface Patient {
   id: string
@@ -45,25 +46,23 @@ export default function PatientsPage() {
   }
 
   return (
-    <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-      <div className="flex items-center justify-between space-y-2">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Patient Management</h2>
-          <p className="text-muted-foreground">
-            Manage patient records, prescriptions, and medical information
-          </p>
-        </div>
-        <div className="flex items-center space-x-2">
-          <Button onClick={fetchPatients} variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-          <Button>
-            <UserPlus className="h-4 w-4 mr-2" />
-            Add Patient
-          </Button>
-        </div>
-      </div>
+    <DashboardPageShell>
+      <DashboardPageHeader
+        title="Patient Management"
+        description="Manage patient records, prescriptions, and medical information"
+        actions={
+          <div className="flex items-center space-x-2">
+            <Button onClick={fetchPatients} variant="outline" size="sm">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+            <Button>
+              <UserPlus className="h-4 w-4 mr-2" />
+              Add Patient
+            </Button>
+          </div>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
@@ -162,6 +161,6 @@ export default function PatientsPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </DashboardPageShell>
   )
 }

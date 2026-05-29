@@ -26,8 +26,13 @@ Pryrox gates pharmacy capabilities by subscription plan using a database-backed 
 | Branches | `branches.access`, `branches.create` | |
 | Staff | `staff.access`, `staff.invite` | Invite enforces `limit.users` |
 | Settings | `settings.access` | Always allowed when subscribed |
+| Settings | `customization` | Per-pharmacy logo, colors, custom domain (`/settings?tab=branding`) |
 | Billing | `billing.self_serve` | Self-serve plan changes |
 | Limits | `limit.users`, `limit.branches`, `limit.transactions_per_branch` | Values from plan columns |
+
+## Active pharmacy context
+
+Users with multiple `pharmacy_users` rows use `users.active_pharmacy_id` (set via user menu or `POST /api/me/active-pharmacy`). APIs that call `getRequestPharmacyId()` use this tenant. See [pharmacy-tenant-architecture.md](./pharmacy-tenant-architecture.md).
 
 ## Enforcement
 

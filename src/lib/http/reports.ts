@@ -1,8 +1,13 @@
 import { fetchJson } from "./client";
+import {
+  buildBranchScopeQueryString,
+  type BranchScopeQuery,
+} from "@/lib/pharmacy/branch-scope";
 
 export const reportsKeys = {
   all: ["reports"] as const,
-  sales: () => [...reportsKeys.all, "sales"] as const,
+  sales: (scope?: BranchScopeQuery) =>
+    [...reportsKeys.all, "sales", scope ?? {}] as const,
   inventory: () => [...reportsKeys.all, "inventory"] as const,
 };
 
@@ -33,9 +38,13 @@ const EMPTY_SALES: ReportsSalesData = {
   activeCustomers: 0,
 };
 
-export async function getReportsSales(): Promise<ReportsSalesData> {
+export async function getReportsSales(
+  scope?: BranchScopeQuery,
+): Promise<ReportsSalesData> {
   try {
-    return await fetchJson<ReportsSalesData>("/api/reports/sales");
+    return await fetchJson<ReportsSalesData>(
+      `/api/reports/sales${buildBranchScopeQueryString(scope ?? {})}`,
+    );
   } catch {
     return EMPTY_SALES;
   }

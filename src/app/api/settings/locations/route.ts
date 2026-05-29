@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
 import { resolveIsAppPlatformAdmin } from '@/lib/platform-admin'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 
 const DEFAULT_LOCATIONS = [
   { id: '1', name: 'Main Store', description: 'Primary location', is_active: true },
@@ -19,19 +20,15 @@ export async function GET() {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .maybeSingle()
-
-    if (!userPharmacy?.pharmacy_id) {
+    let pharmacyId: string | null = null
+    try {
+      pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+    } catch {
       const isPlatformAdmin = await resolveIsAppPlatformAdmin(supabase, user.id, null)
       if (isPlatformAdmin) {
         return NextResponse.json(DEFAULT_LOCATIONS)
@@ -42,7 +39,7 @@ export async function GET() {
     const { data: locations, error } = await supabase
       .from('stock_locations')
       .select('*')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .eq('is_active', true)
       .order('created_at', { ascending: true })
 
@@ -66,19 +63,15 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .maybeSingle()
-
-    if (!userPharmacy?.pharmacy_id) {
+    let pharmacyId: string
+    try {
+      pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+    } catch {
       const isPlatformAdmin = await resolveIsAppPlatformAdmin(supabase, user.id, null)
       if (isPlatformAdmin) {
         return NextResponse.json(
@@ -94,14 +87,14 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    
+
     const { data: location, error } = await supabase
       .from('stock_locations')
       .insert({
-        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_id: pharmacyId,
         name: body.name,
         description: body.description || '',
-        is_active: true
+        is_active: true,
       })
       .select()
       .single()
@@ -114,7 +107,7 @@ export async function POST(request: NextRequest) {
             error:
               'Stock locations are not set up yet. Run database migrations (stock_locations).',
           },
-          { status: 503 }
+          { status: 503 },
         )
       }
       throw error
@@ -128,7 +121,7 @@ export async function POST(request: NextRequest) {
           error:
             'Stock locations are not set up yet. Run database migrations (stock_locations).',
         },
-        { status: 503 }
+        { status: 503 },
       )
     }
     console.error('Error creating location:', error)

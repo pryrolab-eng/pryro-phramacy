@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
+import { requireSessionBranchId } from '@/lib/pharmacy/get-session-branch'
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,26 +12,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user's pharmacy_id
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+    const branchId = await requireSessionBranchId(supabase, user.id)
 
-    if (!userPharmacy) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
-    }
-    
     const body = await request.json()
-    console.log('Quick add drug - pharmacy_id:', userPharmacy.pharmacy_id)
+    console.log('Quick add drug - pharmacy_id:', pharmacyId)
     console.log('Quick add drug - body:', body)
     
     // Add to medications table
     const { data: medication, error: medError } = await supabase
       .from('medications')
       .insert({
-        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_id: pharmacyId,
         name: body.name,
         category: body.category,
         manufacturer: body.manufacturer,
@@ -47,7 +41,8 @@ export async function POST(request: NextRequest) {
     const { data: inventory, error: invError } = await supabase
       .from('inventory')
       .insert({
-        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_id: pharmacyId,
+        branch_id: branchId,
         medication_id: medication.id,
         batch_number: body.batch_number,
         quantity_in_stock: body.initial_stock || 0,

@@ -30,6 +30,7 @@ import {
   getAdminPharmacyDetail,
   type AdminPharmacyRow,
 } from "@/lib/http/admin/pharmacies";
+import { AdminPharmacyBrandingSection } from "@/components/admin/admin-pharmacy-branding-section";
 import {
   pharmacyAccessVariant,
   resolvePharmacyPlanDisplay,
@@ -248,6 +249,7 @@ function AdminPharmacyDetailContent({
   detail,
   fallbackPlan,
 }: ContentProps) {
+  const pharmacyId = resolvePharmacyId(pharmacy);
   const planName = detail?.plan.name ?? fallbackPlan.name;
   const planPriceLabel = detail?.plan.priceLabel ?? fallbackPlan.priceLabel;
   const planIsFree = detail?.plan.isFree ?? fallbackPlan.isFree;
@@ -295,6 +297,13 @@ function AdminPharmacyDetailContent({
             </section>
 
             <Separator />
+
+            {pharmacyId ? (
+              <>
+                <AdminPharmacyBrandingSection pharmacyId={pharmacyId} />
+                <Separator />
+              </>
+            ) : null}
 
             {/* Main subscription */}
             <section className="space-y-4">

@@ -10,6 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Building2, CreditCard, BarChart3, AlertTriangle, MapPin, Shield, Users, Receipt } from "lucide-react";
 import { Button } from '@/components/ui/button'
 import { AdminPageHeader } from '@/components/admin/admin-page-header';
+import { DashboardPageShell } from '@/components/dashboard';
 import { Spinner } from '@/components/ui/spinner';
 import {
   adminPharmaciesQueryKey,
@@ -227,9 +228,10 @@ export default function AdminPage() {
   const hasSubscriptionBreakdown = (reports?.planBreakdown?.length ?? 0) > 0
 
   return (
-    <div className="p-6 space-y-6">
+    <DashboardPageShell>
       <div className="max-w-7xl mx-auto space-y-6">
         <AdminPageHeader
+          pinTitle="Platform Dashboard"
           title={
             <>
               <h1 className="text-3xl font-bold">Platform Dashboard</h1>
@@ -556,7 +558,7 @@ export default function AdminPage() {
           </Card>
         </div>
       </div>
-    </div>
+    </DashboardPageShell>
   )
 }
 

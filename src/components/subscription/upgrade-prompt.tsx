@@ -1,51 +1,64 @@
 "use client";
 
-import Link from "next/link";
+import { useState } from "react";
 import { Lock } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { DashboardButton, DashboardFeatureLock } from "@/components/dashboard";
 import { usePharmacyEntitlements } from "@/hooks/usePharmacyEntitlements";
+import { UpgradePlanDialog } from "@/components/subscription/upgrade-plan-dialog";
 
 type Props = {
   featureKey?: string;
   title?: string;
+  description?: string;
   compact?: boolean;
 };
 
 export function UpgradePrompt({
   featureKey,
   title,
+  description,
   compact,
 }: Props) {
+  const [open, setOpen] = useState(false);
   const { featureLabel } = usePharmacyEntitlements();
+  const label = featureKey ? featureLabel(featureKey) : undefined;
   const resolvedTitle =
     title ??
-    (featureKey ? `Upgrade to use ${featureLabel(featureKey)}` : "Upgrade required");
-  const href = featureKey
-    ? `/pharmacy-dashboard/billing?upgrade=${encodeURIComponent(featureKey)}`
-    : "/pharmacy-dashboard/billing";
+    (label ? `Upgrade to use ${label}` : "Upgrade required");
 
   if (compact) {
     return (
-      <Link
-        href={href}
-        className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
-      >
-        <Lock className="h-3 w-3" />
-        Upgrade
-      </Link>
+      <>
+        <DashboardButton
+          type="button"
+          tone="ghost"
+          className="h-7 gap-1.5 px-2 text-xs text-neutral-500"
+          onClick={() => setOpen(true)}
+        >
+          <Lock className="h-3.5 w-3.5" strokeWidth={1.75} />
+          Upgrade
+        </DashboardButton>
+        <UpgradePlanDialog
+          open={open}
+          onOpenChange={setOpen}
+          featureLabel={label}
+        />
+      </>
     );
   }
 
   return (
-    <div className="rounded-lg border border-dashed p-6 text-center space-y-3">
-      <Lock className="h-8 w-8 mx-auto text-muted-foreground" />
-      <p className="font-medium">{resolvedTitle}</p>
-      <p className="text-sm text-muted-foreground">
-        This capability is not included in your current plan.
-      </p>
-      <Button asChild size="sm">
-        <Link href={href}>View plans</Link>
-      </Button>
-    </div>
+    <>
+      <DashboardFeatureLock
+        title={resolvedTitle}
+        description={description}
+        onAction={() => setOpen(true)}
+      />
+      <UpgradePlanDialog
+        open={open}
+        onOpenChange={setOpen}
+        featureLabel={label}
+      />
+    </>
   );
 }

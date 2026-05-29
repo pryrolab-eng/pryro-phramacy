@@ -29,12 +29,13 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
-    const { type } = await request.json()
-    
+    const body = await request.json()
+    const type = body.type
+
     const { data: backup, error } = await supabase
       .from('backups')
       .insert({
-        pharmacy_id: 'userPharmacy.pharmacy_id',
+        pharmacy_id: body.pharmacy_id ?? null,
         name: `${type} Backup - ${new Date().toLocaleDateString()}`,
         type: type,
         file_size: '2.5 MB',

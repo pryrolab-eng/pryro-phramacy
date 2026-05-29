@@ -1,25 +1,21 @@
 import { createClient } from '../../supabase/server'
 import { createServiceClient } from '../../supabase/service'
+import { resolveActivePharmacyId } from './pharmacy/active-pharmacy'
 import { resolvePharmacyEntitlements } from './subscription/lifecycle/entitlements'
 
 export async function checkSubscriptionAccess(userId: string) {
   const supabase = await createClient()
   const admin = createServiceClient()
 
-  const { data: userPharmacy } = await supabase
-    .from('pharmacy_users')
-    .select('pharmacy_id, role')
-    .eq('user_id', userId)
-    .single()
-
-  if (!userPharmacy) {
+  const pharmacyId = await resolveActivePharmacyId(admin, userId)
+  if (!pharmacyId) {
     return { hasAccess: false, reason: 'No pharmacy found', status: null }
   }
 
   const { data: pharmacy } = await supabase
     .from('pharmacies')
     .select('id, name, status, subscription_plan, subscription_expires_at')
-    .eq('id', userPharmacy.pharmacy_id)
+    .eq('id', pharmacyId)
     .single()
 
   if (!pharmacy) {
@@ -35,7 +31,7 @@ export async function checkSubscriptionAccess(userId: string) {
     }
   }
 
-  const ent = await resolvePharmacyEntitlements(admin, userPharmacy.pharmacy_id)
+  const ent = await resolvePharmacyEntitlements(admin, pharmacyId)
 
   if (!ent.isAccessAllowed) {
     if (ent.isExpired) {

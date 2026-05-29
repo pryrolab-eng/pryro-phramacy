@@ -56,17 +56,26 @@ export async function GET() {
     const duplicateGroups = findDuplicatePlanGroups(plans ?? [], { activeOnly: true })
 
     const planIds = catalog.map((p) => (p as { id: string }).id)
-    const { data: planFeatureRows } = await db
-      .from('plan_features')
-      .select('plan_id, feature_key')
-      .in('plan_id', planIds.length ? planIds : ['00000000-0000-0000-0000-000000000000'])
-      .eq('enabled', true)
+    const [{ data: planFeatureRows }, { data: booleanFeatureRows }] = await Promise.all([
+      db
+        .from('plan_features')
+        .select('plan_id, feature_key')
+        .in('plan_id', planIds.length ? planIds : ['00000000-0000-0000-0000-000000000000'])
+        .eq('enabled', true),
+      db.from('platform_features').select('key').eq('feature_type', 'boolean'),
+    ])
+
+    const booleanKeySet = new Set(
+      (booleanFeatureRows ?? []).map((row) => row.key as string),
+    )
 
     const keysByPlan = new Map<string, string[]>()
     for (const row of planFeatureRows ?? []) {
+      const featureKey = row.feature_key as string
+      if (!booleanKeySet.has(featureKey)) continue
       const pid = row.plan_id as string
       const list = keysByPlan.get(pid) ?? []
-      list.push(row.feature_key as string)
+      list.push(featureKey)
       keysByPlan.set(pid, list)
     }
 
@@ -158,6 +167,25 @@ export async function POST(request: NextRequest) {
     const billing_period = billingPeriodFromInput(price, cadence)
     const period = periodLabelFromBilling(billing_period)
 
+    const featureKeys = Array.isArray(body.feature_keys)
+      ? (body.feature_keys as string[])
+      : Array.isArray(body.featureKeys)
+        ? (body.featureKeys as string[])
+        : []
+
+    const limitValidation = (
+      await import('@/lib/subscription/plan-limit-alignment')
+    ).validateMainPlanLimitAlignment({
+      plan_type: requestedType,
+      max_branches: requestedType === 'branch_addon' ? 1 : Number(body.max_branches ?? 1),
+      max_users: Number(body.max_users ?? 5),
+      monthly_tx_limit: Number(body.monthly_tx_limit ?? 500),
+      feature_keys: featureKeys,
+    })
+    if (limitValidation) {
+      return NextResponse.json({ success: false, error: limitValidation }, { status: 400 })
+    }
+
     const { data: plan, error } = await db
       .from('subscription_plans')
       .insert({
@@ -177,12 +205,6 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) throw error
-
-    const featureKeys = Array.isArray(body.feature_keys)
-      ? (body.feature_keys as string[])
-      : Array.isArray(body.featureKeys)
-        ? (body.featureKeys as string[])
-        : []
 
     if (featureKeys.length > 0 && requestedType === 'main') {
       const { validateRequiredMainPlanKeys, syncPlanFeatures, syncPlanMarketingFeatures } =

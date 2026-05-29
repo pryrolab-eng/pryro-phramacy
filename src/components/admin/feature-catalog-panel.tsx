@@ -320,7 +320,7 @@ export function FeatureCatalogPanel() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <AdminPageHeader
         title="Feature catalog"
         description="Capabilities that power plan entitlements, sidebar gates, and API enforcement."

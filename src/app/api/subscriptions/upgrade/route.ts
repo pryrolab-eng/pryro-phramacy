@@ -5,6 +5,7 @@ import {
   createSubscriptionOrchestrator,
   SubscriptionPlanChangeError,
 } from '@/lib/subscription/orchestrator'
+import { resolveActivePharmacyId } from '@/lib/pharmacy/active-pharmacy'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -28,24 +29,10 @@ export async function POST(request: NextRequest) {
 
     const admin = createServiceClient()
 
-    const { data: userPharmacy, error: pharmacyError } = await admin
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .limit(1)
-      .maybeSingle()
-
-    if (pharmacyError) {
-      console.error('Pharmacy lookup error:', pharmacyError)
-      return json({ error: `Pharmacy error: ${pharmacyError.message}` }, { status: 403 })
-    }
-
-    if (!userPharmacy?.pharmacy_id) {
+    const pharmacyId = await resolveActivePharmacyId(admin, user.id)
+    if (!pharmacyId) {
       return json({ error: 'Pharmacy not found' }, { status: 403 })
     }
-
-    const pharmacyId = userPharmacy.pharmacy_id
 
     let planQuery = admin
       .from('subscription_plans')

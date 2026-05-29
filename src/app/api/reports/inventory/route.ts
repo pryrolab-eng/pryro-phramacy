@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 
 export async function GET() {
   try {
@@ -21,16 +22,8 @@ export async function GET() {
       throw entErr
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
-    if (!userPharmacy) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
-    }
-    
     // Get inventory alerts data for last 14 days
     const { data: inventoryData } = await supabase
       .from('inventory')
@@ -41,7 +34,7 @@ export async function GET() {
         created_at,
         medications!inner(name, category, pharmacy_id)
       `)
-      .eq('medications.pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('medications.pharmacy_id', pharmacyId)
       .gte('created_at', new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString())
       .order('created_at', { ascending: true })
     

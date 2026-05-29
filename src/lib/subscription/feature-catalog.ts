@@ -18,9 +18,11 @@ export const LIMIT_COLUMN_BY_KEY: Record<string, string> = {
   [LIMIT_FEATURE_KEYS.transactions]: "monthly_tx_limit",
 };
 
-/** Routes always reachable when subscription is active (matches subscription-blocker). */
+/** Routes always reachable for per-feature checks when subscription is active. */
 export const ALWAYS_ALLOWED_ROUTES = [
-  "/settings",
+  "/pharmacy-dashboard",
+  "/pharmacist-dashboard",
+  "/pos",
   "/pharmacy-dashboard/billing",
   "/sign-in",
   "/sign-out",

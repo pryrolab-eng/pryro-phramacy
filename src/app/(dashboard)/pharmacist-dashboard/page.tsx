@@ -16,26 +16,30 @@ import {
   type PharmacistStats,
   type PendingPrescription,
 } from '@/hooks/usePharmacistDashboard'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { Pill, Users, Clock, CheckCircle, AlertCircle, Search, UserCheck, Calendar, ShoppingCart, Plus, Package, AlertTriangle, ArrowUpRight, Activity, TrendingUp } from 'lucide-react'
+import { Pill, Users, Clock, CheckCircle, AlertCircle, Search, UserCheck, ShoppingCart, Plus, Package, AlertTriangle, Activity } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
 import { useRouter } from 'next/navigation'
-import { SidebarTrigger } from '@/components/ui/sidebar'
-import { LoadingState, LoadingCard } from '@/components/loading-state'
 import { Spinner } from '@/components/ui/spinner'
 import type { StockAlertRow } from '@/lib/http/pharmacy-dashboard'
+import { ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import {
-  ChartConfig,
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart"
+  DashboardPageShell,
+  DashboardPageHeader,
+  DashboardStatCard,
+  DashboardSectionCard,
+  DashboardChartCard,
+  DashboardButton,
+  DashboardToolbar,
+  DashboardTabsList,
+  DashboardMetricGrid,
+  SubscriptionWelcomeGate,
+} from '@/components/dashboard'
 
 interface StockAlert {
   id: string
@@ -76,6 +80,14 @@ function toExpirationAlert(row: StockAlertRow): ExpirationAlert {
 }
 
 export default function PharmacistDashboard() {
+  return (
+    <SubscriptionWelcomeGate>
+      <PharmacistDashboardContent />
+    </SubscriptionWelcomeGate>
+  )
+}
+
+function PharmacistDashboardContent() {
   const router = useRouter()
   const { setAlerts } = usePharmacyStore()
   const invalidate = useInvalidatePharmacistDashboard()
@@ -191,121 +203,72 @@ export default function PharmacistDashboard() {
   )
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-4">
-          <SidebarTrigger />
-          <div className="h-4 w-px bg-border" />
-          <div>
-            <h1 className="text-xl font-bold">Pharmacist Dashboard</h1>
-            <p className="text-sm text-muted-foreground">Your daily workflow and patient care overview</p>
-          </div>
-        </div>
-        <div className="flex space-x-2">
-          <Button size="lg" className="bg-blue-600 hover:bg-blue-700" onClick={() => router.push('/pos')}>
-            <ShoppingCart className="mr-2 h-5 w-5" />
-            Open POS
-          </Button>
-          <Button variant="outline" onClick={() => router.push('/inventory')}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Drug
-          </Button>
-          <Button variant="outline">
-            <Calendar className="mr-2 h-4 w-4" />
-            Schedule
-          </Button>
-        </div>
-      </div>
+    <DashboardPageShell>
+      <DashboardPageHeader
+        title="Pharmacist Dashboard"
+        description="Your daily workflow and patient care overview."
+        actions={
+          <DashboardToolbar>
+            <DashboardButton
+              tone="primary"
+              onClick={() => router.push('/pos')}
+            >
+              <ShoppingCart className="h-4 w-4" />
+              Open POS
+            </DashboardButton>
+            <DashboardButton onClick={() => router.push('/inventory')}>
+              <Plus className="h-4 w-4" />
+              Add drug
+            </DashboardButton>
+          </DashboardToolbar>
+        }
+      />
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Prescriptions Today</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
-              <Pill className="h-4 w-4 text-blue-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.prescriptionsToday}</div>
-            <div className="flex items-center text-xs text-muted-foreground mt-1">
-              <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
-              {stats.pendingPrescriptions} pending
-            </div>
-            <Progress value={85} className="mt-2" />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Customers Served</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-green-100 flex items-center justify-center">
-              <Users className="h-4 w-4 text-green-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.customersServed}</div>
-            <div className="flex items-center text-xs text-muted-foreground mt-1">
-              <TrendingUp className="h-3 w-3 text-green-500 mr-1" />
-              {stats.consultationsGiven} consultations
-            </div>
-            <Progress value={72} className="mt-2" />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg Wait Time</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-orange-100 flex items-center justify-center">
-              <Clock className="h-4 w-4 text-orange-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.averageWaitTime} min</div>
-            <div className="flex items-center text-xs text-muted-foreground mt-1">
-              <Activity className="h-3 w-3 text-green-500 mr-1" />
-              Below target
-            </div>
-            <Progress value={40} className="mt-2" />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Completed Tasks</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-purple-100 flex items-center justify-center">
-              <CheckCircle className="h-4 w-4 text-purple-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.completedSales}</div>
-            <div className="flex items-center text-xs text-muted-foreground mt-1">
-              <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
-              {stats.alertsHandled} alerts handled
-            </div>
-            <Progress value={90} className="mt-2" />
-          </CardContent>
-        </Card>
-      </div>
+      <DashboardMetricGrid>
+        <DashboardStatCard
+          label="Prescriptions today"
+          icon={Pill}
+          loading={loadingStates.stats}
+          value={stats.prescriptionsToday}
+          hint={`${stats.pendingPrescriptions} pending`}
+        />
+        <DashboardStatCard
+          label="Customers served"
+          icon={Users}
+          loading={loadingStates.stats}
+          value={stats.customersServed}
+          hint={`${stats.consultationsGiven} consultations`}
+        />
+        <DashboardStatCard
+          label="Avg wait"
+          icon={Clock}
+          loading={loadingStates.stats}
+          value={`${stats.averageWaitTime} min`}
+          hint="Target under 15 min"
+        />
+        <DashboardStatCard
+          label="Completed sales"
+          icon={CheckCircle}
+          loading={loadingStates.stats}
+          value={stats.completedSales}
+          hint={`${stats.alertsHandled} alerts handled`}
+        />
+      </DashboardMetricGrid>
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList>
+        <DashboardTabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="prescriptions">Prescriptions</TabsTrigger>
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
-        </TabsList>
+        </DashboardTabsList>
         
         <TabsContent value="overview" className="space-y-4">
           <div className="grid gap-6 md:grid-cols-3">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center text-sm">
-                  <AlertTriangle className="mr-2 h-4 w-4 text-red-500" />
-                  Stock Alerts
-                </CardTitle>
-                <CardDescription>Low stock and out of stock items</CardDescription>
-              </CardHeader>
-              <CardContent>
+            <DashboardSectionCard
+              title="Stock alerts"
+              description="Low stock and out of stock items"
+            >
                 <ScrollArea className="h-[200px]">
                   <div className="space-y-3">
                     {stockAlerts.map((alert) => (
@@ -328,18 +291,12 @@ export default function PharmacistDashboard() {
                     ))}
                   </div>
                 </ScrollArea>
-              </CardContent>
-            </Card>
+            </DashboardSectionCard>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center text-sm">
-                  <Package className="mr-2 h-4 w-4 text-orange-500" />
-                  Expiration Alerts
-                </CardTitle>
-                <CardDescription>Items expiring soon</CardDescription>
-              </CardHeader>
-              <CardContent>
+            <DashboardSectionCard
+              title="Expiration alerts"
+              description="Items expiring soon"
+            >
                 <ScrollArea className="h-[200px]">
                   <div className="space-y-3">
                     {expirationAlerts.map((alert) => (
@@ -362,15 +319,12 @@ export default function PharmacistDashboard() {
                     ))}
                   </div>
                 </ScrollArea>
-              </CardContent>
-            </Card>
+            </DashboardSectionCard>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Quick Actions</CardTitle>
-                <CardDescription>Frequently used operations</CardDescription>
-              </CardHeader>
-              <CardContent>
+            <DashboardSectionCard
+              title="Quick actions"
+              description="Frequently used operations"
+            >
                 <div className="space-y-2">
                   <Button size="sm" className="w-full justify-start" onClick={() => router.push('/pos')}>
                     <ShoppingCart className="mr-2 h-4 w-4" />
@@ -389,21 +343,15 @@ export default function PharmacistDashboard() {
                     Check Inventory
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
+            </DashboardSectionCard>
           </div>
         </TabsContent>
         
         <TabsContent value="prescriptions" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center text-sm">
-                <AlertCircle className="mr-2 h-4 w-4 text-blue-500" />
-                Pending Prescriptions
-              </CardTitle>
-              <CardDescription>Prescriptions awaiting dispensing</CardDescription>
-            </CardHeader>
-            <CardContent>
+          <DashboardSectionCard
+            title="Pending prescriptions"
+            description="Prescriptions awaiting dispensing"
+          >
               <div className="space-y-4">
                 {pendingPrescriptions.map((prescription) => (
                   <div key={prescription.id} className="flex items-center justify-between p-4 border rounded-lg">
@@ -445,21 +393,15 @@ export default function PharmacistDashboard() {
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
+          </DashboardSectionCard>
         </TabsContent>
         
         <TabsContent value="alerts" className="space-y-4">
           <div className="grid gap-6 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center text-sm">
-                  <AlertTriangle className="mr-2 h-4 w-4 text-red-500" />
-                  Stock Alerts
-                </CardTitle>
-                <CardDescription>Detailed view of stock issues</CardDescription>
-              </CardHeader>
-              <CardContent>
+            <DashboardSectionCard
+              title="Stock alerts"
+              description="Detailed view of stock issues"
+            >
                 <div className="space-y-3">
                   {stockAlerts.map((alert) => (
                     <div key={alert.id} className="flex items-center justify-between p-3 border rounded-lg">
@@ -476,18 +418,12 @@ export default function PharmacistDashboard() {
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
+            </DashboardSectionCard>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center text-sm">
-                  <Package className="mr-2 h-4 w-4 text-orange-500" />
-                  Expiration Alerts
-                </CardTitle>
-                <CardDescription>Detailed expiration tracking</CardDescription>
-              </CardHeader>
-              <CardContent>
+            <DashboardSectionCard
+              title="Expiration alerts"
+              description="Detailed expiration tracking"
+            >
                 <div className="space-y-3">
                   {expirationAlerts.map((alert) => (
                     <div key={alert.id} className="flex items-center justify-between p-3 border rounded-lg">
@@ -506,87 +442,76 @@ export default function PharmacistDashboard() {
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
+            </DashboardSectionCard>
           </div>
         </TabsContent>
         
         <TabsContent value="analytics" className="space-y-4">
           <div className="grid gap-6 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Daily Activity Trend</CardTitle>
-                <CardDescription>Prescriptions and customers served</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer config={{
-                  prescriptions: { label: "Prescriptions", color: "#3b82f6" },
-                  customers: { label: "Customers", color: "#60a5fa" }
-                }}>
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" />
-                    <YAxis />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Line 
-                      type="monotone" 
-                      dataKey="prescriptions" 
-                      stroke="#3b82f6" 
-                      strokeWidth={2}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="customers" 
-                      stroke="#60a5fa" 
-                      strokeWidth={2}
-                    />
-                  </LineChart>
-                </ChartContainer>
-              </CardContent>
-            </Card>
+            <DashboardChartCard
+              title="Daily activity trend"
+              description="Prescriptions and customers served"
+              config={{
+                prescriptions: { label: 'Prescriptions', color: '#3b82f6' },
+                customers: { label: 'Customers', color: '#60a5fa' },
+              }}
+              loading={loadingStates.charts}
+            >
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="time" />
+                <YAxis />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Line
+                  type="monotone"
+                  dataKey="prescriptions"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="customers"
+                  stroke="#60a5fa"
+                  strokeWidth={2}
+                />
+              </LineChart>
+            </DashboardChartCard>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Performance Metrics</CardTitle>
-                <CardDescription>Weekly comparison</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer config={{
-                  thisWeek: { label: "This Week", color: "#3b82f6" },
-                  lastWeek: { label: "Last Week", color: "#60a5fa" }
-                }}>
-                  <BarChart data={[
-                    { day: "Mon", thisWeek: 12, lastWeek: 8 },
-                    { day: "Tue", thisWeek: 15, lastWeek: 12 },
-                    { day: "Wed", thisWeek: 18, lastWeek: 14 },
-                    { day: "Thu", thisWeek: 14, lastWeek: 16 },
-                    { day: "Fri", thisWeek: 20, lastWeek: 18 },
-                    { day: "Sat", thisWeek: 16, lastWeek: 15 },
-                    { day: "Sun", thisWeek: 10, lastWeek: 8 }
-                  ]}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="day" />
-                    <YAxis />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Bar dataKey="thisWeek" fill="#3b82f6" radius={4} />
-                    <Bar dataKey="lastWeek" fill="#60a5fa" radius={4} />
-                  </BarChart>
-                </ChartContainer>
-              </CardContent>
-            </Card>
+            <DashboardChartCard
+              title="Performance metrics"
+              description="Weekly comparison"
+              config={{
+                thisWeek: { label: 'This Week', color: '#3b82f6' },
+                lastWeek: { label: 'Last Week', color: '#60a5fa' },
+              }}
+            >
+              <BarChart
+                data={[
+                  { day: 'Mon', thisWeek: 12, lastWeek: 8 },
+                  { day: 'Tue', thisWeek: 15, lastWeek: 12 },
+                  { day: 'Wed', thisWeek: 18, lastWeek: 14 },
+                  { day: 'Thu', thisWeek: 14, lastWeek: 16 },
+                  { day: 'Fri', thisWeek: 20, lastWeek: 18 },
+                  { day: 'Sat', thisWeek: 16, lastWeek: 15 },
+                  { day: 'Sun', thisWeek: 10, lastWeek: 8 },
+                ]}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="day" />
+                <YAxis />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="thisWeek" fill="#3b82f6" radius={4} />
+                <Bar dataKey="lastWeek" fill="#60a5fa" radius={4} />
+              </BarChart>
+            </DashboardChartCard>
           </div>
         </TabsContent>
       </Tabs>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center text-sm">
-            <Clock className="mr-2 h-4 w-4 text-green-500" />
-            Recent Activities
-          </CardTitle>
-          <CardDescription>Your recent work activities</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <DashboardSectionCard
+        title="Recent activities"
+        description="Your recent work activities"
+      >
           <ScrollArea className="h-[300px]">
             <div className="space-y-4">
               {recentActivities.map((activity) => (
@@ -605,8 +530,7 @@ export default function PharmacistDashboard() {
               ))}
             </div>
           </ScrollArea>
-        </CardContent>
-      </Card>
-    </div>
+      </DashboardSectionCard>
+    </DashboardPageShell>
   )
 }

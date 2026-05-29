@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../supabase/server'
 
 export async function GET(request: NextRequest) {
@@ -11,22 +12,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user's pharmacy
-    const { data: pharmacyUser, error: pharmacyError } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .single()
-
-    if (pharmacyError || !pharmacyUser) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 404 })
-    }
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
     // Get dashboard stats
     const { data: stats, error: statsError } = await supabase
       .from('pharmacy_dashboard_stats')
       .select('*')
-      .eq('pharmacy_id', pharmacyUser.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .single()
 
     if (statsError) {
@@ -37,7 +29,7 @@ export async function GET(request: NextRequest) {
     const { data: alerts, error: alertsError } = await supabase
       .from('inventory_alerts')
       .select('*')
-      .eq('pharmacy_id', pharmacyUser.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .limit(10)
 
     if (alertsError) {
@@ -59,7 +51,7 @@ export async function GET(request: NextRequest) {
           total_price
         )
       `)
-      .eq('pharmacy_id', pharmacyUser.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .order('created_at', { ascending: false })
       .limit(5)
 

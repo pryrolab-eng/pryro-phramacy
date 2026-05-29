@@ -155,6 +155,7 @@ export function AdminBillingPanel() {
   return (
     <div className="space-y-6">
       <AdminPageHeader
+        pinTitle="Billing & transactions"
         title={
           <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
             <Receipt className="h-8 w-8 text-primary" />
@@ -329,7 +330,8 @@ export function AdminBillingPanel() {
               <CardDescription>
                 Orphan payments, pending upgrades, and legacy plan rows without{' '}
                 <code className="text-xs">plan_id</code>. Pending items older than{' '}
-                {expireDays} days are auto-cancelled by cron.
+                {expireDays} days can be auto-cancelled when a scheduled job runs
+                (see /api/cron/cancel-stale-pending-payments).
               </CardDescription>
             </CardHeader>
             <CardContent>

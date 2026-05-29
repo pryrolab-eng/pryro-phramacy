@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../supabase/server'
 import { firstRelation } from '@/lib/supabase/relation'
 
@@ -15,7 +16,7 @@ export async function GET() {
         expiry_date,
         medications(name, category)
       `)
-      .eq('pharmacy_id', 'userPharmacy.pharmacy_id')
+      .eq('pharmacy_id', 'pharmacyId')
       .limit(10)
 
     if (error) throw error

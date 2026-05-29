@@ -47,6 +47,7 @@ import {
 
 export { pharmacySettingsKeys } from "@/lib/http/pharmacy-settings";
 export { pharmacyBrandingKeys } from "@/lib/http/pharmacy-branding";
+export { usePharmacyBranding } from "./usePharmacyBranding";
 export { billingKeys } from "@/lib/http/billing";
 export { settingsSecurityKeys } from "@/lib/http/settings-security";
 export { settingsApiKeysQueryKey } from "@/lib/http/settings-api-keys";
@@ -64,14 +65,6 @@ export function usePharmacySettingsInfo(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: pharmacySettingsKeys.info(),
     queryFn: getPharmacySettings,
-    enabled: options?.enabled ?? true,
-  });
-}
-
-export function usePharmacyBranding(options?: { enabled?: boolean }) {
-  return useQuery({
-    queryKey: pharmacyBrandingKeys.all,
-    queryFn: getPharmacyBranding,
     enabled: options?.enabled ?? true,
   });
 }
@@ -239,6 +232,7 @@ export function useInvalidatePharmacySettingsPage() {
   return () =>
     Promise.all([
       queryClient.invalidateQueries({ queryKey: pharmacySettingsKeys.info() }),
+      queryClient.invalidateQueries({ queryKey: pharmacyBrandingKeys.all }),
       queryClient.invalidateQueries({ queryKey: billingKeys.invoices() }),
     ]);
 }

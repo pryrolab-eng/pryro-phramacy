@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../../supabase/server'
 import { firstRelation } from '@/lib/supabase/relation'
 
@@ -14,21 +15,8 @@ export async function GET() {
       })
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .limit(1)
-      .single()
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
-    if (!userPharmacy) {
-      return NextResponse.json({
-        stockByCategory: [],
-        inventoryTrend: []
-      })
-    }
-    
     // Get stock by category
     const { data: categoryData } = await supabase
       .from('inventory')
@@ -37,8 +25,8 @@ export async function GET() {
         selling_price,
         medications!inner(category, pharmacy_id)
       `)
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
-      .eq('medications.pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
+      .eq('medications.pharmacy_id', pharmacyId)
     
     const categoryStats: Record<string, { stock: number; value: number }> = {}
     categoryData?.forEach(item => {

@@ -1,11 +1,12 @@
 'use client'
 
 import { AdminBillingPanel } from '@/components/admin/admin-billing-panel'
+import { DashboardPageShell } from '@/components/dashboard'
 
 export default function AdminBillingPage() {
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <DashboardPageShell className="max-w-7xl mx-auto">
       <AdminBillingPanel />
-    </div>
+    </DashboardPageShell>
   )
 }

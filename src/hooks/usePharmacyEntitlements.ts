@@ -5,11 +5,13 @@ import {
   entitlementsKeys,
   getPharmacyEntitlementsSnapshot,
 } from "@/lib/http/entitlements";
+import { ApiError } from "@/lib/http/client";
 import type { PharmacyEntitlementsSnapshot } from "@/lib/subscription/lifecycle/types";
 import { getFeatureLabel } from "@/lib/subscription/feature-labels";
 
 export type { PharmacyEntitlementsSnapshot };
 
+/** Placeholder only — never treat as real subscription state. */
 const EMPTY: PharmacyEntitlementsSnapshot = {
   pharmacyId: "",
   effectivePlan: null,
@@ -34,8 +36,26 @@ export function usePharmacyEntitlements(options?: { enabled?: boolean }) {
     queryKey: entitlementsKeys.pharmacy(),
     queryFn: getPharmacyEntitlementsSnapshot,
     enabled: options?.enabled ?? true,
-    staleTime: 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
+    refetchInterval: 60 * 1000,
+    refetchIntervalInBackground: false,
+    /** Keep last snapshot visible while session refetches on reload/focus. */
+    placeholderData: (previousData) => previousData,
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && error.status === 401) {
+        return failureCount < 3;
+      }
+      return failureCount < 1;
+    },
+    retryDelay: (attempt) => Math.min(400 * (attempt + 1), 1200),
   });
+
+  const hasSnapshot = query.data !== undefined;
+  /** True during first load or session restore before a snapshot exists. */
+  const isHydrating = !hasSnapshot && !query.isError;
+  /** True once we have loaded entitlements at least once this mount. */
+  const isEntitlementsReady = hasSnapshot;
 
   const data = query.data ?? EMPTY;
   const featureSet = new Set(data.featureKeys);
@@ -43,13 +63,25 @@ export function usePharmacyEntitlements(options?: { enabled?: boolean }) {
   return {
     ...query,
     entitlements: data,
-    can: (featureKey: string) =>
-      data.isAccessAllowed && featureSet.has(featureKey),
+    hasSnapshot,
+    isHydrating,
+    isEntitlementsReady,
+    can: (featureKey: string) => {
+      if (!isEntitlementsReady) return false;
+      return data.isAccessAllowed && featureSet.has(featureKey);
+    },
     featureLabel: (featureKey: string) =>
       getFeatureLabel(featureKey, data.featureLabels),
     withinLimit: (limitKey: "users" | "branches") => {
-      if (!data.isAccessAllowed) {
-        return { allowed: false, reason: "Subscription inactive", current: 0, limit: 0 };
+      if (!isEntitlementsReady || !data.isAccessAllowed) {
+        return {
+          allowed: false,
+          reason: isHydrating
+            ? undefined
+            : "Subscription inactive",
+          current: 0,
+          limit: 0,
+        };
       }
       if (limitKey === "users") {
         const current = data.usage.activeUsers;

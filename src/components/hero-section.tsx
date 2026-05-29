@@ -46,10 +46,13 @@ export default function HeroSection() {
                         >
                             <Image
                                 src="https://ik.imagekit.io/lrigu76hy/tailark/night-background.jpg?updatedAt=1745733451120"
-                                alt="background"
+                                alt=""
+                                aria-hidden
                                 className="hidden size-full dark:block"
-                                width="3276"
-                                height="4095"
+                                width={3276}
+                                height={4095}
+                                sizes="100vw"
+                                priority
                             />
                         </AnimatedGroup>
 

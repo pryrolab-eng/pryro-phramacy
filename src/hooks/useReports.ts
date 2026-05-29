@@ -8,6 +8,7 @@ import {
   type ReportsInventoryData,
   type ReportsSalesData,
 } from "@/lib/http/reports";
+import type { BranchScopeQuery } from "@/lib/pharmacy/branch-scope";
 
 export {
   reportsKeys,
@@ -15,10 +16,14 @@ export {
   type ReportsSalesData,
 } from "@/lib/http/reports";
 
-export function useReportsSales(options?: { enabled?: boolean }) {
+export function useReportsSales(options?: {
+  enabled?: boolean;
+  scope?: BranchScopeQuery;
+}) {
+  const scope = options?.scope;
   return useQuery({
-    queryKey: reportsKeys.sales(),
-    queryFn: getReportsSales,
+    queryKey: reportsKeys.sales(scope),
+    queryFn: () => getReportsSales(scope),
     enabled: options?.enabled ?? true,
   });
 }
@@ -35,7 +40,7 @@ export function useInvalidateReports() {
   const queryClient = useQueryClient();
   return () =>
     Promise.all([
-      queryClient.invalidateQueries({ queryKey: reportsKeys.sales() }),
+      queryClient.invalidateQueries({ queryKey: [...reportsKeys.all, "sales"] }),
       queryClient.invalidateQueries({ queryKey: reportsKeys.inventory() }),
     ]);
 }

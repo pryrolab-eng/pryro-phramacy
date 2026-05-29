@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../../supabase/server'
 import { getEffectiveSubscriptionLabel } from '@/lib/subscription/effective-plan'
 
@@ -11,27 +12,19 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
-    if (!userPharmacy) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
-    }
-    
     const { data: pharmacy, error } = await supabase
       .from('pharmacies')
       .select('*')
-      .eq('id', userPharmacy.pharmacy_id)
+      .eq('id', pharmacyId)
       .single()
     
     if (error) throw error
 
     const subscription = await getEffectiveSubscriptionLabel(
       supabase,
-      userPharmacy.pharmacy_id,
+      pharmacyId,
       pharmacy.subscription_plan
     )
     
@@ -61,15 +54,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!userPharmacy) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
-    }
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
     const body = await request.json()
     
@@ -86,7 +71,7 @@ export async function PUT(request: NextRequest) {
         city: body.location?.split(',')[0]?.trim(),
         province: body.location?.split(',')[1]?.trim()
       })
-      .eq('id', userPharmacy.pharmacy_id)
+      .eq('id', pharmacyId)
     
     if (error) throw error
     

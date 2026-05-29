@@ -1,54 +1,63 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../../supabase/server'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { createServiceClient } from '../../../../../supabase/service'
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+  const { id: pharmacyUserId } = await params
   try {
     const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
+    await requireSessionPharmacyId(supabase, user.id)
+    const admin = createServiceClient()
     const body = await request.json()
-    
-    // Update users table
-    const { error: userError } = await supabase
+
+    const { data: member, error: memberErr } = await admin
+      .from('pharmacy_users')
+      .select('id, user_id, pharmacy_id')
+      .eq('id', pharmacyUserId)
+      .maybeSingle()
+
+    if (memberErr || !member) {
+      return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 })
+    }
+
+    const authUserId = member.user_id
+
+    const { error: userError } = await admin
       .from('users')
       .update({
         name: body.name,
         full_name: body.name,
-        phone: body.phone
+        phone: body.phone,
       })
-      .eq('id', id)
+      .eq('id', authUserId)
 
     if (userError) throw userError
 
-    // Update role in pharmacy_users
-    const { error: roleError } = await supabase
-      .from('pharmacy_users')
-      .update({
-        role: body.role
+    const pharmacyUpdates: { role?: string; is_active?: boolean } = {}
+    if (body.role !== undefined) pharmacyUpdates.role = body.role
+    if (body.status !== undefined) {
+      pharmacyUpdates.is_active = body.status !== 'inactive'
+    }
+
+    if (Object.keys(pharmacyUpdates).length > 0) {
+      const { error: roleError } = await admin
+        .from('pharmacy_users')
+        .update(pharmacyUpdates)
+        .eq('id', pharmacyUserId)
+
+      if (roleError) throw roleError
+    }
+
+    if (body.password && String(body.password).trim()) {
+      const { error: passwordError } = await admin.auth.admin.updateUserById(authUserId, {
+        password: body.password,
       })
-      .eq('user_id', id)
-
-    if (roleError) throw roleError
-
-    // Update password if provided
-    if (body.password && body.password.trim()) {
-      // Create service role client for admin operations
-      const adminSupabase = createServiceClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        {
-          auth: {
-            autoRefreshToken: false,
-            persistSession: false
-          }
-        }
-      )
-      
-      const { error: passwordError } = await adminSupabase.auth.admin.updateUserById(
-        id,
-        { password: body.password }
-      )
-      
       if (passwordError) {
         console.error('Password update error:', passwordError)
         return NextResponse.json({ success: false, error: 'Failed to update password' })
@@ -63,18 +72,21 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+  const { id: pharmacyUserId } = await params
   try {
-    const supabase = createServiceClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-    
-    // Delete from pharmacy_users table
-    const { error: pharmacyUserError } = await supabase
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+    }
+
+    await requireSessionPharmacyId(supabase, user.id)
+    const admin = createServiceClient()
+
+    const { error: pharmacyUserError } = await admin
       .from('pharmacy_users')
       .delete()
-      .eq('id', id)
+      .eq('id', pharmacyUserId)
 
     if (pharmacyUserError) throw pharmacyUserError
 

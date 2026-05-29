@@ -14,7 +14,22 @@ import { Separator } from "@/components/ui/separator"
 import { Progress } from "@/components/ui/progress"
 import { Receipt, DollarSign, TrendingUp, Calendar, Search, Filter, Download, ArrowUpRight, ArrowDownRight, Users, ShoppingCart, CreditCard, Banknote } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, CartesianGrid, LabelList, XAxis, YAxis, BarChart, Bar } from 'recharts'
-import { SidebarTrigger } from '@/components/ui/sidebar'
+import {
+  DashboardPageHeader,
+  DashboardPageShell,
+  DashboardToolbar,
+  DashboardButton,
+  DashboardMetricGrid,
+  DashboardStatCard,
+  DashboardTabsList,
+  DashboardChartCard,
+  DashboardSectionCard,
+  DashboardTableCard,
+  DashboardSearchInput,
+  DashboardListRow,
+  DashboardProgressTrack,
+  DashboardPageLoading,
+} from '@/components/dashboard'
 import { Spinner } from '@/components/ui/spinner'
 import {
   ChartConfig,
@@ -68,13 +83,12 @@ function WeeklySalesChart({ data }: { data: Array<{ day?: string; sales: number 
   ]
 
   return (
-    <Card className="shadow-lg">
-      <CardHeader>
-        <CardTitle className="text-sm">Weekly Sales Trend</CardTitle>
-        <CardDescription>Daily sales performance over the past week</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ChartContainer config={weeklyChartConfig} className="h-64">
+    <DashboardChartCard
+      title="Weekly sales trend"
+      description="Daily sales performance over the past week"
+      config={weeklyChartConfig}
+      chartClassName="h-64"
+    >
           <LineChart
             accessibilityLayer
             data={weeklyData}
@@ -116,9 +130,7 @@ function WeeklySalesChart({ data }: { data: Array<{ day?: string; sales: number 
               />
             </Line>
           </LineChart>
-        </ChartContainer>
-      </CardContent>
-    </Card>
+    </DashboardChartCard>
   )
 }
 
@@ -135,13 +147,12 @@ function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number
   ]
 
   return (
-    <Card className="shadow-lg">
-      <CardHeader>
-        <CardTitle className="text-sm">Today's Hourly Sales</CardTitle>
-        <CardDescription>Sales performance throughout the day</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ChartContainer config={hourlyChartConfig} className="h-64">
+    <DashboardChartCard
+      title="Today's hourly sales"
+      description="Sales performance throughout the day"
+      config={hourlyChartConfig}
+      chartClassName="h-64"
+    >
           <LineChart
             accessibilityLayer
             data={hourlyData}
@@ -183,9 +194,7 @@ function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number
               />
             </Line>
           </LineChart>
-        </ChartContainer>
-      </CardContent>
-    </Card>
+    </DashboardChartCard>
   )
 }
 
@@ -247,108 +256,63 @@ export default function SalesPage() {
     setFilteredSales(filtered)
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Spinner className="size-6" />
-    </div>
-  )
+  if (loading) return <DashboardPageLoading label="Loading sales…" />
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="h-6" />
-          <div>
-            <h1 className="text-xl font-bold">Sales Dashboard</h1>
-            <p className="text-sm text-muted-foreground">Track your sales performance and transactions</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm">
-            <Download className="mr-2 h-4 w-4" />
-            Export
-          </Button>
-          <Button size="sm">
-            <Receipt className="mr-2 h-4 w-4" />
-            New Sale
-          </Button>
-        </div>
-      </div>
+    <DashboardPageShell>
+      <DashboardPageHeader
+        title="Sales"
+        description="Track sales performance and transactions"
+        actions={
+          <DashboardToolbar>
+            <DashboardButton onClick={() => window.print()}>
+              <Download className="h-4 w-4" />
+              Export
+            </DashboardButton>
+            <DashboardButton
+              tone="primary"
+              onClick={() => { window.location.href = '/pos' }}
+            >
+              <Receipt className="h-4 w-4" />
+              New sale
+            </DashboardButton>
+          </DashboardToolbar>
+        }
+      />
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today's Sales</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-green-100 flex items-center justify-center">
-              <DollarSign className="h-4 w-4 text-green-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.todayTotal.toLocaleString()} RWF</div>
-            <div className="flex items-center text-xs text-muted-foreground mt-1">
-              <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
-              +15% from yesterday
-            </div>
-            <Progress value={75} className="mt-2" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">This Week</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
-              <TrendingUp className="h-4 w-4 text-blue-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.weekTotal.toLocaleString()} RWF</div>
-            <div className="flex items-center text-xs text-muted-foreground mt-1">
-              <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
-              +8% from last week
-            </div>
-            <Progress value={68} className="mt-2" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">This Month</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-purple-100 flex items-center justify-center">
-              <Calendar className="h-4 w-4 text-purple-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.monthTotal.toLocaleString()} RWF</div>
-            <div className="flex items-center text-xs text-muted-foreground mt-1">
-              <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
-              +12% from last month
-            </div>
-            <Progress value={82} className="mt-2" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-orange-100 flex items-center justify-center">
-              <Receipt className="h-4 w-4 text-orange-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalSales}</div>
-            <div className="flex items-center text-xs text-muted-foreground mt-1">
-              <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
-              +5% from yesterday
-            </div>
-            <Progress value={60} className="mt-2" />
-          </CardContent>
-        </Card>
-      </div>
+      <DashboardMetricGrid>
+        <DashboardStatCard
+          label="Today's sales"
+          icon={DollarSign}
+          value={`${stats.todayTotal.toLocaleString()} RWF`}
+          hint="Revenue today"
+        />
+        <DashboardStatCard
+          label="This week"
+          icon={TrendingUp}
+          value={`${stats.weekTotal.toLocaleString()} RWF`}
+          hint="Last 7 days"
+        />
+        <DashboardStatCard
+          label="This month"
+          icon={Calendar}
+          value={`${stats.monthTotal.toLocaleString()} RWF`}
+          hint="Calendar month"
+        />
+        <DashboardStatCard
+          label="Transactions"
+          icon={Receipt}
+          value={stats.totalSales}
+          hint="All time count"
+        />
+      </DashboardMetricGrid>
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList>
+        <DashboardTabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="transactions">Transactions</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
-        </TabsList>
+        </DashboardTabsList>
         
         <TabsContent value="overview" className="space-y-4">
           <div className="grid gap-6 md:grid-cols-2">
@@ -357,12 +321,10 @@ export default function SalesPage() {
           </div>
           
           <div className="grid gap-6 md:grid-cols-3">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Payment Methods</CardTitle>
-                <CardDescription>Sales breakdown by payment type</CardDescription>
-              </CardHeader>
-              <CardContent>
+            <DashboardSectionCard
+              title="Payment methods"
+              description="Sales breakdown by payment type"
+            >
                 <div className="space-y-3">
                   {analyticsData.paymentBreakdown.map((payment, index) => {
                     const icons: Record<string, ReactNode> = {
@@ -384,22 +346,19 @@ export default function SalesPage() {
                           <span className="text-sm font-medium">{labels[payment.method] || payment.method}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Progress value={payment.percentage} className="w-20" />
-                          <span className="text-sm text-muted-foreground">{payment.percentage}%</span>
+                          <DashboardProgressTrack value={payment.percentage} className="w-20" />
+                          <span className="text-sm text-neutral-500">{payment.percentage}%</span>
                         </div>
                       </div>
                     )
                   })}
                 </div>
-              </CardContent>
-            </Card>
+            </DashboardSectionCard>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Top Categories</CardTitle>
-                <CardDescription>Best selling product categories</CardDescription>
-              </CardHeader>
-              <CardContent>
+            <DashboardSectionCard
+              title="Top categories"
+              description="Best selling product categories"
+            >
                 <div className="space-y-3">
                   {(analyticsData.topCategories?.length > 0 ? analyticsData.topCategories : [
                     { name: 'Prescription', value: 40, color: 'bg-red-500' },
@@ -413,79 +372,64 @@ export default function SalesPage() {
                         <span className="text-sm font-medium">{category.name}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Progress value={category.value} className="w-20" />
-                        <span className="text-sm text-muted-foreground">{category.value}%</span>
+                        <DashboardProgressTrack value={category.value} className="w-20" />
+                        <span className="text-sm text-neutral-500">{category.value}%</span>
                       </div>
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
+            </DashboardSectionCard>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Recent Sales</CardTitle>
-                <CardDescription>Latest transactions</CardDescription>
-              </CardHeader>
-              <CardContent>
+            <DashboardSectionCard
+              title="Recent sales"
+              description="Latest transactions"
+            >
                 <ScrollArea className="h-[200px]">
                   <div className="space-y-3">
                     {sales.slice(0, 5).map((sale) => (
-                      <div key={sale.id} className="flex items-center justify-between p-2 rounded-lg border">
+                      <DashboardListRow key={sale.id}>
                         <div>
                           <p className="text-sm font-medium">{sale.customer}</p>
-                          <p className="text-xs text-muted-foreground">{sale.items} items</p>
+                          <p className="text-xs text-neutral-500">{sale.items} items</p>
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-semibold">{sale.amount.toLocaleString()} RWF</p>
                           <Badge variant="outline" className="text-xs">{sale.paymentMethod}</Badge>
                         </div>
-                      </div>
+                      </DashboardListRow>
                     ))}
                   </div>
                 </ScrollArea>
-              </CardContent>
-            </Card>
+            </DashboardSectionCard>
           </div>
         </TabsContent>
         
         <TabsContent value="transactions" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-sm">Sales Transactions</CardTitle>
-                  <CardDescription>Detailed view of all sales transactions</CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="relative">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search transactions..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-8 w-64"
-                    />
-                  </div>
-                  <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="today">Today</SelectItem>
-                      <SelectItem value="week">This Week</SelectItem>
-                      <SelectItem value="month">This Month</SelectItem>
-                      <SelectItem value="all">All Time</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button variant="outline" size="sm">
-                    <Filter className="mr-2 h-4 w-4" />
-                    Filter
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
+          <DashboardTableCard
+            title="Sales transactions"
+            description="Detailed view of all sales"
+            toolbar={
+              <>
+                <DashboardSearchInput
+                  placeholder="Search transactions…"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-64"
+                />
+                <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+                  <SelectTrigger className="h-8 w-32 rounded-lg">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="week">This week</SelectItem>
+                    <SelectItem value="month">This month</SelectItem>
+                    <SelectItem value="all">All time</SelectItem>
+                  </SelectContent>
+                </Select>
+              </>
+            }
+          >
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -516,22 +460,19 @@ export default function SalesPage() {
                   ))}
                 </TableBody>
               </Table>
-            </CardContent>
-          </Card>
+          </DashboardTableCard>
         </TabsContent>
         
         <TabsContent value="analytics" className="space-y-4">
           <div className="grid gap-6 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Sales Performance</CardTitle>
-                <CardDescription>Monthly comparison</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer config={{
-                  current: { label: "Current Month", color: "#3b82f6" },
-                  previous: { label: "Previous Month", color: "#60a5fa" }
-                }}>
+            <DashboardChartCard
+              title="Sales performance"
+              description="Monthly comparison"
+              config={{
+                current: { label: "Current Month", color: "#3b82f6" },
+                previous: { label: "Previous Month", color: "#60a5fa" },
+              }}
+            >
                   <BarChart data={analyticsData.monthlyComparison?.length > 0 ? analyticsData.monthlyComparison : [
                     { week: "Week 1", current: 450000, previous: 380000 },
                     { week: "Week 2", current: 520000, previous: 420000 },
@@ -545,16 +486,12 @@ export default function SalesPage() {
                     <Bar dataKey="current" fill="#3b82f6" radius={4} />
                     <Bar dataKey="previous" fill="#60a5fa" radius={4} />
                   </BarChart>
-                </ChartContainer>
-              </CardContent>
-            </Card>
+            </DashboardChartCard>
             
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Customer Distribution</CardTitle>
-                <CardDescription>Sales by customer type</CardDescription>
-              </CardHeader>
-              <CardContent>
+            <DashboardSectionCard
+              title="Customer distribution"
+              description="Sales by customer type"
+            >
                 <div className="h-48">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -587,13 +524,12 @@ export default function SalesPage() {
                     <span>Insurance Customers (15%)</span>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+            </DashboardSectionCard>
           </div>
         </TabsContent>
       </Tabs>
 
 
-    </div>
+    </DashboardPageShell>
   )
 }

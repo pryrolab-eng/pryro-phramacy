@@ -12,6 +12,7 @@ export function Toaster(props: ToasterProps) {
       position="top-center"
       closeButton
       richColors={false}
+      style={{ zIndex: 9999 }}
       className="toaster group"
       toastOptions={{
         classNames: {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../../supabase/server'
 
 export async function GET() {
@@ -10,20 +11,12 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!userPharmacy) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
-    }
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
     const { data: settings } = await supabase
       .from('pharmacy_settings')
       .select('setting_value')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .eq('setting_key', 'security')
       .single()
 
@@ -45,20 +38,12 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json()
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!userPharmacy) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
-    }
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
     const { error } = await supabase
       .from('pharmacy_settings')
       .upsert({
-        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_id: pharmacyId,
         setting_key: 'security',
         setting_value: body
       }, {

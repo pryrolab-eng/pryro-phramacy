@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../supabase/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 
 export async function GET() {
   try {
@@ -13,23 +14,12 @@ export async function GET() {
       })
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
-    if (!userPharmacy) {
-      return NextResponse.json({
-        sales: [],
-        stats: { todayTotal: 0, weekTotal: 0, monthTotal: 0, totalSales: 0 }
-      })
-    }
-    
     const { data: sales, error } = await supabase
       .from('sales')
       .select('*')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .order('created_at', { ascending: false })
       .limit(20)
 
@@ -53,19 +43,19 @@ export async function GET() {
     const { data: todaySales } = await supabase
       .from('sales')
       .select('total_amount')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .gte('created_at', today)
     
     const { data: weekSales } = await supabase
       .from('sales')
       .select('total_amount')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .gte('created_at', weekAgo)
     
     const { data: monthSales } = await supabase
       .from('sales')
       .select('total_amount')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .gte('created_at', monthAgo)
     
     const stats = {
@@ -95,15 +85,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!userPharmacy) {
-      return NextResponse.json({ success: false, error: 'Pharmacy not found' }, { status: 404 })
-    }
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
     const body = await request.json()
     const { sale, items } = body
@@ -111,7 +93,7 @@ export async function POST(request: NextRequest) {
     const { data: newSale, error: saleError } = await supabase
       .from('sales')
       .insert({
-        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_id: pharmacyId,
         customer_name: sale.customer_name || 'Walk-in Customer',
         subtotal: sale.subtotal,
         insurance_amount: sale.insurance_amount || 0,

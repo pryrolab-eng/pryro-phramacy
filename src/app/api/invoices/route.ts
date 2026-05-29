@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "../../../../supabase/server";
 import { createServiceClient } from "../../../../supabase/service";
+import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 
 export type BillingHistoryItem = {
   id: string;
@@ -24,19 +25,7 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { data: userPharmacy } = await supabase
-      .from("pharmacy_users")
-      .select("pharmacy_id")
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
-
-    if (!userPharmacy?.pharmacy_id) {
-      return NextResponse.json({ error: "Pharmacy not found" }, { status: 403 });
-    }
-
-    const pharmacyId = userPharmacy.pharmacy_id;
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id);
     const admin = createServiceClient();
 
     const [{ data: invoices }, { data: transactions }, { data: paymentMethod }] =
@@ -171,12 +160,21 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id);
     const body = await request.json();
 
     const receiptNumber = `INV-${Date.now()}`;
 
     const { data: invoice, error } = await supabase.from("sales").insert({
-      pharmacy_id: body.pharmacy_id || "userPharmacy.pharmacy_id",
+      pharmacy_id: body.pharmacy_id || pharmacyId,
       customer_name: body.customer,
       total_amount: body.amount,
       receipt_number: receiptNumber,

@@ -1,10 +1,18 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 
 export async function GET() {
   try {
     const supabase = await createClient()
-    
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json([])
+    }
+
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+
     const { data: inventoryData } = await supabase
       .from('inventory')
       .select(`
@@ -13,13 +21,12 @@ export async function GET() {
         created_at,
         medications!inner(pharmacy_id)
       `)
-      .eq('medications.pharmacy_id', 'userPharmacy.pharmacy_id')
-    
-    // Group by month
+      .eq('medications.pharmacy_id', pharmacyId)
+
     const monthlyData: Record<string, { inStock: number; lowStock: number }> = {}
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
-    
-    inventoryData?.forEach(item => {
+
+    inventoryData?.forEach((item) => {
       const month = months[new Date(item.created_at).getMonth()]
       if (!monthlyData[month]) {
         monthlyData[month] = { inStock: 0, lowStock: 0 }
@@ -30,19 +37,16 @@ export async function GET() {
         monthlyData[month].inStock++
       }
     })
-    
-    const chartData = months.map(month => ({
+
+    const chartData = months.map((month) => ({
       month,
       inStock: monthlyData[month]?.inStock || 0,
-      lowStock: monthlyData[month]?.lowStock || 0
+      lowStock: monthlyData[month]?.lowStock || 0,
     }))
-    
+
     return NextResponse.json(chartData)
   } catch (error) {
-    return NextResponse.json([
-      { month: "Jan", inStock: 850, lowStock: 45 },
-      { month: "Feb", inStock: 920, lowStock: 32 },
-      { month: "Mar", inStock: 780, lowStock: 68 }
-    ])
+    console.error('GET /api/pharmacy/inventory-chart', error)
+    return NextResponse.json([])
   }
 }

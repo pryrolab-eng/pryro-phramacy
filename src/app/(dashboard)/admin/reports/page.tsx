@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 
 import { AdminPageHeader } from '@/components/admin/admin-page-header'
+import { DashboardPageShell } from '@/components/dashboard'
 import {
   adminReportsExportColumns,
 } from '@/components/admin/admin-reports-export-columns'
@@ -179,8 +180,9 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <DashboardPageShell className="max-w-7xl mx-auto">
       <AdminPageHeader
+        pinTitle="Business Reports & Analytics"
         title={
           <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
             <BarChart3 className="h-8 w-8 text-primary" />
@@ -358,6 +360,6 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </DashboardPageShell>
   )
 }

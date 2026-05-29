@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../../supabase/server'
 import { firstRelation } from '@/lib/supabase/relation'
 
@@ -18,28 +19,13 @@ export async function GET() {
       })
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
-    if (!userPharmacy) {
-      return NextResponse.json({
-        weeklySales: [],
-        paymentBreakdown: [],
-        hourlySales: [],
-        monthlyComparison: [],
-        customerDistribution: [],
-        topCategories: []
-      })
-    }
-    
     // Get last 7 days sales for weekly chart
     const { data: weeklyData } = await supabase
       .from('sales')
       .select('total_amount, created_at')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
     
     const dailyTotals: Record<string, number> = {}
@@ -60,7 +46,7 @@ export async function GET() {
     const { data: paymentData } = await supabase
       .from('sales')
       .select('payment_method, total_amount')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
     
     const paymentTotals: Record<string, number> = {}
@@ -83,7 +69,7 @@ export async function GET() {
     const { data: todayData } = await supabase
       .from('sales')
       .select('total_amount, created_at')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .gte('created_at', today)
     
     const hourlyTotals: Record<number, number> = {}
@@ -118,13 +104,13 @@ export async function GET() {
     const { data: currentMonthData } = await supabase
       .from('sales')
       .select('total_amount, created_at')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .gte('created_at', currentMonthStart.toISOString())
     
     const { data: previousMonthData } = await supabase
       .from('sales')
       .select('total_amount, created_at')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .gte('created_at', previousMonth.toISOString())
       .lt('created_at', currentMonthStart.toISOString())
     
@@ -159,7 +145,7 @@ export async function GET() {
         sales!inner(pharmacy_id),
         inventory!inner(medications!inner(category))
       `)
-      .eq('sales.pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('sales.pharmacy_id', pharmacyId)
       .gte('sales.created_at', monthAgo)
     
     const categoryTotals: Record<string, number> = {}
@@ -189,7 +175,7 @@ export async function GET() {
     const { data: allSales } = await supabase
       .from('sales')
       .select('customer_name, insurance_provider_id')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .gte('created_at', monthAgo)
     
     let walkIn = 0

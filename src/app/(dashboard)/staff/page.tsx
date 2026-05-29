@@ -1,408 +1,240 @@
 'use client'
 
-import { useMemo, useState, useEffect } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { useUsers, staffUsersQueryKey } from '@/hooks'
+import {
+  useUsers,
+} from '@/hooks/useUsers'
 import { createPharmacist } from '@/lib/http/pharmacist'
-import { deleteStaffMember, updateStaffMember, type StaffUser } from '@/lib/http/staff'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { PasswordInput } from "@/components/ui/password-input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { UserCog, Plus, Mail, Phone, Calendar } from 'lucide-react'
-import { SidebarTrigger } from '@/components/ui/sidebar'
-import { Spinner } from '@/components/ui/spinner'
+import type { StaffUser } from '@/lib/http/staff'
+import { staffStats } from '@/lib/staff/format-staff'
+import {
+  DashboardPageShell,
+  DashboardPageHeader,
+  DashboardToolbar,
+  DashboardButton,
+  DashboardPageLoading,
+  DashboardMetricGrid,
+  DashboardStatCard,
+  DashboardTableCard,
+  DashboardSearchInput,
+  DashboardPanelEmpty,
+} from '@/components/dashboard'
+import { StaffListRow } from '@/components/staff/staff-list-row'
+import { StaffDetailSheet } from '@/components/staff/staff-detail-sheet'
+import {
+  StaffAddDialog,
+  StaffAddDialogTrigger,
+  type StaffInviteInput,
+} from '@/components/staff/staff-add-dialog'
+import {
+  Users,
+  UserCheck,
+  Stethoscope,
+  Wallet,
+  RefreshCw,
+  UserPlus,
+} from 'lucide-react'
 import { FeatureGate } from '@/components/subscription/feature-gate'
-
-interface StaffMember {
-  id: string
-  name: string
-  email: string
-  phone: string
-  role: string
-  status: 'active' | 'inactive'
-  joinDate: string
-}
+import { useActivePharmacy } from '@/components/providers/active-pharmacy-provider'
 
 export default function StaffManagePage() {
-  const queryClient = useQueryClient()
   const usersQuery = useUsers()
+  const { activePharmacyId, context, isPending: ctxPending } = useActivePharmacy()
 
-  const staff = useMemo((): StaffMember[] => {
-    return (usersQuery.data ?? []).map((u) => ({
-      ...u,
-      status: u.status === 'inactive' ? 'inactive' : 'active',
-    }))
-  }, [usersQuery.data])
+  const activeMembership = useMemo(
+    () => context.memberships.find((m) => m.pharmacyId === activePharmacyId),
+    [context.memberships, activePharmacyId],
+  )
 
-  const [isAddingStaff, setIsAddingStaff] = useState(false)
-  const [newStaff, setNewStaff] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    role: 'pharmacist',
-    password: ''
-  })
-  const [editingStaff, setEditingStaff] = useState<any>(null)
-  const [isEditingStaff, setIsEditingStaff] = useState(false)
-  const [pharmacyLoading, setPharmacyLoading] = useState(true)
-  const [userPharmacy, setUserPharmacy] = useState<{
-    pharmacy_id: string
-    pharmacy_name?: string
-  } | null>(null)
+  const staff = usersQuery.data ?? []
+  const stats = useMemo(() => staffStats(staff), [staff])
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const { createClient } = await import('../../../../supabase/client')
-        const supabase = createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          const { data } = await supabase
-            .from('pharmacy_users')
-            .select('pharmacy_id, pharmacies(name)')
-            .eq('user_id', user.id)
-            .single()
-          const row = data as {
-            pharmacy_id?: string
-            pharmacies?: { name?: string } | { name?: string }[] | null
-          } | null
-          const pharmacyJoin = row?.pharmacies
-          const pharmacyName = Array.isArray(pharmacyJoin)
-            ? pharmacyJoin[0]?.name
-            : pharmacyJoin?.name
-          if (row?.pharmacy_id) {
-            setUserPharmacy({
-              pharmacy_id: row.pharmacy_id,
-              pharmacy_name: pharmacyName,
-            })
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching pharmacy:', error)
-      } finally {
-        setPharmacyLoading(false)
-      }
-    })()
-  }, [])
+  const [searchTerm, setSearchTerm] = useState('')
+  const [addOpen, setAddOpen] = useState(false)
+  const [invitePending, setInvitePending] = useState(false)
+  const [selectedMember, setSelectedMember] = useState<StaffUser | null>(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
 
-  const loading = usersQuery.isPending || pharmacyLoading
+  const filtered = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase()
+    if (!q) return staff
+    return staff.filter(
+      (m) =>
+        m.name.toLowerCase().includes(q) ||
+        m.email.toLowerCase().includes(q) ||
+        m.phone.toLowerCase().includes(q) ||
+        m.role.toLowerCase().includes(q),
+    )
+  }, [staff, searchTerm])
 
-  const handleAddStaff = async () => {
-    if (!userPharmacy?.pharmacy_id) {
+  const handleInvite = async (input: StaffInviteInput) => {
+    if (!activePharmacyId) {
       toast.error('Pharmacy not found')
       return
     }
+    setInvitePending(true)
     try {
       const result = await createPharmacist({
-        email: newStaff.email,
-        password: newStaff.password.trim() || undefined,
-        full_name: newStaff.name,
-        phone: newStaff.phone,
-        role: newStaff.role,
-        pharmacy_id: userPharmacy.pharmacy_id,
-        pharmacy_name: userPharmacy.pharmacy_name,
+        email: input.email,
+        password: input.password.trim() || undefined,
+        full_name: input.name,
+        phone: input.phone,
+        role: input.role,
+        pharmacy_id: activePharmacyId,
+        pharmacy_name: activeMembership?.pharmacyName ?? undefined,
       })
 
-      await queryClient.invalidateQueries({ queryKey: staffUsersQueryKey })
-      setIsAddingStaff(false)
-      setNewStaff({ name: '', email: '', phone: '', role: 'pharmacist', password: '' })
+      await usersQuery.refetch()
 
       if (result.emailSent) {
         toast.success('Invitation sent', {
-          description: `Login instructions were emailed to ${newStaff.email}.`,
+          description: `Login instructions were emailed to ${input.email}.`,
         })
       } else {
         toast.warning('Staff member created', {
           description:
             result.emailError ??
-            'Account was created but the invitation email could not be sent. Check SMTP settings.',
+            'Account was created but the invitation email could not be sent.',
         })
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
-      console.error('Error adding pharmacist:', error)
-      toast.error('Could not add staff member', { description: message })
-    }
-  }
-
-  const toggleStaffStatus = async (id: string) => {
-    try {
-      const member = staff.find(s => s.id === id)
-      const newStatus = member?.status === 'active' ? 'inactive' : 'active'
-
-      queryClient.setQueryData<StaffUser[]>(staffUsersQueryKey, (old) => {
-        if (!old) return old
-        return old.map((u) =>
-          u.id === id ? { ...u, status: newStatus } : u
-        )
+      toast.error('Could not add staff member', {
+        description: error instanceof Error ? error.message : undefined,
       })
-
-      alert(`Staff member ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully!`)
-    } catch (error) {
-      console.error('Error updating staff status:', error)
+      throw error
+    } finally {
+      setInvitePending(false)
     }
   }
 
-  const handleEditStaff = (member: StaffMember) => {
-    setEditingStaff({
-      id: member.id,
-      name: member.name,
-      email: member.email,
-      phone: member.phone,
-      role: member.role,
-      password: ''
-    })
-    setIsEditingStaff(true)
+  if (usersQuery.isPending || ctxPending) {
+    return <DashboardPageLoading label="Loading staff…" />
   }
-
-  const saveEditStaff = async () => {
-    if (!editingStaff?.id) return
-    try {
-      await updateStaffMember(editingStaff.id, {
-        name: editingStaff.name,
-        email: editingStaff.email,
-        phone: editingStaff.phone,
-        role: editingStaff.role,
-        password: editingStaff.password?.trim() || undefined,
-      })
-
-      await queryClient.invalidateQueries({ queryKey: staffUsersQueryKey })
-      setIsEditingStaff(false)
-      setEditingStaff(null)
-      alert('Staff member updated successfully!')
-    } catch (error) {
-      console.error('Error updating staff:', error)
-      const message = error instanceof Error ? error.message : 'Error updating staff member'
-      alert(message)
-    }
-  }
-
-  const handleDeleteStaff = async (id: string, name: string) => {
-    if (confirm(`Are you sure you want to delete ${name}? This action cannot be undone.`)) {
-      try {
-        await deleteStaffMember(id)
-        await queryClient.invalidateQueries({ queryKey: staffUsersQueryKey })
-        alert('Staff member deleted successfully!')
-      } catch (error) {
-        console.error('Error deleting staff:', error)
-        const message = error instanceof Error ? error.message : 'Error deleting staff member'
-        alert(message)
-      }
-    }
-  }
-
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Spinner className="size-6" />
-    </div>
-  )
 
   return (
-    <div className="p-6 space-y-6 bg-gray-100 min-h-screen">
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-4">
-          <SidebarTrigger />
-          <div className="h-4 w-px bg-border" />
-          <div>
-            <h1 className="text-xl font-bold">Staff Management</h1>
-            <p className="text-sm text-muted-foreground">Manage your pharmacy staff members</p>
-            {usersQuery.isError ? (
-              <p className="text-sm text-destructive mt-1" role="alert">
-                {usersQuery.error instanceof Error ? usersQuery.error.message : 'Could not load staff.'}
-              </p>
-            ) : null}
-          </div>
-        </div>
-        <FeatureGate featureKey="staff.invite" compact>
-        <Dialog open={isAddingStaff} onOpenChange={setIsAddingStaff}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Staff Member
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Pharmacist</DialogTitle>
-              <DialogDescription>
-                We email login instructions to the address below. Password is optional — leave blank to generate one automatically.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="staff_name">Full Name</Label>
-                <Input
-                  id="staff_name"
-                  value={newStaff.name}
-                  onChange={(e) => setNewStaff({...newStaff, name: e.target.value})}
+    <FeatureGate featureKey="staff.access">
+      <DashboardPageShell>
+        <DashboardPageHeader
+          title="Staff"
+          description="Invite pharmacists and cashiers, manage roles and branch access"
+          actions={
+            <DashboardToolbar>
+              <DashboardButton
+                onClick={() => void usersQuery.refetch()}
+                disabled={usersQuery.isFetching}
+              >
+                <RefreshCw
+                  className={`mr-1.5 h-4 w-4 ${usersQuery.isFetching ? 'animate-spin' : ''}`}
                 />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="staff_email">Email</Label>
-                <Input
-                  id="staff_email"
-                  type="email"
-                  value={newStaff.email}
-                  onChange={(e) => setNewStaff({...newStaff, email: e.target.value})}
+                Refresh
+              </DashboardButton>
+              <FeatureGate featureKey="staff.invite" compact>
+                <StaffAddDialog
+                  open={addOpen}
+                  onOpenChange={setAddOpen}
+                  onSubmit={handleInvite}
+                  isPending={invitePending}
+                  trigger={<StaffAddDialogTrigger />}
                 />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="staff_phone">Phone</Label>
-                <Input
-                  id="staff_phone"
-                  value={newStaff.phone}
-                  onChange={(e) => setNewStaff({...newStaff, phone: e.target.value})}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="staff_password">Password (optional)</Label>
-                <PasswordInput
-                  id="staff_password"
-                  value={newStaff.password}
-                  onChange={(e) => setNewStaff({...newStaff, password: e.target.value})}
-                  placeholder="Auto-generated and emailed if empty"
-                />
-              </div>
+              </FeatureGate>
+            </DashboardToolbar>
+          }
+        />
 
-            </div>
-            <DialogFooter>
-              <Button onClick={handleAddStaff} disabled={!newStaff.email || !newStaff.name}>
-                Send invitation
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-        </FeatureGate>
-      </div>
+        {usersQuery.isError ? (
+          <p className="text-sm text-destructive" role="alert">
+            {usersQuery.error instanceof Error
+              ? usersQuery.error.message
+              : 'Could not load staff.'}
+          </p>
+        ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {staff.map((member) => (
-          <Card key={member.id} className="p-3">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <UserCog className="mr-1 h-4 w-4" />
-                  <span className="font-medium text-sm truncate">{member.name}</span>
-                </div>
-                <Badge 
-                  variant={member.status === 'active' ? 'default' : 'secondary'} 
-                  className={`text-xs px-1 py-0 h-4 ${member.status === 'active' ? 'bg-blue-500 hover:bg-blue-600' : ''}`}
-                >
-                  {member.status}
-                </Badge>
-              </div>
-              <p className="text-xs text-muted-foreground capitalize">{member.role}</p>
-              
-              <div className="space-y-1">
-                <div className="flex items-center text-xs">
-                  <Mail className="mr-1 h-3 w-3 text-muted-foreground" />
-                  <span className="truncate">{member.email}</span>
-                </div>
-                <div className="flex items-center text-xs">
-                  <Phone className="mr-1 h-3 w-3 text-muted-foreground" />
-                  {member.phone}
-                </div>
-                <div className="flex items-center text-xs">
-                  <Calendar className="mr-1 h-3 w-3 text-muted-foreground" />
-                  {member.joinDate}
-                </div>
-              </div>
-              
-              <div className="flex flex-wrap gap-1 pt-2">
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="text-xs h-7 px-2"
-                  onClick={() => toggleStaffStatus(member.id)}
-                >
-                  {member.status === 'active' ? 'Deactivate' : 'Activate'}
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="text-xs h-7 px-2"
-                  onClick={() => handleEditStaff(member)}
-                >
-                  Edit
-                </Button>
-                <Button 
-                  variant="destructive" 
-                  size="sm"
-                  className="text-xs h-7 px-2"
-                  onClick={() => handleDeleteStaff(member.id, member.name)}
-                >
-                  Delete
-                </Button>
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
+        <DashboardMetricGrid>
+          <DashboardStatCard
+            label="Team size"
+            icon={Users}
+            value={stats.total}
+            hint="All members at this pharmacy"
+          />
+          <DashboardStatCard
+            label="Active"
+            icon={UserCheck}
+            value={stats.active}
+            hint="Can sign in and work"
+          />
+          <DashboardStatCard
+            label="Pharmacists"
+            icon={Stethoscope}
+            value={stats.pharmacists}
+            hint="Dispensing & clinical roles"
+          />
+          <DashboardStatCard
+            label="Cashiers"
+            icon={Wallet}
+            value={stats.cashiers}
+            hint="POS-focused roles"
+          />
+        </DashboardMetricGrid>
 
-      <Dialog open={isEditingStaff} onOpenChange={setIsEditingStaff}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Staff Member</DialogTitle>
-            <DialogDescription>Update staff member information</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label>Full Name</Label>
-              <Input
-                value={editingStaff?.name || ''}
-                onChange={(e) => setEditingStaff({...editingStaff, name: e.target.value})}
+        <DashboardTableCard
+          title="Team directory"
+          description={`${filtered.length} of ${staff.length} shown`}
+          toolbar={
+            <DashboardSearchInput
+              placeholder="Search name, email, phone, role…"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-sm flex-1"
+            />
+          }
+        >
+          {filtered.length === 0 ? (
+            <div className="p-6">
+              <DashboardPanelEmpty
+                icon={Users}
+                title={staff.length === 0 ? 'No staff yet' : 'No matches'}
+                description={
+                  staff.length === 0
+                    ? 'Invite your first pharmacist or cashier to help run the pharmacy.'
+                    : 'Try a different search term.'
+                }
               />
+              {staff.length === 0 && (
+                <div className="mt-4 flex justify-center">
+                  <FeatureGate featureKey="staff.invite" compact>
+                    <DashboardButton tone="primary" onClick={() => setAddOpen(true)}>
+                      <UserPlus className="mr-1.5 h-4 w-4" />
+                      Invite staff
+                    </DashboardButton>
+                  </FeatureGate>
+                </div>
+              )}
             </div>
-            <div className="grid gap-2">
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={editingStaff?.email || ''}
-                onChange={(e) => setEditingStaff({...editingStaff, email: e.target.value})}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Phone</Label>
-              <Input
-                value={editingStaff?.phone || ''}
-                onChange={(e) => setEditingStaff({...editingStaff, phone: e.target.value})}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Role</Label>
-              <Select value={editingStaff?.role || 'pharmacist'} onValueChange={(value) => setEditingStaff({...editingStaff, role: value})}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pharmacist">Pharmacist</SelectItem>
-                  <SelectItem value="cashier">Cashier</SelectItem>
-                  <SelectItem value="staff">Staff</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label>New Password (optional)</Label>
-              <PasswordInput
-                value={editingStaff?.password || ''}
-                onChange={(e) => setEditingStaff({...editingStaff, password: e.target.value})}
-                placeholder="Leave blank to keep current password"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button onClick={saveEditStaff}>Save Changes</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+          ) : (
+            <ul className="space-y-2 p-4">
+              {filtered.map((member) => (
+                <li key={member.id}>
+                  <StaffListRow
+                    member={member}
+                    onSelect={(m) => {
+                      setSelectedMember(m)
+                      setSheetOpen(true)
+                    }}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </DashboardTableCard>
+
+        <StaffDetailSheet
+          member={selectedMember}
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          onDeleted={() => setSelectedMember(null)}
+        />
+      </DashboardPageShell>
+    </FeatureGate>
   )
 }
-
-

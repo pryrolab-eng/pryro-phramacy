@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../../supabase/server'
 
 export async function POST(request: NextRequest) {
@@ -10,21 +11,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!userPharmacy) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 404 })
-    }
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
     // Get pharmacy's RRA EBM API key
     const { data: apiKey } = await supabase
       .from('api_keys')
       .select('key')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .eq('name', 'RRA EBM API')
       .eq('status', 'Active')
       .single()

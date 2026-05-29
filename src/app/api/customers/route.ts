@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../supabase/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
+import {
+  formatCustomerRow,
+  parseAllergiesInput,
+} from '@/lib/customers/format-customer'
+import {
+  buildSalesTotalsIndex,
+  fetchPharmacySaleTotals,
+  lookupCustomerTotal,
+} from '@/lib/customers/customer-sales'
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,18 +21,12 @@ export async function GET(request: NextRequest) {
     
     if (!user) return NextResponse.json([])
     
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-    
-    if (!userPharmacy) return NextResponse.json([])
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
     
     let customersQuery = supabase
       .from('customers')
       .select('*')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       
     if (query.length > 0) {
       customersQuery = customersQuery.or(`name.ilike.%${query}%,phone.ilike.%${query}%`)
@@ -39,18 +43,18 @@ export async function GET(request: NextRequest) {
     }
     
     const { data: customers } = await customersQuery
-    const formattedCustomers = (customers || []).map(c => ({
-      id: c.id,
-      name: c.name,
-      phone: c.phone,
-      email: c.email || '',
-      dateOfBirth: c.date_of_birth || '',
-      allergies: c.allergies ? c.allergies.join(', ') : 'None',
-      insurance: c.insurance_number || '',
-      totalPurchases: 0,
-      lastVisit: c.created_at?.split('T')[0] || '',
-      status: 'active'
-    }))
+    const saleRows = await fetchPharmacySaleTotals(supabase, pharmacyId)
+    const totalsIndex = buildSalesTotalsIndex(saleRows)
+
+    const formattedCustomers = (customers || []).map((c) =>
+      formatCustomerRow(c, {
+        totalPurchases: lookupCustomerTotal(
+          totalsIndex,
+          c.name,
+          c.phone,
+        ),
+      }),
+    )
     
     return NextResponse.json(formattedCustomers)
   } catch (error) {
@@ -67,20 +71,16 @@ export async function POST(request: NextRequest) {
     
     if (!user) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-    
-    if (!userPharmacy) return NextResponse.json({ success: false, error: 'Pharmacy not found' }, { status: 404 })
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
     
     const customerData = {
-      pharmacy_id: userPharmacy.pharmacy_id,
+      pharmacy_id: pharmacyId,
       name: body.name || body.patientName || '',
       phone: body.phone || body.phoneNumber || '',
       email: body.email || '',
-      insurance_number: body.insurance || body.insuranceNumber || ''
+      date_of_birth: body.dateOfBirth || null,
+      allergies: parseAllergiesInput(body.allergies),
+      insurance_number: body.insurance || body.insuranceNumber || '',
     }
     
     const { data: newCustomer, error } = await supabase

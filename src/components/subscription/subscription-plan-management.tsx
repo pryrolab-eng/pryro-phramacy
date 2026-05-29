@@ -38,7 +38,13 @@ import {
   Plus,
   AlertTriangle,
 } from "lucide-react";
-import { normalizePlanKey, planDisplayName } from "@/lib/admin/plan-stats";
+import { planDisplayName } from "@/lib/admin/plan-stats";
+import {
+  catalogPlanMatchesActive,
+  findCurrentCatalogPlan,
+  resolveCurrentPlanPrice,
+} from "@/lib/subscription/match-current-catalog-plan";
+import { useActiveCatalogPlanRef } from "@/hooks/useActiveCatalogPlanRef";
 import { fallbackPlansForDisplay } from "@/lib/subscription/default-plans";
 import { normalizeSubscriptionPlanRow } from "@/lib/subscription/normalize-plan";
 import {
@@ -63,7 +69,7 @@ import {
   useValidatePhoneMutation,
 } from "@/hooks/useSubscriptionManagement";
 import { BranchAddonCheckoutDialog } from "@/components/subscription/branch-addon-checkout-dialog";
-import { PlanFeatureList } from "@/components/subscription/plan-feature-list";
+import { PlanCatalogSections } from "@/components/subscription/plan-catalog-sections";
 import type { SubscriptionPlan as SaasSubscriptionPlan } from "@/lib/saas/types";
 
 export type CatalogPlan = {
@@ -85,11 +91,9 @@ type Props = {
   checkoutReturnContext?: PaidCheckoutContext;
   onPlanChanged?: () => void;
   showBranchAddons?: boolean;
+  /** Tighter grid for upgrade modal vs full billing page */
+  layout?: "page" | "dialog";
 };
-
-function planMatchesCurrent(planName: string, activePlanKey: string): boolean {
-  return normalizePlanKey(planName) === normalizePlanKey(activePlanKey);
-}
 
 function toSaasAddonPlan(plan: CatalogPlan): SaasSubscriptionPlan {
   return {
@@ -117,8 +121,8 @@ export function SubscriptionPlanManagement({
   checkoutReturnContext = "settings",
   onPlanChanged,
   showBranchAddons = true,
+  layout = "page",
 }: Props) {
-  const [currentPlanKey, setCurrentPlanKey] = useState("standard");
   const [plans, setPlans] = useState<CatalogPlan[]>([]);
   const [addonPlans, setAddonPlans] = useState<CatalogPlan[]>([]);
   const [scheduledChange, setScheduledChange] =
@@ -130,6 +134,12 @@ export function SubscriptionPlanManagement({
 
   const invalidateSubscription = useInvalidateSubscriptionManagement();
   const plansQuery = useSubscriptionPlansCatalog();
+  const {
+    activePlan,
+    isLoading: activePlanLoading,
+    isError: activePlanError,
+    refetch: refetchActivePlan,
+  } = useActiveCatalogPlanRef();
   const pharmacyPlanQuery = usePharmacySubscriptionPlan();
   const scheduledQuery = useScheduledChangeQuery();
   const statusQuery = useSubscriptionStatusQuery();
@@ -164,7 +174,7 @@ export function SubscriptionPlanManagement({
         id: plan.id,
         name: plan.name,
         price: plan.price,
-        current: planMatchesCurrent(plan.name, currentPlanKey),
+        current: catalogPlanMatchesActive(plan, activePlan),
         features: plan.features,
         plan_type: plan.plan_type,
         monthly_tx_limit: plan.monthly_tx_limit,
@@ -172,7 +182,7 @@ export function SubscriptionPlanManagement({
         max_branches: Number(row.max_branches ?? 0),
       };
     },
-    [currentPlanKey]
+    [activePlan],
   );
 
   const applyCatalogPlans = useCallback(
@@ -185,13 +195,10 @@ export function SubscriptionPlanManagement({
   );
 
   useEffect(() => {
-    if (pharmacyPlanQuery.data) {
-      setCurrentPlanKey(pharmacyPlanQuery.data.subscription);
-      if (pharmacyPlanQuery.data.subscriptionExpiresAt) {
-        setSubscriptionExpiresAt(pharmacyPlanQuery.data.subscriptionExpiresAt);
-      }
+    if (pharmacyPlanQuery.data?.subscriptionExpiresAt) {
+      setSubscriptionExpiresAt(pharmacyPlanQuery.data.subscriptionExpiresAt);
     }
-  }, [pharmacyPlanQuery.data]);
+  }, [pharmacyPlanQuery.data?.subscriptionExpiresAt]);
 
   useEffect(() => {
     if (plansQuery.data?.length) {
@@ -203,7 +210,7 @@ export function SubscriptionPlanManagement({
         id: plan.id,
         name: plan.name,
         price: plan.price,
-        current: planMatchesCurrent(plan.name, currentPlanKey),
+        current: catalogPlanMatchesActive(plan, activePlan),
         features: plan.features,
         plan_type: "main" as const,
         monthly_tx_limit: plan.monthly_tx_limit ?? 0,
@@ -213,7 +220,13 @@ export function SubscriptionPlanManagement({
       setPlans(fallback);
       setAddonPlans([]);
     }
-  }, [plansQuery.data, plansQuery.isError, plansQuery.isSuccess, applyCatalogPlans, currentPlanKey]);
+  }, [
+    plansQuery.data,
+    plansQuery.isError,
+    plansQuery.isSuccess,
+    applyCatalogPlans,
+    activePlan,
+  ]);
 
   useEffect(() => {
     const scheduled = scheduledQuery.data?.scheduledChange ?? null;
@@ -257,23 +270,42 @@ export function SubscriptionPlanManagement({
     setPlans((prev) =>
       prev.map((plan) => ({
         ...plan,
-        current: planMatchesCurrent(plan.name, currentPlanKey),
-      }))
+        current: catalogPlanMatchesActive(plan, activePlan),
+      })),
     );
-  }, [currentPlanKey]);
+  }, [activePlan]);
+
+  const currentPlan = useMemo(
+    () => findCurrentCatalogPlan(plans, activePlan),
+    [plans, activePlan],
+  );
+
+  const currentPlanPrice = resolveCurrentPlanPrice(plans, activePlan);
 
   const activePlanLabel = useMemo(() => {
-    const match = plans.find((p) => p.current);
-    return match?.name ?? planDisplayName(currentPlanKey);
-  }, [plans, currentPlanKey]);
+    if (currentPlan?.name) return currentPlan.name;
+    if (activePlan?.name) return planDisplayName(activePlan.name);
+    return "Your plan";
+  }, [currentPlan, activePlan]);
 
-  const currentPlanPrice = () => {
-    const current = plans.find((p) => p.current);
-    return current?.price ?? 0;
-  };
+  const upgradePlans = useMemo(
+    () =>
+      [...plans]
+        .filter((p) => !p.current && p.price > currentPlanPrice)
+        .sort((a, b) => a.price - b.price),
+    [plans, currentPlanPrice],
+  );
 
-  const isPlanUpgrade = (plan: CatalogPlan) => plan.price > currentPlanPrice();
-  const isPlanDowngrade = (plan: CatalogPlan) => plan.price < currentPlanPrice();
+  const downgradePlans = useMemo(
+    () =>
+      [...plans]
+        .filter((p) => !p.current && p.price < currentPlanPrice)
+        .sort((a, b) => b.price - a.price),
+    [plans, currentPlanPrice],
+  );
+
+  const isPlanUpgrade = (plan: CatalogPlan) => plan.price > currentPlanPrice;
+  const isPlanDowngrade = (plan: CatalogPlan) => plan.price < currentPlanPrice;
 
   const formatEffectiveDate = (iso: string) => {
     const d = new Date(iso);
@@ -315,7 +347,6 @@ export function SubscriptionPlanManagement({
     if (plan.price === 0) {
       try {
         await createPendingSubscription(plan.id || plan.name);
-        setCurrentPlanKey(normalizePlanKey(plan.name));
         await refreshAll();
         alert(`You are now on the ${plan.name} plan.`);
       } catch (error) {
@@ -343,7 +374,7 @@ export function SubscriptionPlanManagement({
     );
     if (!plan || plan.current) return;
 
-    if (plan.price === currentPlanPrice()) {
+    if (plan.price === currentPlanPrice) {
       alert("You are already on this plan tier.");
       return;
     }
@@ -424,7 +455,6 @@ export function SubscriptionPlanManagement({
         pollKpayTransaction(
           paymentData.transaction.id,
           async () => {
-            setCurrentPlanKey(normalizePlanKey(plan.name));
             await refreshAll();
             alert(`Payment successful! You are now on the ${plan.name} plan.`);
           },
@@ -550,59 +580,43 @@ export function SubscriptionPlanManagement({
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Main subscription plans</CardTitle>
-          <CardDescription>
-            Upgrade or schedule a downgrade for your pharmacy&apos;s primary plan
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {plans.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">
-              No plans available. Contact support or try again later.
+      <div>
+        {plansQuery.isPending || activePlanLoading ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            Loading your plan and catalog…
+          </p>
+        ) : activePlanError && !activePlan ? (
+          <div className="space-y-3 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-4 text-center">
+            <p className="text-sm text-destructive">
+              Could not load your current plan. Check your connection and try again.
             </p>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-3">
-              {plans.map((plan) => (
-                <div
-                  key={plan.id || plan.name}
-                  className={`border rounded-lg p-5 flex flex-col ${plan.current ? "border-blue-500 bg-blue-50" : ""}`}
-                >
-                  <div className="text-center mb-3">
-                    <h3 className="font-semibold text-lg">{plan.name}</h3>
-                    <div className="text-2xl font-bold text-blue-600">
-                      {plan.price.toLocaleString()} RWF
-                    </div>
-                    <p className="text-sm text-muted-foreground">per month</p>
-                  </div>
-                  <PlanFeatureList
-                    features={plan.features}
-                    maxVisible={5}
-                    dense
-                    className="mb-4 flex-1"
-                  />
-                  {plan.current ? (
-                    <Button disabled className="w-full">
-                      <Check className="mr-2 h-4 w-4" />
-                      Current Plan
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={() => void handlePlanChange(plan.id || plan.name)}
-                      variant={isPlanUpgrade(plan) ? "default" : "outline"}
-                      className="w-full"
-                    >
-                      <ArrowUpRight className="mr-2 h-4 w-4" />
-                      {isPlanUpgrade(plan) ? "Upgrade" : "Downgrade"}
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void refetchActivePlan();
+                void plansQuery.refetch();
+              }}
+            >
+              Retry
+            </Button>
+          </div>
+        ) : plans.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            No plans available. Contact support or try again later.
+          </p>
+        ) : (
+          <PlanCatalogSections
+            currentPlan={currentPlan}
+            activePlanLabel={activePlanLabel}
+            upgradePlans={upgradePlans}
+            downgradePlans={downgradePlans}
+            layout={layout}
+            onPlanSelect={(id) => void handlePlanChange(id)}
+          />
+        )}
+      </div>
 
       {showBranchAddons && addonPlans.length > 0 && (
         <Card>

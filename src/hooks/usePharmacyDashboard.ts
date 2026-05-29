@@ -18,6 +18,7 @@ import {
   type StockAlertsResponse,
   type WeeklySalesChartPoint,
 } from "@/lib/http/pharmacy-dashboard";
+import type { BranchScopeQuery } from "@/lib/pharmacy/branch-scope";
 
 export {
   pharmacyDashboardKeys,
@@ -28,19 +29,35 @@ export {
   type StockAlertsResponse,
 } from "@/lib/http/pharmacy-dashboard";
 
-export function usePharmacyDashboardStats(options?: { enabled?: boolean }) {
+const DASHBOARD_STALE_MS = 2 * 60 * 1000;
+
+export function usePharmacyDashboardStats(options?: {
+  enabled?: boolean;
+  scope?: BranchScopeQuery;
+  scopeDays?: number;
+}) {
+  const scope = options?.scope;
+  const days = options?.scopeDays ?? 30;
   return useQuery({
-    queryKey: pharmacyDashboardKeys.stats(),
-    queryFn: getPharmacyDashboardStats,
+    queryKey: pharmacyDashboardKeys.stats(scope?.branchId, days),
+    queryFn: () => getPharmacyDashboardStats(scope),
     enabled: options?.enabled ?? true,
+    staleTime: DASHBOARD_STALE_MS,
   });
 }
 
-export function useRecentPosSales(options?: { enabled?: boolean }) {
+export function useRecentPosSales(options?: {
+  enabled?: boolean;
+  scope?: BranchScopeQuery;
+  scopeDays?: number;
+}) {
+  const scope = options?.scope;
+  const days = options?.scopeDays ?? 30;
   return useQuery({
-    queryKey: pharmacyDashboardKeys.recentSales(),
-    queryFn: getRecentPosSales,
+    queryKey: pharmacyDashboardKeys.recentSales(scope?.branchId, days),
+    queryFn: () => getRecentPosSales(scope),
     enabled: options?.enabled ?? true,
+    staleTime: DASHBOARD_STALE_MS,
   });
 }
 
@@ -49,6 +66,7 @@ export function useStockAlerts(options?: { enabled?: boolean }) {
     queryKey: pharmacyDashboardKeys.stockAlerts(),
     queryFn: getStockAlerts,
     enabled: options?.enabled ?? true,
+    staleTime: DASHBOARD_STALE_MS,
   });
 }
 
@@ -57,6 +75,7 @@ export function usePharmacySalesChart(options?: { enabled?: boolean }) {
     queryKey: pharmacyDashboardKeys.salesChart(),
     queryFn: getPharmacySalesChart,
     enabled: options?.enabled ?? true,
+    staleTime: DASHBOARD_STALE_MS,
   });
 }
 
@@ -65,6 +84,7 @@ export function usePharmacyWeeklySalesChart(options?: { enabled?: boolean }) {
     queryKey: pharmacyDashboardKeys.weeklySales(),
     queryFn: getPharmacyWeeklySalesChart,
     enabled: options?.enabled ?? true,
+    staleTime: DASHBOARD_STALE_MS,
   });
 }
 
@@ -73,6 +93,7 @@ export function usePharmacyCategorySalesChart(options?: { enabled?: boolean }) {
     queryKey: pharmacyDashboardKeys.categorySales(),
     queryFn: getPharmacyCategorySalesChart,
     enabled: options?.enabled ?? true,
+    staleTime: DASHBOARD_STALE_MS,
   });
 }
 
@@ -81,6 +102,7 @@ export function usePharmacyInventoryChart(options?: { enabled?: boolean }) {
     queryKey: pharmacyDashboardKeys.inventoryChart(),
     queryFn: getPharmacyInventoryChart,
     enabled: options?.enabled ?? true,
+    staleTime: DASHBOARD_STALE_MS,
   });
 }
 
@@ -103,10 +125,10 @@ export function useInvalidatePharmacyDashboard() {
     invalidateAll: () =>
       queryClient.invalidateQueries({ queryKey: pharmacyDashboardKeys.all }),
     invalidateStats: () =>
-      queryClient.invalidateQueries({ queryKey: pharmacyDashboardKeys.stats() }),
+      queryClient.invalidateQueries({ queryKey: [...pharmacyDashboardKeys.all, "stats"] }),
     invalidateRecentSales: () =>
       queryClient.invalidateQueries({
-        queryKey: pharmacyDashboardKeys.recentSales(),
+        queryKey: [...pharmacyDashboardKeys.all, "recent-sales"],
       }),
     invalidateStockAlerts: () =>
       queryClient.invalidateQueries({

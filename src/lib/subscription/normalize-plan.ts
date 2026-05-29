@@ -51,6 +51,8 @@ export type DisplaySubscriptionPlan = {
   is_popular: boolean;
   plan_type: PlanType;
   monthly_tx_limit: number;
+  max_users?: number;
+  max_branches?: number;
 };
 
 export function planTypeFromRow(row: Record<string, unknown>): PlanType {
@@ -109,6 +111,8 @@ export function normalizeSubscriptionPlanRow(
     is_popular: Boolean(row.is_popular),
     plan_type: planTypeFromRow(row),
     monthly_tx_limit: Number(row.monthly_tx_limit ?? 0),
+    max_users: row.max_users !== undefined ? Number(row.max_users) : undefined,
+    max_branches: row.max_branches !== undefined ? Number(row.max_branches) : undefined,
   };
 }
 

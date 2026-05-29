@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../supabase/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 
 export async function GET() {
   try {
@@ -8,21 +9,13 @@ export async function GET() {
     
     if (!user) return NextResponse.json([])
     
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .single()
-    
-    if (!userPharmacy) return NextResponse.json([])
-    
-    // Global rows: pharmacy_id is null. Pharmacy-specific: pharmacy_id matches.
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+
     const { data: categories, error } = await supabase
       .from('categories')
       .select('*')
       .or(
-        `pharmacy_id.is.null,pharmacy_id.eq.${userPharmacy.pharmacy_id}`,
+        `pharmacy_id.is.null,pharmacy_id.eq.${pharmacyId}`,
       )
       .eq('is_active', true)
       .order('name', { ascending: true })
@@ -47,19 +40,12 @@ export async function POST(request: NextRequest) {
     
     const body = await request.json()
     
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .single()
-    
-    if (!userPharmacy) return NextResponse.json({ success: false, error: 'Pharmacy not found' }, { status: 404 })
-    
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+
     const { data: category, error } = await supabase
       .from('categories')
       .insert({
-        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_id: pharmacyId,
         name: body.name || body.categoryName,
         description: body.description || body.categoryDescription || '',
         is_active: true

@@ -1,69 +1,89 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
 import { firstRelation } from '@/lib/supabase/relation'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
+import { requireSessionBranchId } from '@/lib/pharmacy/get-session-branch'
+import {
+  filterSellableBatches,
+  sortBatchesFefo,
+} from '@/lib/pos/pharmacy-rules'
+import { formatInventoryRowForPos } from '@/lib/pos/format-pos-product'
 
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (!user) {
       return NextResponse.json([])
     }
 
-    // Get user's pharmacy_id
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+    const branchId = await requireSessionBranchId(supabase, user.id)
 
-    if (!userPharmacy) {
-      return NextResponse.json([])
-    }
+    const today = new Date().toISOString().slice(0, 10)
 
-    // Get products with medication details for POS
     const { data: products, error } = await supabase
       .from('inventory')
       .select(`
         id,
+        medication_id,
         batch_number,
         quantity_in_stock,
         selling_price,
         expiry_date,
         medications (
+          id,
           name,
-          category
+          category,
+          generic_name,
+          strength,
+          dosage_form,
+          barcode,
+          requires_prescription
         )
       `)
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
+      .eq('branch_id', branchId)
       .gt('quantity_in_stock', 0)
+      .or(`expiry_date.is.null,expiry_date.gte.${today}`)
 
     if (error) {
       console.error('Database error:', error)
       return NextResponse.json([])
     }
 
-    // Format for POS interface
-    const formattedProducts = products?.map(item => {
-      const medications = firstRelation(item.medications)
-      const today = new Date()
-      const expiryDate = new Date(item.expiry_date)
-      const daysToExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-      
-      return {
-        id: item.id,
-        name: medications?.name || 'Unknown Product',
-        price: item.selling_price,
-        stock: item.quantity_in_stock,
-        batch: item.batch_number,
-        expiryDate: item.expiry_date,
-        daysToExpiry,
-        category: medications?.category || 'general'
-      }
-    }) || []
+    const formattedProducts = sortBatchesFefo(
+      filterSellableBatches(
+        (products ?? []).map((item) => {
+          const medications = firstRelation(item.medications) as {
+            id?: string
+            name?: string
+            category?: string
+            generic_name?: string | null
+            strength?: string | null
+            dosage_form?: string | null
+            barcode?: string | null
+            requires_prescription?: boolean | null
+          } | null
+          const med = medications
+            ? { ...medications, id: medications.id ?? item.medication_id }
+            : null
+          return formatInventoryRowForPos(
+            {
+              id: item.id,
+              batch_number: item.batch_number,
+              quantity_in_stock: item.quantity_in_stock,
+              selling_price: item.selling_price,
+              expiry_date: item.expiry_date,
+              medications: med,
+            },
+            med,
+          )
+        }),
+      ),
+    )
 
-    console.log(`Found ${formattedProducts.length} products for POS`)
     return NextResponse.json(formattedProducts)
   } catch (error) {
     console.error('Error fetching products:', error)

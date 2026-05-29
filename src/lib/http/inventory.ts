@@ -146,15 +146,20 @@ export async function purchaseInventoryStock(body: {
 
 export async function transferInventoryStock(body: {
   productId: string;
-  product: string;
+  product?: string;
   quantity: number;
-  from: string;
-  to: string;
-}): Promise<ApiSuccessResult> {
+  fromBranchId: string;
+  toBranchId: string;
+}): Promise<ApiSuccessResult & { newStock?: number; destinationStock?: number }> {
   const data = await fetchJson<ApiSuccessResult>("/api/inventory/transfers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      productId: body.productId,
+      quantity: body.quantity,
+      fromBranchId: body.fromBranchId,
+      toBranchId: body.toBranchId,
+    }),
   });
   ensureApiSuccess(data, "Failed to transfer stock");
   return data;

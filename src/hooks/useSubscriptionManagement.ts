@@ -12,6 +12,7 @@ import {
   scheduleSubscriptionDowngrade,
   subscriptionKeys,
 } from "@/lib/http/subscription";
+import { invalidatePharmacyPlanCaches } from "@/lib/query/invalidate-plan-caches";
 import { validatePhoneNumber } from "@/lib/http/validation";
 
 export function useSubscriptionPlansCatalog(options?: { enabled?: boolean }) {
@@ -19,7 +20,9 @@ export function useSubscriptionPlansCatalog(options?: { enabled?: boolean }) {
     queryKey: plansKeys.catalog(),
     queryFn: getSubscriptionPlans,
     enabled: options?.enabled ?? true,
-    staleTime: 0,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
+    placeholderData: (previousData) => previousData,
   });
 }
 
@@ -28,6 +31,7 @@ export function usePharmacySubscriptionPlan(options?: { enabled?: boolean }) {
     queryKey: pharmacySettingsKeys.info(),
     queryFn: getPharmacySettings,
     enabled: options?.enabled ?? true,
+    placeholderData: (previousData) => previousData,
     select: (data) => ({
       subscription: String(data.subscription ?? "standard").toLowerCase(),
       subscriptionExpiresAt: data.subscriptionExpiresAt ?? null,
@@ -71,16 +75,7 @@ export function usePolarConfigEnabled(options?: { enabled?: boolean }) {
 
 export function useInvalidateSubscriptionManagement() {
   const queryClient = useQueryClient();
-  return () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: plansKeys.catalog() }),
-      queryClient.invalidateQueries({ queryKey: pharmacySettingsKeys.info() }),
-      queryClient.invalidateQueries({ queryKey: subscriptionKeys.status() }),
-      queryClient.invalidateQueries({
-        queryKey: subscriptionKeys.scheduledChange(),
-      }),
-      queryClient.invalidateQueries({ queryKey: subscriptionKeys.planLimits() }),
-    ]);
+  return () => invalidatePharmacyPlanCaches(queryClient);
 }
 
 export function useScheduleDowngradeMutation() {

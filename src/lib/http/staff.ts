@@ -29,6 +29,7 @@ export type StaffUpdatePayload = {
   phone: string;
   role: string;
   password?: string;
+  status?: "active" | "inactive";
 };
 
 type StaffMutationResult = { success: boolean; error?: string };

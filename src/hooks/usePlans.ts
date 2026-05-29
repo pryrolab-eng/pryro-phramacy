@@ -14,5 +14,7 @@ export function usePublicMainPlans(options?: { enabled?: boolean }) {
       return list.filter((p) => (p.plan_type ?? "main") === "main");
     },
     enabled: options?.enabled ?? true,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
   });
 }

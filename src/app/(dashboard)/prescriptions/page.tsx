@@ -20,7 +20,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Progress } from "@/components/ui/progress"
 import { Pill, Plus, Clock, CheckCircle, AlertCircle, User, Calendar, Search, Filter, Download, ArrowUpRight, FileText, Users } from 'lucide-react'
-import { SidebarTrigger } from '@/components/ui/sidebar'
+import { DashboardPageHeader, DashboardPageShell } from '@/components/dashboard'
 import { Spinner } from '@/components/ui/spinner'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts'
 import {
@@ -135,16 +135,11 @@ export default function PrescriptionsPage() {
   )
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="h-6" />
-          <div>
-            <h1 className="text-xl font-bold">Prescriptions</h1>
-            <p className="text-sm text-muted-foreground">Manage patient prescriptions and dispensing</p>
-          </div>
-        </div>
+    <DashboardPageShell>
+      <DashboardPageHeader
+        title="Prescriptions"
+        description="Manage patient prescriptions and dispensing"
+        actions={
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm">
             <Download className="mr-2 h-4 w-4" />
@@ -220,7 +215,8 @@ export default function PrescriptionsPage() {
             </DialogContent>
           </Dialog>
         </div>
-      </div>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -564,6 +560,6 @@ export default function PrescriptionsPage() {
           </div>
         </TabsContent>
       </Tabs>
-    </div>
+    </DashboardPageShell>
   )
 }

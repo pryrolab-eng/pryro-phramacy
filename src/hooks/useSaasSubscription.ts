@@ -14,6 +14,7 @@ import {
   updateSaasPlan,
   type SubscribeToSaasPlanInput,
 } from '@/lib/http/saas'
+import { invalidateAllPlanCaches } from '@/lib/query/invalidate-plan-caches'
 import {
   createSaasBranch,
   getSaasBranches,
@@ -31,7 +32,10 @@ export function useSaasPlans() {
   return useQuery<SubscriptionPlan[]>({
     queryKey: saasKeys.plans(),
     queryFn: getSaasPlans,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
+    refetchInterval: 60 * 1000,
+    refetchIntervalInBackground: false,
   })
 }
 
@@ -40,6 +44,9 @@ export function useSaasSubscription() {
     queryKey: saasKeys.subscription(),
     queryFn: getSaasSubscriptionSummary,
     staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
+    refetchInterval: 60 * 1000,
+    refetchIntervalInBackground: false,
   })
 }
 
@@ -118,7 +125,7 @@ export function useCreateSaasPlan() {
   return useMutation({
     mutationFn: createSaasPlan,
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: saasKeys.plans() })
+      void invalidateAllPlanCaches(qc)
     },
   })
 }
@@ -134,7 +141,7 @@ export function useUpdateSaasPlan() {
       updates: Record<string, unknown>
     }) => updateSaasPlan(planId, updates),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: saasKeys.plans() })
+      void invalidateAllPlanCaches(qc)
     },
   })
 }

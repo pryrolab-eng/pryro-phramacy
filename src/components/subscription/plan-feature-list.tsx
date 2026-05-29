@@ -28,12 +28,12 @@ export function PlanFeatureList({
   if (all.length === 0) return null;
 
   const itemClass = cn(
-    "flex items-start gap-2 text-gray-500 dark:text-gray-400",
+    "flex items-start gap-2 text-muted-foreground",
     dense ? "text-xs" : "text-sm",
   );
 
   const checkClass = cn(
-    "text-gray-900 dark:text-white shrink-0 mt-0.5",
+    "shrink-0 text-primary mt-0.5",
     dense ? "size-3" : "size-4",
   );
 
@@ -53,9 +53,8 @@ export function PlanFeatureList({
             <button
               type="button"
               className={cn(
-                "mt-2 inline-flex items-center gap-1 rounded-md border-2 border-gray-300 bg-white px-2 py-0.5 text-xs font-semibold text-gray-700 shadow-sm transition-colors",
-                "hover:border-gray-900 hover:bg-gray-50 hover:text-gray-900",
-                "dark:border-gray-600 dark:bg-gray-950 dark:text-gray-300 dark:hover:border-gray-300 dark:hover:text-white",
+                "mt-2 inline-flex items-center gap-1 rounded-md border border-border bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground transition-colors",
+                "hover:border-primary/30 hover:bg-muted hover:text-foreground",
               )}
             >
               +{moreCount} more feature{moreCount === 1 ? "" : "s"}

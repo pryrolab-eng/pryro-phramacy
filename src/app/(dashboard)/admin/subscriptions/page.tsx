@@ -1,11 +1,12 @@
 'use client'
 
 import { AdminSubscriptionsPanel } from '@/components/admin/admin-subscriptions-panel'
+import { DashboardPageShell } from '@/components/dashboard'
 
 export default function SubscriptionsPage() {
   return (
-    <div className="p-6">
+    <DashboardPageShell>
       <AdminSubscriptionsPanel />
-    </div>
+    </DashboardPageShell>
   )
 }

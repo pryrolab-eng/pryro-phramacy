@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
 import {
@@ -14,11 +14,8 @@ import {
 } from '@/hooks'
 import { toast } from 'sonner'
 import { createClient } from '../../../../supabase/client'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { PasswordInput } from "@/components/ui/password-input"
 import { Label } from "@/components/ui/label"
@@ -33,11 +30,31 @@ import { LineChart, Line, ResponsiveContainer, Area, AreaChart, BarChart, Bar, X
 import { PharmacyRadialChart } from '@/components/pharmacy-radial-chart'
 import { PharmacyBarChart } from '@/components/pharmacy-bar-chart'
 import { PharmacyInventoryChart } from '@/components/pharmacy-inventory-chart'
-import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
+import { ChartConfig, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { BranchUsageWidget } from '@/components/branch-usage-widget'
-import { DashboardPanelEmpty } from '@/components/dashboard/dashboard-panel-empty'
-import { DashboardPanelSkeleton } from '@/components/dashboard/dashboard-panel-skeleton'
-import { Skeleton } from '@/components/ui/skeleton'
+import { BranchScopeFilter } from '@/components/shell/branch-scope-filter'
+import { useBranchReportScope } from '@/hooks/useBranchReportScope'
+import { SubscriptionWelcomeGate } from '@/components/dashboard'
+import {
+  DashboardPageShell,
+  DashboardPageHeader,
+  DashboardStatCard,
+  DashboardSectionCard,
+  DashboardChartCard,
+  DashboardButton,
+  DashboardToolbar,
+  DashboardTabsList,
+  DashboardMetricGrid,
+  DashboardPanelEmpty,
+  DashboardPanelSkeleton,
+  Dialog,
+  DialogTrigger,
+  DashboardDialogContent,
+  DashboardDialogHeader,
+  DashboardDialogTitle,
+  DashboardDialogBody,
+  DashboardDialogFooter,
+} from '@/components/dashboard'
 
 const EMPTY_STATS: PharmacyDashboardStats = {
   totalProducts: 0,
@@ -51,8 +68,17 @@ const EMPTY_STATS: PharmacyDashboardStats = {
 }
 
 export default function PharmacyDashboard() {
-  const statsQuery = usePharmacyDashboardStats()
-  const recentSalesQuery = useRecentPosSales()
+  return (
+    <SubscriptionWelcomeGate>
+      <PharmacyDashboardContent />
+    </SubscriptionWelcomeGate>
+  )
+}
+
+function PharmacyDashboardContent() {
+  const { branchScope, setBranchScope, scopeQuery, days } = useBranchReportScope()
+  const statsQuery = usePharmacyDashboardStats({ scope: scopeQuery, scopeDays: days })
+  const recentSalesQuery = useRecentPosSales({ scope: scopeQuery, scopeDays: days })
   const stockAlertsQuery = useStockAlerts()
   const salesChartQuery = usePharmacySalesChart()
   const { invalidateStats, invalidateRecentSales, invalidateStockAlerts } =
@@ -70,15 +96,20 @@ export default function PharmacyDashboard() {
     stockAlertsQuery.isPending ||
     salesChartQuery.isPending
 
-  useRealtimeUpdates((update) => {
-    if (update.type === 'inventory_update') {
-      void invalidateStockAlerts()
-    }
-    if (update.type === 'new_sale') {
-      void invalidateStats()
-      void invalidateRecentSales()
-    }
-  })
+  useRealtimeUpdates(
+    useCallback(
+      (update) => {
+        if (update.type === 'inventory_update') {
+          void invalidateStockAlerts()
+        }
+        if (update.type === 'new_sale') {
+          void invalidateStats()
+          void invalidateRecentSales()
+        }
+      },
+      [invalidateStats, invalidateRecentSales, invalidateStockAlerts],
+    ),
+  )
 
   const [isAddingPharmacist, setIsAddingPharmacist] = useState(false)
   const [newPharmacist, setNewPharmacist] = useState({
@@ -150,58 +181,56 @@ export default function PharmacyDashboard() {
     }
   }
 
+  const salesChartConfig = {
+    revenue: { label: 'Revenue', color: 'hsl(var(--chart-1))' },
+  } satisfies ChartConfig
+
   const SalesChart = () => (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm">Sales Performance</CardTitle>
-        <CardDescription>Monthly revenue trends</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ChartContainer config={{
-          revenue: { label: "Revenue", color: "hsl(var(--chart-1))" }
-        }}>
-          <AreaChart data={salesChartData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="month" />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            <Area type="monotone" dataKey="revenue" stroke="hsl(var(--chart-1))" fill="hsl(var(--chart-1))" fillOpacity={0.2} />
-          </AreaChart>
-        </ChartContainer>
-      </CardContent>
-    </Card>
+    <DashboardChartCard
+      title="Sales performance"
+      description="Monthly revenue trends"
+      config={salesChartConfig}
+      loading={salesChartQuery.isPending}
+    >
+      <AreaChart data={salesChartData}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="month" />
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <Area
+          type="monotone"
+          dataKey="revenue"
+          stroke="hsl(var(--chart-1))"
+          fill="hsl(var(--chart-1))"
+          fillOpacity={0.2}
+        />
+      </AreaChart>
+    </DashboardChartCard>
   )
 
   return (
-    <div className="flex-1 space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="h-6" />
-          <div className="space-y-1">
-            <h1 className="text-xl font-semibold tracking-tight">Pharmacy Dashboard</h1>
-            <p className="text-xs text-muted-foreground">
-              Welcome back! Here's your pharmacy overview for today.
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
-            <Calendar className="mr-2 h-4 w-4" />
-            Export Report
-          </Button>
+    <DashboardPageShell>
+      <DashboardPageHeader
+        title="Pharmacy Dashboard"
+        description="Overview for your pharmacy — scoped by branch when filtered below."
+        actions={
+          <DashboardToolbar>
+          <BranchScopeFilter value={branchScope} onChange={setBranchScope} />
+          <DashboardButton onClick={() => window.print()}>
+            <Calendar className="h-4 w-4" />
+            Export
+          </DashboardButton>
           <Dialog open={isAddingPharmacist} onOpenChange={setIsAddingPharmacist}>
             <DialogTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Pill className="mr-2 h-4 w-4" />
-                Add Pharmacist
-              </Button>
+              <DashboardButton>
+                <Pill className="h-4 w-4" />
+                Add pharmacist
+              </DashboardButton>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-              <DialogHeader>
-                <DialogTitle>Add New Pharmacist</DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
+            <DashboardDialogContent className="sm:max-w-[425px]">
+              <DashboardDialogHeader>
+                <DashboardDialogTitle>Add New Pharmacist</DashboardDialogTitle>
+              </DashboardDialogHeader>
+              <DashboardDialogBody className="grid gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="name">Full Name</Label>
                   <Input
@@ -239,9 +268,11 @@ export default function PharmacyDashboard() {
                     placeholder="Minimum 8 characters"
                   />
                 </div>
-              </div>
-              <DialogFooter>
-                <Button
+              </DashboardDialogBody>
+              <DashboardDialogFooter>
+                <DashboardButton
+                  tone="primary"
+                  className="w-full sm:w-auto"
                   onClick={() => void handleAddPharmacist()}
                   disabled={
                     !newPharmacist.name ||
@@ -249,145 +280,86 @@ export default function PharmacyDashboard() {
                     !newPharmacist.password ||
                     createPharmacistMutation.isPending
                   }
-                  className="w-full"
                 >
                   {createPharmacistMutation.isPending ? 'Sending…' : 'Add Pharmacist'}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
+                </DashboardButton>
+              </DashboardDialogFooter>
+            </DashboardDialogContent>
           </Dialog>
-          <Button onClick={() => window.location.href = '/pos'} size="sm">
-            <ShoppingCart className="mr-2 h-4 w-4" />
-            New Sale
-          </Button>
-        </div>
-      </div>
+          <DashboardButton
+            tone="primary"
+            onClick={() => { window.location.href = '/pos' }}
+          >
+            <ShoppingCart className="h-4 w-4" />
+            New sale
+          </DashboardButton>
+          </DashboardToolbar>
+        }
+      />
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today's Sales</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-green-100 flex items-center justify-center">
-              <DollarSign className="h-4 w-4 text-green-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {overviewLoading ? (
-              <Skeleton className="h-8 w-32" />
-            ) : (
-              <div className="text-2xl font-bold">
-                {localStats.todaySales.toLocaleString()} RWF
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              {overviewLoading
-                ? 'Loading…'
-                : localStats.todaySales === 0
-                  ? 'No sales recorded today'
-                  : 'Total for today'}
-            </p>
-          </CardContent>
-        </Card>
+      <DashboardMetricGrid columns={5}>
+        <DashboardStatCard
+          label="Today's sales"
+          icon={DollarSign}
+          loading={overviewLoading}
+          value={`${localStats.todaySales.toLocaleString()} RWF`}
+          hint={
+            localStats.todaySales === 0 ? 'No sales today' : 'Total for today'
+          }
+        />
+        <DashboardStatCard
+          label="Products"
+          icon={Package}
+          loading={overviewLoading}
+          value={localStats.totalProducts}
+          hint={`${lowStockItems.length} low stock`}
+        />
+        <DashboardStatCard
+          label="Customers"
+          icon={Users}
+          loading={overviewLoading}
+          value={localStats.totalCustomers}
+          hint="Unique customers"
+        />
+        <DashboardStatCard
+          label="Low stock"
+          icon={AlertTriangle}
+          loading={overviewLoading}
+          value={lowStockItems.length}
+          hint="Below threshold"
+        />
+        <DashboardStatCard
+          label="Expiring soon"
+          icon={Clock}
+          loading={overviewLoading}
+          value={expiringItems.length}
+          hint="Within 60 days"
+        />
+      </DashboardMetricGrid>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Products</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
-              <Package className="h-4 w-4 text-blue-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {overviewLoading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <div className="text-2xl font-bold">{localStats.totalProducts}</div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              {overviewLoading ? 'Loading…' : `${lowStockItems.length} low stock`}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Customers</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-purple-100 flex items-center justify-center">
-              <Users className="h-4 w-4 text-purple-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {overviewLoading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <div className="text-2xl font-bold">{localStats.totalCustomers}</div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              {overviewLoading ? 'Loading…' : 'Unique customers'}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Low Stock</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-amber-100 flex items-center justify-center">
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {overviewLoading ? (
-              <Skeleton className="h-8 w-12" />
-            ) : (
-              <div className="text-2xl font-bold">{lowStockItems.length}</div>
-            )}
-            <p className="text-xs text-muted-foreground">Items below threshold</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-red-100 flex items-center justify-center">
-              <Clock className="h-4 w-4 text-red-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {overviewLoading ? (
-              <Skeleton className="h-8 w-12" />
-            ) : (
-              <div className="text-2xl font-bold">{expiringItems.length}</div>
-            )}
-            <p className="text-xs text-muted-foreground">Within 60 days</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Main Content */}
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList>
+        <DashboardTabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="sales">Sales</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
-        </TabsList>
+        </DashboardTabsList>
         
         <TabsContent value="overview" className="space-y-4">
           {/* Subscription & branch usage widget */}
           <BranchUsageWidget />
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {/* Recent Sales */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Recent Sales</CardTitle>
-                <Button variant="ghost" size="sm" asChild>
+            <DashboardSectionCard
+              title="Recent sales"
+              action={
+                <DashboardButton tone="ghost" asChild>
                   <a href="/sales" aria-label="View all sales">
                     <Eye className="h-4 w-4" />
                   </a>
-                </Button>
-              </CardHeader>
-              <CardContent>
+                </DashboardButton>
+              }
+            >
                 {overviewLoading ? (
                   <DashboardPanelSkeleton rows={4} />
                 ) : recentSales.length === 0 ? (
@@ -425,21 +397,20 @@ export default function PharmacyDashboard() {
                     </div>
                   </ScrollArea>
                 )}
-              </CardContent>
-            </Card>
+            </DashboardSectionCard>
 
-            {/* Low Stock Items */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Stock Alerts</CardTitle>
+            <DashboardSectionCard
+              title="Stock alerts"
+              description="Below minimum threshold"
+              action={
                 <Badge
                   variant={lowStockItems.length > 0 ? 'destructive' : 'secondary'}
                   className="text-xs"
                 >
                   {overviewLoading ? '…' : lowStockItems.length}
                 </Badge>
-              </CardHeader>
-              <CardContent>
+              }
+            >
                 {overviewLoading ? (
                   <DashboardPanelSkeleton rows={4} />
                 ) : lowStockItems.length === 0 ? (
@@ -475,18 +446,17 @@ export default function PharmacyDashboard() {
                     </div>
                   </ScrollArea>
                 )}
-              </CardContent>
-            </Card>
+            </DashboardSectionCard>
 
-            {/* Expiring Items */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
+            <DashboardSectionCard
+              title="Expiring soon"
+              description="Within 60 days"
+              action={
                 <Badge variant="outline" className="text-xs">
                   {overviewLoading ? '…' : expiringItems.length}
                 </Badge>
-              </CardHeader>
-              <CardContent>
+              }
+            >
                 {overviewLoading ? (
                   <DashboardPanelSkeleton rows={4} />
                 ) : expiringItems.length === 0 ? (
@@ -522,8 +492,7 @@ export default function PharmacyDashboard() {
                     </div>
                   </ScrollArea>
                 )}
-              </CardContent>
-            </Card>
+            </DashboardSectionCard>
           </div>
         </TabsContent>
         
@@ -542,15 +511,12 @@ export default function PharmacyDashboard() {
         </TabsContent>
         
         <TabsContent value="analytics" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Monthly Performance</CardTitle>
-              <CardDescription>Revenue trends from database</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ChartContainer config={{
-                revenue: { label: "Revenue", color: "hsl(var(--chart-1))" }
-              }}>
+          <DashboardChartCard
+            title="Monthly performance"
+            description="Revenue trends from your sales data"
+            config={salesChartConfig}
+            loading={salesChartQuery.isPending}
+          >
                 <BarChart
                   data={salesChartData.map(item => ({ month: item.month, revenue: item.revenue }))}
                   layout="vertical"
@@ -584,13 +550,9 @@ export default function PharmacyDashboard() {
                     />
                   </Bar>
                 </BarChart>
-              </ChartContainer>
-            </CardContent>
-          </Card>
+          </DashboardChartCard>
         </TabsContent>
       </Tabs>
-
-
-    </div>
+    </DashboardPageShell>
   )
 }

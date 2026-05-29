@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../../supabase/server'
 
 export async function GET() {
@@ -38,16 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user's pharmacy_id
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .single()
-
-    if (!userPharmacy) {
-      return NextResponse.json({ success: false, error: 'Pharmacy not found' }, { status: 404 })
-    }
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
     const body = await request.json()
     
@@ -58,7 +50,7 @@ export async function POST(request: NextRequest) {
         contact_person: body.contact,
         phone: body.phone,
         email: body.email,
-        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_id: pharmacyId,
         is_active: true
       })
       .select()

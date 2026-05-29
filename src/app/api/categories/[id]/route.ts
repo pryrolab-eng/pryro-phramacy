@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -10,14 +11,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     
     if (!user) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-    
-    if (!userPharmacy) return NextResponse.json({ success: false, error: 'Pharmacy not found' }, { status: 404 })
-    
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+
     const { data, error } = await supabase
       .from('categories')
       .update({
@@ -26,7 +21,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         is_active: body.status === 'Active'
       })
       .eq('id', id)
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .select()
       .single()
     
@@ -50,19 +45,13 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     
     if (!user) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-    
-    if (!userPharmacy) return NextResponse.json({ success: false, error: 'Pharmacy not found' }, { status: 404 })
-    
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+
     const { error } = await supabase
       .from('categories')
       .delete()
       .eq('id', id)
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
     
     if (error) {
       console.error('Delete error:', error)

@@ -111,6 +111,55 @@ export async function PUT(
       );
     }
 
+    const { validateMainPlanLimitAlignment } = await import(
+      "@/lib/subscription/plan-limit-alignment"
+    )
+    const { loadPlanFeatureKeys } = await import("@/lib/subscription/plan-features")
+
+    const featureKeysForCheck = Array.isArray(body.feature_keys)
+      ? (body.feature_keys as string[])
+      : Array.isArray(body.featureKeys)
+        ? (body.featureKeys as string[])
+        : null
+
+    const { data: currentPlan } = await auth.db
+      .from("subscription_plans")
+      .select("name, plan_type, max_branches, max_users, monthly_tx_limit")
+      .eq("id", id)
+      .maybeSingle()
+
+    const resolvedFeatureKeys =
+      featureKeysForCheck ?? (await loadPlanFeatureKeys(auth.db, id))
+
+    const merged = {
+      max_branches: Number(
+        updates.max_branches ??
+          (currentPlan as { max_branches?: number })?.max_branches ??
+          1,
+      ),
+      max_users: Number(
+        updates.max_users ??
+          (currentPlan as { max_users?: number })?.max_users ??
+          1,
+      ),
+      monthly_tx_limit: Number(
+        updates.monthly_tx_limit ??
+          (currentPlan as { monthly_tx_limit?: number })?.monthly_tx_limit ??
+          0,
+      ),
+      feature_keys: resolvedFeatureKeys,
+    }
+    const planTypeForCheck = normalizePlanType(
+      String(updates.plan_type ?? currentPlan?.plan_type ?? "main"),
+    )
+    const limitError = validateMainPlanLimitAlignment({
+      plan_type: planTypeForCheck,
+      ...merged,
+    })
+    if (limitError) {
+      return NextResponse.json({ success: false, error: limitError }, { status: 400 })
+    }
+
     if (updates.name !== undefined) {
       const planName = String(updates.name).trim();
       if (!planName) {

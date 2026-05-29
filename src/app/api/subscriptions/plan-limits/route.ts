@@ -6,6 +6,7 @@ import {
   getPharmacyUsage,
   getPlanLimitsForPharmacy,
 } from "@/lib/subscription/plan-limits";
+import { resolveActivePharmacyId } from "@/lib/pharmacy/active-pharmacy";
 
 export async function GET(request: NextRequest) {
   const { supabase, json } = createRouteHandlerClient(request);
@@ -20,19 +21,10 @@ export async function GET(request: NextRequest) {
     }
 
     const admin = createServiceClient();
-    const { data: userPharmacy } = await admin
-      .from("pharmacy_users")
-      .select("pharmacy_id")
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
-
-    if (!userPharmacy?.pharmacy_id) {
+    const pharmacyId = await resolveActivePharmacyId(admin, user.id);
+    if (!pharmacyId) {
       return json({ error: "Pharmacy not found" }, { status: 403 });
     }
-
-    const pharmacyId = userPharmacy.pharmacy_id;
     const [limits, usage, canAdd] = await Promise.all([
       getPlanLimitsForPharmacy(admin, pharmacyId),
       getPharmacyUsage(admin, pharmacyId),

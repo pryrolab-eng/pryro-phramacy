@@ -20,6 +20,10 @@ import {
   lookupPosCustomerByPhone,
   posKeys,
   processPosReturn,
+  lookupPosSale,
+  getCurrentCashierShift,
+  openCashierShift,
+  closeCashierShift,
   processPosSale,
   quickAddPosEntity,
   quickAddPosPatient,
@@ -28,6 +32,9 @@ import {
   type PosCustomer,
   type PosQuickAddEndpoint,
   type PosSalePayload,
+  type PosReturnPayload,
+  type PosSaleLookup,
+  type CashierShift,
 } from "@/lib/http/pos";
 import {
   checkBranchTransactionAllowed,
@@ -42,21 +49,30 @@ export {
   type PosCustomer,
   type PosProduct,
   type PosSalePayload,
+  type PrescriptionConfirmation,
 } from "@/lib/http/pos";
 
-export function usePosProducts(options?: { enabled?: boolean }) {
+export function usePosProducts(options?: {
+  enabled?: boolean;
+  branchId?: string | null;
+}) {
+  const branchId = options?.branchId;
   return useQuery({
-    queryKey: posKeys.products(),
-    queryFn: getPosProducts,
-    enabled: options?.enabled ?? true,
+    queryKey: posKeys.products(branchId),
+    queryFn: () => getPosProducts(branchId),
+    enabled: (options?.enabled ?? true) && Boolean(branchId),
   });
 }
 
-export function usePosFastMoving(options?: { enabled?: boolean }) {
+export function usePosFastMoving(options?: {
+  enabled?: boolean;
+  branchId?: string | null;
+}) {
+  const branchId = options?.branchId;
   return useQuery({
-    queryKey: posKeys.fastMoving(),
-    queryFn: getPosFastMovingProducts,
-    enabled: options?.enabled ?? true,
+    queryKey: posKeys.fastMoving(branchId),
+    queryFn: () => getPosFastMovingProducts(branchId),
+    enabled: (options?.enabled ?? true) && Boolean(branchId),
   });
 }
 
@@ -158,10 +174,55 @@ export function useQuickAddPosEntityMutation() {
 }
 
 export function useProcessPosReturnMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: processPosReturn,
+    mutationFn: (payload: PosReturnPayload) => processPosReturn(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: posKeys.all });
+    },
   });
 }
+
+export function useLookupPosSaleMutation() {
+  return useMutation({
+    mutationFn: lookupPosSale,
+  });
+}
+
+export function useCashierShift(branchId: string | null) {
+  return useQuery({
+    queryKey: posKeys.shift(branchId),
+    queryFn: () => getCurrentCashierShift(branchId!),
+    enabled: Boolean(branchId),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useOpenCashierShiftMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: openCashierShift,
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: posKeys.shift(variables.branchId),
+      });
+    },
+  });
+}
+
+export function useCloseCashierShiftMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: closeCashierShift,
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: posKeys.shift(variables.branchId),
+      });
+    },
+  });
+}
+
+export type { PosReturnPayload, PosSaleLookup, CashierShift };
 
 export function useAnalyzeCartSafetyMutation() {
   return useMutation({

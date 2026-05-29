@@ -50,16 +50,17 @@ import {
 import { DataTable } from '@/components/ui/data-table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Spinner } from '@/components/ui/spinner';
-import {
-  adminBillingQueryKey,
-  adminPlansQueryKey,
-  adminReportsSummaryQueryKey,
-  useAdminPlans,
-} from '@/hooks'
+import { useAdminPlans } from '@/hooks'
 import { createAdminPlan, dedupeAdminPlans, fixAdminPlanCatalog, syncAllPlansToPolar, updateAdminPlan, type AdminSubscriptionPlanRow } from '@/lib/http/admin/plans'
+import { invalidateAllPlanCaches } from '@/lib/query/invalidate-plan-caches'
 import { PlanFeatureMatrix } from '@/components/admin/plan-feature-matrix'
+import { PlanLimitFields } from '@/components/admin/plan-limit-fields'
 import { parsePlanPriceInput } from '@/lib/subscription/normalize-plan'
 import { normalizePlanPeriodLabel } from '@/lib/subscription/plan-period'
+import {
+  applyPlanLimitsForFeatures,
+  validateMainPlanLimitAlignment,
+} from '@/lib/subscription/plan-limit-alignment'
 
 type PlanCard = SubscriptionPlanTableRow & {
   features: string[]
@@ -71,6 +72,9 @@ const defaultPlanLimits = (planType: 'main' | 'branch_addon') =>
   planType === 'branch_addon'
     ? { max_branches: 1, max_users: 5, monthly_tx_limit: 2000 }
     : { max_branches: 1, max_users: 5, monthly_tx_limit: 500 }
+
+const planDialogContentClassName =
+  'flex max-h-[min(90dvh,calc(100vh-2rem))] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl'
 
 export function AdminSubscriptionsPanel() {
   const queryClient = useQueryClient()
@@ -190,9 +194,7 @@ export function AdminSubscriptionsPanel() {
     setDedupeLoading(true)
     try {
       const result = await dedupeAdminPlans()
-      await queryClient.invalidateQueries({ queryKey: adminPlansQueryKey })
-      await queryClient.invalidateQueries({ queryKey: adminBillingQueryKey })
-      await queryClient.invalidateQueries({ queryKey: adminReportsSummaryQueryKey })
+      await invalidateAllPlanCaches(queryClient)
       showFeedback(
         result.deactivated > 0 ? 'Duplicates removed' : 'No duplicates',
         result.message ??
@@ -221,9 +223,7 @@ export function AdminSubscriptionsPanel() {
 
     try {
       const result = await syncAllPlansToPolar()
-      await queryClient.invalidateQueries({ queryKey: adminPlansQueryKey })
-      await queryClient.invalidateQueries({ queryKey: adminBillingQueryKey })
-      await queryClient.invalidateQueries({ queryKey: adminReportsSummaryQueryKey })
+      await invalidateAllPlanCaches(queryClient)
       setPolarSyncStats({
         synced: result.synced,
         failed: result.failed,
@@ -243,9 +243,7 @@ export function AdminSubscriptionsPanel() {
     setFixCatalogLoading(true)
     try {
       const result = await fixAdminPlanCatalog()
-      await queryClient.invalidateQueries({ queryKey: adminPlansQueryKey })
-      await queryClient.invalidateQueries({ queryKey: adminBillingQueryKey })
-      await queryClient.invalidateQueries({ queryKey: adminReportsSummaryQueryKey })
+      await invalidateAllPlanCaches(queryClient)
       showFeedback(
         result.mainPlansFixed + result.addonsFixed > 0 ? 'Catalog fixed' : 'Catalog OK',
         result.message ?? 'Plan types verified.',
@@ -266,21 +264,34 @@ export function AdminSubscriptionsPanel() {
     setIsAddingPlanLoading(true)
     try {
       const limits = defaultPlanLimits(newPlan.plan_type)
-      const { polarSync } = await createAdminPlan({
-        name: newPlan.name,
-        price: parseInt(newPlan.price, 10),
-        feature_keys: newPlan.plan_type === 'main' ? newPlanFeatureKeys : [],
-        plan_type: newPlan.plan_type,
-        billing_period:
-          parseInt(newPlan.price, 10) === 0 ? 'free' : newPlan.billing_cadence,
-        billing_cadence: newPlan.billing_cadence,
+      const featureKeys = newPlan.plan_type === 'main' ? newPlanFeatureKeys : []
+      const alignedLimits = applyPlanLimitsForFeatures({
+        feature_keys: featureKeys,
         max_branches: Number(newPlan.max_branches) || limits.max_branches,
         max_users: Number(newPlan.max_users) || limits.max_users,
         monthly_tx_limit: Number(newPlan.monthly_tx_limit) || limits.monthly_tx_limit,
       })
-      await queryClient.invalidateQueries({ queryKey: adminPlansQueryKey })
-      await queryClient.invalidateQueries({ queryKey: adminBillingQueryKey })
-      await queryClient.invalidateQueries({ queryKey: adminReportsSummaryQueryKey })
+      const limitError = validateMainPlanLimitAlignment({
+        plan_type: newPlan.plan_type,
+        ...alignedLimits,
+      })
+      if (limitError) {
+        showFeedback('Plan limits mismatch', limitError, 'error')
+        return
+      }
+      const { polarSync } = await createAdminPlan({
+        name: newPlan.name,
+        price: parseInt(newPlan.price, 10),
+        feature_keys: alignedLimits.feature_keys,
+        plan_type: newPlan.plan_type,
+        billing_period:
+          parseInt(newPlan.price, 10) === 0 ? 'free' : newPlan.billing_cadence,
+        billing_cadence: newPlan.billing_cadence,
+        max_branches: alignedLimits.max_branches,
+        max_users: alignedLimits.max_users,
+        monthly_tx_limit: alignedLimits.monthly_tx_limit,
+      })
+      await invalidateAllPlanCaches(queryClient)
       setIsAddingPlan(false)
       setNewPlan({
         name: '',
@@ -323,9 +334,7 @@ export function AdminSubscriptionsPanel() {
     setTogglingPlanId(plan.id)
     try {
       await updateAdminPlan(plan.id, { is_active: nextActive })
-      await queryClient.invalidateQueries({ queryKey: adminPlansQueryKey })
-      await queryClient.invalidateQueries({ queryKey: adminBillingQueryKey })
-      await queryClient.invalidateQueries({ queryKey: adminReportsSummaryQueryKey })
+      await invalidateAllPlanCaches(queryClient)
     } catch (error) {
       console.error('Error updating plan status:', error)
       showFeedback(
@@ -350,7 +359,14 @@ export function AdminSubscriptionsPanel() {
     () =>
       adminSubscriptionPlanColumns({
         onEdit: (plan) => {
-          setSelectedPlan(plan as PlanCard)
+          const p = plan as PlanCard
+          const aligned = applyPlanLimitsForFeatures({
+            feature_keys: p.feature_keys,
+            max_branches: p.max_branches,
+            max_users: p.max_users,
+            monthly_tx_limit: p.monthly_tx_limit,
+          })
+          setSelectedPlan({ ...p, ...aligned })
           setEditPlanPrice(String(plan.price))
           setIsEditingPlan(true)
         },
@@ -373,26 +389,42 @@ export function AdminSubscriptionsPanel() {
       )
       return
     }
+    const alignedLimits = applyPlanLimitsForFeatures({
+      feature_keys: selectedPlan.feature_keys,
+      max_branches: selectedPlan.max_branches,
+      max_users: selectedPlan.max_users,
+      monthly_tx_limit: selectedPlan.monthly_tx_limit,
+    })
+    const savePayload = {
+      name: selectedPlan.name,
+      price,
+      billing_period:
+        price === 0 ? 'free' : selectedPlan.billing_cadence,
+      billing_cadence: selectedPlan.billing_cadence,
+      feature_keys: alignedLimits.feature_keys,
+      is_popular: selectedPlan.popular,
+      is_active: selectedPlan.is_active,
+      plan_type: selectedPlan.plan_type,
+      max_branches: alignedLimits.max_branches,
+      max_users: alignedLimits.max_users,
+      monthly_tx_limit: alignedLimits.monthly_tx_limit,
+    }
+    const limitError = validateMainPlanLimitAlignment({
+      plan_type: savePayload.plan_type,
+      max_branches: savePayload.max_branches,
+      max_users: savePayload.max_users,
+      monthly_tx_limit: savePayload.monthly_tx_limit,
+      feature_keys: savePayload.feature_keys,
+    })
+    if (limitError) {
+      showFeedback('Plan limits mismatch', limitError, 'error')
+      return
+    }
     setIsSavingPlan(true)
     try {
-      const data = await updateAdminPlan(selectedPlan.id, {
-        name: selectedPlan.name,
-        price,
-        billing_period:
-          price === 0 ? 'free' : selectedPlan.billing_cadence,
-        billing_cadence: selectedPlan.billing_cadence,
-        feature_keys: selectedPlan.feature_keys,
-        is_popular: selectedPlan.popular,
-        is_active: selectedPlan.is_active,
-        plan_type: selectedPlan.plan_type,
-        max_branches: selectedPlan.max_branches,
-        max_users: selectedPlan.max_users,
-        monthly_tx_limit: selectedPlan.monthly_tx_limit,
-      })
+      const data = await updateAdminPlan(selectedPlan.id, savePayload)
 
-      await queryClient.invalidateQueries({ queryKey: adminPlansQueryKey })
-      await queryClient.invalidateQueries({ queryKey: adminBillingQueryKey })
-      await queryClient.invalidateQueries({ queryKey: adminReportsSummaryQueryKey })
+      await invalidateAllPlanCaches(queryClient)
       setIsEditingPlan(false)
       setSelectedPlan(null)
 
@@ -415,7 +447,7 @@ export function AdminSubscriptionsPanel() {
       } else {
         showFeedback(
           'Plan updated',
-          `${selectedPlan.name} is now ${savedPrice.toLocaleString()} RWF/month. Pharmacies will see this after they refresh Settings.`
+          `${selectedPlan.name} is now ${savedPrice.toLocaleString()} RWF/month.`
         )
       }
     } catch (error) {
@@ -437,7 +469,7 @@ export function AdminSubscriptionsPanel() {
   )
 
   return (
-    <div className="p-6">
+    <div>
       <PolarSyncDialog
         open={polarSyncOpen}
         onOpenChange={setPolarSyncOpen}
@@ -489,6 +521,7 @@ export function AdminSubscriptionsPanel() {
 
         <div className="max-w-7xl mx-auto space-y-6">
           <AdminPageHeader
+            pinTitle="Subscription catalog"
             title={
               <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
                 <CreditCard className="h-8 w-8 text-primary" />
@@ -663,11 +696,12 @@ export function AdminSubscriptionsPanel() {
                       Create New Plan
                     </Button>
                   </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
+                  <DialogContent className={planDialogContentClassName}>
+                    <DialogHeader className="shrink-0 border-b px-6 py-4">
                       <DialogTitle>Add New Plan</DialogTitle>
                     </DialogHeader>
-                    <div className="grid gap-4 py-4">
+                    <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+                    <div className="grid gap-4">
                       <div className="grid gap-2">
                         <Label>Plan Name</Label>
                         <Input
@@ -737,45 +771,53 @@ export function AdminSubscriptionsPanel() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="grid gap-2">
-                          <Label>Max branches</Label>
-                          <Input
-                            type="number"
-                            min={1}
-                            value={newPlan.max_branches}
-                            onChange={(e) => setNewPlan({ ...newPlan, max_branches: e.target.value })}
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Max users</Label>
-                          <Input
-                            type="number"
-                            min={1}
-                            value={newPlan.max_users}
-                            onChange={(e) => setNewPlan({ ...newPlan, max_users: e.target.value })}
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Tx / month</Label>
-                          <Input
-                            type="number"
-                            min={0}
-                            value={newPlan.monthly_tx_limit}
-                            onChange={(e) => setNewPlan({ ...newPlan, monthly_tx_limit: e.target.value })}
-                          />
-                        </div>
-                      </div>
                       {newPlan.plan_type === 'main' ? (
                         <div className="grid gap-2">
                           <Label>Plan features</Label>
                           <PlanFeatureMatrix
                             selectedKeys={newPlanFeatureKeys}
-                            onChange={setNewPlanFeatureKeys}
+                            onChange={(keys) => {
+                              setNewPlanFeatureKeys(keys)
+                              const aligned = applyPlanLimitsForFeatures({
+                                feature_keys: keys,
+                                max_branches: Number(newPlan.max_branches) || 1,
+                                max_users: Number(newPlan.max_users) || 1,
+                                monthly_tx_limit: Number(newPlan.monthly_tx_limit) || 0,
+                              })
+                              setNewPlan({
+                                ...newPlan,
+                                max_branches: String(aligned.max_branches),
+                                max_users: String(aligned.max_users),
+                                monthly_tx_limit: String(aligned.monthly_tx_limit),
+                              })
+                            }}
                           />
                         </div>
                       ) : null}
+                      <div className="grid gap-2">
+                        <Label>Plan limits</Label>
+                        <PlanLimitFields
+                          planType={newPlan.plan_type}
+                          featureKeys={newPlanFeatureKeys}
+                          maxBranches={Number(newPlan.max_branches) || 1}
+                          maxUsers={Number(newPlan.max_users) || 1}
+                          monthlyTxLimit={Number(newPlan.monthly_tx_limit) || 0}
+                          onMaxBranchesChange={(value) =>
+                            setNewPlan({ ...newPlan, max_branches: String(value) })
+                          }
+                          onMaxUsersChange={(value) =>
+                            setNewPlan({ ...newPlan, max_users: String(value) })
+                          }
+                          onMonthlyTxLimitChange={(value) =>
+                            setNewPlan({ ...newPlan, monthly_tx_limit: String(value) })
+                          }
+                        />
+                      </div>
+                    </div>
+                    </div>
+                    <div className="shrink-0 border-t px-6 py-4">
                       <Button
+                        className="w-full sm:w-auto"
                         onClick={() => void handleAddPlan()}
                         disabled={
                           !newPlan.name || newPlan.price === '' || isAddingPlanLoading
@@ -800,12 +842,14 @@ export function AdminSubscriptionsPanel() {
 
           {/* Edit Dialog */}
           <Dialog open={isEditingPlan} onOpenChange={setIsEditingPlan}>
-            <DialogContent>
-              <DialogHeader>
+            <DialogContent className={planDialogContentClassName}>
+              <DialogHeader className="shrink-0 border-b px-6 py-4">
                 <DialogTitle>Edit Plan</DialogTitle>
               </DialogHeader>
               {selectedPlan && (
-                <div className="grid gap-4 py-4">
+                <>
+                <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+                <div className="grid gap-4">
                   <div className="grid gap-2">
                     <Label>Plan Name</Label>
                     <Input
@@ -857,61 +901,44 @@ export function AdminSubscriptionsPanel() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="grid gap-2">
-                      <Label>Max branches</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={selectedPlan.max_branches}
-                        onChange={(e) =>
-                          setSelectedPlan({
-                            ...selectedPlan,
-                            max_branches: Number(e.target.value) || 1,
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>Max users</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={selectedPlan.max_users}
-                        onChange={(e) =>
-                          setSelectedPlan({
-                            ...selectedPlan,
-                            max_users: Number(e.target.value) || 1,
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>Tx / month</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={selectedPlan.monthly_tx_limit}
-                        onChange={(e) =>
-                          setSelectedPlan({
-                            ...selectedPlan,
-                            monthly_tx_limit: Number(e.target.value) || 0,
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
                   {selectedPlan.plan_type === 'main' ? (
                     <div className="grid gap-2">
                       <Label>Plan features</Label>
                       <PlanFeatureMatrix
                         selectedKeys={selectedPlan.feature_keys}
                         onChange={(keys) =>
-                          setSelectedPlan({ ...selectedPlan, feature_keys: keys })
+                          setSelectedPlan({
+                            ...selectedPlan,
+                            ...applyPlanLimitsForFeatures({
+                              feature_keys: keys,
+                              max_branches: selectedPlan.max_branches,
+                              max_users: selectedPlan.max_users,
+                              monthly_tx_limit: selectedPlan.monthly_tx_limit,
+                            }),
+                          })
                         }
                       />
                     </div>
                   ) : null}
+                  <div className="grid gap-2">
+                    <Label>Plan limits</Label>
+                    <PlanLimitFields
+                      planType={selectedPlan.plan_type}
+                      featureKeys={selectedPlan.feature_keys}
+                      maxBranches={selectedPlan.max_branches}
+                      maxUsers={selectedPlan.max_users}
+                      monthlyTxLimit={selectedPlan.monthly_tx_limit}
+                      onMaxBranchesChange={(value) =>
+                        setSelectedPlan({ ...selectedPlan, max_branches: value })
+                      }
+                      onMaxUsersChange={(value) =>
+                        setSelectedPlan({ ...selectedPlan, max_users: value })
+                      }
+                      onMonthlyTxLimitChange={(value) =>
+                        setSelectedPlan({ ...selectedPlan, monthly_tx_limit: value })
+                      }
+                    />
+                  </div>
                   {selectedPlan.polar_product_id ? (
                     <p className="text-xs text-muted-foreground rounded-md border px-3 py-2">
                       Polar product (auto-synced):{' '}
@@ -935,7 +962,11 @@ export function AdminSubscriptionsPanel() {
                       }
                     />
                   </div>
+                  </div>
+                </div>
+                <div className="shrink-0 border-t px-6 py-4">
                   <Button
+                    className="w-full sm:w-auto"
                     onClick={() => void handleEditPlan()}
                     disabled={isSavingPlan}
                   >
@@ -949,6 +980,7 @@ export function AdminSubscriptionsPanel() {
                     )}
                   </Button>
                 </div>
+                </>
               )}
             </DialogContent>
           </Dialog>

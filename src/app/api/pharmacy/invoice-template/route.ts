@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../../supabase/server'
 
 export async function GET() {
@@ -8,7 +9,7 @@ export async function GET() {
     const { data: pharmacy } = await supabase
       .from('pharmacies')
       .select('invoice_template')
-      .eq('id', 'userPharmacy.pharmacy_id')
+      .eq('id', 'pharmacyId')
       .single()
 
     const defaultTemplate = {
@@ -43,7 +44,7 @@ export async function PUT(request: NextRequest) {
     const { error } = await supabase
       .from('pharmacies')
       .update({ invoice_template: template })
-      .eq('id', 'userPharmacy.pharmacy_id')
+      .eq('id', 'pharmacyId')
 
     if (error) throw error
 

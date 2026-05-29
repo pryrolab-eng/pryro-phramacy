@@ -1,4 +1,9 @@
 import { fetchJson } from "./client";
+import {
+  buildBranchScopeQueryString,
+  branchScopeCacheKey,
+  type BranchScopeQuery,
+} from "@/lib/pharmacy/branch-scope";
 
 export type PharmacyDashboardStats = {
   totalProducts: number;
@@ -60,8 +65,18 @@ export type InventoryChartPoint = {
 
 export const pharmacyDashboardKeys = {
   all: ["pharmacy", "dashboard"] as const,
-  stats: () => [...pharmacyDashboardKeys.all, "stats"] as const,
-  recentSales: () => [...pharmacyDashboardKeys.all, "recent-sales"] as const,
+  stats: (branchId?: string, days = 30) =>
+    [
+      ...pharmacyDashboardKeys.all,
+      "stats",
+      ...branchScopeCacheKey(branchId, days),
+    ] as const,
+  recentSales: (branchId?: string, days = 30) =>
+    [
+      ...pharmacyDashboardKeys.all,
+      "recent-sales",
+      ...branchScopeCacheKey(branchId, days),
+    ] as const,
   stockAlerts: () => [...pharmacyDashboardKeys.all, "stock-alerts"] as const,
   salesChart: () => [...pharmacyDashboardKeys.all, "sales-chart"] as const,
   weeklySales: () => [...pharmacyDashboardKeys.all, "weekly-sales"] as const,
@@ -86,17 +101,25 @@ const EMPTY_STOCK_ALERTS: StockAlertsResponse = {
   expiring: [],
 };
 
-export async function getPharmacyDashboardStats(): Promise<PharmacyDashboardStats> {
+export async function getPharmacyDashboardStats(
+  scope?: BranchScopeQuery,
+): Promise<PharmacyDashboardStats> {
   try {
-    return await fetchJson<PharmacyDashboardStats>("/api/pharmacy/dashboard");
+    return await fetchJson<PharmacyDashboardStats>(
+      `/api/pharmacy/dashboard${buildBranchScopeQueryString(scope ?? {})}`,
+    );
   } catch {
     return EMPTY_STATS;
   }
 }
 
-export async function getRecentPosSales(): Promise<RecentSaleRow[]> {
+export async function getRecentPosSales(
+  scope?: BranchScopeQuery,
+): Promise<RecentSaleRow[]> {
   try {
-    return await fetchJson<RecentSaleRow[]>("/api/pos");
+    return await fetchJson<RecentSaleRow[]>(
+      `/api/pos${buildBranchScopeQueryString(scope ?? {})}`,
+    );
   } catch {
     return [];
   }

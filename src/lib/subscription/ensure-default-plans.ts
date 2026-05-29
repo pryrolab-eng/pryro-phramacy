@@ -32,9 +32,9 @@ export async function ensureDefaultSubscriptionPlans(
       is_active: true,
       plan_type: "main",
       billing_period: plan.price === 0 ? "free" : "monthly",
-      max_branches: 1,
-      max_users: 5,
-      monthly_tx_limit: 500,
+      max_branches: plan.max_branches ?? 1,
+      max_users: plan.max_users ?? 5,
+      monthly_tx_limit: plan.monthly_tx_limit ?? 500,
     }))
   );
 

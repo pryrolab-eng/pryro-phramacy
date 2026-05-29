@@ -1,4 +1,5 @@
 import type { AdminPharmacyDetail } from "@/lib/admin/pharmacy-detail";
+import type { PharmacyBranding } from "@/lib/http/pharmacy-branding";
 import { ApiError, ensureApiSuccess, fetchJson } from "../client";
 
 export type AdminPharmacyDetailPayload = AdminPharmacyDetail;
@@ -105,4 +106,55 @@ export async function repairAdminPharmacies(): Promise<PharmacyRepairResult> {
   );
   ensureApiSuccess(data, "Failed to repair pharmacy data");
   return data;
+}
+
+export async function getAdminPharmacyBranding(
+  pharmacyId: string,
+): Promise<PharmacyBranding> {
+  return fetchJson<PharmacyBranding>(
+    `/api/admin/pharmacies/${encodeURIComponent(pharmacyId)}/branding`,
+  );
+}
+
+export async function updateAdminPharmacyBranding(
+  pharmacyId: string,
+  body: PharmacyBranding,
+): Promise<void> {
+  await fetchJson(
+    `/api/admin/pharmacies/${encodeURIComponent(pharmacyId)}/branding`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export async function uploadAdminPharmacyLogo(
+  pharmacyId: string,
+  file: File,
+): Promise<{ url: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(
+    `/api/admin/pharmacies/${encodeURIComponent(pharmacyId)}/branding/upload`,
+    { method: "POST", body: formData },
+  );
+  let data: unknown = {};
+  try {
+    data = await res.json();
+  } catch {
+    data = {};
+  }
+  if (!res.ok) {
+    const message =
+      data &&
+      typeof data === "object" &&
+      "error" in data &&
+      typeof (data as { error: unknown }).error === "string"
+        ? (data as { error: string }).error
+        : "Failed to upload logo";
+    throw new ApiError(message, res.status, data);
+  }
+  return data as { url: string };
 }

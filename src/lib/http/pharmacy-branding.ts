@@ -2,6 +2,8 @@ import { ApiError, fetchJson } from "./client";
 
 export const pharmacyBrandingKeys = {
   all: ["pharmacy", "branding"] as const,
+  detail: (pharmacyId: string) =>
+    [...pharmacyBrandingKeys.all, pharmacyId] as const,
 };
 
 export type PharmacyBranding = {

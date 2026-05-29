@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../supabase/server'
+import { createServiceClient } from '../../../../supabase/service'
+import { resolveActivePharmacyContext } from '@/lib/pharmacy/active-pharmacy'
 
 export async function GET() {
   try {
@@ -38,20 +40,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { plan, useKPay = false } = body
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id, role')
-      .eq('user_id', user.id)
-      .single()
+    const admin = createServiceClient()
+    const ctx = await resolveActivePharmacyContext(admin, user.id)
 
-    if (!userPharmacy) {
+    if (!ctx.activePharmacyId) {
       return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
     }
 
-    // Only pharmacy owners and admins can manage subscriptions
-    if (!['pharmacy_owner', 'admin'].includes(userPharmacy.role)) {
+    if (!['pharmacy_owner', 'admin'].includes(ctx.role ?? '')) {
       return NextResponse.json({ error: 'Only pharmacy owners can manage subscriptions' }, { status: 403 })
     }
+
+    const pharmacyId = ctx.activePharmacyId
 
     const planPrices: Record<string, number> = {
       'trial': 0,
@@ -76,14 +76,14 @@ export async function POST(request: NextRequest) {
           subscription_plan: dbPlan,
           subscription_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
         })
-        .eq('id', userPharmacy.pharmacy_id)
+        .eq('id', pharmacyId)
 
       if (updateError) throw updateError
 
       const { error: invoiceError } = await supabase
         .from('invoices')
         .insert({
-          pharmacy_id: userPharmacy.pharmacy_id,
+          pharmacy_id: pharmacyId,
           amount,
           status: amount === 0 ? 'paid' : 'pending',
           due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
     const { data: subscription, error: subError } = await supabase
       .from('subscriptions')
       .insert({
-        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_id: pharmacyId,
         plan: dbPlan,
         amount,
         is_active: false,

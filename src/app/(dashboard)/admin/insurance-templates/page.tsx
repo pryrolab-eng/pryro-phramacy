@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { FileText, Type, Image, Calendar, DollarSign, User, Hash, Minus } from 'lucide-react'
 import { createInsuranceProvider } from '@/lib/http/insurance'
+import { AdminPageHeader } from '@/components/admin/admin-page-header'
+import { DashboardPageShell } from '@/components/dashboard'
 
 type ComponentDef = {
   type: string
@@ -301,16 +303,17 @@ export default function InsuranceTemplatesPage() {
   }
 
   return (
-    <div className="p-6">
-
-
+    <DashboardPageShell>
         <div className="max-w-7xl mx-auto">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-2">
-              <FileText className="h-8 w-8 text-blue-600" />
-              Insurance Template Designer
-            </h1>
-          </div>
+          <AdminPageHeader
+            pinTitle="Insurance Template Designer"
+            title={
+              <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
+                <FileText className="h-8 w-8 text-blue-600" />
+                Insurance Template Designer
+              </h1>
+            }
+          />
 
           <div className="mb-6">
             <h2 className="text-2xl font-bold mb-6 text-gray-800">Professional Insurance Templates</h2>
@@ -633,7 +636,6 @@ export default function InsuranceTemplatesPage() {
             )}
           </div>
         </div>
-
-    </div>
+    </DashboardPageShell>
   )
 }

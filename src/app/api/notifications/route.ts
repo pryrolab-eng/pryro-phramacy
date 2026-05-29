@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../supabase/server'
 
 export async function GET() {
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
     const { data: notification, error } = await supabase
       .from('notifications')
       .insert({
-        pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',
+        pharmacy_id: body.pharmacy_id || 'pharmacyId',
         title: body.title,
         message: body.message,
         type: body.type || 'info',

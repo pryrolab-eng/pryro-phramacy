@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     const { data: template, error } = await supabase
       .from('insurance_templates')
       .insert({
-        pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',
+        pharmacy_id: body.pharmacy_id ?? null,
         name: body.name,
         insurance_provider: body.insurance_provider,
         template_html: body.template_html,

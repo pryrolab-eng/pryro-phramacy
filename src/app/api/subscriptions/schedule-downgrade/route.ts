@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createRouteHandlerClient } from "../../../../../supabase/route-handler";
 import { createServiceClient } from "../../../../../supabase/service";
 import { scheduleSubscriptionDowngrade } from "@/lib/subscription/schedule-downgrade";
+import { resolveActivePharmacyId } from "@/lib/pharmacy/active-pharmacy";
 
 export async function POST(request: NextRequest) {
   const { supabase, json } = createRouteHandlerClient(request);
@@ -24,21 +25,14 @@ export async function POST(request: NextRequest) {
 
     const admin = createServiceClient();
 
-    const { data: userPharmacy, error: pharmacyError } = await admin
-      .from("pharmacy_users")
-      .select("pharmacy_id")
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
-
-    if (pharmacyError || !userPharmacy?.pharmacy_id) {
+    const pharmacyId = await resolveActivePharmacyId(admin, user.id);
+    if (!pharmacyId) {
       return json({ error: "Pharmacy not found" }, { status: 403 });
     }
 
     const result = await scheduleSubscriptionDowngrade(
       admin,
-      userPharmacy.pharmacy_id,
+      pharmacyId,
       targetPlanId
     );
 

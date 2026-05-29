@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
+import { requireSessionBranchId } from '@/lib/pharmacy/get-session-branch'
 import { createClient } from '../../../../../supabase/server'
 
 export async function POST(request: NextRequest) {
@@ -22,16 +24,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user's pharmacy_id
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+    const branchId = await requireSessionBranchId(supabase, user.id)
 
-    if (!userPharmacy) {
-      return NextResponse.json({ success: false, error: 'Pharmacy not found' })
-    }
-    
     const body = await request.json()
     console.log('Received data:', body)
     
@@ -54,7 +49,7 @@ export async function POST(request: NextRequest) {
       .from('medications')
       .select('id')
       .eq('name', body.name)
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .single()
 
     let medicationId
@@ -67,8 +62,9 @@ export async function POST(request: NextRequest) {
         .from('inventory')
         .select('id, quantity_in_stock')
         .eq('medication_id', medicationId)
-        .eq('pharmacy_id', userPharmacy.pharmacy_id)
-        .single()
+        .eq('pharmacy_id', pharmacyId)
+        .eq('branch_id', branchId)
+        .maybeSingle()
       
       if (existingInventory) {
         // Update existing inventory - add to quantity
@@ -96,7 +92,7 @@ export async function POST(request: NextRequest) {
           category: categoryEnum,
           requires_prescription: categoryEnum === 'prescription',
           is_active: true,
-          pharmacy_id: userPharmacy.pharmacy_id
+          pharmacy_id: pharmacyId
         })
         .select('id')
         .single()
@@ -112,7 +108,8 @@ export async function POST(request: NextRequest) {
     const { data: inventory, error } = await supabase
       .from('inventory')
       .insert({
-        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_id: pharmacyId,
+        branch_id: branchId,
         medication_id: medicationId,
         batch_number: body.batch_number || 'BATCH001',
         quantity_in_stock: parseInt(body.quantity) || 0,

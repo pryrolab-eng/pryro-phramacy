@@ -5,6 +5,7 @@ import { createSubscriptionUpgrade } from '@/lib/subscription/create-pending-upg
 import { getScheduledSubscriptionChange } from '@/lib/subscription/get-scheduled-change'
 import { SubscriptionPlanChangeError } from '@/lib/subscription/validate-upgrade'
 import { SUBSCRIPTION_CURRENT_PLAN_EMBED } from '@/lib/subscription/embed-plan'
+import { resolveActivePharmacyId } from '@/lib/pharmacy/active-pharmacy'
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,14 +16,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user's pharmacy
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!userPharmacy) {
+    const admin = createServiceClient()
+    const pharmacyId = await resolveActivePharmacyId(admin, user.id)
+    if (!pharmacyId) {
       return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
     }
 
@@ -32,22 +28,22 @@ export async function GET(request: NextRequest) {
       .select(`
         *,
         ${SUBSCRIPTION_CURRENT_PLAN_EMBED} (
+          id,
           name,
           price,
           period,
           features
         )
       `)
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .eq('is_active', true)
       .order('created_at', { ascending: false })
       .limit(1)
       .single()
 
-    const admin = createServiceClient()
     const scheduled = await getScheduledSubscriptionChange(
       admin,
-      userPharmacy.pharmacy_id
+      pharmacyId
     )
 
     if (!subscription) {
@@ -85,7 +81,7 @@ export async function GET(request: NextRequest) {
     const { data: recentPayments } = await supabase
       .from('payment_transactions')
       .select('*')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
       .eq('subscription_id', subscription.id)
       .eq('status', 'completed')
       .order('created_at', { ascending: false })
@@ -139,17 +135,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { planId } = body
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!userPharmacy) {
+    const admin = createServiceClient()
+    const pharmacyId = await resolveActivePharmacyId(admin, user.id)
+    if (!pharmacyId) {
       return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
     }
 
-    const admin = createServiceClient()
     const { data: plan } = await admin
       .from('subscription_plans')
       .select('*')
@@ -161,7 +152,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Plan not found' }, { status: 404 })
     }
 
-    const result = await createSubscriptionUpgrade(admin, userPharmacy.pharmacy_id, {
+    const result = await createSubscriptionUpgrade(admin, pharmacyId, {
       id: plan.id as string,
       name: String(plan.name),
       price: plan.price,

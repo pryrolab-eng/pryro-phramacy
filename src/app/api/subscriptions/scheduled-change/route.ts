@@ -3,21 +3,14 @@ import { createRouteHandlerClient } from "../../../../../supabase/route-handler"
 import { createServiceClient } from "../../../../../supabase/service";
 import { cancelScheduledSubscriptionChange } from "@/lib/subscription/cancel-scheduled-change";
 import { getScheduledSubscriptionChange } from "@/lib/subscription/get-scheduled-change";
+import { resolveActivePharmacyId } from "@/lib/pharmacy/active-pharmacy";
 
 async function resolvePharmacyId(
-  supabase: ReturnType<typeof createRouteHandlerClient>["supabase"],
+  _supabase: ReturnType<typeof createRouteHandlerClient>["supabase"],
   admin: ReturnType<typeof createServiceClient>,
   userId: string
 ): Promise<string | null> {
-  const { data: userPharmacy } = await admin
-    .from("pharmacy_users")
-    .select("pharmacy_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-
-  return userPharmacy?.pharmacy_id ?? null;
+  return resolveActivePharmacyId(admin, userId);
 }
 
 export async function GET(request: NextRequest) {

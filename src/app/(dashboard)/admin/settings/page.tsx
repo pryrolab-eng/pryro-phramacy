@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { Settings, Save, Shield, Globe, Database, Users, BarChart3, Zap, Monitor, AlertTriangle, FileText, CheckCircle2, XCircle, Building2, Plus } from "lucide-react"
 import { AdminPageHeader } from '@/components/admin/admin-page-header'
+import { DashboardPageShell } from '@/components/dashboard'
 import { Spinner } from '@/components/ui/spinner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { adminSystemSettingsQueryKey, useAdminSystemSettings, useCreateStockLocationMutation, useStockLocations } from '@/hooks'
@@ -111,9 +112,10 @@ export default function AdminSettingsPage() {
   )
 
   return (
-    <div className="p-6">
+    <DashboardPageShell>
       <div className="max-w-6xl mx-auto">
         <AdminPageHeader
+          pinTitle="Admin Settings"
           title={
             <h1 className="text-3xl font-bold flex items-center gap-2">
               <Settings className="h-8 w-8 text-blue-600" />
@@ -551,6 +553,6 @@ export default function AdminSettingsPage() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </DashboardPageShell>
   )
 }

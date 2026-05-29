@@ -462,9 +462,10 @@ export function AdminStoresPanel() {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <>
+    <div className="mx-auto max-w-7xl space-y-6">
         <AdminPageHeader
+          pinTitle="Pharmacies"
           title={
             <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
               <Building2 className="h-8 w-8 text-primary" />
@@ -762,7 +763,7 @@ export function AdminStoresPanel() {
           ) : null}
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
 

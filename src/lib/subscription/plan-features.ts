@@ -61,7 +61,13 @@ export async function loadPlanFeatureKeys(
     .from("platform_features")
     .select("key, feature_type")
     .in("key", keys);
-  if (metaErr) throw new Error(metaErr.message);
+  if (metaErr) {
+    console.warn(
+      "loadPlanFeatureKeys: platform_features lookup failed, using plan keys as-is:",
+      metaErr.message,
+    );
+    return keys;
+  }
 
   const booleanKeys = new Set(
     (meta ?? [])

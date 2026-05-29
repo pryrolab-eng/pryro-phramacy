@@ -10,6 +10,8 @@ export type SubscriptionPlanRow = {
   is_active: boolean;
   plan_type?: PlanType;
   monthly_tx_limit?: number;
+  max_users?: number;
+  max_branches?: number;
 };
 
 export const DEFAULT_SUBSCRIPTION_PLANS: Omit<
@@ -27,6 +29,9 @@ export const DEFAULT_SUBSCRIPTION_PLANS: Omit<
       "Basic reports",
     ],
     is_popular: false,
+    max_branches: 1,
+    max_users: 3,
+    monthly_tx_limit: 200,
   },
   {
     name: "Standard",
@@ -40,6 +45,9 @@ export const DEFAULT_SUBSCRIPTION_PLANS: Omit<
       "Advanced reports",
     ],
     is_popular: true,
+    max_branches: 5,
+    max_users: 15,
+    monthly_tx_limit: 2000,
   },
   {
     name: "Premium",
@@ -53,6 +61,9 @@ export const DEFAULT_SUBSCRIPTION_PLANS: Omit<
       "Custom integrations",
     ],
     is_popular: false,
+    max_branches: 15,
+    max_users: 50,
+    monthly_tx_limit: 5000,
   },
 ];
 
@@ -62,6 +73,5 @@ export function fallbackPlansForDisplay(): SubscriptionPlanRow[] {
     id: `fallback-${index + 1}`,
     is_active: true,
     plan_type: "main" as const,
-    monthly_tx_limit: 0,
   }));
 }

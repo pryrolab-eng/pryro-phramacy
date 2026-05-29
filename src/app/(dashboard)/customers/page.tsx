@@ -1,258 +1,217 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useCreateCustomerMutation, useCustomers } from '@/hooks/useCustomers'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Users, Plus, Phone, Mail, Calendar } from 'lucide-react'
-import { LineChart, Line, ResponsiveContainer, AreaChart, Area } from 'recharts'
-import { SidebarTrigger } from '@/components/ui/sidebar'
-import { Spinner } from '@/components/ui/spinner'
+import { toast } from 'sonner'
+import {
+  useCreateCustomerMutation,
+  useCustomers,
+  type CustomerRow,
+} from '@/hooks/useCustomers'
+import {
+  DashboardPageShell,
+  DashboardPageHeader,
+  DashboardPageLoading,
+  DashboardToolbar,
+  DashboardButton,
+  DashboardMetricGrid,
+  DashboardStatCard,
+  DashboardTableCard,
+  DashboardSearchInput,
+  DashboardPanelEmpty,
+} from '@/components/dashboard'
+import { CustomerListRow } from '@/components/customers/customer-list-row'
+import { CustomerDetailSheet } from '@/components/customers/customer-detail-sheet'
+import {
+  CustomersAddDialog,
+  CustomersAddDialogTrigger,
+} from '@/components/customers/customers-add-dialog'
+import { Users, UserCheck, Shield, CalendarDays, RefreshCw } from 'lucide-react'
+import { FeatureGate } from '@/components/subscription/feature-gate'
 
-interface Customer {
-  id: string
-  name: string
-  phone: string
-  email: string
-  dateOfBirth: string
-  allergies: string
-  insurance: string
-  totalPurchases: number
-  lastVisit: string
-  status: 'active' | 'inactive'
+function customerStats(customers: CustomerRow[]) {
+  const monthStart = new Date()
+  monthStart.setDate(1)
+  monthStart.setHours(0, 0, 0, 0)
+
+  const withInsurance = customers.filter(
+    (c) => (c.insurance || c.insurance_number || '').trim().length > 0,
+  ).length
+
+  const newThisMonth = customers.filter((c) => {
+    if (!c.lastVisit) return false
+    const d = new Date(c.lastVisit)
+    return !Number.isNaN(d.getTime()) && d >= monthStart
+  }).length
+
+  return {
+    total: customers.length,
+    active: customers.filter((c) => c.status !== 'inactive').length,
+    withInsurance,
+    newThisMonth,
+  }
 }
 
 export default function CustomersPage() {
   const customersQuery = useCustomers()
   const createCustomerMutation = useCreateCustomerMutation()
-  const customers = (customersQuery.data ?? []) as Customer[]
-  const stats = useMemo(
-    () => ({
-      totalCustomers: customers.length,
-      activeCustomers: customers.filter((c) => c.status === 'active').length,
-      newThisMonth: Math.floor(customers.length * 0.1),
-    }),
-    [customers],
-  )
-  const [isAddingCustomer, setIsAddingCustomer] = useState(false)
-  const [newCustomer, setNewCustomer] = useState({
-    name: '',
-    phone: '',
-    email: '',
-    dateOfBirth: '',
-    allergies: '',
-    insurance: ''
-  })
-  const loading = customersQuery.isPending
+  const customers = customersQuery.data ?? []
+  const [searchTerm, setSearchTerm] = useState('')
+  const [addOpen, setAddOpen] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
 
-  const handleAddCustomer = async () => {
+  const stats = useMemo(() => customerStats(customers), [customers])
+
+  const filtered = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase()
+    if (!q) return customers
+    return customers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.phone.toLowerCase().includes(q) ||
+        (c.email ?? '').toLowerCase().includes(q) ||
+        (c.insurance ?? '').toLowerCase().includes(q) ||
+        (c.insurance_number ?? '').toLowerCase().includes(q),
+    )
+  }, [customers, searchTerm])
+
+  const handleAddCustomer = async (
+    input: Parameters<typeof createCustomerMutation.mutateAsync>[0],
+  ) => {
     try {
-      const result = await createCustomerMutation.mutateAsync(newCustomer)
+      const result = await createCustomerMutation.mutateAsync(input)
       if (result.success) {
-        setIsAddingCustomer(false)
-        setNewCustomer({
-          name: '',
-          phone: '',
-          email: '',
-          dateOfBirth: '',
-          allergies: '',
-          insurance: '',
+        toast.success('Customer added', {
+          description: result.customer?.name ?? input.name,
+        })
+      } else {
+        toast.error('Could not add customer', {
+          description: result.error ?? 'Unknown error',
         })
       }
-    } catch (error) {
-      console.error('Error adding customer:', error)
+    } catch (e) {
+      toast.error('Could not add customer', {
+        description: e instanceof Error ? e.message : 'Unknown error',
+      })
     }
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Spinner className="size-6" />
-    </div>
-  )
+  if (customersQuery.isPending) {
+    return <DashboardPageLoading label="Loading customers…" />
+  }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-4">
-          <SidebarTrigger />
-          <div className="h-4 w-px bg-border" />
-          <div>
-            <h1 className="text-xl font-bold">Patient Management</h1>
-            <p className="text-sm text-muted-foreground">Manage patient records, prescriptions, and medical information</p>
-          </div>
-        </div>
-        <Dialog open={isAddingCustomer} onOpenChange={setIsAddingCustomer}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Patient
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Patient</DialogTitle>
-              <DialogDescription>Add a new patient to your pharmacy records</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label>Full Name</Label>
-                <Input 
-                  placeholder="e.g. Marie Uwimana" 
-                  value={newCustomer.name}
-                  onChange={(e) => setNewCustomer({...newCustomer, name: e.target.value})}
+    <FeatureGate featureKey="customers.access">
+      <DashboardPageShell>
+        <DashboardPageHeader
+          title="Customers"
+          description="Manage customer profiles for POS, insurance, and visit history"
+          actions={
+            <DashboardToolbar>
+              <DashboardButton
+                onClick={() => void customersQuery.refetch()}
+                disabled={customersQuery.isFetching}
+              >
+                <RefreshCw
+                  className={`mr-1.5 h-4 w-4 ${customersQuery.isFetching ? 'animate-spin' : ''}`}
                 />
-              </div>
-              <div className="grid gap-2">
-                <Label>Phone Number</Label>
-                <Input 
-                  placeholder="+250788123456" 
-                  value={newCustomer.phone}
-                  onChange={(e) => setNewCustomer({...newCustomer, phone: e.target.value})}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Email Address</Label>
-                <Input 
-                  type="email"
-                  placeholder="marie@email.com" 
-                  value={newCustomer.email}
-                  onChange={(e) => setNewCustomer({...newCustomer, email: e.target.value})}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Date of Birth</Label>
-                <Input 
-                  type="date"
-                  value={newCustomer.dateOfBirth}
-                  onChange={(e) => setNewCustomer({...newCustomer, dateOfBirth: e.target.value})}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Known Allergies</Label>
-                <Input 
-                  placeholder="e.g. Penicillin, Aspirin (or None)" 
-                  value={newCustomer.allergies}
-                  onChange={(e) => setNewCustomer({...newCustomer, allergies: e.target.value})}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Insurance Provider</Label>
-                <Input 
-                  placeholder="e.g. RSSB, MMI, Radiant" 
-                  value={newCustomer.insurance}
-                  onChange={(e) => setNewCustomer({...newCustomer, insurance: e.target.value})}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={handleAddCustomer} disabled={!newCustomer.name || !newCustomer.phone}>
-                Add Patient
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-        <Button variant="outline" onClick={() => void customersQuery.refetch()}>
-          Refresh
-        </Button>
-      </div>
+                Refresh
+              </DashboardButton>
+              <CustomersAddDialog
+                open={addOpen}
+                onOpenChange={setAddOpen}
+                onSubmit={handleAddCustomer}
+                isPending={createCustomerMutation.isPending}
+                trigger={<CustomersAddDialogTrigger />}
+              />
+            </DashboardToolbar>
+          }
+        />
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Patients</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalCustomers}</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[{v:140},{v:145},{v:150},{v:152},{v:154},{v:stats?.totalCustomers || 156}]}>
-                  <Area type="monotone" dataKey="v" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.08} strokeWidth={1} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Patients</CardTitle>
-            <Users className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats?.activeCustomers}</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[{v:135},{v:138},{v:140},{v:141},{v:142},{v:stats?.activeCustomers || 142}]}>
-                  <Area type="monotone" dataKey="v" stroke="#10b981" fill="#10b981" fillOpacity={0.08} strokeWidth={1} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">New This Month</CardTitle>
-            <Calendar className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats?.newThisMonth}</div>
-            <div className="h-8 mt-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[{v:8},{v:10},{v:11},{v:12},{v:11},{v:stats?.newThisMonth || 12}]}>
-                  <Area type="monotone" dataKey="v" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.08} strokeWidth={1} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+        <DashboardMetricGrid>
+          <DashboardStatCard
+            label="Total customers"
+            icon={Users}
+            value={stats.total}
+            hint="Registered in your pharmacy"
+          />
+          <DashboardStatCard
+            label="Active"
+            icon={UserCheck}
+            value={stats.active}
+            hint="Available for sales"
+          />
+          <DashboardStatCard
+            label="With insurance"
+            icon={Shield}
+            value={stats.withInsurance}
+            hint="Insurance number on file"
+          />
+          <DashboardStatCard
+            label="New this month"
+            icon={CalendarDays}
+            value={stats.newThisMonth}
+            hint="Added since month start"
+          />
+        </DashboardMetricGrid>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Patient Records</CardTitle>
-          <CardDescription>Manage patient information and medical history</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {(customers || []).map((customer) => (
-              <div key={customer.id} className="flex items-center justify-between p-4 border rounded-lg">
-                <div className="flex items-center space-x-4">
-                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                    <Users className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="font-medium">{customer.name}</p>
-                    <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                      <div className="flex items-center">
-                        <Phone className="h-3 w-3 mr-1" />
-                        {customer.phone}
-                      </div>
-                      <div className="flex items-center">
-                        <Mail className="h-3 w-3 mr-1" />
-                        {customer.insurance}
-                      </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Allergies: {customer.allergies || 'None'}
-                    </div>
-                  </div>
+        <DashboardTableCard
+          title="Customer directory"
+          description={`${filtered.length} of ${customers.length} shown`}
+          toolbar={
+            <DashboardSearchInput
+              placeholder="Search name, phone, email, insurance…"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-sm flex-1"
+            />
+          }
+        >
+          {filtered.length === 0 ? (
+            <div className="p-6">
+              <DashboardPanelEmpty
+                icon={Users}
+                title={customers.length === 0 ? 'No customers yet' : 'No matches'}
+                description={
+                  customers.length === 0
+                    ? 'Add your first customer to speed up checkout and track visits.'
+                    : 'Try a different search term.'
+                }
+                actionLabel={customers.length === 0 ? 'Add customer' : undefined}
+                actionHref={undefined}
+              />
+              {customers.length === 0 && (
+                <div className="mt-4 flex justify-center">
+                  <DashboardButton tone="primary" onClick={() => setAddOpen(true)}>
+                    Add customer
+                  </DashboardButton>
                 </div>
-                <div className="text-right space-y-1">
-                  <p className="font-semibold">{customer.totalPurchases.toLocaleString()} RWF</p>
-                  <p className="text-sm text-muted-foreground">Last visit: {customer.lastVisit}</p>
-                  <Badge variant={customer.status === 'active' ? 'default' : 'secondary'}>
-                    {customer.status}
-                  </Badge>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+              )}
+            </div>
+          ) : (
+            <ul className="space-y-2 p-4">
+              {filtered.map((customer) => (
+                <li key={customer.id}>
+                  <CustomerListRow
+                    customer={customer}
+                    onSelect={(c) => {
+                      setSelectedId(c.id)
+                      setSheetOpen(true)
+                    }}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </DashboardTableCard>
+
+        <CustomerDetailSheet
+          customerId={selectedId}
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          onDeleted={() => setSelectedId(null)}
+        />
+      </DashboardPageShell>
+    </FeatureGate>
   )
 }

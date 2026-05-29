@@ -19,16 +19,43 @@ import {
   useUpdateInventoryProductMutation,
   type InventoryListRow,
 } from '@/hooks/useInventory'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import {
+  DashboardPageShell,
+  DashboardPageHeader,
+  DashboardToolbar,
+  DashboardButton,
+  DashboardMetricGrid,
+  DashboardStatCard,
+  DashboardTabsList,
+  DashboardTableCard,
+  DashboardSearchInput,
+  DashboardSectionCard,
+  DashboardChartCard,
+  DashboardListRow,
+  DashboardProgressTrack,
+  DashboardPanelEmpty,
+  DashboardPageLoading,
+  Dialog,
+  DialogTrigger,
+  DashboardDialogContent,
+  DashboardDialogHeader,
+  DashboardDialogTitle,
+  DashboardDialogDescription,
+  DashboardDialogBody,
+  DashboardDialogFooter,
+  AlertDialog,
+  DashboardAlertDialogContent,
+  DashboardAlertDialogHeader,
+  DashboardAlertDialogTitle,
+  DashboardAlertDialogDescription,
+  DashboardAlertDialogActions,
+} from '@/components/dashboard'
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
@@ -37,20 +64,20 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
 import { Package, Plus, AlertTriangle, Calendar, Upload, Download, QrCode, Scan, Search, Filter, MoreHorizontal, Edit, Trash2, Eye, TrendingUp, TrendingDown } from 'lucide-react'
-import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Spinner } from '@/components/ui/spinner'
 import { FeatureGate } from '@/components/subscription/feature-gate'
 import { usePharmacyEntitlements } from '@/hooks/usePharmacyEntitlements'
+import { useActivePharmacy } from '@/components/providers/active-pharmacy-provider'
+import { useSaasBranches } from '@/hooks/useSaasSubscription'
 import { shouldHideLockedFeature } from '@/lib/subscription/nav-entitlement-display'
 import * as XLSX from 'xlsx'
 import JsBarcode from 'jsbarcode'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, AreaChart, Area } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar } from 'recharts'
 
 interface InventoryItem {
   id: string
@@ -97,6 +124,9 @@ function toInventoryItem(row: InventoryListRow): InventoryItem {
 
 export default function InventoryPage() {
   const { can } = usePharmacyEntitlements()
+  const { activeBranchId } = useActivePharmacy()
+  const branchesQuery = useSaasBranches()
+  const branches = branchesQuery.data ?? []
   const showAnalyticsTab =
     can('inventory.analytics') ||
     !shouldHideLockedFeature('inventory.analytics', can)
@@ -151,7 +181,12 @@ export default function InventoryPage() {
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
   const [adjustmentForm, setAdjustmentForm] = useState({ productId: '', quantity: '', reason: '', type: 'increase' })
   const [purchaseForm, setPurchaseForm] = useState({ productId: '', quantity: '', costPrice: '', supplier: '' })
-  const [transferForm, setTransferForm] = useState({ productId: '', quantity: '', fromLocation: 'main-store', toLocation: '' })
+  const [transferForm, setTransferForm] = useState({
+    productId: '',
+    quantity: '',
+    fromBranchId: '',
+    toBranchId: '',
+  })
   const [isAddingSupplier, setIsAddingSupplier] = useState(false)
   const [newSupplier, setNewSupplier] = useState({ name: '', contact: '', phone: '', email: '' })
   const [selectedCategory, setSelectedCategory] = useState('all')
@@ -491,20 +526,34 @@ export default function InventoryPage() {
         return
       }
 
+      if (!transferForm.fromBranchId || !transferForm.toBranchId) {
+        toast({
+          title: "Error",
+          description: "Select source and destination branches",
+          variant: "destructive",
+        })
+        return
+      }
+
       const result = await transferMutation.mutateAsync({
         productId: transferForm.productId,
-        product: product.name,
-        quantity: parseInt(transferForm.quantity),
-        from: transferForm.fromLocation,
-        to: transferForm.toLocation,
+        quantity: parseInt(transferForm.quantity, 10),
+        fromBranchId: transferForm.fromBranchId,
+        toBranchId: transferForm.toBranchId,
       })
 
       toast({
         title: "Success",
-        description: `Transferred ${transferForm.quantity} units. New stock: ${result.newStock ?? 'updated'}`,
+        description: `Transferred ${transferForm.quantity} units. Source stock: ${result.newStock ?? 'updated'}`,
       })
+      void invalidateInventory.invalidateList()
       setTransferDialogOpen(false)
-      setTransferForm({ productId: '', quantity: '', fromLocation: 'main-store', toLocation: '' })
+      setTransferForm({
+        productId: '',
+        quantity: '',
+        fromBranchId: activeBranchId ?? '',
+        toBranchId: '',
+      })
     } catch (error) {
       console.error('Transfer error:', error)
       toast({
@@ -611,44 +660,44 @@ export default function InventoryPage() {
     }
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Spinner className="size-6" />
-    </div>
+  const lowStockCount = localInventory.filter((item) => item.stock <= item.minStock).length
+  const expiringCount = localInventory.filter((item) => {
+    const daysToExpiry = Math.ceil(
+      (new Date(item.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+    )
+    return daysToExpiry <= 60
+  }).length
+  const inventoryValue = localInventory.reduce(
+    (sum, item) => sum + item.stock * item.price,
+    0,
   )
 
+  if (loading) return <DashboardPageLoading label="Loading inventory…" />
+
   return (
-    <div className="flex-1 space-y-4 p-4 md:p-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="h-6" />
-          <div className="space-y-1">
-            <h1 className="text-xl font-semibold tracking-tight">Inventory Management</h1>
-            <p className="text-xs text-muted-foreground">
-              Manage your pharmacy stock with automated alerts and analytics
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={exportToExcel}>
-            <Download className="mr-2 h-4 w-4" />
+    <DashboardPageShell>
+      <DashboardPageHeader
+        title="Inventory management"
+        description="Manage stock, batches, and branch-level quantities."
+        actions={
+        <DashboardToolbar>
+          <DashboardButton onClick={exportToExcel}>
+            <Download className="h-4 w-4" />
             Export
-          </Button>
+          </DashboardButton>
           <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Upload className="mr-2 h-4 w-4" />
+              <DashboardButton>
+                <Upload className="h-4 w-4" />
                 Import
-              </Button>
+              </DashboardButton>
             </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Import Products from Excel</DialogTitle>
-                <DialogDescription>Upload an Excel file to bulk import products</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
+            <DashboardDialogContent>
+              <DashboardDialogHeader>
+                <DashboardDialogTitle>Import Products from Excel</DashboardDialogTitle>
+                <DashboardDialogDescription>Upload an Excel file to bulk import products</DashboardDialogDescription>
+              </DashboardDialogHeader>
+              <DashboardDialogBody className="space-y-4">
                 {previewData.length === 0 ? (
                   <>
                     <div className="p-4 bg-blue-50 rounded-lg">
@@ -661,14 +710,14 @@ export default function InventoryPage() {
                       </ul>
                     </div>
                     <div className="flex gap-2">
-                      <Button variant="outline" onClick={downloadSample} className="flex-1">
+                      <DashboardButton onClick={downloadSample} className="flex-1">
                         <Download className="mr-2 h-4 w-4" />
                         Download Sample
-                      </Button>
-                      <Button onClick={() => document.getElementById('excel-upload')?.click()} className="flex-1">
+                      </DashboardButton>
+                      <DashboardButton tone="primary" onClick={() => document.getElementById('excel-upload')?.click()} className="flex-1">
                         <Upload className="mr-2 h-4 w-4" />
                         Choose File
-                      </Button>
+                      </DashboardButton>
                     </div>
                   </>
                 ) : (
@@ -695,17 +744,17 @@ export default function InventoryPage() {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => { setPreviewData([]); setValidationErrors([]) }} className="flex-1">
+                      <DashboardButton onClick={() => { setPreviewData([]); setValidationErrors([]) }} className="flex-1">
                         Cancel
-                      </Button>
-                      <Button onClick={confirmImport} disabled={validationErrors.length > 0} className="flex-1">
+                      </DashboardButton>
+                      <DashboardButton tone="primary" onClick={confirmImport} disabled={validationErrors.length > 0} className="flex-1">
                         Import {previewData.length} Products
-                      </Button>
+                      </DashboardButton>
                     </div>
                   </>
                 )}
-              </div>
-            </DialogContent>
+              </DashboardDialogBody>
+            </DashboardDialogContent>
           </Dialog>
           <input
             id="excel-upload"
@@ -714,19 +763,51 @@ export default function InventoryPage() {
             onChange={handleExcelImport}
             style={{ display: 'none' }}
           />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <DashboardButton tone="ghost">
+                <QrCode className="h-4 w-4" />
+                Barcode
+              </DashboardButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Barcode tools</DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={() => {
+                  setBulkMode(false)
+                  setSelectedProducts([])
+                  setBarcodeDialogOpen(true)
+                }}
+              >
+                <QrCode className="mr-2 h-4 w-4" />
+                Single barcode
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  setBulkMode(true)
+                  setSelectedProducts([])
+                  setSelectedProduct(null)
+                  setBarcodeDialogOpen(true)
+                }}
+              >
+                <QrCode className="mr-2 h-4 w-4" />
+                Bulk generate
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Dialog open={isAddingProduct} onOpenChange={setIsAddingProduct}>
             <DialogTrigger asChild>
-              <Button size="sm">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Product
-              </Button>
+              <DashboardButton tone="primary">
+                <Plus className="h-4 w-4" />
+                Add product
+              </DashboardButton>
             </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Product</DialogTitle>
-              <DialogDescription>Add medication with custom stock alert thresholds</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4 max-h-96 overflow-y-auto">
+          <DashboardDialogContent>
+            <DashboardDialogHeader>
+              <DashboardDialogTitle>Add New Product</DashboardDialogTitle>
+              <DashboardDialogDescription>Add medication with custom stock alert thresholds</DashboardDialogDescription>
+            </DashboardDialogHeader>
+            <DashboardDialogBody className="grid gap-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label>Product Code (SKU)</Label>
@@ -767,9 +848,9 @@ export default function InventoryPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button size="icon" variant="outline" onClick={() => setQuickAddCategoryOpen(true)}>
+                    <DashboardButton size="icon" onClick={() => setQuickAddCategoryOpen(true)}>
                       <Plus className="h-4 w-4" />
-                    </Button>
+                    </DashboardButton>
                   </div>
                 </div>
                 <div className="grid gap-2">
@@ -901,9 +982,9 @@ export default function InventoryPage() {
                   onChange={(e) => setNewProduct({...newProduct, notes: e.target.value})}
                 />
               </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={() => {
+            </DashboardDialogBody>
+            <DashboardDialogFooter>
+              <DashboardButton tone="primary" onClick={() => {
                 console.log('Form validation:', {
                   name: newProduct.name,
                   category: newProduct.category,
@@ -914,29 +995,29 @@ export default function InventoryPage() {
                 handleAddProduct()
               }} disabled={!newProduct.name || !newProduct.category || !newProduct.stock || !newProduct.minStock}>
                 Add Product
-              </Button>
-            </DialogFooter>
-          </DialogContent>
+              </DashboardButton>
+            </DashboardDialogFooter>
+          </DashboardDialogContent>
         </Dialog>
         
         <Dialog open={quickAddCategoryOpen} onOpenChange={setQuickAddCategoryOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Category</DialogTitle>
-              <DialogDescription>Create a new product category</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
+          <DashboardDialogContent>
+            <DashboardDialogHeader>
+              <DashboardDialogTitle>Add New Category</DashboardDialogTitle>
+              <DashboardDialogDescription>Create a new product category</DashboardDialogDescription>
+            </DashboardDialogHeader>
+            <DashboardDialogBody className="space-y-4">
               <Input
                 placeholder="Category name (e.g., Supplements)"
                 value={newCategoryName}
                 onChange={(e) => setNewCategoryName(e.target.value)}
               />
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setQuickAddCategoryOpen(false); setNewCategoryName('') }}>
+            </DashboardDialogBody>
+            <DashboardDialogFooter>
+              <DashboardButton onClick={() => { setQuickAddCategoryOpen(false); setNewCategoryName('') }}>
                 Cancel
-              </Button>
-              <Button onClick={async () => {
+              </DashboardButton>
+              <DashboardButton tone="primary" onClick={async () => {
                 if (newCategoryName.trim()) {
                   try {
                     const result = await createCategoryMutation.mutateAsync(
@@ -971,132 +1052,80 @@ export default function InventoryPage() {
                 }
               }} disabled={!newCategoryName.trim()}>
                 Add Category
-              </Button>
-            </DialogFooter>
-          </DialogContent>
+              </DashboardButton>
+            </DashboardDialogFooter>
+          </DashboardDialogContent>
         </Dialog>
-        </div>
-      </div>
+        </DashboardToolbar>
+        }
+      />
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Products</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
-              <Package className="h-4 w-4 text-blue-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{localInventory.length}</div>
-            <p className="text-xs text-muted-foreground">Active inventory items</p>
-          </CardContent>
-        </Card>
+      <DashboardMetricGrid columns={5}>
+        <DashboardStatCard
+          label="Total products"
+          icon={Package}
+          value={localInventory.length}
+          hint="Active inventory items"
+        />
+        <DashboardStatCard
+          label="Low stock"
+          icon={AlertTriangle}
+          value={lowStockCount}
+          hint="Below minimum"
+        />
+        <DashboardStatCard
+          label="Expiring soon"
+          icon={Calendar}
+          value={expiringCount}
+          hint="Within 60 days"
+        />
+        <DashboardStatCard
+          label="Total value"
+          icon={TrendingUp}
+          value={`${inventoryValue.toLocaleString()} RWF`}
+          hint="Stock on hand"
+        />
+      </DashboardMetricGrid>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Low Stock</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-red-100 flex items-center justify-center">
-              <AlertTriangle className="h-4 w-4 text-red-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{localInventory.filter(item => item.stock <= item.minStock).length}</div>
-            <p className="text-xs text-muted-foreground">Items need reorder</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-amber-100 flex items-center justify-center">
-              <Calendar className="h-4 w-4 text-amber-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {localInventory.filter(item => {
-                const daysToExpiry = Math.ceil((new Date(item.expiryDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
-                return daysToExpiry <= 60
-              }).length}
-            </div>
-            <p className="text-xs text-muted-foreground">Within 60 days</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Value</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-green-100 flex items-center justify-center">
-              <TrendingUp className="h-4 w-4 text-green-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{(localInventory.reduce((sum, item) => sum + (item.stock * item.price), 0)).toLocaleString()} RWF</div>
-            <p className="text-xs text-muted-foreground">Inventory worth</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
-            <div className="h-8 w-8 rounded-lg bg-purple-100 flex items-center justify-center">
-              <QrCode className="h-4 w-4 text-purple-600" />
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <Button onClick={() => { setBulkMode(false); setBarcodeDialogOpen(true) }} className="w-full" size="sm">
-              Generate Barcode
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Main Content */}
       <Tabs defaultValue="inventory" className="space-y-4">
-        <TabsList>
+        <DashboardTabsList>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
           {showAnalyticsTab ? (
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
           ) : null}
           <TabsTrigger value="actions">Actions</TabsTrigger>
-        </TabsList>
+        </DashboardTabsList>
         
         <TabsContent value="inventory" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-sm">Inventory Items</CardTitle>
-                  <CardDescription>Manage your pharmacy stock levels</CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-2">
-                    <Search className="h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search products..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-64"
-                    />
-                  </div>
-                  <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue placeholder="Category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Categories</SelectItem>
-                      {categories.map(category => (
-                        <SelectItem key={category.id} value={category.name}>{category.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border">
+          <DashboardTableCard
+            title="Inventory items"
+            description="Manage your pharmacy stock levels"
+            toolbar={
+              <>
+                <DashboardSearchInput
+                  placeholder="Search products…"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-64"
+                />
+                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                  <SelectTrigger className="h-8 w-40 rounded-lg">
+                    <SelectValue placeholder="Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All categories</SelectItem>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.name}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
+            }
+          >
+              <div className="min-w-full">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -1151,7 +1180,7 @@ export default function InventoryPage() {
                                   <span className="font-medium">{item.stock}</span>
                                   <span className="text-sm text-muted-foreground">/ {item.minStock} min</span>
                                 </div>
-                                <Progress value={Math.min(stockPercentage, 100)} className="h-1" />
+                                <DashboardProgressTrack value={Math.min(stockPercentage, 100)} className="h-1" />
                               </div>
                             </TableCell>
                             <TableCell className="font-medium">{item.price.toLocaleString()} RWF</TableCell>
@@ -1164,9 +1193,9 @@ export default function InventoryPage() {
                             <TableCell className="text-right">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" className="h-8 w-8 p-0">
+                                  <DashboardButton tone="ghost" className="h-8 w-8 p-0">
                                     <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
+                                  </DashboardButton>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuLabel>Actions</DropdownMenuLabel>
@@ -1178,6 +1207,8 @@ export default function InventoryPage() {
                                     Edit
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => {
+                                    setBulkMode(false)
+                                    setSelectedProducts([])
                                     setSelectedProduct(item)
                                     setBarcodeDialogOpen(true)
                                   }}>
@@ -1203,8 +1234,8 @@ export default function InventoryPage() {
               </div>
               
               {/* Pagination */}
-              <div className="flex items-center justify-between px-2 py-4">
-                <div className="text-sm text-muted-foreground">
+              <div className="flex items-center justify-between border-t border-neutral-100 px-5 py-4 dark:border-neutral-800">
+                <div className="text-sm text-neutral-500">
                   Showing 1 to 10 of {localInventory.length} products
                 </div>
                 <Pagination>
@@ -1224,218 +1255,220 @@ export default function InventoryPage() {
                   </PaginationContent>
                 </Pagination>
               </div>
-            </CardContent>
-          </Card>
+          </DashboardTableCard>
         </TabsContent>
         
         <TabsContent value="alerts" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <AlertTriangle className="h-4 w-4 text-red-500" />
-                  Low Stock Alerts
-                </CardTitle>
-                <CardDescription>Items below minimum threshold</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-64">
-                  <div className="space-y-3">
-                    {localInventory.filter(item => item.stock <= item.minStock).map((item) => (
-                      <div key={item.id} className="flex items-center justify-between p-3 rounded-lg border border-red-200 bg-red-50">
-                        <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
-                            <Package className="h-4 w-4 text-red-600" />
-                          </div>
-                          <div>
-                            <div className="font-medium">{item.name}</div>
-                            <div className="text-sm text-muted-foreground">{item.category}</div>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-medium text-red-700">{item.stock} / {item.minStock}</div>
-                          <Progress value={(item.stock / item.minStock) * 100} className="w-16 h-2 mt-1" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <Calendar className="h-4 w-4 text-amber-500" />
-                  Expiring Items
-                </CardTitle>
-                <CardDescription>Products expiring within 60 days</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-64">
-                  <div className="space-y-3">
-                    {localInventory.filter(item => {
-                      const daysToExpiry = Math.ceil((new Date(item.expiryDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
-                      return daysToExpiry <= 60 && daysToExpiry > 0
-                    }).map((item) => {
-                      const daysToExpiry = Math.ceil((new Date(item.expiryDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
-                      return (
-                        <div key={item.id} className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50">
+            <DashboardSectionCard
+              title="Low stock alerts"
+              description="Items below minimum threshold"
+            >
+              <ScrollArea className="h-64">
+                <div className="space-y-3">
+                  {localInventory.filter((item) => item.stock <= item.minStock).length === 0 ? (
+                    <DashboardPanelEmpty
+                      icon={Package}
+                      title="No low stock items"
+                      description="Everything is above your minimum thresholds."
+                      className="min-h-[200px]"
+                    />
+                  ) : (
+                    localInventory
+                      .filter((item) => item.stock <= item.minStock)
+                      .map((item) => (
+                        <DashboardListRow key={item.id} variant="danger">
                           <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center">
-                              <Calendar className="h-4 w-4 text-amber-600" />
-                            </div>
+                            <Package className="h-4 w-4 text-red-600" />
                             <div>
-                              <div className="font-medium">{item.name}</div>
-                              <div className="text-sm text-muted-foreground">{item.category}</div>
+                              <p className="text-sm font-medium">{item.name}</p>
+                              <p className="text-xs text-neutral-500">{item.category}</p>
                             </div>
                           </div>
                           <div className="text-right">
-                            <Badge variant={daysToExpiry <= 30 ? 'destructive' : 'secondary'}>
-                              {daysToExpiry} days
-                            </Badge>
-                            <div className="text-sm text-muted-foreground mt-1">Stock: {item.stock}</div>
+                            <p className="text-sm font-medium text-red-700">
+                              {item.stock} / {item.minStock}
+                            </p>
+                            <DashboardProgressTrack
+                              value={(item.stock / Math.max(item.minStock, 1)) * 100}
+                              className="mt-1 w-20"
+                              barClassName="bg-red-600"
+                            />
                           </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
+                        </DashboardListRow>
+                      ))
+                  )}
+                </div>
+              </ScrollArea>
+            </DashboardSectionCard>
+
+            <DashboardSectionCard
+              title="Expiring items"
+              description="Products expiring within 60 days"
+            >
+              <ScrollArea className="h-64">
+                <div className="space-y-3">
+                  {localInventory.filter((item) => {
+                    const daysToExpiry = Math.ceil(
+                      (new Date(item.expiryDate).getTime() - Date.now()) /
+                        (1000 * 60 * 60 * 24),
+                    )
+                    return daysToExpiry <= 60 && daysToExpiry > 0
+                  }).length === 0 ? (
+                    <DashboardPanelEmpty
+                      icon={Calendar}
+                      title="Nothing expiring soon"
+                      description="No batches due within 60 days."
+                      className="min-h-[200px]"
+                    />
+                  ) : (
+                    localInventory
+                      .filter((item) => {
+                        const daysToExpiry = Math.ceil(
+                          (new Date(item.expiryDate).getTime() - Date.now()) /
+                            (1000 * 60 * 60 * 24),
+                        )
+                        return daysToExpiry <= 60 && daysToExpiry > 0
+                      })
+                      .map((item) => {
+                        const daysToExpiry = Math.ceil(
+                          (new Date(item.expiryDate).getTime() - Date.now()) /
+                            (1000 * 60 * 60 * 24),
+                        )
+                        return (
+                          <DashboardListRow key={item.id} variant="warning">
+                            <div className="flex items-center gap-3">
+                              <Calendar className="h-4 w-4 text-amber-600" />
+                              <div>
+                                <p className="text-sm font-medium">{item.name}</p>
+                                <p className="text-xs text-neutral-500">{item.category}</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <Badge variant={daysToExpiry <= 30 ? 'destructive' : 'secondary'}>
+                                {daysToExpiry} days
+                              </Badge>
+                              <p className="mt-1 text-xs text-neutral-500">Stock: {item.stock}</p>
+                            </div>
+                          </DashboardListRow>
+                        )
+                      })
+                  )}
+                </div>
+              </ScrollArea>
+            </DashboardSectionCard>
           </div>
         </TabsContent>
         
         <TabsContent value="analytics" className="space-y-4">
           <FeatureGate featureKey="inventory.analytics">
           <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Stock by Category</CardTitle>
-                <CardDescription>Inventory distribution</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={analyticsData.stockByCategory}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="category" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="stock" fill="#3b82f6" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Inventory Value Trend</CardTitle>
-                <CardDescription>Monthly inventory worth</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={analyticsData.inventoryTrend}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" />
-                      <YAxis />
-                      <Tooltip formatter={(value) => [`${value.toLocaleString()} RWF`, 'Value']} />
-                      <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
+            <DashboardChartCard
+              title="Stock by category"
+              description="Inventory distribution"
+              config={{ stock: { label: "Stock", color: "#3b82f6" } }}
+              chartClassName="h-64 w-full"
+            >
+              <BarChart data={analyticsData.stockByCategory}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="category" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="stock" fill="#3b82f6" radius={4} />
+              </BarChart>
+            </DashboardChartCard>
+
+            <DashboardChartCard
+              title="Inventory value trend"
+              description="Monthly inventory worth"
+              config={{ value: { label: "Value", color: "#10b981" } }}
+              chartClassName="h-64 w-full"
+            >
+              <LineChart data={analyticsData.inventoryTrend}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis />
+                <Tooltip formatter={(value) => [`${Number(value).toLocaleString()} RWF`, 'Value']} />
+                <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} />
+              </LineChart>
+            </DashboardChartCard>
           </div>
           </FeatureGate>
         </TabsContent>
         
         <TabsContent value="actions" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Stock Management</CardTitle>
-                <CardDescription>Adjust and manage inventory levels</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button className="w-full" onClick={() => setAdjustmentDialogOpen(true)}>
-                  Stock Adjustment
-                </Button>
-                <Button variant="outline" className="w-full" onClick={() => setPurchaseDialogOpen(true)}>
-                  Purchase Stock
-                </Button>
-                <Button variant="outline" className="w-full" onClick={() => setTransferDialogOpen(true)}>
-                  Stock Transfer
-                </Button>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Data Management</CardTitle>
-                <CardDescription>Import and export inventory data</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button className="w-full" onClick={exportToExcel}>
-                  <Download className="mr-2 h-4 w-4" />
+          <div className="grid gap-4 md:grid-cols-2">
+            <DashboardSectionCard
+              title="Stock management"
+              description="Adjust and manage inventory levels"
+              contentClassName="space-y-2"
+            >
+                <DashboardButton tone="primary" className="w-full" onClick={() => setAdjustmentDialogOpen(true)}>
+                  Stock adjustment
+                </DashboardButton>
+                <DashboardButton className="w-full" onClick={() => setPurchaseDialogOpen(true)}>
+                  Purchase stock
+                </DashboardButton>
+                <DashboardButton
+                  className="w-full"
+                  onClick={() => {
+                    setTransferForm((f) => ({
+                      ...f,
+                      fromBranchId: activeBranchId ?? f.fromBranchId,
+                    }))
+                    setTransferDialogOpen(true)
+                  }}
+                >
+                  Stock transfer
+                </DashboardButton>
+            </DashboardSectionCard>
+
+            <DashboardSectionCard
+              title="Data management"
+              description="Import and export inventory data"
+              contentClassName="space-y-2"
+            >
+                <DashboardButton tone="primary" className="w-full" onClick={exportToExcel}>
+                  <Download className="h-4 w-4" />
                   Export to Excel
-                </Button>
-                <Button variant="outline" className="w-full" onClick={() => setIsImportDialogOpen(true)}>
-                  <Upload className="mr-2 h-4 w-4" />
+                </DashboardButton>
+                <DashboardButton className="w-full" onClick={() => setIsImportDialogOpen(true)}>
+                  <Upload className="h-4 w-4" />
                   Import from Excel
-                </Button>
-                <Button variant="outline" className="w-full" onClick={downloadSample}>
-                  Download Sample
-                </Button>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Barcode Tools</CardTitle>
-                <CardDescription>Generate and print barcodes</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button className="w-full" onClick={() => { setBulkMode(false); setBarcodeDialogOpen(true) }}>
-                  <QrCode className="mr-2 h-4 w-4" />
-                  Single Barcode
-                </Button>
-                <Button variant="outline" className="w-full" onClick={() => { setBulkMode(true); setBarcodeDialogOpen(true) }}>
-                  Bulk Generate
-                </Button>
-              </CardContent>
-            </Card>
+                </DashboardButton>
+                <DashboardButton className="w-full" onClick={downloadSample}>
+                  Download sample
+                </DashboardButton>
+            </DashboardSectionCard>
           </div>
         </TabsContent>
       </Tabs>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
+        <DashboardAlertDialogContent>
+          <DashboardAlertDialogHeader>
+            <DashboardAlertDialogTitle>Are you sure?</DashboardAlertDialogTitle>
+            <DashboardAlertDialogDescription>
               This action cannot be undone. This will permanently delete the product from your inventory.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setProductToDelete(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDeleteProduct}>
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
+            </DashboardAlertDialogDescription>
+          </DashboardAlertDialogHeader>
+          <DashboardAlertDialogActions
+            confirmLabel="Delete"
+            confirmTone="destructive"
+            onCancel={() => setProductToDelete(null)}
+            onConfirm={handleDeleteProduct}
+          />
+        </DashboardAlertDialogContent>
       </AlertDialog>
 
       <Dialog open={adjustmentDialogOpen} onOpenChange={setAdjustmentDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Stock Adjustment</DialogTitle>
-            <DialogDescription>Adjust stock quantities for inventory corrections</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
+        <DashboardDialogContent>
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Stock Adjustment</DashboardDialogTitle>
+            <DashboardDialogDescription>Adjust stock quantities for inventory corrections</DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogBody className="space-y-4">
             <div>
               <Label>Select Product</Label>
               <Select value={adjustmentForm.productId} onValueChange={(value) => setAdjustmentForm({...adjustmentForm, productId: value})}>
@@ -1480,23 +1513,23 @@ export default function InventoryPage() {
                 placeholder="Reason for adjustment"
               />
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAdjustmentDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAdjustment} disabled={!adjustmentForm.productId || !adjustmentForm.quantity || !adjustmentForm.reason}>
+          </DashboardDialogBody>
+          <DashboardDialogFooter>
+            <DashboardButton onClick={() => setAdjustmentDialogOpen(false)}>Cancel</DashboardButton>
+            <DashboardButton tone="primary" onClick={handleAdjustment} disabled={!adjustmentForm.productId || !adjustmentForm.quantity || !adjustmentForm.reason}>
               Adjust Stock
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+            </DashboardButton>
+          </DashboardDialogFooter>
+        </DashboardDialogContent>
       </Dialog>
 
       <Dialog open={purchaseDialogOpen} onOpenChange={setPurchaseDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Purchase Stock</DialogTitle>
-            <DialogDescription>Add new stock through purchase</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
+        <DashboardDialogContent>
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Purchase Stock</DashboardDialogTitle>
+            <DashboardDialogDescription>Add new stock through purchase</DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogBody className="space-y-4">
             <div>
               <Label>Select Product</Label>
               <Select value={purchaseForm.productId} onValueChange={(value) => setPurchaseForm({...purchaseForm, productId: value})}>
@@ -1545,28 +1578,28 @@ export default function InventoryPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Button size="icon" variant="outline" onClick={() => setIsAddingSupplier(true)}>
+                <DashboardButton size="icon" onClick={() => setIsAddingSupplier(true)}>
                   <Plus className="h-4 w-4" />
-                </Button>
+                </DashboardButton>
               </div>
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPurchaseDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handlePurchase} disabled={!purchaseForm.productId || !purchaseForm.quantity || !purchaseForm.costPrice}>
+          </DashboardDialogBody>
+          <DashboardDialogFooter>
+            <DashboardButton onClick={() => setPurchaseDialogOpen(false)}>Cancel</DashboardButton>
+            <DashboardButton tone="primary" onClick={handlePurchase} disabled={!purchaseForm.productId || !purchaseForm.quantity || !purchaseForm.costPrice}>
               Purchase Stock
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+            </DashboardButton>
+          </DashboardDialogFooter>
+        </DashboardDialogContent>
       </Dialog>
 
       <Dialog open={isAddingSupplier} onOpenChange={setIsAddingSupplier}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add New Supplier</DialogTitle>
-            <DialogDescription>Create a new supplier for purchasing</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
+        <DashboardDialogContent>
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Add New Supplier</DashboardDialogTitle>
+            <DashboardDialogDescription>Create a new supplier for purchasing</DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogBody className="space-y-4">
             <div>
               <Label>Supplier Name</Label>
               <Input 
@@ -1600,23 +1633,31 @@ export default function InventoryPage() {
                 placeholder="contact@supplier.com"
               />
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddingSupplier(false)}>Cancel</Button>
-            <Button onClick={handleAddSupplier} disabled={!newSupplier.name}>
+          </DashboardDialogBody>
+          <DashboardDialogFooter>
+            <DashboardButton onClick={() => setIsAddingSupplier(false)}>Cancel</DashboardButton>
+            <DashboardButton tone="primary" onClick={handleAddSupplier} disabled={!newSupplier.name}>
               Add Supplier
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+            </DashboardButton>
+          </DashboardDialogFooter>
+        </DashboardDialogContent>
       </Dialog>
 
       <Dialog open={barcodeDialogOpen} onOpenChange={setBarcodeDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Generate Barcode</DialogTitle>
-            <DialogDescription>Generate barcode for {selectedProduct?.name}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 max-h-96 overflow-y-auto">
+        <DashboardDialogContent>
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>
+              {bulkMode ? "Bulk barcode labels" : "Generate barcode"}
+            </DashboardDialogTitle>
+            <DashboardDialogDescription>
+              {bulkMode
+                ? "Select products and print barcode labels in one batch."
+                : selectedProduct
+                  ? `Generate barcode for ${selectedProduct.name}`
+                  : "Choose a product and print its barcode label."}
+            </DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogBody className="space-y-4">
             {!bulkMode ? (
               <>
                 <div className="space-y-2">
@@ -1699,28 +1740,29 @@ export default function InventoryPage() {
               </>
             )}
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => { setBarcodeDialogOpen(false); setSelectedProducts([]) }} className="flex-1">
+              <DashboardButton onClick={() => { setBarcodeDialogOpen(false); setSelectedProducts([]) }} className="flex-1">
                 Cancel
-              </Button>
-              <Button 
+              </DashboardButton>
+              <DashboardButton
+                tone="primary"
                 onClick={bulkMode ? printBulkBarcodes : printBarcode} 
                 disabled={bulkMode ? selectedProducts.length === 0 : !selectedProduct} 
                 className="flex-1"
               >
                 {bulkMode ? `Print ${selectedProducts.length} Barcodes` : 'Print Barcode'}
-              </Button>
+              </DashboardButton>
             </div>
-          </div>
-        </DialogContent>
+          </DashboardDialogBody>
+        </DashboardDialogContent>
       </Dialog>
 
       <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Stock Transfer</DialogTitle>
-            <DialogDescription>Transfer inventory between locations</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
+        <DashboardDialogContent>
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Stock Transfer</DashboardDialogTitle>
+            <DashboardDialogDescription>Move stock between branches (same product batch)</DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogBody className="space-y-4">
             <div>
               <Label>Select Product</Label>
               <Select value={transferForm.productId} onValueChange={(value) => setTransferForm({...transferForm, productId: value})}>
@@ -1746,51 +1788,75 @@ export default function InventoryPage() {
               />
             </div>
             <div>
-              <Label>From Location</Label>
-              <Select value={transferForm.fromLocation} onValueChange={(value) => setTransferForm({...transferForm, fromLocation: value})}>
+              <Label>From branch</Label>
+              <Select
+                value={transferForm.fromBranchId}
+                onValueChange={(value) =>
+                  setTransferForm({ ...transferForm, fromBranchId: value })
+                }
+              >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Source branch" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="main-store">Main Store</SelectItem>
-                  <SelectItem value="branch">Branch</SelectItem>
-                  <SelectItem value="cold-storage">Cold Storage</SelectItem>
-                  <SelectItem value="warehouse">Warehouse</SelectItem>
+                  {branches.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>To Location</Label>
-              <Select value={transferForm.toLocation} onValueChange={(value) => setTransferForm({...transferForm, toLocation: value})}>
+              <Label>To branch</Label>
+              <Select
+                value={transferForm.toBranchId}
+                onValueChange={(value) =>
+                  setTransferForm({ ...transferForm, toBranchId: value })
+                }
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select destination" />
+                  <SelectValue placeholder="Destination branch" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="main-store">Main Store</SelectItem>
-                  <SelectItem value="branch">Branch</SelectItem>
-                  <SelectItem value="cold-storage">Cold Storage</SelectItem>
-                  <SelectItem value="warehouse">Warehouse</SelectItem>
+                  {branches
+                    .filter((b) => b.id !== transferForm.fromBranchId)
+                    .map((b) => (
+                      <SelectItem key={b.id} value={b.id}>
+                        {b.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTransferDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleTransfer} disabled={!transferForm.productId || !transferForm.quantity || !transferForm.toLocation}>
+          </DashboardDialogBody>
+          <DashboardDialogFooter>
+            <DashboardButton onClick={() => setTransferDialogOpen(false)}>Cancel</DashboardButton>
+            <DashboardButton
+              tone="primary"
+              onClick={handleTransfer}
+              disabled={
+                !transferForm.productId ||
+                !transferForm.quantity ||
+                !transferForm.fromBranchId ||
+                !transferForm.toBranchId ||
+                transferMutation.isPending
+              }
+            >
               Transfer Stock
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+            </DashboardButton>
+          </DashboardDialogFooter>
+        </DashboardDialogContent>
       </Dialog>
 
       <Dialog open={isEditingProduct} onOpenChange={setIsEditingProduct}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Product</DialogTitle>
-            <DialogDescription>Update product details</DialogDescription>
-          </DialogHeader>
+        <DashboardDialogContent>
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Edit Product</DashboardDialogTitle>
+            <DashboardDialogDescription>Update product details</DashboardDialogDescription>
+          </DashboardDialogHeader>
           {editProduct && (
-            <div className="space-y-4">
+            <DashboardDialogBody className="space-y-4">
               <div>
                 <Label>Product Name</Label>
                 <Input value={editProduct.name} disabled />
@@ -1819,14 +1885,14 @@ export default function InventoryPage() {
                   onChange={(e) => setEditProduct({...editProduct, minStock: e.target.value})}
                 />
               </div>
-            </div>
+            </DashboardDialogBody>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditingProduct(false)}>Cancel</Button>
-            <Button onClick={handleEditProduct}>Save Changes</Button>
-          </DialogFooter>
-        </DialogContent>
+          <DashboardDialogFooter>
+            <DashboardButton onClick={() => setIsEditingProduct(false)}>Cancel</DashboardButton>
+            <DashboardButton tone="primary" onClick={handleEditProduct}>Save Changes</DashboardButton>
+          </DashboardDialogFooter>
+        </DashboardDialogContent>
       </Dialog>
-    </div>
+    </DashboardPageShell>
   )
 }

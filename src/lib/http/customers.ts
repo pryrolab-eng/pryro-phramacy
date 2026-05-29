@@ -21,9 +21,33 @@ export type CustomerRow = {
   insurance_number?: string | null;
 };
 
+export type CustomerSaleRow = {
+  id: string;
+  receiptNumber: string | null;
+  totalAmount: number;
+  paymentMethod: string | null;
+  createdAt: string | null;
+};
+
+export type CustomerDetail = {
+  customer: CustomerRow;
+  recentSales: CustomerSaleRow[];
+};
+
+export type UpdateCustomerInput = {
+  name?: string;
+  phone?: string;
+  email?: string;
+  dateOfBirth?: string;
+  allergies?: string;
+  insurance?: string;
+  status?: "active" | "inactive";
+};
+
 export const customersKeys = {
   all: ["customers"] as const,
   list: () => [...customersKeys.all, "list"] as const,
+  detail: (id: string) => [...customersKeys.all, "detail", id] as const,
   search: (q: string) => [...customersKeys.all, "search", q] as const,
 };
 
@@ -55,6 +79,28 @@ export async function createCustomer(body: CreateCustomerInput) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+export async function getCustomer(id: string): Promise<CustomerDetail> {
+  return fetchJson<CustomerDetail>(`/api/customers/${id}`);
+}
+
+export async function updateCustomer(id: string, body: UpdateCustomerInput) {
+  return fetchJson<{ success: boolean; customer?: CustomerRow; error?: string }>(
+    `/api/customers/${id}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export async function deleteCustomer(id: string) {
+  return fetchJson<{ success: boolean; error?: string }>(
+    `/api/customers/${id}`,
+    { method: "DELETE" },
+  );
 }
 
 export async function searchCustomers(q: string): Promise<CustomerSearchRow[]> {

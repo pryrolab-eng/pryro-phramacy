@@ -1,6 +1,5 @@
 "use client";
 
-import { pharmacyApi } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 import {
   getPharmacyDashboardStats,
@@ -8,13 +7,14 @@ import {
   getStockAlerts,
   pharmacyDashboardKeys,
 } from "@/lib/http/pharmacy-dashboard";
+import { getMeContext, meContextKeys } from "@/lib/http/me-context";
 
-export const currentPharmacyQueryKey = ["pharmacy", "current"] as const;
+export const currentPharmacyQueryKey = meContextKeys.all;
 
 export function usePharmacy(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: currentPharmacyQueryKey,
-    queryFn: () => pharmacyApi.getCurrent(),
+    queryFn: getMeContext,
     enabled: options?.enabled ?? true,
   });
 }
@@ -25,7 +25,7 @@ export function useDashboard(pharmacyId?: string) {
 
   const statsQuery = useQuery({
     queryKey: pharmacyDashboardKeys.stats(),
-    queryFn: getPharmacyDashboardStats,
+    queryFn: () => getPharmacyDashboardStats(),
     enabled,
   });
 
@@ -37,7 +37,7 @@ export function useDashboard(pharmacyId?: string) {
 
   const salesQuery = useQuery({
     queryKey: pharmacyDashboardKeys.recentSales(),
-    queryFn: getRecentPosSales,
+    queryFn: () => getRecentPosSales(),
     enabled,
   });
 

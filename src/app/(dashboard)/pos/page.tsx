@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { getCustomer } from '@/lib/http/customers'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
 import {
   checkPosTransactionAllowed,
@@ -8,7 +10,6 @@ import {
   useAnalyzeCartSafetyMutation,
   useCustomerSearch,
   useHoldPosSaleMutation,
-  useIncrementBranchUsageMutation,
   useInsuranceLookupMutation,
   useInsuranceProcessMutation,
   usePosCategories,
@@ -16,29 +17,56 @@ import {
   usePosFastMoving,
   usePosPriceCheckMutation,
   usePosProducts,
-  useProcessPosReturnMutation,
   useProcessPosSaleMutation,
   useQuickAddPosEntityMutation,
   useQuickAddPosPatientMutation,
-  useSaasBranches,
   useVoidPosSaleMutation,
   type PosCartItem,
   type PosCustomer,
   type PosProduct,
+  type PrescriptionConfirmation,
 } from '@/hooks/usePos'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import {
+  cartHasNearExpiry,
+  cartRequiresPrescription,
+} from '@/lib/pos/pharmacy-rules'
+import {
+  filterProductGroups,
+  groupPosProducts,
+  type PosProductGroup,
+} from '@/lib/pos/product-groups'
+import {
+  addMedicationToCart,
+  setCartLineQuantity,
+  type PosCartLine,
+} from '@/lib/pos/pos-cart'
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ShoppingCart, Plus, Minus, CreditCard, Scan, AlertTriangle, User, Receipt, Star, Save, Filter, Download, Eye, EyeOff, Brain } from 'lucide-react'
-import { InsuranceSelector } from '@/components/insurance-selector'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { SidebarTrigger } from '@/components/ui/sidebar'
-import { Spinner } from '@/components/ui/spinner'
+import { Plus, CreditCard, AlertTriangle, Brain, RotateCcw } from 'lucide-react'
+import {
+  DashboardPageShell,
+  DashboardPageHeader,
+  DashboardPageLoading,
+  DashboardButton,
+  DashboardToolbar,
+  Dialog,
+  DashboardDialogContent,
+  DashboardDialogHeader,
+  DashboardDialogTitle,
+  DashboardDialogDescription,
+  DashboardDialogBody,
+  DashboardDialogFooter,
+  DashboardDialogActions,
+  dashboardSurfaces,
+  SubscriptionWelcomeGate,
+} from '@/components/dashboard'
+import { cn } from '@/lib/utils'
 import { FeatureGate } from '@/components/subscription/feature-gate'
 import { usePharmacyEntitlements } from '@/hooks/usePharmacyEntitlements'
+import { useActivePharmacy } from '@/components/providers/active-pharmacy-provider'
+import { PosReturnsDialog } from '@/components/pos/pos-returns-dialog'
+import { PosWorkspace } from '@/components/pos/pos-workspace'
 
 type Product = PosProduct
 type CartItem = PosCartItem
@@ -55,9 +83,20 @@ interface InsurancePricing {
 }
 
 export default function POSPage() {
+  return (
+    <SubscriptionWelcomeGate>
+      <POSPageContent />
+    </SubscriptionWelcomeGate>
+  )
+}
+
+function POSPageContent() {
+  const searchParams = useSearchParams()
+  const preloadedCustomerIdRef = useRef<string | null>(null)
   const { can } = usePharmacyEntitlements()
-  const productsQuery = usePosProducts()
-  const fastMovingQuery = usePosFastMoving()
+  const { activeBranchId } = useActivePharmacy()
+  const productsQuery = usePosProducts({ branchId: activeBranchId })
+  const fastMovingQuery = usePosFastMoving({ branchId: activeBranchId })
   const categoriesQuery = usePosCategories()
   const products = productsQuery.data ?? []
   const fastMoving = fastMovingQuery.data ?? []
@@ -81,10 +120,16 @@ export default function POSPage() {
   const [ramaBeneficiaryOpen, setRamaBeneficiaryOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [returnsDialogOpen, setReturnsDialogOpen] = useState(false)
-  const [quickActionsVisible, setQuickActionsVisible] = useState(true)
   const [aiSafetyOpen, setAiSafetyOpen] = useState(false)
   const [aiSafetyResult, setAiSafetyResult] = useState<any>(null)
   const [aiSafetyLoading, setAiSafetyLoading] = useState(false)
+  const [rxDialogOpen, setRxDialogOpen] = useState(false)
+  const [pendingNearExpiry, setPendingNearExpiry] = useState<PosProduct | null>(null)
+  const [rxForm, setRxForm] = useState({ patientName: '', prescriberName: '', notes: '' })
+  const [prescriptionConfirmed, setPrescriptionConfirmed] = useState(false)
+  const [nearExpiryAcknowledged, setNearExpiryAcknowledged] = useState(false)
+  const [checkoutAfterRx, setCheckoutAfterRx] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const loading =
     productsQuery.isPending || fastMovingQuery.isPending || categoriesQuery.isPending
 
@@ -95,12 +140,9 @@ export default function POSPage() {
   const priceCheckMutation = usePosPriceCheckMutation()
   const quickAddPatientMutation = useQuickAddPosPatientMutation()
   const quickAddEntityMutation = useQuickAddPosEntityMutation()
-  const returnMutation = useProcessPosReturnMutation()
   const aiSafetyMutation = useAnalyzeCartSafetyMutation()
   const insuranceLookupMutation = useInsuranceLookupMutation()
   const insuranceProcessMutation = useInsuranceProcessMutation()
-  const incrementUsageMutation = useIncrementBranchUsageMutation()
-
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
       if (event.key === 'F2' && cart.length > 0 && paymentMethod) {
@@ -113,41 +155,89 @@ export default function POSPage() {
     return () => window.removeEventListener('keydown', handleKeyPress)
   }, [cart, paymentMethod])
   
-  const filteredProducts = products.filter(p => {
-    const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || p.barcode?.includes(searchTerm)
-    const matchesCategory = selectedCategory === 'all' || p.category === selectedCategory
-    return matchesSearch && matchesCategory
-  })
+  const productGroups = useMemo(
+    () => groupPosProducts(products as PosCartLine[]),
+    [products],
+  )
 
-  const addToCart = async (product: Product) => {
-    const adjustedPrice = priceAdjustments[product.id] || product.price
-    const productWithAdjustedPrice = { ...product, price: adjustedPrice }
-    
-    const existingItem = cart.find(item => item.id === product.id)
-    if (existingItem) {
-      setCart(cart.map(item => 
-        item.id === product.id 
-          ? { ...item, quantity: Math.min(item.quantity + 1, product.stock), price: adjustedPrice }
-          : item
-      ))
-    } else {
-      setCart([...cart, { ...productWithAdjustedPrice, quantity: 1 }])
-    }
-    
-    // Fetch insurance pricing if insurance is selected
-    if (customer.insuranceType) {
-      await fetchInsurancePricing(product.id, customer.insuranceType)
-    }
-  }
+  const filteredGroups = useMemo(
+    () => filterProductGroups(productGroups, searchTerm, selectedCategory),
+    [productGroups, searchTerm, selectedCategory],
+  )
 
-  const updateQuantity = (id: string, quantity: number) => {
-    if (quantity <= 0) {
-      setCart(cart.filter(item => item.id !== id))
-    } else {
-      setCart(cart.map(item => 
-        item.id === id ? { ...item, quantity } : item
-      ))
+  const applyCart = useCallback((next: PosCartLine[]) => {
+    setCart(next)
+  }, [])
+
+  const handleAddProduct = useCallback(
+    async (batch: Product, options?: { acknowledgeNearExpiry?: boolean }) => {
+      const result = addMedicationToCart(
+        cart as PosCartLine[],
+        products as PosCartLine[],
+        batch as PosCartLine,
+        priceAdjustments,
+        options,
+      )
+
+      if (result.needsNearExpiryConfirm) {
+        setPendingNearExpiry(batch)
+        return
+      }
+
+      if (result.error) {
+        alert(result.error)
+        return
+      }
+
+      applyCart(result.cart)
+
+      if (customer.insuranceType) {
+        await fetchInsurancePricing(batch.id, customer.insuranceType)
+      }
+    },
+    [cart, products, priceAdjustments, customer.insuranceType, applyCart],
+  )
+
+  const handleAddGroup = useCallback(
+    (group: PosProductGroup, options?: { acknowledgeNearExpiry?: boolean }) => {
+      void handleAddProduct(group.fefoBatch, options)
+    },
+    [handleAddProduct],
+  )
+
+  const tryBarcodeAdd = useCallback(() => {
+    const code = searchTerm.trim()
+    if (!code) {
+      searchInputRef.current?.focus()
+      return
     }
+    const byBarcode = productGroups.filter(
+      (g) => g.barcode && g.barcode === code,
+    )
+    if (byBarcode.length === 1) {
+      handleAddGroup(byBarcode[0]!)
+      setSearchTerm('')
+      return
+    }
+    if (filteredGroups.length === 1) {
+      handleAddGroup(filteredGroups[0]!)
+      setSearchTerm('')
+    }
+  }, [searchTerm, productGroups, filteredGroups, handleAddGroup])
+
+  const updateQuantity = (inventoryId: string, quantity: number) => {
+    const { cart: next, error } = setCartLineQuantity(
+      cart as PosCartLine[],
+      products as PosCartLine[],
+      inventoryId,
+      quantity,
+      priceAdjustments,
+    )
+    if (error) {
+      alert(error)
+      return
+    }
+    applyCart(next)
   }
 
   const getSubtotal = () => {
@@ -213,6 +303,29 @@ export default function POSPage() {
     setShowCustomerSuggestions(false)
   }
 
+  useEffect(() => {
+    const customerId = searchParams.get('customerId')
+    if (!customerId || preloadedCustomerIdRef.current === customerId) return
+    preloadedCustomerIdRef.current = customerId
+
+    void getCustomer(customerId)
+      .then(({ customer: c }) => {
+        const insuranceNumber = c.insurance_number ?? c.insurance ?? ''
+        setCustomer({
+          name: c.name,
+          phone: c.phone,
+          insuranceNumber,
+          insuranceType: insuranceNumber ? 'RSSB' : '',
+          coveragePercent: insuranceNumber ? 90 : 0,
+        })
+        setCustomerSearchQuery(c.phone)
+        setShowCustomerSuggestions(false)
+      })
+      .catch(() => {
+        preloadedCustomerIdRef.current = null
+      })
+  }, [searchParams])
+
   const fetchInsurancePricing = async (drugId: string, insuranceType: string) => {
     try {
       const data = await getInsurancePricing(insuranceType, drugId)
@@ -239,27 +352,40 @@ export default function POSPage() {
 
   // ── Subscription / transaction gate ──────────────────────
   const [txBlocked, setTxBlocked] = useState<{ reason: string; message: string } | null>(null)
-  const [currentBranchId, setCurrentBranchId] = useState<string | null>(null)
 
-  const branchesQuery = useSaasBranches()
-
-  useEffect(() => {
-    const firstBranch = branchesQuery.data?.branches?.[0]
-    if (firstBranch?.id) setCurrentBranchId(firstBranch.id)
-  }, [branchesQuery.data])
-
-  const processSale = async () => {
+  const completeSale = async (opts?: {
+    prescriptionConfirmation?: PrescriptionConfirmation
+    nearExpiryAcknowledged?: boolean
+  }) => {
     if (cart.length === 0) {
       alert('Cart is empty. Add items to process sale.')
       return
     }
-    
+
     if (!paymentMethod) {
       alert('Please select a payment method.')
       return
     }
 
-    const gate = await checkPosTransactionAllowed(currentBranchId)
+    if (!activeBranchId) {
+      alert('Select a branch before processing a sale.')
+      return
+    }
+
+    if (cartRequiresPrescription(cart) && !opts?.prescriptionConfirmation?.confirmed) {
+      setCheckoutAfterRx(true)
+      setRxDialogOpen(true)
+      return
+    }
+
+    if (cartHasNearExpiry(cart) && !opts?.nearExpiryAcknowledged) {
+      const ok = window.confirm(
+        'One or more items are near expiry (within 30 days). Continue with this sale?',
+      )
+      if (!ok) return
+    }
+
+    const gate = await checkPosTransactionAllowed(activeBranchId)
     if (!gate.allowed) {
       setTxBlocked({
         reason: gate.reason ?? 'limit_reached',
@@ -267,6 +393,17 @@ export default function POSPage() {
       })
       return
     }
+
+    const prescriptionConfirmation: PrescriptionConfirmation | undefined =
+      opts?.prescriptionConfirmation ??
+      (prescriptionConfirmed
+        ? {
+            confirmed: true,
+            patientName: rxForm.patientName || customer.name,
+            prescriberName: rxForm.prescriberName,
+            notes: rxForm.notes,
+          }
+        : undefined)
 
     const saleData = {
       customer,
@@ -276,7 +413,11 @@ export default function POSPage() {
       patientAmount: getPatientAmount(),
       paymentMethod,
       cashAmount: parseFloat(cashAmount) || 0,
-      insuranceAmount: parseFloat(insuranceAmount) || 0
+      insuranceAmount: parseFloat(insuranceAmount) || 0,
+      branchId: activeBranchId,
+      prescriptionConfirmation,
+      nearExpiryAcknowledged:
+        opts?.nearExpiryAcknowledged ?? nearExpiryAcknowledged ?? cartHasNearExpiry(cart),
     }
     
     try {
@@ -285,14 +426,6 @@ export default function POSPage() {
       const result = await saleMutation.mutateAsync(saleData)
       console.log('Sale API response:', result)
 
-      if (currentBranchId) {
-        try {
-          await incrementUsageMutation.mutateAsync(currentBranchId)
-        } catch {
-          // non-fatal
-        }
-      }
-      
       const receiptNumber = result.receiptNumber || `RCP-${Date.now()}`
       
       // Print invoice
@@ -319,10 +452,35 @@ export default function POSPage() {
       setPaymentMethod('')
       setPriceAdjustments({})
       setInsurancePricing({})
+      setPrescriptionConfirmed(false)
+      setNearExpiryAcknowledged(false)
+      setRxForm({ patientName: '', prescriberName: '', notes: '' })
       
     } catch (error) {
       console.error('Sale processing error:', error)
       alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}\n\nSale may not have been saved to database.`)
+    }
+  }
+
+  const processSale = () => {
+    void completeSale()
+  }
+
+  const confirmPrescriptionAndCheckout = () => {
+    setPrescriptionConfirmed(true)
+    setRxDialogOpen(false)
+    const confirmation: PrescriptionConfirmation = {
+      confirmed: true,
+      patientName: rxForm.patientName || customer.name,
+      prescriberName: rxForm.prescriberName,
+      notes: rxForm.notes,
+    }
+    if (checkoutAfterRx) {
+      setCheckoutAfterRx(false)
+      void completeSale({
+        prescriptionConfirmation: confirmation,
+        nearExpiryAcknowledged,
+      })
     }
   }
 
@@ -427,455 +585,191 @@ export default function POSPage() {
     }
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Spinner className="size-6" />
-    </div>
-  )
+  if (loading) {
+    return <DashboardPageLoading label="Loading POS…" />
+  }
+
+  const lowStockCount = products.filter((p) => p.stock <= 20).length
+  const expiringCount = products.filter((p) => p.daysToExpiry <= 90).length
 
   return (
-    <div className="p-4 h-screen flex flex-col">
-      <div className="mb-4 flex items-center gap-4">
-        <SidebarTrigger />
-        <div className="h-4 w-px bg-border" />
-        <div>
-          <h1 className="text-xl font-bold">Point of Sale</h1>
-          <p className="text-sm text-muted-foreground">Advanced pharmacy POS system</p>
-        </div>
-      </div>
-
-      <div className="flex-1 grid grid-cols-12 gap-4">
-        {/* Left Panel - Product Search */}
-        <div className="col-span-4 space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">Product Search</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Search by name or scan barcode..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button size="icon" variant="outline" onClick={() => setQuickAddDialog('drug')}>
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon" variant="outline">
-                    <Scan className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="flex gap-2">
-                  <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Filter by category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Categories</SelectItem>
-                      {categories.map((cat) => (
-                        <SelectItem key={cat.id} value={cat.name}>
-                          {cat.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button size="icon" variant="outline" onClick={() => setQuickAddDialog('category')}>
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              
-              <Tabs defaultValue="all" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="all">All Products</TabsTrigger>
-                  <TabsTrigger value="favorites">
-                    <Star className="h-4 w-4 mr-1" />
-                    Fast Moving
-                  </TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="all" className="mt-3">
-                  <div className="space-y-1 max-h-80 overflow-y-auto">
-                    {filteredProducts.map((product) => (
-                      <div key={product.id} className="flex items-center justify-between p-2 border rounded hover:bg-gray-50">
-                        <div className="flex-1 cursor-pointer" onClick={() => addToCart(product)}>
-                          <span className="font-medium text-sm">{product.name}</span>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="outline" className="text-xs px-1 py-0 text-[10px]">Batch: {product.batch}</Badge>
-                            {product.daysToExpiry <= 30 && (
-                              <Badge variant="destructive" className="text-xs">
-                                <AlertTriangle className="h-3 w-3 mr-1" />
-                                {product.daysToExpiry}d
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="text-right">
-                            <input
-                              type="number"
-                              className="w-16 text-xs p-1 border rounded text-right"
-                              value={priceAdjustments[product.id] || product.price}
-                              onChange={(e) => setPriceAdjustments({...priceAdjustments, [product.id]: Number(e.target.value)})}
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                            {priceAdjustments[product.id] && priceAdjustments[product.id] !== product.price && (
-                              <span className="text-xs text-gray-500 line-through">{product.price}</span>
-                            )}
-                            <Badge variant="outline" className="text-xs">Qty: {product.stock}</Badge>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="favorites" className="mt-3">
-                  <div className="space-y-1 max-h-80 overflow-y-auto">
-                    {fastMoving.map((product) => (
-                      <div key={product.id} className="flex items-center justify-between p-2 border rounded hover:bg-gray-50 cursor-pointer" onClick={() => addToCart(product)}>
-                        <span className="font-medium text-sm flex-1">{product.name}</span>
-                        <span className="font-bold text-blue-600 mx-2">{product.price} RWF</span>
-                        <Badge variant="outline" className="text-xs">Qty: {product.stock}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Middle Panel - Cart */}
-        <div className="col-span-4 space-y-4">
-          <Card className="flex flex-col h-full">
-            <CardHeader className="pb-3 flex-shrink-0">
-              <CardTitle className="flex items-center text-sm">
-                <ShoppingCart className="mr-2 h-4 w-4" />
-                Cart ({cart.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 max-h-96 overflow-y-auto">
-              {/* Customer Info */}
-              <div className="space-y-2 p-3 bg-gray-50 rounded">
-                <div className="flex gap-2 relative">
-                  <div className="flex-1 relative">
-                    <Input
-                      placeholder="Customer name"
-                      value={customer.name}
-                      onChange={(e) => {
-                        const value = e.target.value
-                        setCustomer({ ...customer, name: value })
-                        searchCustomers(value)
-                      }}
-                      onFocus={() => customer.name.length >= 2 && setShowCustomerSuggestions(true)}
-                      onBlur={() => setTimeout(() => setShowCustomerSuggestions(false), 200)}
-                      className="flex-1"
-                    />
-                    {showCustomerSuggestions && customerSuggestions.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 bg-white border rounded-md shadow-lg z-50 max-h-40 overflow-y-auto">
-                        {customerSuggestions.map((suggestion) => (
-                          <div
-                            key={suggestion.id}
-                            className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
-                            onClick={() => selectCustomer(suggestion)}
-                          >
-                            <div className="font-medium text-sm">{suggestion.name}</div>
-                            <div className="text-xs text-gray-500">
-                              {suggestion.phone}
-                              {suggestion.insurance_number && (
-                                <span className="ml-2 text-blue-600">• {suggestion.insurance_number}</span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <Button size="icon" variant="outline" onClick={() => setQuickAddDialog('patient')}>
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-                <FeatureGate featureKey="pos.insurance" compact>
-                  <div className="flex gap-2">
-                    <div className="flex-1">
-                      <div className="text-xs text-[10px]">
-                        <InsuranceSelector
-                          value={customer.insuranceType || 'cash'}
-                          onValueChange={(insuranceType) => {
-                          const coverageMap = { RAMA: 100, MMI: 85, RSSB: 90, Radiant: 80 }
-                          const coverage = coverageMap[insuranceType as keyof typeof coverageMap] || 0
-                          const finalInsuranceType = insuranceType === 'cash' ? '' : insuranceType
-                          setCustomer({ ...customer, insuranceType: finalInsuranceType, coveragePercent: coverage })
-                          
-                          if (finalInsuranceType) {
-                            setInsuranceInterfaceOpen(true)
-                          }
-                          
-                          if (finalInsuranceType) {
-                            cart.forEach(item => fetchInsurancePricing(item.id, finalInsuranceType))
-                          } else {
-                            setInsurancePricing({})
-                          }
-                        }}
-                        coveragePercent={customer.coveragePercent}
-                        />
-                      </div>
-                    </div>
-                    <Button size="icon" variant="outline" onClick={() => setQuickAddDialog('insurance')}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  {customer.insuranceType && (
-                    <Input
-                      placeholder="Insurance number (optional)"
-                      value={customer.insuranceNumber}
-                      onChange={(e) => setCustomer({ ...customer, insuranceNumber: e.target.value })}
-                      className="mt-2"
-                    />
-                  )}
-                </FeatureGate>
-              </div>
-
-              {/* Cart Items */}
-              <div className="space-y-2 max-h-80 overflow-y-auto">
-                {cart.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between p-2 border rounded">
-                    <div className="flex-1">
-                      <p className="font-medium text-sm">{item.name}</p>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">Batch: {item.batch}</span>
-                        {item.daysToExpiry <= 30 && (
-                          <Badge variant="destructive" className="text-[8px]">
-                            <AlertTriangle className="h-3 w-3 mr-1" />
-                            Exp {item.daysToExpiry}d
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground">{item.price} RWF each</p>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <Button size="sm" variant="outline" className="h-4 w-4 p-0" onClick={() => updateQuantity(item.id, item.quantity - 1)}>
-                        <Minus className="h-1.5 w-1.5" />
-                      </Button>
-                      <span className="w-4 text-center text-[10px]">{item.quantity}</span>
-                      <Button size="sm" variant="outline" className="h-4 w-4 p-0" onClick={() => updateQuantity(item.id, item.quantity + 1)}>
-                        <Plus className="h-1.5 w-1.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Totals */}
-              <div className="border-t pt-3 space-y-2">
-                <div className="flex justify-between">
-                  <span>Subtotal:</span>
-                  <span>{getSubtotal().toLocaleString()} RWF</span>
-                </div>
-                {can('pos.insurance') && customer.insuranceType && (
-                  <>
-                    <div className="flex justify-between text-green-600 text-xs">
-                      <span>{customer.insuranceType} Covers:</span>
-                      <span>{getInsuranceCoverage().toLocaleString()} RWF</span>
-                    </div>
-                    <div className="flex justify-between font-bold text-blue-600 text-xs">
-                      <span>Patient Pays:</span>
-                      <span>{getPatientAmount().toLocaleString()} RWF</span>
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Insurance Bill: {getInsuranceCoverage().toLocaleString()} RWF | Patient Bill: {getPatientAmount().toLocaleString()} RWF
-                    </div>
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right Panel - Payment */}
-        <div className="col-span-4 space-y-4">
-          {/* Small Buttons */}
-          <div className="flex justify-end gap-2 -mt-11">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="w-10 h-6 text-xs bg-purple-50 hover:bg-purple-100 text-purple-700"
+    <DashboardPageShell className="[&>div]:max-w-none [&>div]:space-y-4 [&>div]:p-4 md:[&>div]:p-6">
+      <DashboardPageHeader
+        title="Point of Sale"
+        description="Scan, sell, and settle — FEFO stock, Rx gate, shifts & returns"
+        actions={
+          <DashboardToolbar>
+            <DashboardButton
+              tone="ghost"
+              size="icon"
+              title="AI safety check"
               onClick={() => setAiSafetyOpen(true)}
             >
-              <Brain className="h-2 w-2" />
-            </Button>
-            <Button 
-              variant="default" 
-              size="sm" 
-              className="w-16 h-6 text-xs bg-gray-800 hover:bg-gray-700 text-white"
-              onClick={() => setQuickAddDialog('drug')}
-            >
-              Add+
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="w-16 h-6 text-xs relative"
-              onClick={() => setAlertsOpen(true)}
-            >
-              <span>Alerts</span>
-              <div className="flex items-center gap-1 ml-1">
-                {products.filter(p => p.stock <= 20).length > 0 && (
-                  <div className="w-1 h-1 bg-red-500 rounded-full animate-ping" style={{animationDuration: '2s'}}></div>
-                )}
-                {products.filter(p => p.daysToExpiry <= 90).length > 0 && (
-                  <div className="w-1 h-1 bg-yellow-500 rounded-full animate-ping" style={{animationDuration: '2s'}}></div>
-                )}
-              </div>
-            </Button>
-          </div>
-          
-          <Card className="-mt-2">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">Payment</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Payment method" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="card">Card</SelectItem>
-                  <SelectItem value="mobile">Mobile Money</SelectItem>
-                  {can('pos.insurance') ? (
-                    <>
-                      <SelectItem value="insurance">Insurance Only</SelectItem>
-                      <SelectItem value="split">Split Payment</SelectItem>
-                    </>
-                  ) : null}
-                </SelectContent>
-              </Select>
-
-              {can('pos.insurance') && paymentMethod === 'split' && (
-                <div className="space-y-2">
-                  <Input
-                    placeholder="Cash amount"
-                    type="number"
-                    value={cashAmount}
-                    onChange={(e) => setCashAmount(e.target.value)}
-                  />
-                  <Input
-                    placeholder="Insurance amount"
-                    type="number"
-                    value={insuranceAmount}
-                    onChange={(e) => setInsuranceAmount(e.target.value)}
-                  />
-                </div>
+              <Brain className="h-4 w-4 text-violet-600" />
+            </DashboardButton>
+            <DashboardButton tone="outline" onClick={() => setQuickAddDialog('drug')}>
+              <Plus className="mr-1.5 h-4 w-4" />
+              Quick add
+            </DashboardButton>
+            <DashboardButton tone="outline" onClick={() => setAlertsOpen(true)}>
+              Alerts
+              {(lowStockCount > 0 || expiringCount > 0) && (
+                <span className="ml-1.5 inline-flex gap-0.5">
+                  {lowStockCount > 0 && (
+                    <span className="size-1.5 rounded-full bg-red-500" />
+                  )}
+                  {expiringCount > 0 && (
+                    <span className="size-1.5 rounded-full bg-amber-500" />
+                  )}
+                </span>
               )}
-
-              <Button 
-                className="w-full h-12 text-lg" 
-                onClick={processSale}
-                disabled={cart.length === 0 || !paymentMethod}
-              >
-                <CreditCard className="mr-2 h-5 w-5" />
-                Process Sale (F2)
-              </Button>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" onClick={() => setCart([])}>
-                  Clear Cart
-                </Button>
-                <Button variant="outline" onClick={() => {
-                  const backup = {
-                    cart,
-                    customer,
-                    timestamp: new Date().toISOString(),
-                    priceAdjustments
-                  }
-                  localStorage.setItem('pos_backup', JSON.stringify(backup))
-                  alert('Backup created successfully!')
-                }}>
-                  <Save className="mr-2 h-4 w-4" />
-                  Backup
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-xs flex items-center justify-between">
-                Quick Actions
-                <Button 
-                  size="icon" 
-                  variant="ghost" 
-                  className="h-4 w-4" 
-                  onClick={() => setQuickActionsVisible(!quickActionsVisible)}
-                >
-                  {quickActionsVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            {quickActionsVisible && (
-            <CardContent className="grid grid-cols-2 gap-2">
-              <Button 
-                variant="outline" 
-                className="h-6 px-2 text-[10px] bg-orange-50 hover:bg-orange-100 text-orange-700"
-                onClick={() => setReturnsDialogOpen(true)}
-              >
+            </DashboardButton>
+            {can('pos.returns') && (
+              <DashboardButton tone="outline" onClick={() => setReturnsDialogOpen(true)}>
+                <RotateCcw className="mr-1.5 h-4 w-4" />
                 Returns
-              </Button>
-              <Button variant="outline" className="h-6 px-2 text-[10px]" onClick={async () => {
-                const data = await holdSaleMutation.mutateAsync({ cart, customer })
-                alert(data.success ? 'Sale held successfully!' : 'Failed to hold sale')
-              }}>
-                Hold
-              </Button>
-              <Button variant="outline" className="h-6 px-2 text-[10px]" onClick={async () => {
-                const phone = prompt('Enter customer phone:')
-                if (phone) {
-                  const customers = await customerLookupMutation.mutateAsync(phone)
-                  alert(customers.length ? `Found: ${customers[0].name}` : 'Customer not found')
-                }
-              }}>
-                Customer
-              </Button>
-              <Button variant="outline" className="h-6 px-2 text-[10px]" onClick={async () => {
-                const query = prompt('Enter product name or barcode:')
-                if (query) {
-                  const found = await priceCheckMutation.mutateAsync(query)
-                  alert(found.length ? `${found[0].name}: ${found[0].price} RWF` : 'Product not found')
-                }
-              }}>
-                Price
-              </Button>
-              <Button variant="outline" className="h-6 px-2 text-[10px] col-span-2" onClick={async () => {
-                const saleId = prompt('Enter sale ID to void:')
-                if (saleId) {
-                  const data = await voidSaleMutation.mutateAsync({
-                    saleId,
-                    reason: 'User requested',
-                  })
-                  alert(data.success ? 'Sale voided successfully!' : 'Failed to void sale')
-                }
-              }}>
-                Void Sale
-              </Button>
-            </CardContent>
+              </DashboardButton>
             )}
-          </Card>
-        </div>
-      </div>
+          </DashboardToolbar>
+        }
+      />
+
+      <PosWorkspace
+        searchInputRef={searchInputRef}
+        searchTerm={searchTerm}
+        onSearchTermChange={setSearchTerm}
+        onSearchEnter={tryBarcodeAdd}
+        selectedCategory={selectedCategory}
+        onCategoryChange={setSelectedCategory}
+        categories={categories}
+        filteredGroups={filteredGroups}
+        fastMoving={fastMoving}
+        productGroups={productGroups}
+        priceAdjustments={priceAdjustments}
+        onPriceAdjustment={(id, price) =>
+          setPriceAdjustments({ ...priceAdjustments, [id]: price })
+        }
+        onAddGroup={handleAddGroup}
+        onAddProduct={(p) => void handleAddProduct(p)}
+        onQuickAddDrug={() => setQuickAddDialog('drug')}
+        onQuickAddCategory={() => setQuickAddDialog('category')}
+        onScan={() => {
+          searchInputRef.current?.focus()
+          tryBarcodeAdd()
+        }}
+        cart={cart}
+        customer={customer}
+        onCustomerChange={setCustomer}
+        onCustomerNameChange={(name) => {
+          setCustomer({ ...customer, name })
+          searchCustomers(name)
+        }}
+        customerSuggestions={customerSuggestions}
+        showCustomerSuggestions={showCustomerSuggestions}
+        onSelectCustomer={selectCustomer}
+        onCustomerFocus={() =>
+          customer.name.length >= 2 && setShowCustomerSuggestions(true)
+        }
+        onCustomerBlur={() =>
+          setTimeout(() => setShowCustomerSuggestions(false), 200)
+        }
+        onQuickAddPatient={() => setQuickAddDialog('patient')}
+        onQuickAddInsurance={() => setQuickAddDialog('insurance')}
+        canInsurance={can('pos.insurance')}
+        onInsuranceTypeChange={(insuranceType) => {
+          const coverageMap = { RAMA: 100, MMI: 85, RSSB: 90, Radiant: 80 }
+          const coverage =
+            coverageMap[insuranceType as keyof typeof coverageMap] || 0
+          const finalInsuranceType =
+            insuranceType === 'cash' ? '' : insuranceType
+          setCustomer({
+            ...customer,
+            insuranceType: finalInsuranceType,
+            coveragePercent: coverage,
+          })
+          if (finalInsuranceType) {
+            setInsuranceInterfaceOpen(true)
+            cart.forEach((item) =>
+              void fetchInsurancePricing(item.id, finalInsuranceType),
+            )
+          } else {
+            setInsurancePricing({})
+          }
+        }}
+        updateQuantity={updateQuantity}
+        subtotal={getSubtotal()}
+        insuranceCoverage={getInsuranceCoverage()}
+        patientAmount={getPatientAmount()}
+        activeBranchId={activeBranchId}
+        paymentMethod={paymentMethod}
+        onPaymentMethodChange={setPaymentMethod}
+        cashAmount={cashAmount}
+        onCashAmountChange={setCashAmount}
+        insuranceAmount={insuranceAmount}
+        onInsuranceAmountChange={setInsuranceAmount}
+        onProcessSale={processSale}
+        onClearCart={() => setCart([])}
+        onHoldSale={async () => {
+          const data = await holdSaleMutation.mutateAsync({ cart, customer })
+          alert(data.success ? 'Sale held successfully!' : 'Failed to hold sale')
+        }}
+        onLookupCustomer={async () => {
+          const phone = prompt('Enter customer phone:')
+          if (phone) {
+            const customers = await customerLookupMutation.mutateAsync(phone)
+            alert(
+              customers.length
+                ? `Found: ${customers[0].name}`
+                : 'Customer not found',
+            )
+          }
+        }}
+        onPriceCheck={async () => {
+          const query = prompt('Enter product name or barcode:')
+          if (query) {
+            const found = await priceCheckMutation.mutateAsync(query)
+            alert(
+              found.length
+                ? `${found[0].name}: ${found[0].price} RWF`
+                : 'Product not found',
+            )
+          }
+        }}
+        onVoidSale={async () => {
+          const saleId = prompt('Enter sale ID to void:')
+          if (saleId) {
+            const data = await voidSaleMutation.mutateAsync({
+              saleId,
+              reason: 'User requested',
+            })
+            alert(
+              data.success ? 'Sale voided successfully!' : 'Failed to void sale',
+            )
+          }
+        }}
+        onBackupCart={() => {
+          localStorage.setItem(
+            'pos_backup',
+            JSON.stringify({
+              cart,
+              customer,
+              timestamp: new Date().toISOString(),
+              priceAdjustments,
+            }),
+          )
+          alert('Cart backup saved locally.')
+        }}
+        saleDisabled={cart.length === 0 || !paymentMethod}
+      />
 
       {/* Insurance Interface Dialog */}
       <FeatureGate featureKey="pos.insurance" hideWhenLocked>
       <Dialog open={insuranceInterfaceOpen} onOpenChange={setInsuranceInterfaceOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Insurance Processing</DialogTitle>
-          </DialogHeader>
-          <div className="max-h-96 overflow-y-auto space-y-4">
+        <DashboardDialogContent className="max-w-2xl">
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Insurance processing</DashboardDialogTitle>
+          </DashboardDialogHeader>
+          <DashboardDialogBody className="max-h-96 overflow-y-auto">
             <div className="text-lg font-bold">TOTAL: {getSubtotal().toLocaleString()}.00</div>
             
             <div className="space-y-3">
@@ -895,9 +789,9 @@ export default function POSPage() {
                 <div className="flex gap-2">
                   <Input placeholder="01580533" className="flex-1" />
                   {customer.insuranceType === 'RAMA' && (
-                    <Button size="icon" variant="outline" onClick={() => setRamaBeneficiaryOpen(true)}>
+                    <DashboardButton size="icon" onClick={() => setRamaBeneficiaryOpen(true)}>
                       <Plus className="h-4 w-4" />
-                    </Button>
+                    </DashboardButton>
                   )}
                 </div>
               </div>
@@ -981,12 +875,12 @@ export default function POSPage() {
               </div>
             </div>
             
-            <div className="grid grid-cols-4 gap-2">
-              <Button variant="outline" onClick={() => setInsuranceInterfaceOpen(false)}>CANCEL</Button>
-              <Button variant="outline" onClick={async () => {
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <DashboardButton onClick={() => setInsuranceInterfaceOpen(false)}>Cancel</DashboardButton>
+              <DashboardButton onClick={async () => {
                 alert('Draft saved successfully!')
-              }}>SAVE DRAFT</Button>
-              <Button variant="outline" onClick={async () => {
+              }}>Save draft</DashboardButton>
+              <DashboardButton onClick={async () => {
                 try {
                   const result = await insuranceLookupMutation.mutateAsync(
                     customer.insuranceNumber,
@@ -1001,8 +895,8 @@ export default function POSPage() {
                 } catch {
                   alert('Approval request sent successfully!')
                 }
-              }}>REQUEST APPROVAL</Button>
-              <Button onClick={async () => {
+              }}>Request approval</DashboardButton>
+              <DashboardButton tone="primary" onClick={async () => {
                 try {
                   const result = await insuranceProcessMutation.mutateAsync({
                     insuranceType: customer.insuranceType,
@@ -1023,22 +917,21 @@ export default function POSPage() {
                   alert('Insurance claim processed successfully!')
                   setInsuranceInterfaceOpen(false)
                 }
-              }}>FINISH</Button>
+              }}>Finish</DashboardButton>
             </div>
-          </div>
-        </DialogContent>
+          </DashboardDialogBody>
+        </DashboardDialogContent>
       </Dialog>
 
       <Dialog open={ramaBeneficiaryOpen} onOpenChange={setRamaBeneficiaryOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>RAMA Insurance Beneficiary Form</DialogTitle>
-          </DialogHeader>
-          <div className="max-h-96 overflow-y-auto space-y-4">
-            <div className="text-sm text-muted-foreground mb-4">
-              Register and manage insurance beneficiaries under the RAMA system
-            </div>
-            
+        <DashboardDialogContent className="max-w-2xl">
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>RAMA beneficiary</DashboardDialogTitle>
+            <DashboardDialogDescription>
+              Register and manage insurance beneficiaries under RAMA.
+            </DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogBody className="max-h-96 space-y-4 overflow-y-auto">
             <div className="space-y-3">
               <h4 className="font-medium text-sm">1. Identification Details</h4>
               <div className="grid grid-cols-2 gap-3">
@@ -1115,27 +1008,29 @@ export default function POSPage() {
                 <Input placeholder="GLOBAL INEZA ID" />
               </div>
             </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setRamaBeneficiaryOpen(false)} className="flex-1">Cancel</Button>
-            <Button onClick={() => setRamaBeneficiaryOpen(false)} className="flex-1">Save</Button>
-          </div>
-        </DialogContent>
+          </DashboardDialogBody>
+          <DashboardDialogActions
+            cancelLabel="Cancel"
+            confirmLabel="Save"
+            onCancel={() => setRamaBeneficiaryOpen(false)}
+            onConfirm={() => setRamaBeneficiaryOpen(false)}
+          />
+        </DashboardDialogContent>
       </Dialog>
       </FeatureGate>
 
-      {/* Minimalist Right-side Alerts Panel */}
+      {/* Alerts drawer */}
       {alertsOpen && (
-        <div className="fixed right-0 top-0 h-full w-80 bg-white shadow-lg border-l z-50 flex flex-col">
+        <div className={cn("fixed right-0 top-0 z-50 flex h-full w-80 flex-col border-l shadow-xl", dashboardSurfaces.card)}>
           <div className="p-3 border-b flex justify-between items-center">
             <h2 className="font-medium text-sm">Alerts</h2>
             <div className="flex gap-1">
-              <Button size="sm" className="h-6 text-xs px-2" onClick={() => {
+              <DashboardButton size="sm" className="h-7 text-xs" onClick={() => {
                 alert('Export feature temporarily disabled for security reasons')
               }}>
                 Excel
-              </Button>
-              <Button size="sm" variant="outline" className="h-6 w-6 p-0" onClick={() => setAlertsOpen(false)}>×</Button>
+              </DashboardButton>
+              <DashboardButton size="icon" className="h-7 w-7" onClick={() => setAlertsOpen(false)}>×</DashboardButton>
             </div>
           </div>
           
@@ -1188,16 +1083,17 @@ export default function POSPage() {
       )}
 
       <Dialog open={quickAddDialog !== null} onOpenChange={() => setQuickAddDialog(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {quickAddDialog === 'drug' && 'Quick Add Drug'}
-              {quickAddDialog === 'patient' && 'Quick Add Patient'}
-              {quickAddDialog === 'insurance' && 'Quick Add Insurance'}
-              {quickAddDialog === 'rama-beneficiary' && 'RAMA Insurance Beneficiary Form'}
-              {quickAddDialog === 'category' && 'Add New Category'}
-            </DialogTitle>
-          </DialogHeader>
+        <DashboardDialogContent>
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>
+              {quickAddDialog === 'drug' && 'Quick add drug'}
+              {quickAddDialog === 'patient' && 'Quick add patient'}
+              {quickAddDialog === 'insurance' && 'Quick add insurance'}
+              {quickAddDialog === 'rama-beneficiary' && 'RAMA beneficiary'}
+              {quickAddDialog === 'category' && 'Add category'}
+            </DashboardDialogTitle>
+          </DashboardDialogHeader>
+          <DashboardDialogBody>
           <form className="space-y-4">
             {quickAddDialog === 'drug' && (
               <div className="max-h-96 overflow-y-auto space-y-4">
@@ -1366,9 +1262,10 @@ export default function POSPage() {
               </div>
             )}
           </form>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setQuickAddDialog(null)} className="flex-1">Cancel</Button>
-            <Button onClick={async () => {
+          </DashboardDialogBody>
+          <DashboardDialogFooter>
+            <DashboardButton onClick={() => setQuickAddDialog(null)}>Cancel</DashboardButton>
+            <DashboardButton tone="primary" onClick={async () => {
               if (quickAddDialog === 'patient') {
                 const form = document.querySelector('form')
                 const patientName = (form?.querySelector('input[name="patientName"]') as HTMLInputElement | null)?.value?.trim()
@@ -1442,76 +1339,18 @@ export default function POSPage() {
                   form?.reset()
                 }
               }
-            }} className="flex-1">Add</Button>
-          </div>
-        </DialogContent>
+            }}>Add</DashboardButton>
+          </DashboardDialogFooter>
+        </DashboardDialogContent>
       </Dialog>
 
-      {/* Returns and Refunds Dialog */}
-      <Dialog open={returnsDialogOpen} onOpenChange={setReturnsDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Returns & Refunds</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <Input placeholder="Receipt/Invoice Number" />
-              <Input placeholder="Customer Phone" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Return Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="return">Return</SelectItem>
-                  <SelectItem value="refund">Refund</SelectItem>
-                  <SelectItem value="exchange">Exchange</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Reason" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="defective">Defective Product</SelectItem>
-                  <SelectItem value="expired">Expired</SelectItem>
-                  <SelectItem value="wrong">Wrong Item</SelectItem>
-                  <SelectItem value="customer">Customer Request</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Input placeholder="Product Name or Barcode" />
-            <div className="grid grid-cols-3 gap-4">
-              <Input placeholder="Quantity" type="number" />
-              <Input placeholder="Unit Price" type="number" />
-              <Input placeholder="Total Amount" type="number" disabled />
-            </div>
-            <Input placeholder="Notes (optional)" />
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setReturnsDialogOpen(false)} className="flex-1">
-                Cancel
-              </Button>
-              <Button onClick={async () => {
-                try {
-                  const result = await returnMutation.mutateAsync({
-                    sale_id: 'temp-sale-id',
-                    reason: 'Customer request',
-                    refund_amount: 0,
-                  })
-                  alert(result.success ? 'Return processed successfully!' : result.error)
-                  if (result.success) setReturnsDialogOpen(false)
-                } catch {
-                  alert('Return processed successfully!')
-                  setReturnsDialogOpen(false)
-                }
-              }} className="flex-1">
-                Process Return
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <FeatureGate featureKey="pos.returns">
+        <PosReturnsDialog
+          open={returnsDialogOpen}
+          onOpenChange={setReturnsDialogOpen}
+          branchId={activeBranchId}
+        />
+      </FeatureGate>
 
       {/* Transaction Blocked Overlay */}
       {txBlocked && (
@@ -1534,19 +1373,16 @@ export default function POSPage() {
                 : 'This branch has reached its monthly transaction limit. Sales are blocked until the billing cycle resets or the plan is upgraded.'}
             </div>
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => setTxBlocked(null)}
-              >
+              <DashboardButton className="flex-1" onClick={() => setTxBlocked(null)}>
                 Dismiss
-              </Button>
-              <Button
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+              </DashboardButton>
+              <DashboardButton
+                tone="destructive"
+                className="flex-1"
                 onClick={() => { window.location.href = '/pharmacy-dashboard/billing' }}
               >
-                View Plans
-              </Button>
+                View plans
+              </DashboardButton>
             </div>
           </div>
         </div>
@@ -1586,7 +1422,7 @@ export default function POSPage() {
                 <Brain className="h-4 w-4 text-purple-600" />
                 AI Safety Check
               </h3>
-              <Button size="sm" variant="ghost" onClick={() => setAiSafetyOpen(false)}>×</Button>
+              <DashboardButton tone="ghost" size="sm" onClick={() => setAiSafetyOpen(false)}>×</DashboardButton>
             </div>
             
             <div className="space-y-3 max-h-80 overflow-y-auto">
@@ -1604,9 +1440,10 @@ export default function POSPage() {
               </div>
               
               <div className="grid grid-cols-2 gap-2">
-                <Button 
-                  size="sm" 
-                  className="bg-purple-600 hover:bg-purple-700 rounded-xl" 
+                <DashboardButton
+                  tone="primary"
+                  size="sm"
+                  className="rounded-xl bg-violet-600 hover:bg-violet-700"
                   onClick={async () => {
                     setAiSafetyLoading(true)
                     try {
@@ -1624,8 +1461,8 @@ export default function POSPage() {
                   disabled={aiSafetyLoading || cart.length === 0}
                 >
                   {aiSafetyLoading ? 'Analyzing...' : 'Process Analysis'}
-                </Button>
-                <Button size="sm" variant="outline" className="rounded-xl" onClick={() => {
+                </DashboardButton>
+                <DashboardButton size="sm" className="rounded-xl" onClick={() => {
                   if (aiSafetyResult) {
                     const advice = `Safety Analysis:\n\nInteractions: ${aiSafetyResult.interactions.length}\nWarnings: ${aiSafetyResult.warnings.length}\nSeverity: ${aiSafetyResult.severity.toUpperCase()}\n\nRecommendations:\n${aiSafetyResult.recommendations.join('\n')}`
                     alert(advice)
@@ -1634,7 +1471,7 @@ export default function POSPage() {
                   }
                 }}>
                   Get Advice
-                </Button>
+                </DashboardButton>
               </div>
               
               <div className={`p-3 rounded text-xs ${
@@ -1676,6 +1513,69 @@ export default function POSPage() {
           </div>
         </div>
       )}
-    </div>
+
+      <Dialog open={Boolean(pendingNearExpiry)} onOpenChange={(open) => !open && setPendingNearExpiry(null)}>
+        <DashboardDialogContent className="sm:max-w-md">
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Near-expiry stock</DashboardDialogTitle>
+            <DashboardDialogDescription>
+              {pendingNearExpiry
+                ? `${pendingNearExpiry.name} (batch ${pendingNearExpiry.batch}) expires in ${pendingNearExpiry.daysToExpiry} days. Continue adding to cart?`
+                : ''}
+            </DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogActions
+            cancelLabel="Cancel"
+            confirmLabel="Continue"
+            onCancel={() => setPendingNearExpiry(null)}
+            onConfirm={() => {
+              const batch = pendingNearExpiry
+              setPendingNearExpiry(null)
+              setNearExpiryAcknowledged(true)
+              if (batch) {
+                void handleAddProduct(batch, { acknowledgeNearExpiry: true })
+              }
+            }}
+          />
+        </DashboardDialogContent>
+      </Dialog>
+
+      <Dialog open={rxDialogOpen} onOpenChange={setRxDialogOpen}>
+        <DashboardDialogContent className="sm:max-w-md">
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Prescription confirmation</DashboardDialogTitle>
+            <DashboardDialogDescription>
+              This sale includes prescription-only medicines. Confirm details before completing.
+            </DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogBody className="space-y-3">
+            <Input
+              placeholder="Patient name"
+              value={rxForm.patientName}
+              onChange={(e) => setRxForm({ ...rxForm, patientName: e.target.value })}
+            />
+            <Input
+              placeholder="Prescriber / doctor name"
+              value={rxForm.prescriberName}
+              onChange={(e) => setRxForm({ ...rxForm, prescriberName: e.target.value })}
+            />
+            <Input
+              placeholder="Notes (optional)"
+              value={rxForm.notes}
+              onChange={(e) => setRxForm({ ...rxForm, notes: e.target.value })}
+            />
+          </DashboardDialogBody>
+          <DashboardDialogActions
+            cancelLabel="Cancel"
+            confirmLabel="Confirm & continue"
+            onCancel={() => {
+              setRxDialogOpen(false)
+              setCheckoutAfterRx(false)
+            }}
+            onConfirm={confirmPrescriptionAndCheckout}
+          />
+        </DashboardDialogContent>
+      </Dialog>
+    </DashboardPageShell>
   )
 }

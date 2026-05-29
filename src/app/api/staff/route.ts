@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerClient } from '../../../../supabase/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 
 export async function GET() {
   try {
@@ -11,16 +12,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user's pharmacy_id
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!userPharmacy) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
-    }
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
     // Use service role to get staff details
     const serviceSupabase = createClient(
@@ -38,8 +30,7 @@ export async function GET() {
         created_at,
         user_id
       `)
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
-      .eq('is_active', true)
+      .eq('pharmacy_id', pharmacyId)
       .order('created_at', { ascending: false })
 
     if (error) throw error

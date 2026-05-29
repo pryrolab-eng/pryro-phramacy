@@ -1,22 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "../../../supabase/service";
+import { resolveActivePharmacyId } from "@/lib/pharmacy/active-pharmacy";
 import {
   entitlementErrorResponse,
   requirePharmacyEntitlement,
 } from "./assert-entitlement";
 
 export async function getRequestPharmacyId(
-  supabase: SupabaseClient,
+  _supabase: SupabaseClient,
   userId: string,
 ): Promise<string | null> {
-  const { data } = await supabase
-    .from("pharmacy_users")
-    .select("pharmacy_id")
-    .eq("user_id", userId)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
-  return data?.pharmacy_id ?? null;
+  const admin = createServiceClient();
+  return resolveActivePharmacyId(admin, userId);
 }
 
 export async function guardPharmacyFeature(

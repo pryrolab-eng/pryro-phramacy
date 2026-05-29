@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../../../../supabase/server'
 
 export async function GET() {
@@ -10,20 +11,12 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!userPharmacy) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
-    }
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
     const { data: whitelist } = await supabase
       .from('ip_whitelist')
       .select('*')
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
 
     return NextResponse.json({ ips: whitelist || [] })
   } catch (error) {
@@ -47,20 +40,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'IP address required' }, { status: 400 })
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!userPharmacy) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
-    }
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
     const { data, error } = await supabase
       .from('ip_whitelist')
       .insert({
-        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_id: pharmacyId,
         ip_address: ip,
         description: description || ''
       })

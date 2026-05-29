@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Edit, Trash2 } from "lucide-react";
 import { AdminPageHeader } from '@/components/admin/admin-page-header';
+import { DashboardPageShell } from '@/components/dashboard';
 import { Spinner } from '@/components/ui/spinner';
 import {
   adminCategoriesQueryKey,
@@ -104,9 +105,10 @@ export default function CategoriesPage() {
   )
 
   return (
-    <div className="p-6">
+    <DashboardPageShell>
         <div className="max-w-7xl mx-auto">
           <AdminPageHeader
+            pinTitle="Category Management"
             title={<h1 className="text-3xl font-bold">Category Management</h1>}
             description={
               <>
@@ -257,6 +259,6 @@ export default function CategoriesPage() {
             </DialogContent>
           </Dialog>
         </div>
-    </div>
+    </DashboardPageShell>
   );
 }

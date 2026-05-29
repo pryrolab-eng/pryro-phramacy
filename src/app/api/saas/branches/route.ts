@@ -9,6 +9,7 @@ import {
   getBranchCurrentUsage,
   createBranch,
 } from '@/lib/saas/subscription-engine'
+import { resolveActivePharmacyId } from '@/lib/pharmacy/active-pharmacy'
 
 export async function GET() {
   try {
@@ -17,19 +18,12 @@ export async function GET() {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const admin = createServiceClient()
-    const { data: membership } = await admin
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .limit(1)
-      .maybeSingle()
-
-    if (!membership?.pharmacy_id) {
+    const pharmacyId = await resolveActivePharmacyId(admin, user.id)
+    if (!pharmacyId) {
       return NextResponse.json({ error: 'Pharmacy not found' }, { status: 404 })
     }
 
-    const branches = await getPharmacyBranches(admin, membership.pharmacy_id)
+    const branches = await getPharmacyBranches(admin, pharmacyId)
     const branchesWithUsage = await Promise.all(
       branches.map(async (b) => ({
         ...b,
@@ -51,16 +45,20 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const admin = createServiceClient()
+    const pharmacyId = await resolveActivePharmacyId(admin, user.id)
+    if (!pharmacyId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const { data: membership } = await admin
       .from('pharmacy_users')
-      .select('pharmacy_id, role')
+      .select('role')
       .eq('user_id', user.id)
+      .eq('pharmacy_id', pharmacyId)
       .eq('is_active', true)
-      .in('role', ['pharmacy_owner', 'admin'])
-      .limit(1)
       .maybeSingle()
 
-    if (!membership?.pharmacy_id) {
+    if (!membership || !['pharmacy_owner', 'admin'].includes(membership.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -77,7 +75,7 @@ export async function POST(request: NextRequest) {
     try {
       await requirePharmacyEntitlement({
         admin,
-        pharmacyId: membership.pharmacy_id,
+        pharmacyId,
         feature: 'branches.create',
         limit: 'branches',
       })
@@ -89,7 +87,7 @@ export async function POST(request: NextRequest) {
       throw entErr
     }
 
-    const branch = await createBranch(admin, membership.pharmacy_id, {
+    const branch = await createBranch(admin, pharmacyId, {
       name: name.trim(),
       address,
       phone,

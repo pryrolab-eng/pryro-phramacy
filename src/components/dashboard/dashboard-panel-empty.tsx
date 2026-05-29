@@ -1,7 +1,8 @@
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { dashboardSurfaces } from "./dashboard-tokens";
+import { DashboardButton } from "./dashboard-button";
 
 type DashboardPanelEmptyProps = {
   icon: LucideIcon;
@@ -21,27 +22,20 @@ export function DashboardPanelEmpty({
   className,
 }: DashboardPanelEmptyProps) {
   return (
-    <div
-      className={cn(
-        "flex min-h-[280px] flex-col items-center justify-center rounded-lg border border-dashed border-neutral-200 bg-neutral-50/50 px-6 py-10 text-center",
-        className,
-      )}
-    >
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-neutral-200 bg-white">
+    <div className={cn(dashboardSurfaces.empty, className)}>
+      <div className={cn(dashboardSurfaces.iconBox, "mb-4 h-12 w-12")}>
         <Icon className="h-5 w-5 text-neutral-500" strokeWidth={1.75} />
       </div>
-      <p className="text-sm font-medium text-neutral-900">{title}</p>
+      <p className="text-sm font-medium text-neutral-900 dark:text-neutral-50">
+        {title}
+      </p>
       <p className="mt-1 max-w-[220px] text-xs leading-relaxed text-neutral-500">
         {description}
       </p>
       {actionLabel && actionHref ? (
-        <Button
-          asChild
-          size="sm"
-          className="mt-5 bg-neutral-900 text-white hover:bg-neutral-800"
-        >
+        <DashboardButton tone="primary" asChild className="mt-5">
           <Link href={actionHref}>{actionLabel}</Link>
-        </Button>
+        </DashboardButton>
       ) : null}
     </div>
   );

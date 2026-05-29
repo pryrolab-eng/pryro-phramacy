@@ -2,14 +2,19 @@ import { ensureApiSuccess, fetchJson } from "./client";
 
 export type PosProduct = {
   id: string;
+  medicationId: string;
   name: string;
   price: number;
   stock: number;
   batch: string;
-  expiryDate: string;
+  expiryDate: string | null;
   daysToExpiry: number;
-  barcode?: string;
-  category?: string;
+  requiresPrescription: boolean;
+  strength?: string | null;
+  dosageForm?: string | null;
+  genericName?: string | null;
+  barcode?: string | null;
+  category?: string | null;
 };
 
 export type PosCustomer = {
@@ -22,6 +27,13 @@ export type PosCustomer = {
 
 export type PosCartItem = PosProduct & { quantity: number };
 
+export type PrescriptionConfirmation = {
+  confirmed: boolean;
+  patientName?: string;
+  prescriberName?: string;
+  notes?: string;
+};
+
 export type PosSalePayload = {
   customer: PosCustomer;
   items: PosCartItem[];
@@ -31,6 +43,9 @@ export type PosSalePayload = {
   paymentMethod: string;
   cashAmount: number;
   insuranceAmount: number;
+  branchId?: string | null;
+  prescriptionConfirmation?: PrescriptionConfirmation;
+  nearExpiryAcknowledged?: boolean;
 };
 
 export type PosSaleResult = {
@@ -69,14 +84,20 @@ export type AiSafetyResponse = {
 
 export const posKeys = {
   all: ["pos"] as const,
-  products: () => [...posKeys.all, "products"] as const,
-  fastMoving: () => [...posKeys.all, "fast-moving"] as const,
+  products: (branchId?: string | null) =>
+    [...posKeys.all, "products", branchId ?? "none"] as const,
+  fastMoving: (branchId?: string | null) =>
+    [...posKeys.all, "fast-moving", branchId ?? "none"] as const,
   customerLookup: (phone: string) =>
     [...posKeys.all, "customer-lookup", phone] as const,
   priceCheck: (q: string) => [...posKeys.all, "price-check", q] as const,
+  shift: (branchId?: string | null) =>
+    [...posKeys.all, "shift", branchId ?? "none"] as const,
 };
 
-export async function getPosProducts(): Promise<PosProduct[]> {
+export async function getPosProducts(
+  _branchId?: string | null,
+): Promise<PosProduct[]> {
   try {
     const data = await fetchJson<PosProduct[]>("/api/pos/products");
     return Array.isArray(data) ? data : [];
@@ -85,11 +106,11 @@ export async function getPosProducts(): Promise<PosProduct[]> {
   }
 }
 
-export async function getPosFastMovingProducts(): Promise<PosProduct[]> {
+export async function getPosFastMovingProducts(
+  _branchId?: string | null,
+): Promise<PosProduct[]> {
   try {
-    const data = await fetchJson<PosProduct[]>(
-      "/api/pos/products?fastMoving=true",
-    );
+    const data = await fetchJson<PosProduct[]>("/api/pos/products");
     return Array.isArray(data) ? data : [];
   } catch {
     return [];
@@ -178,15 +199,153 @@ export async function quickAddPosEntity(
   });
 }
 
-export async function processPosReturn(payload: {
-  sale_id: string;
+export type ReturnDisposition = "restock" | "damaged" | "destroy";
+
+export type PosSaleLookupItem = {
+  saleItemId: string;
+  inventoryId: string | null;
+  name: string;
+  quantitySold: number;
+  quantityReturned: number;
+  quantityAvailable: number;
+  unitPrice: number;
+  batch: string | null;
+  expiryDate: string | null;
+};
+
+export type PosSaleLookup = {
+  id: string;
+  receiptNumber: string;
+  customerName: string | null;
+  customerPhone: string | null;
+  totalAmount: number;
+  paymentMethod: string;
+  branchId: string;
+  createdAt: string;
+  items: PosSaleLookupItem[];
+};
+
+export type PosReturnLine = {
+  saleItemId: string;
+  inventoryId: string;
+  quantity: number;
+  disposition: ReturnDisposition;
+};
+
+export type PosReturnPayload = {
+  saleId: string;
+  branchId: string;
+  returnType: "return" | "refund" | "exchange";
   reason: string;
-  refund_amount: number;
-}): Promise<ApiSuccessResult & { error?: string }> {
-  return fetchJson<ApiSuccessResult & { error?: string }>("/api/pos/returns", {
+  notes?: string;
+  refundAmount?: number;
+  refundMethod?: string;
+  items: PosReturnLine[];
+};
+
+export type CashierShift = {
+  id: string;
+  status: "open" | "closed";
+  opening_cash: number;
+  expected_cash?: number | null;
+  actual_cash?: number | null;
+  cash_variance?: number | null;
+  total_sales?: number;
+  total_refunds?: number;
+  transaction_count?: number;
+  opened_at: string;
+  closed_at?: string | null;
+  liveTotalSales?: number;
+  liveCashSales?: number;
+  liveTransactionCount?: number;
+};
+
+export async function lookupPosSale(params: {
+  receipt?: string;
+  saleId?: string;
+  branchId: string;
+}): Promise<PosSaleLookup> {
+  const q = new URLSearchParams({ branchId: params.branchId });
+  if (params.receipt) q.set("receipt", params.receipt);
+  if (params.saleId) q.set("saleId", params.saleId);
+  const data = await fetchJson<{ sale: PosSaleLookup; error?: string }>(
+    `/api/pos/sales/lookup?${q.toString()}`,
+  );
+  if (!data.sale) {
+    throw new Error(data.error ?? "Sale not found");
+  }
+  return data.sale;
+}
+
+export async function processPosReturn(
+  payload: PosReturnPayload,
+): Promise<ApiSuccessResult & { error?: string; refundAmount?: number }> {
+  const data = await fetchJson<
+    ApiSuccessResult & { error?: string; refundAmount?: number }
+  >("/api/pos/returns", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  });
+  ensureApiSuccess(data, "Failed to process return");
+  return data;
+}
+
+export async function getCurrentCashierShift(
+  branchId: string,
+): Promise<CashierShift | null> {
+  const data = await fetchJson<{ shift: CashierShift | null }>(
+    `/api/pos/shifts?branchId=${encodeURIComponent(branchId)}`,
+  );
+  return data.shift ?? null;
+}
+
+export async function openCashierShift(payload: {
+  branchId: string;
+  openingCash: number;
+}): Promise<CashierShift> {
+  const data = await fetchJson<{ success: boolean; shift: CashierShift }>(
+    "/api/pos/shifts",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "open",
+        branchId: payload.branchId,
+        openingCash: payload.openingCash,
+      }),
+    },
+  );
+  return data.shift;
+}
+
+export async function closeCashierShift(payload: {
+  branchId: string;
+  shiftId: string;
+  actualCash: number;
+  closeNotes?: string;
+}): Promise<{
+  shift: CashierShift;
+  summary: {
+    expectedCash: number;
+    actualCash: number;
+    variance: number;
+    totalSales: number;
+    cashSales: number;
+    transactionCount: number;
+    totalRefunds: number;
+  };
+}> {
+  return fetchJson("/api/pos/shifts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "close",
+      branchId: payload.branchId,
+      shiftId: payload.shiftId,
+      actualCash: payload.actualCash,
+      closeNotes: payload.closeNotes,
+    }),
   });
 }
 

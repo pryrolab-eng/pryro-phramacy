@@ -1,27 +1,19 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '../../../../supabase/server'
 import { firstRelation } from '@/lib/supabase/relation'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 
 export async function GET() {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (!user) {
       return NextResponse.json({ all: [], lowStock: [], expiring: [] })
     }
 
-    // Get user's pharmacy_id
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
-    if (!userPharmacy) {
-      return NextResponse.json({ all: [], lowStock: [], expiring: [] })
-    }
-    
     const { data: inventory, error } = await supabase
       .from('inventory')
       .select(`
@@ -35,36 +27,42 @@ export async function GET() {
           category
         )
       `)
-      .eq('pharmacy_id', userPharmacy.pharmacy_id)
+      .eq('pharmacy_id', pharmacyId)
 
     if (error) throw error
 
-    const currentDate = new Date()
-    const formattedAlerts = inventory?.map(item => {
-      const medications = firstRelation(item.medications)
-      const expiryDate = new Date(item.expiry_date)
-      const daysToExpiry = Math.ceil((expiryDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24))
-      
+    const lowStock =
+      inventory?.filter((item) => item.quantity_in_stock <= item.minimum_stock_level) ?? []
+
+    const expiring =
+      inventory?.filter((item) => {
+        if (!item.expiry_date) return false
+        const expiryDate = new Date(item.expiry_date)
+        const thirtyDaysFromNow = new Date()
+        thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30)
+        return expiryDate <= thirtyDaysFromNow
+      }) ?? []
+
+    const formatItem = (item: (typeof inventory)[number]) => {
+      const med = firstRelation(item.medications)
       return {
         id: item.id,
-        product: medications?.name || 'Unknown Product',
-        current_stock: item.quantity_in_stock,
-        min_stock: item.minimum_stock_level,
-        category: medications?.category || 'General',
-        expires_in: daysToExpiry
+        name: med?.name ?? 'Unknown',
+        category: med?.category ?? 'other',
+        batch: item.batch_number,
+        quantity: item.quantity_in_stock,
+        minimum: item.minimum_stock_level,
+        expiry: item.expiry_date,
       }
-    }) || []
-
-    const lowStock = formattedAlerts.filter(item => item.current_stock <= item.min_stock)
-    const expiring = formattedAlerts.filter(item => item.expires_in <= 60 && item.expires_in > 0)
+    }
 
     return NextResponse.json({
-      all: formattedAlerts,
-      lowStock,
-      expiring
+      all: inventory?.map(formatItem) ?? [],
+      lowStock: lowStock.map(formatItem),
+      expiring: expiring.map(formatItem),
     })
   } catch (error) {
-    console.error('Error fetching stock alerts:', error)
+    console.error('GET /api/stock-alerts', error)
     return NextResponse.json({ all: [], lowStock: [], expiring: [] })
   }
 }

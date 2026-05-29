@@ -1,6 +1,6 @@
 'use client'
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DashboardSectionCard } from '@/components/dashboard'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -9,7 +9,9 @@ import {
 } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
 import { useSaasSubscription } from '@/hooks/useSaasSubscription'
+import { isAtLimit, limitUsageTextClass } from '@/lib/billing/limit-display'
 import type { BranchUsage, Branch } from '@/lib/saas/types'
+import { cn } from '@/lib/utils'
 
 type BranchWithUsage = Branch & { usage: BranchUsage | null }
 
@@ -18,10 +20,9 @@ function usagePct(usage: BranchUsage | null): number {
   return Math.min(100, Math.round((usage.tx_count / usage.tx_limit) * 100))
 }
 
-function barColor(pct: number, blocked: boolean): string {
-  if (blocked) return 'bg-red-500'
-  if (pct >= 90) return 'bg-red-500'
-  if (pct >= 70) return 'bg-amber-500'
+function barColor(pct: number, blocked: boolean, atLimit: boolean): string {
+  if (blocked || atLimit) return 'bg-red-500'
+  if (pct >= 80) return 'bg-amber-500'
   return 'bg-green-500'
 }
 
@@ -30,23 +31,21 @@ export function BranchUsageWidget() {
 
   if (isPending) {
     return (
-      <Card>
-        <CardContent className="flex items-center justify-center py-8">
+      <DashboardSectionCard title="Subscription & branch usage">
+        <div className="flex items-center justify-center py-8">
           <Spinner className="size-5" />
-        </CardContent>
-      </Card>
+        </div>
+      </DashboardSectionCard>
     )
   }
 
   if (!summary?.main_subscription) {
     return (
-      <Card className="border-amber-300 bg-amber-50">
-        <CardContent className="pt-4 pb-4 flex items-center gap-3">
-          <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-amber-800">No active subscription</p>
-            <p className="text-xs text-amber-700">Subscribe to a plan to unlock all features.</p>
-          </div>
+      <DashboardSectionCard
+        title="No active subscription"
+        description="Subscribe to a plan to unlock all features."
+        className="border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30"
+        action={
           <Button
             size="sm"
             variant="outline"
@@ -56,8 +55,13 @@ export function BranchUsageWidget() {
             <CreditCard className="h-3.5 w-3.5 mr-1" />
             Subscribe
           </Button>
-        </CardContent>
-      </Card>
+        }
+      >
+        <div className="flex items-center gap-3 text-sm text-amber-800 dark:text-amber-200">
+          <AlertTriangle className="h-5 w-5 shrink-0" />
+          <p>Billing and branch limits apply once you have an active plan.</p>
+        </div>
+      </DashboardSectionCard>
     )
   }
 
@@ -67,41 +71,43 @@ export function BranchUsageWidget() {
   const totalCost = summary.total_monthly_cost
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <Activity className="h-4 w-4 text-blue-500" />
-            Subscription &amp; Branch Usage
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            {blockedCount > 0 && (
-              <Badge variant="destructive" className="text-xs">
-                <AlertTriangle className="h-3 w-3 mr-1" />
-                {blockedCount} blocked
-              </Badge>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={() => void refetch()}
-              disabled={isFetching}
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
+    <DashboardSectionCard
+      title="Subscription & branch usage"
+      action={
+        <div className="flex items-center gap-2">
+          {blockedCount > 0 && (
+            <Badge variant="destructive" className="text-xs">
+              <AlertTriangle className="h-3 w-3 mr-1" />
+              {blockedCount} blocked
+            </Badge>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => void refetch()}
+            disabled={isFetching}
+            aria-label="Refresh usage"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+          </Button>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {/* Plan summary row */}
-        <div className="flex items-center justify-between text-sm bg-muted/40 rounded-lg px-3 py-2">
+      }
+    >
+      <div className="space-y-3">
+        <div className="flex items-center justify-between text-sm bg-neutral-50 rounded-lg px-3 py-2 dark:bg-neutral-800/50">
           <div className="flex items-center gap-2">
-            <CreditCard className="h-4 w-4 text-blue-500" />
+            <CreditCard className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
             <span className="font-medium">{planName}</span>
           </div>
           <div className="flex items-center gap-3 text-muted-foreground text-xs">
-            <span className="flex items-center gap-1">
+            <span
+              className={cn(
+                "flex items-center gap-1",
+                isAtLimit(summary.branch_count, summary.branch_limit) &&
+                  limitUsageTextClass(true),
+              )}
+            >
               <GitBranch className="h-3.5 w-3.5" />
               {summary.branch_count}/{summary.branch_limit} branches
             </span>
@@ -109,7 +115,6 @@ export function BranchUsageWidget() {
           </div>
         </div>
 
-        {/* Per-branch usage */}
         {branches.length === 0 ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
             <Building2 className="h-4 w-4" />
@@ -121,7 +126,10 @@ export function BranchUsageWidget() {
             {branches.map(branch => {
               const usage = branch.usage
               const pct = usagePct(usage)
-              const color = barColor(pct, usage?.is_blocked ?? false)
+              const atLimit = usage
+                ? isAtLimit(usage.tx_count, usage.tx_limit)
+                : false
+              const color = barColor(pct, usage?.is_blocked ?? false, atLimit)
               return (
                 <div key={branch.id} className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
@@ -132,7 +140,12 @@ export function BranchUsageWidget() {
                         <Badge variant="destructive" className="text-[10px] px-1 py-0 ml-1">Blocked</Badge>
                       )}
                     </span>
-                    <span className="text-muted-foreground">
+                    <span
+                      className={cn(
+                        "text-muted-foreground",
+                        atLimit && limitUsageTextClass(true),
+                      )}
+                    >
                       {usage
                         ? `${usage.tx_count.toLocaleString()} / ${usage.tx_limit.toLocaleString()} tx`
                         : 'No record'}
@@ -152,17 +165,16 @@ export function BranchUsageWidget() {
           </div>
         )}
 
-        {/* Footer link */}
-        <div className="pt-1 border-t">
+        <div className="pt-3 border-t border-neutral-100 dark:border-neutral-800">
           <a
             href="/pharmacy-dashboard/billing"
-            className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+            className="text-xs text-neutral-700 hover:underline flex items-center gap-1 dark:text-neutral-300"
           >
             <TrendingUp className="h-3.5 w-3.5" />
             Manage subscription &amp; invoices →
           </a>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </DashboardSectionCard>
   )
 }

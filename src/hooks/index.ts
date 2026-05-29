@@ -84,7 +84,14 @@ export {
   type CreateStockLocationInput,
   type StockLocationRow,
 } from "./useStockLocations";
-export { staffUsersQueryKey, useUsers, type StaffUser } from "./useUsers";
+export {
+  staffUsersQueryKey,
+  useUsers,
+  useUpdateStaffMutation,
+  useDeleteStaffMutation,
+  type StaffUser,
+  type StaffUpdatePayload,
+} from "./useUsers";
 export {
   checkPosTransactionAllowed,
   posKeys,
@@ -139,7 +146,6 @@ export {
   useCreateSettingsLocationMutation,
   useInvalidatePharmacySettingsPage,
   useIpWhitelist,
-  usePharmacyBranding,
   usePharmacySettingsInfo,
   useRemoveIpWhitelistMutation,
   useSecuritySettings,
@@ -155,6 +161,7 @@ export {
   useUploadPharmacyLogoMutation,
   useVerifyTwoFaMutation,
 } from "./usePharmacySettingsPage";
+export { usePharmacyBranding, DEFAULT_PHARMACY_BRANDING } from "./usePharmacyBranding";
 export {
   pharmacistDashboardKeys,
   useInvalidatePharmacistDashboard,

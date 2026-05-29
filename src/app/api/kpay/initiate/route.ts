@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../../supabase/server'
 import { kpayService } from '@/lib/kpay'
 import { PhoneNumberValidator } from '@/lib/phone-validator'
@@ -51,15 +52,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { data: userPharmacy } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!userPharmacy) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
-    }
+    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
     const refid = `PYX-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
@@ -81,7 +74,7 @@ export async function POST(request: NextRequest) {
     const { data: transaction, error: transactionError } = await supabase
       .from('payment_transactions')
       .insert({
-        pharmacy_id: userPharmacy.pharmacy_id,
+        pharmacy_id: pharmacyId,
         sale_id: saleId || null,
         subscription_id: subscriptionId || null,
         kpay_refid: refid,

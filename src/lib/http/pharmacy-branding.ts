@@ -7,6 +7,8 @@ export const pharmacyBrandingKeys = {
 };
 
 export type PharmacyBranding = {
+  /** Sidebar / shell display name when customization is enabled. */
+  platformName: string;
   logoUrl: string;
   primaryColor: string;
   customDomain: string;

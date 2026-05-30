@@ -11,6 +11,7 @@ import {
   SettingsSection,
 } from "@/components/settings/settings-primitives";
 import { useActivePharmacy } from "@/components/providers/active-pharmacy-provider";
+import { usePharmacyEntitlements } from "@/hooks/usePharmacyEntitlements";
 import { usePharmacyBranding } from "@/hooks/usePharmacyBranding";
 import {
   useUpdatePharmacyBrandingMutation,
@@ -20,13 +21,18 @@ import type { PharmacyBranding } from "@/lib/http/pharmacy-branding";
 
 export function SettingsBrandingPanel() {
   const { activePharmacyId } = useActivePharmacy();
-  const brandingQuery = usePharmacyBranding(activePharmacyId);
+  const { can, isEntitlementsReady } = usePharmacyEntitlements();
+  const hasCustomization = isEntitlementsReady && can("customization");
+  const brandingQuery = usePharmacyBranding(activePharmacyId, {
+    enabled: hasCustomization,
+  });
   const updateMutation = useUpdatePharmacyBrandingMutation();
   const uploadMutation = useUploadPharmacyLogoMutation();
 
   const [form, setForm] = useState<PharmacyBranding>({
+    platformName: "",
     logoUrl: "",
-    primaryColor: "#3b82f6",
+    primaryColor: "#171717",
     customDomain: "",
   });
 
@@ -65,11 +71,26 @@ export function SettingsBrandingPanel() {
       <div className="space-y-8">
         <SettingsPanelTitle
           title="Branding"
-          description="Logo and colors for your pharmacy — each location has its own look for staff and cashiers"
+          description="Requires the customization plan — set your platform name, logo, and colors for the sidebar"
         />
 
         <SettingsSection title="Pharmacy appearance">
           <div className="space-y-4 px-5 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="pharmacy-platform-name">Platform name</Label>
+              <Input
+                id="pharmacy-platform-name"
+                placeholder="Apex Pharmacy"
+                value={form.platformName}
+                onChange={(e) =>
+                  setForm({ ...form, platformName: e.target.value })
+                }
+              />
+              <p className="text-xs text-neutral-500">
+                Shown in the sidebar instead of Pryrox. Leave empty to use
+                your pharmacy name from profile.
+              </p>
+            </div>
             {form.logoUrl ? (
               <img
                 src={form.logoUrl}

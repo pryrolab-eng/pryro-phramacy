@@ -15,8 +15,9 @@ import {
 import type { PharmacyBranding } from "@/lib/http/pharmacy-branding";
 
 const DEFAULT_FORM: PharmacyBranding = {
+  platformName: "",
   logoUrl: "",
-  primaryColor: "#3b82f6",
+  primaryColor: "#171717",
   customDomain: "",
 };
 
@@ -104,6 +105,17 @@ export function AdminPharmacyBrandingSection({ pharmacyId }: Props) {
       </div>
 
       <div className="rounded-lg border bg-card p-4 space-y-4">
+        <div className="grid gap-2">
+          <Label htmlFor="admin-pharmacy-platform-name">Platform name</Label>
+          <Input
+            id="admin-pharmacy-platform-name"
+            placeholder="Apex Pharmacy"
+            value={form.platformName}
+            onChange={(e) =>
+              setForm({ ...form, platformName: e.target.value })
+            }
+          />
+        </div>
         {form.logoUrl ? (
           <img
             src={form.logoUrl}

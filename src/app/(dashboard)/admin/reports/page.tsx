@@ -155,7 +155,7 @@ export default function ReportsPage() {
     )
   }
 
-  const pageLoading = reportsQuery.isPending || chart.loading
+  const pageLoading = reportsQuery.isLoading || chart.loading
   const pageError =
     reportsQuery.isError && reportsQuery.error instanceof Error
       ? reportsQuery.error.message

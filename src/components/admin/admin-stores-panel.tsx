@@ -3,20 +3,28 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { Building2, CreditCard, Plus, Search, Wrench } from "lucide-react";
+import { Building2, CreditCard, Plus, Wrench } from "lucide-react";
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  DashboardButton,
+  DashboardDialogActions,
+  DashboardDialogContent,
+  DashboardDialogDescription,
+  DashboardDialogHeader,
+  DashboardDialogTitle,
+  DashboardMetricGrid,
+  DashboardSearchInput,
+  DashboardStatCard,
+  DashboardDataTable,
+  DashboardAlertDialogContent,
+  DashboardAlertDialogHeader,
+  DashboardAlertDialogTitle,
+  DashboardAlertDialogDescription,
+  DashboardAlertDialogActions,
+} from "@/components/dashboard";
+import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -33,16 +41,8 @@ import { AdminPharmacyDetailDialog } from "@/components/admin/admin-pharmacy-det
 import { createAdminStoresColumns } from "@/components/admin/admin-stores-columns";
 import { toast } from "@/components/ui/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { AlertDialog } from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
 import {
   adminPharmaciesQueryKey,
   useAdminPharmacies,
@@ -168,7 +168,7 @@ export function AdminStoresPanel() {
   const pharmacies = pharmaciesQuery.data ?? [];
   const insurance = insuranceQuery.data ?? [];
   const loading =
-    pharmaciesQuery.isPending || insuranceQuery.isPending || plansQuery.isPending;
+    pharmaciesQuery.isLoading || insuranceQuery.isLoading || plansQuery.isLoading;
 
   const stats = useMemo(() => {
     let activeAccess = 0;
@@ -455,43 +455,82 @@ export function AdminStoresPanel() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center">
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3">
         <Spinner className="size-6" />
+        <p className="text-sm text-neutral-500">Loading pharmacies…</p>
       </div>
     );
   }
 
+  const filterToolbar = (
+    <>
+      <DashboardSearchInput
+        placeholder="Search name, email, license, address…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="min-w-[200px] flex-1"
+      />
+      <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <SelectTrigger
+          className={cn(
+            "h-8 w-full rounded-lg border-neutral-200/80 bg-white text-sm shadow-sm lg:w-[160px] dark:border-neutral-700 dark:bg-neutral-900",
+          )}
+        >
+          <SelectValue placeholder="Access" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All access</SelectItem>
+          <SelectItem value="active">Active</SelectItem>
+          <SelectItem value="suspended">Suspended</SelectItem>
+          <SelectItem value="inactive">Inactive</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select value={planFilter} onValueChange={setPlanFilter}>
+        <SelectTrigger
+          className={cn(
+            "h-8 w-full rounded-lg border-neutral-200/80 bg-white text-sm shadow-sm lg:w-[180px] dark:border-neutral-700 dark:bg-neutral-900",
+          )}
+        >
+          <SelectValue placeholder="Plan" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All plans</SelectItem>
+          <SelectItem value="free">All free plans</SelectItem>
+          {planOptions.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
+              {opt.isFree ? " (Free)" : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </>
+  );
+
   return (
     <>
-    <div className="mx-auto max-w-7xl space-y-6">
         <AdminPageHeader
           pinTitle="Pharmacies"
-          title={
-            <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
-              <Building2 className="h-8 w-8 text-primary" />
-              Pharmacies
-            </h1>
-          }
+          title="Pharmacies"
           description="Registered stores, subscription tier, and account access status."
           actions={
             <>
-              <Button
-                variant="outline"
-                size="sm"
+              <DashboardButton
+                tone="outline"
                 onClick={handleRepair}
                 disabled={repairing}
               >
-                <Wrench className="mr-2 h-4 w-4" />
+                <Wrench className="mr-2 h-4 w-4" strokeWidth={1.75} />
                 {repairing ? "Repairing…" : "Repair data"}
-              </Button>
-              <Button variant="outline" size="sm" asChild>
+              </DashboardButton>
+              <DashboardButton tone="outline" asChild>
                 <Link href="/admin/subscriptions">
-                  <CreditCard className="mr-2 h-4 w-4" />
+                  <CreditCard className="mr-2 h-4 w-4" strokeWidth={1.75} />
                   Plans
                 </Link>
-              </Button>
-              <Button
-                size="sm"
+              </DashboardButton>
+              <DashboardButton
+                tone="primary"
                 onClick={() => {
                   setNewPharmacy({
                     ...emptyPharmacyForm(),
@@ -503,169 +542,106 @@ export function AdminStoresPanel() {
                   setAddOpen(true);
                 }}
               >
-                <Plus className="mr-2 h-4 w-4" />
+                <Plus className="mr-2 h-4 w-4" strokeWidth={1.75} />
                 Add pharmacy
-              </Button>
+              </DashboardButton>
             </>
           }
         />
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total stores
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{stats.total}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Active accounts
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{stats.activeAccess}</p>
-              <p className="text-xs text-muted-foreground">Can use the app</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Paid plans
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{stats.paidPlans}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Free plans
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{stats.freePlans}</p>
-              <p className="text-xs text-muted-foreground">RWF 0 / no price</p>
-            </CardContent>
-          </Card>
-        </div>
+        <DashboardMetricGrid>
+          <DashboardStatCard
+            label="Total stores"
+            icon={Building2}
+            value={stats.total}
+          />
+          <DashboardStatCard
+            label="Active accounts"
+            icon={Building2}
+            value={stats.activeAccess}
+            hint="Can use the app"
+          />
+          <DashboardStatCard
+            label="Paid plans"
+            icon={CreditCard}
+            value={stats.paidPlans}
+          />
+          <DashboardStatCard
+            label="Free plans"
+            icon={CreditCard}
+            value={stats.freePlans}
+            hint="RWF 0 / no price"
+          />
+        </DashboardMetricGrid>
 
-        <Card>
-          <CardHeader className="space-y-4 border-b pb-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="text-base">
-                All pharmacies
-                <span className="ml-2 font-normal text-muted-foreground">
-                  ({filtered.length})
-                </span>
-              </CardTitle>
-            </div>
-            <div className="flex flex-col gap-2 lg:flex-row">
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  placeholder="Search name, email, license, address…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full lg:w-[160px]">
-                  <SelectValue placeholder="Access" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All access</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="suspended">Suspended</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={planFilter} onValueChange={setPlanFilter}>
-                <SelectTrigger className="w-full lg:w-[160px]">
-                  <SelectValue placeholder="Plan" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All plans</SelectItem>
-                  <SelectItem value="free">All free plans</SelectItem>
-                  {planOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                      {opt.isFree ? " (Free)" : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardHeader>
-          <CardContent className="p-4 pt-4">
-            {selectedInView.length > 0 ? (
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm">
-                <div className="text-muted-foreground">
-                  <span className="font-medium text-foreground">
+        <DashboardDataTable
+          title="All pharmacies"
+          description={`${filtered.length} of ${pharmacies.length} shown`}
+          toolbar={filterToolbar}
+          columns={columns}
+          data={filtered}
+          getRowId={(row) => row.id}
+          pageSizeOptions={[10, 20, 50]}
+          emptyMessage="No pharmacies match your filters."
+          tableHeader={
+            selectedInView.length > 0 ? (
+              <div
+                className={cn(
+                  "mx-4 mb-3 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neutral-200/80 bg-neutral-50/80 px-3 py-2 text-sm dark:border-neutral-800 dark:bg-neutral-900/40",
+                )}
+              >
+                <p className="text-neutral-500">
+                  <span className="font-medium text-neutral-900 dark:text-neutral-50">
                     {selectedInView.length}
                   </span>{" "}
                   selected
-                </div>
+                </p>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedIds((prev) => prev.filter((id) => !filteredIdSet.has(id)))}
+                  <DashboardButton
+                    tone="outline"
+                    onClick={() =>
+                      setSelectedIds((prev) =>
+                        prev.filter((id) => !filteredIdSet.has(id)),
+                      )
+                    }
                   >
                     Clear selection
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
+                  </DashboardButton>
+                  <DashboardButton
+                    tone="destructive"
                     disabled={bulkDeleting}
                     onClick={() => setBulkDeleteOpen(true)}
                   >
                     Delete selected
-                  </Button>
+                  </DashboardButton>
                 </div>
               </div>
-            ) : null}
-            <DataTable
-              columns={columns}
-              data={filtered}
-              getRowId={(row) => row.id}
-              pageSize={10}
-              pageSizeOptions={[10, 20, 50]}
-              emptyMessage="No pharmacies match your filters."
-              tableClassName="border-0"
-            />
-          </CardContent>
-        </Card>
-      </div>
+            ) : null
+          }
+        />
 
       <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete selected pharmacies?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This cannot be undone. Pharmacies with active or pending subscriptions will be blocked.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={bulkDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={bulkDeleting}
-              onClick={(e) => {
-                e.preventDefault();
-                void handleBulkDelete();
-              }}
-            >
-              {bulkDeleting ? "Deleting…" : `Delete ${selectedInView.length}`}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
+        <DashboardAlertDialogContent>
+          <DashboardAlertDialogHeader>
+            <DashboardAlertDialogTitle>
+              Delete selected pharmacies?
+            </DashboardAlertDialogTitle>
+            <DashboardAlertDialogDescription>
+              This cannot be undone. Pharmacies with active or pending subscriptions
+              will be blocked.
+            </DashboardAlertDialogDescription>
+          </DashboardAlertDialogHeader>
+          <DashboardAlertDialogActions
+            cancelLabel="Cancel"
+            confirmLabel={
+              bulkDeleting ? "Deleting…" : `Delete ${selectedInView.length}`
+            }
+            onCancel={() => !bulkDeleting && setBulkDeleteOpen(false)}
+            onConfirm={() => void handleBulkDelete()}
+            confirmTone="destructive"
+            confirmDisabled={bulkDeleting}
+          />
+        </DashboardAlertDialogContent>
       </AlertDialog>
 
       {viewPharmacy ? (
@@ -679,89 +655,95 @@ export function AdminStoresPanel() {
 
       {/* Add */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Add pharmacy</DialogTitle>
-            <DialogDescription>Create a store and owner login.</DialogDescription>
-          </DialogHeader>
-          <PharmacyForm
-            data={newPharmacy}
-            onChange={(patch) => setNewPharmacy((p) => ({ ...p, ...patch }))}
-            planOptions={planOptions}
-            insurance={insurance}
-            getCoverage={getCoverage}
-            coverageOverrides={coverageOverrides}
-            setCoverageOverrides={setCoverageOverrides}
-            toggleInsurance={(id, checked) =>
-              setNewPharmacy((p) => ({
-                ...p,
-                insurance_providers: toggleInsurance(p.insurance_providers, id, checked),
-              }))
-            }
+        <DashboardDialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Add pharmacy</DashboardDialogTitle>
+            <DashboardDialogDescription>
+              Create a store and owner login.
+            </DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <div className="max-h-[min(70vh,28rem)] overflow-y-auto px-5 py-4">
+            <PharmacyForm
+              data={newPharmacy}
+              onChange={(patch) => setNewPharmacy((p) => ({ ...p, ...patch }))}
+              planOptions={planOptions}
+              insurance={insurance}
+              getCoverage={getCoverage}
+              coverageOverrides={coverageOverrides}
+              setCoverageOverrides={setCoverageOverrides}
+              toggleInsurance={(id, checked) =>
+                setNewPharmacy((p) => ({
+                  ...p,
+                  insurance_providers: toggleInsurance(
+                    p.insurance_providers,
+                    id,
+                    checked,
+                  ),
+                }))
+              }
+            />
+          </div>
+          <DashboardDialogActions
+            cancelLabel="Cancel"
+            confirmLabel="Create pharmacy"
+            onCancel={() => setAddOpen(false)}
+            onConfirm={handleAdd}
+            confirmDisabled={!newPharmacy.name || !newPharmacy.owner_email}
+            confirmLoading={saving}
           />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleAdd}
-              disabled={saving || !newPharmacy.name || !newPharmacy.owner_email}
-            >
-              {saving ? "Creating…" : "Create pharmacy"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+        </DashboardDialogContent>
       </Dialog>
 
       {/* Edit */}
       <Dialog open={Boolean(editPharmacy)} onOpenChange={(o) => !o && setEditPharmacy(null)}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit pharmacy</DialogTitle>
-            <DialogDescription>
+        <DashboardDialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Edit pharmacy</DashboardDialogTitle>
+            <DashboardDialogDescription>
               Plan changes here update the store cache; paid billing still flows through
               subscriptions.
-            </DialogDescription>
-          </DialogHeader>
+            </DashboardDialogDescription>
+          </DashboardDialogHeader>
           {editPharmacy ? (
             <>
-              <PharmacyForm
-                data={editPharmacy as unknown as PharmacyFormData}
-                onChange={(patch) =>
-                  setEditPharmacy((prev) => (prev ? { ...prev, ...patch } : prev))
-                }
-                planOptions={planOptions}
-                insurance={insurance}
-                getCoverage={getCoverage}
-                coverageOverrides={coverageOverrides}
-                setCoverageOverrides={setCoverageOverrides}
-                toggleInsurance={(id, checked) =>
-                  setEditPharmacy((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          insurance_providers: toggleInsurance(
-                            (prev.insurance_providers as string[]) || [],
-                            id,
-                            checked,
-                          ),
-                        }
-                      : prev,
-                  )
-                }
-                showPassword
+              <div className="max-h-[min(70vh,28rem)] overflow-y-auto px-5 py-4">
+                <PharmacyForm
+                  data={editPharmacy as unknown as PharmacyFormData}
+                  onChange={(patch) =>
+                    setEditPharmacy((prev) => (prev ? { ...prev, ...patch } : prev))
+                  }
+                  planOptions={planOptions}
+                  insurance={insurance}
+                  getCoverage={getCoverage}
+                  coverageOverrides={coverageOverrides}
+                  setCoverageOverrides={setCoverageOverrides}
+                  toggleInsurance={(id, checked) =>
+                    setEditPharmacy((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            insurance_providers: toggleInsurance(
+                              (prev.insurance_providers as string[]) || [],
+                              id,
+                              checked,
+                            ),
+                          }
+                        : prev,
+                    )
+                  }
+                  showPassword
+                />
+              </div>
+              <DashboardDialogActions
+                cancelLabel="Cancel"
+                confirmLabel="Save changes"
+                onCancel={() => setEditPharmacy(null)}
+                onConfirm={handleEdit}
+                confirmLoading={saving}
               />
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setEditPharmacy(null)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleEdit} disabled={saving}>
-                  {saving ? "Saving…" : "Save changes"}
-                </Button>
-              </DialogFooter>
             </>
           ) : null}
-        </DialogContent>
+        </DashboardDialogContent>
       </Dialog>
     </>
   );
@@ -872,7 +854,7 @@ function PharmacyForm({
       )}
       <div className="grid gap-2">
         <Label>Insurance providers</Label>
-        <div className="max-h-40 space-y-3 overflow-y-auto rounded-md border p-3">
+        <div className="max-h-40 space-y-3 overflow-y-auto rounded-lg border border-neutral-200/80 bg-neutral-50/80 p-3 dark:border-neutral-800 dark:bg-neutral-900/40">
           {insurance.map((provider) => (
             <div key={provider.id} className="space-y-2">
               <div className="flex items-center gap-2">

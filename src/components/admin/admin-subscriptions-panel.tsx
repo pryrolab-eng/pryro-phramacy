@@ -4,27 +4,31 @@ import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  DashboardButton,
+  DashboardDialogContent,
+  DashboardDialogHeader,
+  DashboardDialogTitle,
+  DashboardDialogDescription,
+  DashboardDialogBody,
+  DashboardDialogActions,
+  DashboardMetricGrid,
+  DashboardStatCard,
+  DashboardSectionCard,
+  DashboardDataTable,
+  DashboardTabsList,
+  DashboardAlertDialogContent,
+  DashboardAlertDialogHeader,
+  DashboardAlertDialogTitle,
+  DashboardAlertDialogDescription,
+  DashboardAlertDialogActions,
+  DashboardToolbar,
+} from "@/components/dashboard";
+import { AlertDialog } from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
 import { AdminFeedbackDialog, type AdminFeedbackVariant } from "@/components/admin/admin-feedback-dialog";
 import {
   PolarSyncDialog,
@@ -41,14 +45,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CreditCard, Plus, Loader2 } from "lucide-react";
+import { Building2, Layers, Loader2, Plus, Users } from "lucide-react";
 import { AdminPageHeader } from '@/components/admin/admin-page-header'
 import {
   adminSubscriptionPlanColumns,
   type SubscriptionPlanTableRow,
 } from '@/components/admin/admin-subscriptions-columns'
-import { DataTable } from '@/components/ui/data-table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsTrigger } from '@/components/ui/tabs'
 import { Spinner } from '@/components/ui/spinner';
 import { useAdminPlans } from '@/hooks'
 import { createAdminPlan, dedupeAdminPlans, fixAdminPlanCatalog, syncAllPlansToPolar, updateAdminPlan, type AdminSubscriptionPlanRow } from '@/lib/http/admin/plans'
@@ -462,14 +465,17 @@ export function AdminSubscriptionsPanel() {
     }
   }
 
-  if (plansQuery.isPending) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Spinner className="size-6" />
-    </div>
-  )
+  if (plansQuery.isLoading) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3">
+        <Spinner className="size-6" />
+        <p className="text-sm text-neutral-500">Loading subscription catalog…</p>
+      </div>
+    )
+  }
 
   return (
-    <div>
+    <>
       <PolarSyncDialog
         open={polarSyncOpen}
         onOpenChange={setPolarSyncOpen}
@@ -493,51 +499,43 @@ export function AdminSubscriptionsPanel() {
         open={!!deactivateConfirm}
         onOpenChange={(open) => !open && setDeactivateConfirm(null)}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Deactivate this plan?</AlertDialogTitle>
-            <AlertDialogDescription>
+        <DashboardAlertDialogContent>
+          <DashboardAlertDialogHeader>
+            <DashboardAlertDialogTitle>Deactivate this plan?</DashboardAlertDialogTitle>
+            <DashboardAlertDialogDescription>
               {deactivateConfirm
                 ? `"${deactivateConfirm.name}" has ${deactivateConfirm.users} active subscriber(s). Deactivating hides it from new signups; existing subscriptions are unchanged.`
                 : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (deactivateConfirm) {
-                  void applyTogglePlanActive(deactivateConfirm, false)
-                }
-                setDeactivateConfirm(null)
-              }}
-            >
-              Deactivate
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
+            </DashboardAlertDialogDescription>
+          </DashboardAlertDialogHeader>
+          <DashboardAlertDialogActions
+            cancelLabel="Cancel"
+            confirmLabel="Deactivate"
+            onCancel={() => setDeactivateConfirm(null)}
+            onConfirm={() => {
+              if (deactivateConfirm) {
+                void applyTogglePlanActive(deactivateConfirm, false)
+              }
+              setDeactivateConfirm(null)
+            }}
+            confirmTone="destructive"
+          />
+        </DashboardAlertDialogContent>
       </AlertDialog>
 
-
-        <div className="max-w-7xl mx-auto space-y-6">
           <AdminPageHeader
             pinTitle="Subscription catalog"
-            title={
-              <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
-                <CreditCard className="h-8 w-8 text-primary" />
-                Subscription catalog
-              </h1>
-            }
+            title="Subscription catalog"
             description="Main plans and branch add-ons — subscriber counts use plan_id when available"
             actions={
-              <Button variant="outline" asChild>
+              <DashboardButton tone="outline" asChild>
                 <Link href="/admin/stores">View stores</Link>
-              </Button>
+              </DashboardButton>
             }
           />
 
           {duplicateGroups.length > 0 ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/30">
+            <div className="rounded-lg border border-amber-200/80 bg-amber-50/90 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
               <p className="font-medium">
                 {duplicateGroups.length} duplicate plan group
                 {duplicateGroups.length === 1 ? '' : 's'} detected
@@ -556,35 +554,27 @@ export function AdminSubscriptionsPanel() {
             </p>
           ) : null}
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Main plans</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">{mainPlans.length}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Branch add-ons</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">{addonPlans.length}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Active subscribers</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold">{totalSubscribers}</p>
-              </CardContent>
-            </Card>
-          </div>
+          <DashboardMetricGrid className="mb-4 sm:grid-cols-3">
+            <DashboardStatCard
+              label="Main plans"
+              icon={Layers}
+              value={mainPlans.length}
+            />
+            <DashboardStatCard
+              label="Branch add-ons"
+              icon={Building2}
+              value={addonPlans.length}
+            />
+            <DashboardStatCard
+              label="Active subscribers"
+              icon={Users}
+              value={totalSubscribers}
+              hint="Across all plan tiers"
+            />
+          </DashboardMetricGrid>
 
           <Tabs defaultValue="main">
-            <TabsList>
+            <DashboardTabsList>
               <TabsTrigger value="main">
                 Main plans ({mainPlans.length})
               </TabsTrigger>
@@ -592,115 +582,94 @@ export function AdminSubscriptionsPanel() {
                 Branch add-ons ({addonPlans.length})
               </TabsTrigger>
               <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
-            </TabsList>
+            </DashboardTabsList>
 
             <TabsContent value="main" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Main subscription plans</CardTitle>
-                  <CardDescription>
-                    Pharmacy tier products — not branch slot add-ons
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <DataTable
-                    columns={planColumns}
-                    data={mainPlans}
-                    pageSize={10}
-                    enableSorting
-                    initialSorting={[{ id: 'users', desc: true }]}
-                    emptyMessage="No main plans yet."
-                  />
-                </CardContent>
-              </Card>
+              <DashboardDataTable
+                title="Main subscription plans"
+                description="Pharmacy tier products — not branch slot add-ons"
+                searchPlaceholder="Search plans…"
+                columns={planColumns}
+                data={mainPlans}
+                initialSorting={[{ id: 'users', desc: true }]}
+                emptyMessage="No main plans yet."
+              />
             </TabsContent>
 
             <TabsContent value="addons" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Branch add-ons</CardTitle>
-                  <CardDescription>
-                    Extra location slots — never shown as a pharmacy&apos;s main plan
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <DataTable
-                    columns={planColumns}
-                    data={addonPlans}
-                    pageSize={10}
-                    enableSorting
-                    emptyMessage="No branch add-on products yet."
-                  />
-                </CardContent>
-              </Card>
+              <DashboardDataTable
+                title="Branch add-ons"
+                description="Extra location slots — never shown as a pharmacy&apos;s main plan"
+                searchPlaceholder="Search add-ons…"
+                columns={planColumns}
+                data={addonPlans}
+                emptyMessage="No branch add-on products yet."
+              />
             </TabsContent>
 
             <TabsContent value="maintenance" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Catalog maintenance</CardTitle>
-                  <CardDescription>
-                    Fix plan types, remove duplicates, sync Polar
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
+              <DashboardSectionCard
+                title="Catalog maintenance"
+                description="Fix plan types, remove duplicates, sync Polar, or create a plan"
+              >
+                <DashboardToolbar className="mb-4 w-full border-0 bg-transparent p-0 shadow-none">
+                  <DashboardButton
+                    tone="outline"
                     disabled={fixCatalogLoading || dedupeLoading || polarSyncLoading}
                     onClick={() => void handleFixCatalogTypes()}
                   >
                     {fixCatalogLoading ? (
                       <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Fixing…
                       </>
                     ) : (
                       'Fix plan types'
                     )}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
+                  </DashboardButton>
+                  <DashboardButton
+                    tone="outline"
                     disabled={dedupeLoading || polarSyncLoading || fixCatalogLoading}
                     onClick={() => void handleRemoveDuplicates()}
                   >
                     {dedupeLoading ? (
                       <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Cleaning…
                       </>
                     ) : (
                       'Remove duplicates'
                     )}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
+                  </DashboardButton>
+                  <DashboardButton
+                    tone="outline"
                     disabled={polarSyncLoading || dedupeLoading}
                     onClick={() => void handleSyncAllToPolar()}
                   >
                     {polarSyncLoading ? (
                       <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Syncing…
                       </>
                     ) : (
                       'Sync all to Polar'
                     )}
-                  </Button>
+                  </DashboardButton>
                 <Dialog open={isAddingPlan} onOpenChange={setIsAddingPlan}>
                   <DialogTrigger asChild>
-                    <Button>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Create New Plan
-                    </Button>
+                    <DashboardButton tone="primary">
+                      <Plus className="mr-2 h-4 w-4" strokeWidth={1.75} />
+                      Create plan
+                    </DashboardButton>
                   </DialogTrigger>
-                  <DialogContent className={planDialogContentClassName}>
-                    <DialogHeader className="shrink-0 border-b px-6 py-4">
-                      <DialogTitle>Add New Plan</DialogTitle>
-                    </DialogHeader>
-                    <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+                  <DashboardDialogContent className={cn(planDialogContentClassName)}>
+                    <DashboardDialogHeader className="shrink-0">
+                      <DashboardDialogTitle>Add plan</DashboardDialogTitle>
+                      <DashboardDialogDescription>
+                        Define pricing, features, and limits for a new catalog entry.
+                      </DashboardDialogDescription>
+                    </DashboardDialogHeader>
+                    <DashboardDialogBody className="min-h-0 max-h-none flex-1 overflow-y-auto">
                     <div className="grid gap-4">
                       <div className="grid gap-2">
                         <Label>Plan Name</Label>
@@ -814,41 +783,35 @@ export function AdminSubscriptionsPanel() {
                         />
                       </div>
                     </div>
-                    </div>
-                    <div className="shrink-0 border-t px-6 py-4">
-                      <Button
-                        className="w-full sm:w-auto"
-                        onClick={() => void handleAddPlan()}
-                        disabled={
-                          !newPlan.name || newPlan.price === '' || isAddingPlanLoading
-                        }
-                      >
-                        {isAddingPlanLoading ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Saving…
-                          </>
-                        ) : (
-                          'Add Plan'
-                        )}
-                      </Button>
-                    </div>
-                  </DialogContent>
+                    </DashboardDialogBody>
+                    <DashboardDialogActions
+                      cancelLabel="Cancel"
+                      confirmLabel="Add plan"
+                      onCancel={() => setIsAddingPlan(false)}
+                      onConfirm={() => void handleAddPlan()}
+                      confirmDisabled={
+                        !newPlan.name || newPlan.price === '' || isAddingPlanLoading
+                      }
+                      confirmLoading={isAddingPlanLoading}
+                    />
+                  </DashboardDialogContent>
                 </Dialog>
-                </CardContent>
-              </Card>
+                </DashboardToolbar>
+              </DashboardSectionCard>
             </TabsContent>
           </Tabs>
 
-          {/* Edit Dialog */}
           <Dialog open={isEditingPlan} onOpenChange={setIsEditingPlan}>
-            <DialogContent className={planDialogContentClassName}>
-              <DialogHeader className="shrink-0 border-b px-6 py-4">
-                <DialogTitle>Edit Plan</DialogTitle>
-              </DialogHeader>
+            <DashboardDialogContent className={cn(planDialogContentClassName)}>
+              <DashboardDialogHeader className="shrink-0">
+                <DashboardDialogTitle>Edit plan</DashboardDialogTitle>
+                <DashboardDialogDescription>
+                  Update pricing, features, and visibility for this catalog entry.
+                </DashboardDialogDescription>
+              </DashboardDialogHeader>
               {selectedPlan && (
                 <>
-                <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+                <DashboardDialogBody className="min-h-0 max-h-none flex-1 overflow-y-auto">
                 <div className="grid gap-4">
                   <div className="grid gap-2">
                     <Label>Plan Name</Label>
@@ -950,7 +913,7 @@ export function AdminSubscriptionsPanel() {
                       updates the Polar product title on the next save or sync.
                     </p>
                   )}
-                  <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                  <div className="flex items-center justify-between rounded-lg border border-neutral-200/80 bg-neutral-50/80 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900/40">
                     <Label htmlFor="edit-plan-active" className="cursor-pointer">
                       Active (visible in onboarding and upgrades)
                     </Label>
@@ -963,29 +926,22 @@ export function AdminSubscriptionsPanel() {
                     />
                   </div>
                   </div>
-                </div>
-                <div className="shrink-0 border-t px-6 py-4">
-                  <Button
-                    className="w-full sm:w-auto"
-                    onClick={() => void handleEditPlan()}
-                    disabled={isSavingPlan}
-                  >
-                    {isSavingPlan ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Saving…
-                      </>
-                    ) : (
-                      'Save Changes'
-                    )}
-                  </Button>
-                </div>
+                </DashboardDialogBody>
+                <DashboardDialogActions
+                  cancelLabel="Cancel"
+                  confirmLabel="Save changes"
+                  onCancel={() => {
+                    setIsEditingPlan(false)
+                    setSelectedPlan(null)
+                  }}
+                  onConfirm={() => void handleEditPlan()}
+                  confirmLoading={isSavingPlan}
+                />
                 </>
               )}
-            </DialogContent>
+            </DashboardDialogContent>
           </Dialog>
-        </div>
 
-    </div>
+    </>
   );
 }

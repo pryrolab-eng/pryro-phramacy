@@ -78,6 +78,7 @@ type AlertActionsProps = {
   onCancel?: () => void;
   onConfirm?: () => void;
   confirmTone?: DashboardButtonTone;
+  confirmDisabled?: boolean;
 };
 
 export function DashboardAlertDialogActions({
@@ -86,14 +87,17 @@ export function DashboardAlertDialogActions({
   onCancel,
   onConfirm,
   confirmTone = "destructive",
+  confirmDisabled,
 }: AlertActionsProps) {
   return (
     <AlertDialogFooter className={dashboardSurfaces.dialogFooter}>
       <AlertDialogCancel asChild onClick={onCancel}>
-        <DashboardButton>{cancelLabel}</DashboardButton>
+        <DashboardButton disabled={confirmDisabled}>{cancelLabel}</DashboardButton>
       </AlertDialogCancel>
       <AlertDialogAction asChild onClick={onConfirm}>
-        <DashboardButton tone={confirmTone}>{confirmLabel}</DashboardButton>
+        <DashboardButton tone={confirmTone} disabled={confirmDisabled}>
+          {confirmLabel}
+        </DashboardButton>
       </AlertDialogAction>
     </AlertDialogFooter>
   );

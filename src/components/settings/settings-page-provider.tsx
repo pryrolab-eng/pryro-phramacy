@@ -9,24 +9,15 @@ import {
 } from "react";
 import { toast } from "sonner";
 import {
-  useAddIpWhitelistMutation,
-  useCreateSettingsApiKeyMutation,
   useCreateSettingsLocationMutation,
   useInvalidatePharmacySettingsPage,
-  useIpWhitelist,
   usePharmacySettingsInfo,
-  useRemoveIpWhitelistMutation,
-  useSecuritySettings,
   useSetTwoFaEnabledMutation,
-  useSettingsApiKeys,
   useSettingsStockLocations,
   useSetupTwoFaMutation,
   useTwoFaStatus,
   useUpdatePharmacySettingsMutation,
-  useUpdateSecuritySettingsMutation,
-  useUpdateSettingsApiKeyMutation,
   useVerifyTwoFaMutation,
-  type SettingsApiKeyRow,
 } from "@/hooks/usePharmacySettingsPage";
 
 export type SettingsPageContextValue = ReturnType<typeof useSettingsPageState>;
@@ -53,17 +44,11 @@ function useSettingsPageState() {
   });
   const [isEditing, setIsEditing] = useState(false);
   const [isAddLocationOpen, setIsAddLocationOpen] = useState(false);
-  const [isAddApiKeyOpen, setIsAddApiKeyOpen] = useState(false);
-  const [isEditApiKeyOpen, setIsEditApiKeyOpen] = useState(false);
-  const [isIpWhitelistOpen, setIsIpWhitelistOpen] = useState(false);
-  const [newIp, setNewIp] = useState({ ip: "", description: "" });
   const [is2FASetupOpen, setIs2FASetupOpen] = useState(false);
   const [qrCode, setQrCode] = useState("");
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [verifyCode, setVerifyCode] = useState("");
   const [setupStep, setSetupStep] = useState<"qr" | "verify" | "backup">("qr");
-  const [selectedApiKey, setSelectedApiKey] = useState<SettingsApiKeyRow | null>(null);
-  const [newApiKey, setNewApiKey] = useState({ name: "", key: "" });
   const [newLocation, setNewLocation] = useState({ name: "", description: "" });
   const [editInfo, setEditInfo] = useState({
     name: "",
@@ -86,34 +71,24 @@ function useSettingsPageState() {
   });
 
   const settingsQuery = usePharmacySettingsInfo();
-  const securityQuery = useSecuritySettings();
   const twoFaQuery = useTwoFaStatus();
-  const ipWhitelistQuery = useIpWhitelist({ enabled: isIpWhitelistOpen });
-  const apiKeysQuery = useSettingsApiKeys();
   const locationsQuery = useSettingsStockLocations();
   const invalidateSettings = useInvalidatePharmacySettingsPage();
 
   const updateSettingsMutation = useUpdatePharmacySettingsMutation();
-  const updateSecurityMutation = useUpdateSecuritySettingsMutation();
   const setTwoFaMutation = useSetTwoFaEnabledMutation();
-  const addIpMutation = useAddIpWhitelistMutation();
-  const removeIpMutation = useRemoveIpWhitelistMutation();
   const setupTwoFaMutation = useSetupTwoFaMutation();
   const verifyTwoFaMutation = useVerifyTwoFaMutation();
-  const createApiKeyMutation = useCreateSettingsApiKeyMutation();
-  const updateApiKeyMutation = useUpdateSettingsApiKeyMutation();
   const createLocationMutation = useCreateSettingsLocationMutation();
 
-  const ipWhitelist = ipWhitelistQuery.data?.ips ?? [];
-  const apiKeys = apiKeysQuery.data ?? [];
   const stockLocations = locationsQuery.data ?? [];
-  const ipWhitelistEnabled = securityQuery.data?.ip_whitelist_enabled ?? false;
-  const is2FAEnabled = twoFaQuery.data?.enabled ?? false;
+  const platformAllowsTwoFactor =
+    twoFaQuery.data?.platformAllowsTwoFactor !== false;
+  const is2FAEnabled =
+    platformAllowsTwoFactor && (twoFaQuery.data?.enabled ?? false);
   const loading =
     settingsQuery.isPending ||
-    securityQuery.isPending ||
     twoFaQuery.isPending ||
-    apiKeysQuery.isPending ||
     locationsQuery.isPending;
 
   useEffect(() => {
@@ -146,15 +121,6 @@ function useSettingsPageState() {
     return () => window.removeEventListener("focus", onFocus);
   }, [invalidateSettings]);
 
-  const toggleIpWhitelist = async (enabled: boolean) => {
-    try {
-      await updateSecurityMutation.mutateAsync({ ip_whitelist_enabled: enabled });
-      toast.success(enabled ? "IP whitelist enabled" : "IP whitelist disabled");
-    } catch {
-      toast.error("Could not update IP whitelist setting");
-    }
-  };
-
   const handleSaveEdit = async () => {
     try {
       await updateSettingsMutation.mutateAsync(editInfo);
@@ -180,57 +146,38 @@ function useSettingsPageState() {
   };
 
   return {
-      loading,
-      pharmacyInfo,
-      editInfo,
-      setEditInfo,
-      isEditing,
-      setIsEditing,
-      handleSaveEdit,
-      notifyPrefs,
-      setNotifyPrefs,
-      apiKeys,
-      stockLocations,
-      ipWhitelist,
-      ipWhitelistEnabled,
-      toggleIpWhitelist,
-      is2FAEnabled,
-      is2FASetupOpen,
-      setIs2FASetupOpen,
-      qrCode,
-      setQrCode,
-      backupCodes,
-      setBackupCodes,
-      verifyCode,
-      setVerifyCode,
-      setupStep,
-      setSetupStep,
-      setTwoFaMutation,
-      twoFaQuery,
-      setupTwoFaMutation,
-      verifyTwoFaMutation,
-      isAddLocationOpen,
-      setIsAddLocationOpen,
-      newLocation,
-      setNewLocation,
-      handleAddLocation,
-      isAddApiKeyOpen,
-      setIsAddApiKeyOpen,
-      isEditApiKeyOpen,
-      setIsEditApiKeyOpen,
-      newApiKey,
-      setNewApiKey,
-      selectedApiKey,
-      setSelectedApiKey,
-      createApiKeyMutation,
-      updateApiKeyMutation,
-      isIpWhitelistOpen,
-      setIsIpWhitelistOpen,
-      newIp,
-      setNewIp,
-      addIpMutation,
-      removeIpMutation,
-    };
+    loading,
+    pharmacyInfo,
+    editInfo,
+    setEditInfo,
+    isEditing,
+    setIsEditing,
+    handleSaveEdit,
+    notifyPrefs,
+    setNotifyPrefs,
+    stockLocations,
+    is2FAEnabled,
+    platformAllowsTwoFactor,
+    is2FASetupOpen,
+    setIs2FASetupOpen,
+    qrCode,
+    setQrCode,
+    backupCodes,
+    setBackupCodes,
+    verifyCode,
+    setVerifyCode,
+    setupStep,
+    setSetupStep,
+    setTwoFaMutation,
+    twoFaQuery,
+    setupTwoFaMutation,
+    verifyTwoFaMutation,
+    isAddLocationOpen,
+    setIsAddLocationOpen,
+    newLocation,
+    setNewLocation,
+    handleAddLocation,
+  };
 }
 
 export function SettingsPageProvider({ children }: { children: ReactNode }) {

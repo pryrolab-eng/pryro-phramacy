@@ -48,7 +48,7 @@ export function Verify2FAForm() {
         })
 
         if (!verifyError) {
-          window.location.href = '/dashboard'
+          window.location.href = "/app"
         } else {
           console.error('Verify error:', verifyError)
           toast.error('Failed to complete authentication')

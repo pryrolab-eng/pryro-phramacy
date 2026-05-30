@@ -35,6 +35,13 @@ export { DashboardFilterBar } from "./dashboard-filter-bar";
 export { DashboardFilterField } from "./dashboard-filter-field";
 export { DashboardSearchInput } from "./dashboard-search-input";
 export { DashboardTableCard } from "./dashboard-table-card";
+export { DashboardDataTable } from "./dashboard-data-table";
+export type { DashboardDataTableProps } from "./dashboard-data-table";
+export {
+  createDataTableIndexColumn,
+  withDataTableIndexColumn,
+  DATA_TABLE_INDEX_COLUMN_ID,
+} from "../ui/data-table-index-column";
 export { DashboardListRow } from "./dashboard-list-row";
 export { DashboardProgressTrack } from "./dashboard-progress-track";
 export { DashboardStaffCard } from "./dashboard-staff-card";

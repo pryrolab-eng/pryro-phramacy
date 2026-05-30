@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 
+const pharmacyRedirects = require('./src/lib/routes/pharmacy-paths.redirects.cjs');
+
 const isDev = process.env.NODE_ENV === 'development';
 
 const supabaseHost = (() => {
@@ -14,6 +16,26 @@ const supabaseHost = (() => {
 
 const nextConfig = {
     reactStrictMode: false,
+    async redirects() {
+        return [
+            {
+                source: '/dashboard/reset-password',
+                destination: '/reset-password',
+                permanent: true,
+            },
+            {
+                source: '/dashboard',
+                destination: '/app',
+                permanent: true,
+            },
+            {
+                source: '/payment-success',
+                destination: '/payment/success',
+                permanent: true,
+            },
+            ...pharmacyRedirects,
+        ];
+    },
     images: {
         unoptimized: isDev,
         remotePatterns: [

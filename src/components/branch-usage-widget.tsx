@@ -11,6 +11,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { useSaasSubscription } from '@/hooks/useSaasSubscription'
 import { isAtLimit, limitUsageTextClass } from '@/lib/billing/limit-display'
 import type { BranchUsage, Branch } from '@/lib/saas/types'
+import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
 import { cn } from '@/lib/utils'
 
 type BranchWithUsage = Branch & { usage: BranchUsage | null }
@@ -50,7 +51,7 @@ export function BranchUsageWidget() {
             size="sm"
             variant="outline"
             className="border-amber-400 text-amber-700 hover:bg-amber-100 shrink-0"
-            onClick={() => { window.location.href = '/pharmacy-dashboard/billing' }}
+            onClick={() => { window.location.href = PHARMACY_ROUTES.billing }}
           >
             <CreditCard className="h-3.5 w-3.5 mr-1" />
             Subscribe
@@ -119,7 +120,7 @@ export function BranchUsageWidget() {
           <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
             <Building2 className="h-4 w-4" />
             No branches yet.{' '}
-            <a href="/branches" className="underline">Add a branch →</a>
+            <a href={PHARMACY_ROUTES.branches} className="underline">Add a branch →</a>
           </div>
         ) : (
           <div className="space-y-2">
@@ -167,7 +168,7 @@ export function BranchUsageWidget() {
 
         <div className="pt-3 border-t border-neutral-100 dark:border-neutral-800">
           <a
-            href="/pharmacy-dashboard/billing"
+            href={PHARMACY_ROUTES.billing}
             className="text-xs text-neutral-700 hover:underline flex items-center gap-1 dark:text-neutral-300"
           >
             <TrendingUp className="h-3.5 w-3.5" />

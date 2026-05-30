@@ -4,7 +4,7 @@ import { type ColumnDef } from "@tanstack/react-table";
 import { Loader2, XCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { DashboardButton } from "@/components/dashboard";
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
 import type { AdminBillingReconciliationRow } from "@/lib/http/admin/billing";
 
@@ -58,9 +58,9 @@ export function adminBillingReconciliationColumns(
         }
         const busy = opts.cancellingId === item.id;
         return (
-          <Button
+          <DashboardButton
+            tone="outline"
             size="sm"
-            variant="outline"
             disabled={busy}
             onClick={(e) => {
               e.stopPropagation();
@@ -70,10 +70,10 @@ export function adminBillingReconciliationColumns(
             {busy ? (
               <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
             ) : (
-              <XCircle className="mr-1 h-3.5 w-3.5" />
+              <XCircle className="mr-1 h-3.5 w-3.5" strokeWidth={1.75} />
             )}
             Cancel
-          </Button>
+          </DashboardButton>
         );
       },
       meta: { className: "text-right" },

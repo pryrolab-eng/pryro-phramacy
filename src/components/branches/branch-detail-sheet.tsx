@@ -18,6 +18,7 @@ import {
   usageBarTone,
   usagePct,
 } from "@/lib/branches/branch-usage";
+import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 
 type Props = {
   branch: SaasBranchWithUsage | null;
@@ -136,7 +137,7 @@ export function BranchDetailSheet({ branch, open, onOpenChange }: Props) {
         {branch && (usage?.is_blocked || !usage) && (
           <div className="border-t border-neutral-100 px-6 py-4 dark:border-neutral-800">
             <DashboardButton tone="primary" className="w-full" asChild>
-              <Link href="/pharmacy-dashboard/billing">
+              <Link href={PHARMACY_ROUTES.billing}>
                 <CreditCard className="mr-1.5 h-4 w-4" />
                 View billing & plans
               </Link>

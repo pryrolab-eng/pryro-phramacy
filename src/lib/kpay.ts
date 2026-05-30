@@ -1,5 +1,6 @@
 // KPay Payment Gateway Integration
 import { createClient } from '../../supabase/server'
+import { paymentSuccessUrl } from '@/lib/routes/payment-paths'
 
 export interface KPayPaymentRequest {
   msisdn: string
@@ -60,7 +61,7 @@ export class KPayService {
     this.password = process.env.KPAY_PASSWORD || ''
     this.retailerId = process.env.KPAY_RETAILER_ID || '02'
     this.returnUrl = process.env.KPAY_RETURN_URL || `${process.env.NEXT_PUBLIC_APP_URL}/api/kpay/webhook`
-    this.redirectUrl = process.env.KPAY_REDIRECT_URL || `${process.env.NEXT_PUBLIC_APP_URL}/payment/success`
+    this.redirectUrl = process.env.KPAY_REDIRECT_URL || paymentSuccessUrl()
   }
 
   private getAuthHeader(): string {

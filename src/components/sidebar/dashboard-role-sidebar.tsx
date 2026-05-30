@@ -26,6 +26,7 @@ import { usePharmacyEntitlements } from "@/hooks/usePharmacyEntitlements";
 import { usePharmacyBrandingOptional } from "@/components/pharmacy/pharmacy-branding-provider";
 import type { NavItemConfig } from "@/lib/subscription/nav-config";
 import { dashboardSidebarTokens } from "@/components/sidebar/dashboard-sidebar-tokens";
+import { resolveSidebarBrandTitle } from "@/lib/pharmacy/sidebar-brand-display";
 import { cn } from "@/lib/utils";
 
 export type DashboardRoleSidebarConfig = {
@@ -63,6 +64,8 @@ export function DashboardRoleSidebar({
   const { can, entitlements, isHydrating, isEntitlementsReady } =
     usePharmacyEntitlements();
   const { pharmacyName, branding } = usePharmacyBrandingOptional();
+
+  const hasCustomization = isEntitlementsReady && can("customization");
 
   const subscriptionInactive =
     isEntitlementsReady && !entitlements.isAccessAllowed;
@@ -103,10 +106,15 @@ export function DashboardRoleSidebar({
       <DashboardSidebarBrand
         href={brandHref}
         icon={brandIcon}
-        title={pharmacyName}
+        title={resolveSidebarBrandTitle(
+          hasCustomization,
+          branding,
+          pharmacyName,
+        )}
         subtitle={brandSubtitle}
-        logoUrl={branding.logoUrl}
-        primaryColor={branding.primaryColor}
+        logoUrl={hasCustomization ? branding.logoUrl : undefined}
+        primaryColor={hasCustomization ? branding.primaryColor : undefined}
+        branded={hasCustomization}
         hideSubtitleWhenSameAsTitle
       />
 

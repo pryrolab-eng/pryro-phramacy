@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../../supabase/server'
+import { getAllowUserTwoFactor } from '@/lib/platform-security-policy'
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,7 +11,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const platformAllows = await getAllowUserTwoFactor(supabase)
     const { enabled } = await request.json()
+
+    if (enabled && !platformAllows) {
+      return NextResponse.json(
+        { error: 'Two-factor authentication is disabled by the platform administrator' },
+        { status: 403 },
+      )
+    }
 
     // Disable 2FA
     if (!enabled) {
@@ -43,6 +52,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const platformAllows = await getAllowUserTwoFactor(supabase)
+
     const { data, error } = await supabase
       .from('users')
       .select('two_factor_enabled')
@@ -51,7 +62,10 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error
 
-    return NextResponse.json({ enabled: data?.two_factor_enabled || false })
+    return NextResponse.json({
+      enabled: platformAllows ? Boolean(data?.two_factor_enabled) : false,
+      platformAllowsTwoFactor: platformAllows,
+    })
   } catch (error) {
     console.error('2FA status error:', error)
     return NextResponse.json({ error: 'Failed to get 2FA status' }, { status: 500 })

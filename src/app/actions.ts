@@ -9,6 +9,9 @@ import {
   sendSignupConfirmationEmail,
 } from "@/lib/email/auth-emails";
 import crypto from "crypto";
+import { POST_AUTH_ENTRY_PATH } from "@/lib/auth/resolve-home-redirect";
+import { getAllowUserTwoFactor } from "@/lib/platform-security-policy";
+import { RESET_PASSWORD_PATH } from "@/lib/middleware/auth-routes";
 
 export const signInAction = async (formData: FormData) => {
   const email = formData.get("email") as string;
@@ -31,14 +34,15 @@ export const signInAction = async (formData: FormData) => {
     return encodedRedirect("error", "/sign-in", error.message);
   }
 
-  // Check if 2FA is enabled
+  const platformAllows2FA = await getAllowUserTwoFactor(supabase);
+
   const { data: userData } = await supabase
     .from('users')
     .select('two_factor_enabled')
     .eq('id', data.user.id)
     .single();
 
-  if (userData?.two_factor_enabled) {
+  if (platformAllows2FA && userData?.two_factor_enabled) {
     const sessionToken = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
@@ -53,7 +57,7 @@ export const signInAction = async (formData: FormData) => {
     return redirect(`/verify-2fa?session=${sessionToken}`);
   }
 
-  redirect("/dashboard");
+  redirect(POST_AUTH_ENTRY_PATH);
 };
 
 export const signUpAction = async (formData: FormData) => {
@@ -123,7 +127,7 @@ export const forgotPasswordAction = async (formData: FormData) => {
     return encodedRedirect("error", "/forgot-password", "Email is required.");
   }
 
-  const result = await sendPasswordRecoveryEmail(email, "/dashboard/reset-password");
+  const result = await sendPasswordRecoveryEmail(email, RESET_PASSWORD_PATH);
 
   if (!result.ok) {
     return encodedRedirect("error", "/forgot-password", result.error);
@@ -143,13 +147,13 @@ export const resetPasswordAction = async (formData: FormData) => {
   const confirmPassword = formData.get("confirmPassword") as string;
 
   if (!password || !confirmPassword) {
-    return encodedRedirect("error", "/dashboard/reset-password", "Password fields are required.");
+    return encodedRedirect("error", RESET_PASSWORD_PATH, "Password fields are required.");
   }
   if (password !== confirmPassword) {
-    return encodedRedirect("error", "/dashboard/reset-password", "Passwords do not match.");
+    return encodedRedirect("error", RESET_PASSWORD_PATH, "Passwords do not match.");
   }
   if (password.length < 6) {
-    return encodedRedirect("error", "/dashboard/reset-password", "Password must be at least 6 characters.");
+    return encodedRedirect("error", RESET_PASSWORD_PATH, "Password must be at least 6 characters.");
   }
 
   const supabase = await createClient();
@@ -161,14 +165,14 @@ export const resetPasswordAction = async (formData: FormData) => {
   if (userError || !user) {
     return encodedRedirect(
       "error",
-      "/dashboard/reset-password",
+      RESET_PASSWORD_PATH,
       "Your reset link expired or is invalid. Request a new one from Forgot password.",
     );
   }
 
   const { error } = await supabase.auth.updateUser({ password });
   if (error) {
-    return encodedRedirect("error", "/dashboard/reset-password", error.message);
+    return encodedRedirect("error", RESET_PASSWORD_PATH, error.message);
   }
 
   await supabase.auth.signOut();

@@ -17,6 +17,7 @@ import {
 import type { TooltipContent } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { dashboardSidebarTokens } from "@/components/sidebar/dashboard-sidebar-tokens";
+import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 import { cn } from "@/lib/utils";
 
 export type SidebarPlanSummaryProps = {
@@ -213,7 +214,7 @@ function UsagePill({
 /** Icon-only plan control when sidebar is collapsed — popover matches account menu. */
 export function DashboardSidebarPlanCollapsed(props: SidebarPlanSummaryProps) {
   const {
-    billingHref = "/pharmacy-dashboard/billing",
+    billingHref = PHARMACY_ROUTES.billing,
     planLabel,
     isExpired,
   } = props;
@@ -245,7 +246,7 @@ export function DashboardSidebarUpgrade({
   planLabel,
   daysLeft,
   isExpired,
-  billingHref = "/pharmacy-dashboard/billing",
+  billingHref = PHARMACY_ROUTES.billing,
   staffUsed,
   staffLimit,
   branchesUsed,

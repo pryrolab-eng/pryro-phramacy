@@ -12,7 +12,6 @@ export async function GET() {
       .from('categories')
       .select('*')
       .is('pharmacy_id', null)
-      .eq('is_active', true)
       .order('name', { ascending: true })
 
     if (error) {

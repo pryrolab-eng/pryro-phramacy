@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Pencil, Trash2, UserX, UserCheck } from "lucide-react";
+import { Pencil, Trash2, UserX, UserCheck, Mail } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -33,9 +33,16 @@ import {
 import { StaffBranchAccessEditor } from "@/components/staff/staff-branch-access-editor";
 import {
   useDeleteStaffMutation,
+  useResendStaffInviteMutation,
   useUpdateStaffMutation,
 } from "@/hooks/useUsers";
-import type { StaffUpdatePayload, StaffUser } from "@/lib/http/staff";
+import type {
+  StaffInviteCredentials,
+  StaffUpdatePayload,
+  StaffUser,
+} from "@/lib/http/staff";
+import { StaffInviteCredentialsDialog } from "@/components/staff/staff-invite-credentials-dialog";
+import { FeatureGate } from "@/components/subscription/feature-gate";
 import { formatStaffRole } from "@/lib/staff/format-staff";
 
 type Props = {
@@ -53,9 +60,15 @@ export function StaffDetailSheet({
 }: Props) {
   const updateMutation = useUpdateStaffMutation();
   const deleteMutation = useDeleteStaffMutation();
+  const resendMutation = useResendStaffInviteMutation();
 
   const [editing, setEditing] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [resendOpen, setResendOpen] = useState(false);
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
+  const [pendingCredentials, setPendingCredentials] =
+    useState<StaffInviteCredentials | null>(null);
+  const [credentialsEmailError, setCredentialsEmailError] = useState<string>();
   const [form, setForm] = useState<StaffUpdatePayload>({
     name: "",
     email: "",
@@ -116,6 +129,37 @@ export function StaffDetailSheet({
       );
     } catch (e) {
       toast.error("Could not update status", {
+        description: e instanceof Error ? e.message : undefined,
+      });
+    }
+  };
+
+  const handleResendInvite = async () => {
+    if (!member?.id) return;
+    try {
+      const result = await resendMutation.mutateAsync(member.id);
+      setResendOpen(false);
+      if (result.emailSent) {
+        toast.success("Login email sent", {
+          description: `New instructions were emailed to ${member.email}.`,
+        });
+      } else if (result.credentials) {
+        setPendingCredentials(result.credentials);
+        setCredentialsEmailError(result.emailError);
+        setCredentialsOpen(true);
+        toast.warning("Share login details manually", {
+          description:
+            result.emailError ??
+            "Their password was reset but the email could not be sent.",
+        });
+      } else {
+        toast.warning("Password reset", {
+          description:
+            result.emailError ?? "Email could not be sent. Try again later.",
+        });
+      }
+    } catch (e) {
+      toast.error("Could not resend login instructions", {
         description: e instanceof Error ? e.message : undefined,
       });
     }
@@ -279,6 +323,21 @@ export function StaffDetailSheet({
                 </div>
               ) : (
                 <>
+                  <FeatureGate featureKey="staff.invite" compact>
+                    <DashboardButton
+                      className="w-full"
+                      tone="outline"
+                      onClick={() => setResendOpen(true)}
+                      disabled={
+                        resendMutation.isPending ||
+                        updateMutation.isPending ||
+                        !member.email
+                      }
+                    >
+                      <Mail className="mr-1.5 h-4 w-4" />
+                      Resend login email
+                    </DashboardButton>
+                  </FeatureGate>
                   <DashboardButton
                     className="w-full"
                     onClick={() => void toggleStatus()}
@@ -319,6 +378,43 @@ export function StaffDetailSheet({
           )}
         </SheetContent>
       </Sheet>
+
+      <AlertDialog open={resendOpen} onOpenChange={setResendOpen}>
+        <DashboardAlertDialogContent>
+          <DashboardAlertDialogHeader>
+            <DashboardAlertDialogTitle>
+              Resend login instructions?
+            </DashboardAlertDialogTitle>
+            <DashboardAlertDialogDescription>
+              This generates a new temporary password for{" "}
+              {member?.name ?? "this team member"} and emails it to{" "}
+              {member?.email ?? "their address"}. Any previous password from an
+              invite will stop working.
+            </DashboardAlertDialogDescription>
+          </DashboardAlertDialogHeader>
+          <DashboardAlertDialogActions
+            cancelLabel="Cancel"
+            confirmLabel="Resend email"
+            onCancel={() => setResendOpen(false)}
+            onConfirm={() => void handleResendInvite()}
+            confirmDisabled={resendMutation.isPending}
+          />
+        </DashboardAlertDialogContent>
+      </AlertDialog>
+
+      <StaffInviteCredentialsDialog
+        open={credentialsOpen}
+        onOpenChange={(open) => {
+          setCredentialsOpen(open);
+          if (!open) {
+            setPendingCredentials(null);
+            setCredentialsEmailError(undefined);
+          }
+        }}
+        credentials={pendingCredentials}
+        emailError={credentialsEmailError}
+        memberName={member?.name}
+      />
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DashboardAlertDialogContent>

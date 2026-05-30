@@ -20,6 +20,8 @@ type Props = {
   subtitle: string;
   logoUrl?: string | null;
   primaryColor?: string;
+  /** When false, use default Pryrox pill icon and neutral/black chrome only. */
+  branded?: boolean;
   /** Hide subtitle when it matches the title (e.g. both "Pharmacy"). */
   hideSubtitleWhenSameAsTitle?: boolean;
 };
@@ -30,10 +32,11 @@ export function DashboardSidebarBrand({
   title,
   subtitle,
   logoUrl,
-  primaryColor = "#3b82f6",
+  primaryColor,
+  branded = false,
   hideSubtitleWhenSameAsTitle,
 }: Props) {
-  const hasLogo = Boolean(logoUrl?.trim());
+  const hasLogo = branded && Boolean(logoUrl?.trim());
   const showSubtitle =
     Boolean(subtitle?.trim()) &&
     !(
@@ -67,7 +70,7 @@ export function DashboardSidebarBrand({
                   hasLogo && "border-0 bg-transparent p-0",
                 )}
                 style={
-                  !hasLogo
+                  !hasLogo && branded && primaryColor
                     ? { backgroundColor: `${primaryColor}18` }
                     : undefined
                 }

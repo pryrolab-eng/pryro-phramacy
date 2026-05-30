@@ -76,20 +76,6 @@ export function createAdminStoresColumns(
 ): ColumnDef<AdminPharmacyRow>[] {
   return [
     {
-      id: "row_number",
-      header: "#",
-      enableSorting: false,
-      meta: { className: "w-12 text-center" },
-      cell: ({ row, table }) => {
-        const { pageIndex, pageSize } = table.getState().pagination;
-        return (
-          <span className="tabular-nums text-muted-foreground">
-            {pageIndex * pageSize + row.index + 1}
-          </span>
-        );
-      },
-    },
-    {
       accessorKey: "name",
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Pharmacy" />

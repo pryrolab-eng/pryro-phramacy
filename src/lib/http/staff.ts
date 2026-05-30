@@ -1,4 +1,10 @@
 import { fetchJson } from "./client";
+import type {
+  StaffInviteCredentials,
+  StaffInviteDeliveryResult,
+} from "./pharmacist";
+
+export type { StaffInviteCredentials } from "./pharmacist";
 
 /** Row shape returned by `GET /api/staff` (pharmacy team). */
 export type StaffUser = {
@@ -59,4 +65,28 @@ export async function deleteStaffMember(id: string): Promise<void> {
     method: "DELETE",
   });
   assertStaffMutationOk(result, "Failed to delete staff member");
+}
+
+type ResendStaffInviteResponse = StaffInviteDeliveryResult & {
+  success?: boolean;
+  message?: string;
+  error?: string;
+};
+
+/** `POST /api/staff/:id/resend-invite` — reset password and resend login email. */
+export async function resendStaffInvite(
+  id: string,
+): Promise<StaffInviteDeliveryResult> {
+  const data = await fetchJson<ResendStaffInviteResponse>(
+    `/api/staff/${id}/resend-invite`,
+    { method: "POST" },
+  );
+  if (data.success !== true) {
+    throw new Error(data.error ?? "Failed to resend login instructions");
+  }
+  return {
+    emailSent: data.emailSent,
+    emailError: data.emailError,
+    credentials: data.credentials,
+  };
 }

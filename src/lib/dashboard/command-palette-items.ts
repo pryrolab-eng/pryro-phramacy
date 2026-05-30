@@ -8,6 +8,7 @@ import {
 } from "@/lib/subscription/nav-config";
 import { CreditCard, Package, PanelLeft, Plus, ShoppingCart } from "lucide-react";
 import { ADMIN_SIDEBAR_NAV } from "@/lib/admin/navigation";
+import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 import { canReachRouteWhenSubscriptionInactive } from "@/lib/subscription/subscription-grace-routes";
 
 export type CommandPaletteGroup = "navigation" | "actions" | "shortcuts";
@@ -29,13 +30,13 @@ export type CommandPaletteItem = {
   shortcutKeys?: string[];
 };
 
-const BILLING_HREF = "/pharmacy-dashboard/billing";
+const BILLING_HREF = PHARMACY_ROUTES.billing;
 
 const QUICK_ACTIONS_OWNER: Omit<CommandPaletteItem, "group" | "locked">[] = [
   {
     id: "action-pos",
     label: "New sale",
-    href: "/pos",
+    href: PHARMACY_ROUTES.pos,
     icon: ShoppingCart,
     featureKey: "pos.access",
     keywords: "checkout sell",
@@ -43,7 +44,7 @@ const QUICK_ACTIONS_OWNER: Omit<CommandPaletteItem, "group" | "locked">[] = [
   {
     id: "action-inventory",
     label: "Add stock",
-    href: "/inventory",
+    href: PHARMACY_ROUTES.inventory,
     icon: Plus,
     featureKey: "inventory.access",
     keywords: "inventory drug product",
@@ -54,7 +55,7 @@ const QUICK_ACTIONS_PHARMACIST: Omit<CommandPaletteItem, "group" | "locked">[] =
   {
     id: "action-pos",
     label: "Open POS",
-    href: "/pos",
+    href: PHARMACY_ROUTES.pos,
     icon: ShoppingCart,
     featureKey: "pos.access",
     keywords: "checkout sell",
@@ -62,7 +63,7 @@ const QUICK_ACTIONS_PHARMACIST: Omit<CommandPaletteItem, "group" | "locked">[] =
   {
     id: "action-inventory",
     label: "Add drug",
-    href: "/inventory",
+    href: PHARMACY_ROUTES.inventory,
     icon: Package,
     featureKey: "inventory.access",
     keywords: "inventory stock",
@@ -114,7 +115,7 @@ function isAlwaysReachable(
 ): boolean {
   if (canReachRouteWhenSubscriptionInactive(href)) return true;
   if (!subscriptionActive) return false;
-  return href.startsWith("/settings");
+  return href.startsWith(PHARMACY_ROUTES.settings);
 }
 
 export function getNavItemsForRole(role: string | null | undefined): NavItemConfig[] {
@@ -207,7 +208,7 @@ export function buildAdminCommandPaletteItems(): CommandPaletteItem[] {
     href: item.url,
     icon: item.icon,
     group: "navigation" as const,
-    keywords: item.url.replace(/\//g, " "),
+    keywords: [item.url.replace(/\//g, " "), item.keywords].filter(Boolean).join(" "),
   }));
 
   return [SIDEBAR_TOGGLE, ...navigation];

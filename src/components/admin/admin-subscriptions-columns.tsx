@@ -4,7 +4,7 @@ import { type ColumnDef } from "@tanstack/react-table";
 import { Crown, Edit } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { DashboardButton } from "@/components/dashboard";
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
 import { Switch } from "@/components/ui/switch";
 import { formatPlanPriceSuffix } from "@/lib/subscription/plan-period";
@@ -121,14 +121,14 @@ export function adminSubscriptionPlanColumns(
       id: "actions",
       header: () => <span className="sr-only">Actions</span>,
       cell: ({ row }) => (
-        <Button
+        <DashboardButton
+          tone="outline"
           size="sm"
-          variant="outline"
           onClick={() => opts.onEdit(row.original)}
         >
-          <Edit className="h-4 w-4 mr-1" />
+          <Edit className="mr-1 h-4 w-4" strokeWidth={1.75} />
           Edit
-        </Button>
+        </DashboardButton>
       ),
       meta: { className: "text-right" },
     },

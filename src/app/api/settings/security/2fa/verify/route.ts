@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../../../supabase/server'
+import { requireTwoFactorEnrollment } from '@/lib/security/require-two-factor-enrollment'
 import { authenticator } from 'otplib'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const gate = await requireTwoFactorEnrollment()
+    if (!gate.ok) {
+      return NextResponse.json({ error: gate.error }, { status: gate.status })
     }
+
+    const { user, supabase } = gate.context
 
     const { token } = await request.json()
 

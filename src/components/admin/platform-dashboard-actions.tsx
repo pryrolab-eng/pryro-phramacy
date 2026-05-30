@@ -5,16 +5,6 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { FileText, Plus, Shield } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { PasswordInput } from '@/components/ui/password-input'
@@ -25,6 +15,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogTrigger,
+  DashboardButton,
+  DashboardDialogContent,
+  DashboardDialogHeader,
+  DashboardDialogTitle,
+  DashboardDialogDescription,
+  DashboardDialogBody,
+  DashboardDialogActions,
+  DashboardToolbar,
+} from '@/components/dashboard'
 import {
   adminPharmaciesQueryKey,
   adminReportsSummaryQueryKey,
@@ -121,240 +123,267 @@ export function PlatformDashboardActions() {
     }
   }
 
+  const pharmacyFormValid =
+    Boolean(newPharmacy.name) &&
+    Boolean(newPharmacy.owner_email) &&
+    Boolean(newPharmacy.owner_password)
+
   return (
-    <div className="flex flex-wrap gap-2">
+    <DashboardToolbar className="w-auto border-0 bg-transparent p-0 shadow-none">
       <Dialog open={isAddingPharmacy} onOpenChange={setIsAddingPharmacy}>
         <DialogTrigger asChild>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Pharmacy
-          </Button>
+          <DashboardButton tone="primary">
+            <Plus className="mr-2 h-4 w-4" strokeWidth={1.75} />
+            Add pharmacy
+          </DashboardButton>
         </DialogTrigger>
-        <DialogContent className="max-h-[90vh] overflow-y-auto max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Add New Pharmacy</DialogTitle>
-            <DialogDescription>Create a pharmacy and owner account</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-2">
-              <Label>Pharmacy Name</Label>
-              <Input
-                value={newPharmacy.name}
-                onChange={(e) => setNewPharmacy({ ...newPharmacy, name: e.target.value })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Address</Label>
-              <Input
-                value={newPharmacy.address}
-                onChange={(e) => setNewPharmacy({ ...newPharmacy, address: e.target.value })}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+        <DashboardDialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Add pharmacy</DashboardDialogTitle>
+            <DashboardDialogDescription>
+              Create a pharmacy and owner account
+            </DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogBody className="max-h-none overflow-visible">
+            <div className="grid gap-4">
               <div className="grid gap-2">
-                <Label>Owner Name</Label>
+                <Label>Pharmacy name</Label>
                 <Input
-                  value={newPharmacy.owner_name}
+                  value={newPharmacy.name}
+                  onChange={(e) => setNewPharmacy({ ...newPharmacy, name: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Address</Label>
+                <Input
+                  value={newPharmacy.address}
                   onChange={(e) =>
-                    setNewPharmacy({ ...newPharmacy, owner_name: e.target.value })
+                    setNewPharmacy({ ...newPharmacy, address: e.target.value })
                   }
                 />
               </div>
-              <div className="grid gap-2">
-                <Label>Owner Email</Label>
-                <Input
-                  type="email"
-                  value={newPharmacy.owner_email}
-                  onChange={(e) =>
-                    setNewPharmacy({ ...newPharmacy, owner_email: e.target.value })
-                  }
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Phone</Label>
-                <Input
-                  value={newPharmacy.phone}
-                  onChange={(e) => setNewPharmacy({ ...newPharmacy, phone: e.target.value })}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Owner Password</Label>
-                <PasswordInput
-                  value={newPharmacy.owner_password}
-                  onChange={(e) =>
-                    setNewPharmacy({ ...newPharmacy, owner_password: e.target.value })
-                  }
-                  placeholder="Minimum 8 characters"
-                />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>Subscription Plan</Label>
-              <Select
-                value={newPharmacy.subscription_plan}
-                onValueChange={(value) =>
-                  setNewPharmacy({ ...newPharmacy, subscription_plan: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="free">Free / Trial</SelectItem>
-                  <SelectItem value="standard">Standard</SelectItem>
-                  <SelectItem value="premium">Premium</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {insurance.length > 0 ? (
-              <div className="grid gap-2">
-                <Label>Insurance Providers</Label>
-                <div className="max-h-36 space-y-2 overflow-y-auto rounded-md border p-3">
-                  {insurance.map((provider) => (
-                    <label
-                      key={String(provider.id)}
-                      className="flex cursor-pointer items-center gap-2 text-sm"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={newPharmacy.insurance_providers.includes(
-                          String(provider.id),
-                        )}
-                        onChange={(e) =>
-                          handleInsuranceChange(String(provider.id), e.target.checked)
-                        }
-                      />
-                      {String(provider.name ?? 'Provider')}
-                    </label>
-                  ))}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Owner name</Label>
+                  <Input
+                    value={newPharmacy.owner_name}
+                    onChange={(e) =>
+                      setNewPharmacy({ ...newPharmacy, owner_name: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Owner email</Label>
+                  <Input
+                    type="email"
+                    value={newPharmacy.owner_email}
+                    onChange={(e) =>
+                      setNewPharmacy({ ...newPharmacy, owner_email: e.target.value })
+                    }
+                  />
                 </div>
               </div>
-            ) : null}
-          </div>
-          <DialogFooter>
-            <Button
-              onClick={handleAddPharmacy}
-              disabled={
-                saving ||
-                !newPharmacy.name ||
-                !newPharmacy.owner_email ||
-                !newPharmacy.owner_password
-              }
-            >
-              {saving ? 'Creating…' : 'Create Pharmacy'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Phone</Label>
+                  <Input
+                    value={newPharmacy.phone}
+                    onChange={(e) =>
+                      setNewPharmacy({ ...newPharmacy, phone: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Owner password</Label>
+                  <PasswordInput
+                    value={newPharmacy.owner_password}
+                    onChange={(e) =>
+                      setNewPharmacy({ ...newPharmacy, owner_password: e.target.value })
+                    }
+                    placeholder="Minimum 8 characters"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Subscription plan</Label>
+                <Select
+                  value={newPharmacy.subscription_plan}
+                  onValueChange={(value) =>
+                    setNewPharmacy({ ...newPharmacy, subscription_plan: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="free">Free / Trial</SelectItem>
+                    <SelectItem value="standard">Standard</SelectItem>
+                    <SelectItem value="premium">Premium</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {insurance.length > 0 ? (
+                <div className="grid gap-2">
+                  <Label>Insurance providers</Label>
+                  <div className="max-h-36 space-y-2 overflow-y-auto rounded-lg border border-neutral-200/80 bg-neutral-50/80 p-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+                    {insurance.map((provider) => (
+                      <label
+                        key={String(provider.id)}
+                        className="flex cursor-pointer items-center gap-2 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={newPharmacy.insurance_providers.includes(
+                            String(provider.id),
+                          )}
+                          onChange={(e) =>
+                            handleInsuranceChange(
+                              String(provider.id),
+                              e.target.checked,
+                            )
+                          }
+                        />
+                        {String(provider.name ?? 'Provider')}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </DashboardDialogBody>
+          <DashboardDialogActions
+            cancelLabel="Cancel"
+            confirmLabel="Create pharmacy"
+            onCancel={() => setIsAddingPharmacy(false)}
+            onConfirm={handleAddPharmacy}
+            confirmDisabled={!pharmacyFormValid}
+            confirmLoading={saving}
+          />
+        </DashboardDialogContent>
       </Dialog>
 
       <Dialog open={isAddingInsurance} onOpenChange={setIsAddingInsurance}>
         <DialogTrigger asChild>
-          <Button variant="outline">
-            <Shield className="mr-2 h-4 w-4" />
-            Add Insurance
-          </Button>
+          <DashboardButton tone="outline">
+            <Shield className="mr-2 h-4 w-4" strokeWidth={1.75} />
+            Add insurance
+          </DashboardButton>
         </DialogTrigger>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Add Insurance Provider</DialogTitle>
-            <DialogDescription>
+        <DashboardDialogContent className="max-w-2xl">
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Add insurance provider</DashboardDialogTitle>
+            <DashboardDialogDescription>
               Create a global insurance provider for pharmacies
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Insurance Name</Label>
-                <Input
-                  value={newInsurance.name}
-                  onChange={(e) => setNewInsurance({ ...newInsurance, name: e.target.value })}
-                  placeholder="e.g. RSSB, MMI"
-                />
+            </DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogBody className="max-h-none overflow-visible">
+            <div className="grid gap-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Insurance name</Label>
+                  <Input
+                    value={newInsurance.name}
+                    onChange={(e) =>
+                      setNewInsurance({ ...newInsurance, name: e.target.value })
+                    }
+                    placeholder="e.g. RSSB, MMI"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Coverage %</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={newInsurance.coverage_percentage}
+                    onChange={(e) =>
+                      setNewInsurance({
+                        ...newInsurance,
+                        coverage_percentage: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Contact email</Label>
+                  <Input
+                    type="email"
+                    value={newInsurance.contact_email}
+                    onChange={(e) =>
+                      setNewInsurance({
+                        ...newInsurance,
+                        contact_email: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Contact phone</Label>
+                  <Input
+                    value={newInsurance.contact_phone}
+                    onChange={(e) =>
+                      setNewInsurance({
+                        ...newInsurance,
+                        contact_phone: e.target.value,
+                      })
+                    }
+                  />
+                </div>
               </div>
               <div className="grid gap-2">
-                <Label>Coverage %</Label>
+                <Label>Policy number</Label>
                 <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={newInsurance.coverage_percentage}
+                  value={newInsurance.policy_number}
                   onChange={(e) =>
                     setNewInsurance({
                       ...newInsurance,
-                      coverage_percentage: Number(e.target.value),
+                      policy_number: e.target.value,
                     })
                   }
                 />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label>Contact Email</Label>
-                <Input
-                  type="email"
-                  value={newInsurance.contact_email}
-                  onChange={(e) =>
-                    setNewInsurance({ ...newInsurance, contact_email: e.target.value })
+                <Label>Invoice template</Label>
+                <Select
+                  value={newInsurance.invoice_template}
+                  onValueChange={(value) =>
+                    setNewInsurance({ ...newInsurance, invoice_template: value })
                   }
-                />
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">Default</SelectItem>
+                    <SelectItem value="rssb">RSSB</SelectItem>
+                    <SelectItem value="mmi">MMI</SelectItem>
+                    <SelectItem value="radiant">Radiant</SelectItem>
+                    <SelectItem value="custom">Custom</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="grid gap-2">
-                <Label>Contact Phone</Label>
-                <Input
-                  value={newInsurance.contact_phone}
-                  onChange={(e) =>
-                    setNewInsurance({ ...newInsurance, contact_phone: e.target.value })
-                  }
-                />
-              </div>
+              {newInsurance.invoice_template === 'custom' ? (
+                <DashboardButton tone="outline" className="w-full" asChild>
+                  <Link href="/admin/insurance-templates" target="_blank">
+                    <FileText className="mr-2 h-4 w-4" strokeWidth={1.75} />
+                    Open template designer
+                  </Link>
+                </DashboardButton>
+              ) : null}
             </div>
-            <div className="grid gap-2">
-              <Label>Policy Number</Label>
-              <Input
-                value={newInsurance.policy_number}
-                onChange={(e) =>
-                  setNewInsurance({ ...newInsurance, policy_number: e.target.value })
-                }
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Invoice Template</Label>
-              <Select
-                value={newInsurance.invoice_template}
-                onValueChange={(value) =>
-                  setNewInsurance({ ...newInsurance, invoice_template: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="default">Default</SelectItem>
-                  <SelectItem value="rssb">RSSB</SelectItem>
-                  <SelectItem value="mmi">MMI</SelectItem>
-                  <SelectItem value="radiant">Radiant</SelectItem>
-                  <SelectItem value="custom">Custom</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {newInsurance.invoice_template === 'custom' ? (
-              <Button variant="outline" asChild className="w-full">
-                <Link href="/admin/insurance-templates" target="_blank">
-                  <FileText className="mr-2 h-4 w-4" />
-                  Open Template Designer
-                </Link>
-              </Button>
-            ) : null}
-          </div>
-          <DialogFooter>
-            <Button onClick={handleAddInsurance} disabled={saving || !newInsurance.name}>
-              {saving ? 'Adding…' : 'Add Insurance Provider'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+          </DashboardDialogBody>
+          <DashboardDialogActions
+            cancelLabel="Cancel"
+            confirmLabel="Add provider"
+            onCancel={() => setIsAddingInsurance(false)}
+            onConfirm={handleAddInsurance}
+            confirmDisabled={!newInsurance.name}
+            confirmLoading={saving}
+          />
+        </DashboardDialogContent>
       </Dialog>
-    </div>
+    </DashboardToolbar>
   )
 }

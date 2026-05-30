@@ -1,42 +1,60 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../supabase/server'
+import { NextRequest, NextResponse } from "next/server";
+import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
 
 export async function GET() {
-  try {
-    const supabase = await createClient()
-    const { data: templates, error } = await supabase
-      .from('insurance_templates')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (error) throw error
-    return NextResponse.json(templates || [])
-  } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch templates' }, { status: 500 })
+  const auth = await requirePlatformAdminApi();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+
+  const { data, error } = await auth.supabase
+    .from("insurance_templates")
+    .select("*")
+    .is("pharmacy_id", null)
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    console.error("admin insurance-templates GET:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch templates" },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json(data ?? []);
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const supabase = await createClient()
-    const body = await request.json()
-    
-    const { data: template, error } = await supabase
-      .from('insurance_templates')
-      .insert({
-        pharmacy_id: body.pharmacy_id ?? null,
-        name: body.name,
-        insurance_provider: body.insurance_provider,
-        template_html: body.template_html,
-        template_css: body.template_css,
-        is_active: true
-      })
-      .select()
-      .single()
-
-    if (error) throw error
-    return NextResponse.json({ success: true, template })
-  } catch (error) {
-    return NextResponse.json({ error: 'Failed to create template' }, { status: 500 })
+  const auth = await requirePlatformAdminApi();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+
+  const body = await request.json();
+  if (!body?.name?.trim() || !body?.insurance_provider?.trim()) {
+    return NextResponse.json(
+      { error: "Name and insurance provider are required" },
+      { status: 400 },
+    );
+  }
+
+  const { data, error } = await auth.supabase
+    .from("insurance_templates")
+    .insert({
+      pharmacy_id: null,
+      name: String(body.name).trim(),
+      insurance_provider: String(body.insurance_provider).trim(),
+      template_html: body.template_html ?? "",
+      template_css: body.template_css ?? "",
+      is_active: true,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("admin insurance-templates POST:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true, template: data });
 }

@@ -40,7 +40,22 @@ export {
 export { useSendRecoveryEmailMutation, useVerify2FAMutation } from "./useAuth";
 export { usePublicMainPlans } from "./usePlans";
 export { useIsMobile } from "./use-mobile";
-export { adminCategoriesQueryKey, useAdminCategories } from "./useAdminCategories";
+export {
+  adminCategoriesQueryKey,
+  useAdminCategories,
+  useCreateAdminCategoryMutation,
+  useDeleteAdminCategoryMutation,
+  useUpdateAdminCategoryMutation,
+  type AdminCategoryRow,
+} from "./useAdminCategories";
+export {
+  adminInsuranceTemplatesQueryKey,
+  useAdminInsuranceTemplates,
+  useCreateAdminInsuranceTemplateMutation,
+  useDeleteAdminInsuranceTemplateMutation,
+  useUpdateAdminInsuranceTemplateMutation,
+  type AdminInsuranceTemplateRow,
+} from "./useAdminInsuranceTemplates";
 export { useAdminDashboardData } from "./useAdminDashboardData";
 export {
   adminPharmaciesQueryKey,
@@ -77,6 +92,19 @@ export {
   adminSystemSettingsQueryKey,
   useAdminSystemSettings,
 } from "./useAdminSystemSettings";
+export {
+  adminApiKeysQueryKey,
+  adminIpWhitelistQueryKey,
+} from "@/lib/http/admin/platform-security";
+export {
+  useAdminApiKeys,
+  useAdminIpWhitelist,
+  useAddAdminIpWhitelistMutation,
+  useCreateAdminApiKeyMutation,
+  useRemoveAdminIpWhitelistMutation,
+  useUpdateAdminApiKeyMutation,
+  type AdminApiKeyRow,
+} from "./useAdminPlatformSecurity";
 export {
   stockLocationsQueryKey,
   useCreateStockLocationMutation,

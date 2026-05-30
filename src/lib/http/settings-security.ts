@@ -19,6 +19,7 @@ export type IpWhitelistEntry = {
 
 export type TwoFaStatus = {
   enabled: boolean;
+  platformAllowsTwoFactor?: boolean;
 };
 
 export async function getSecuritySettings(): Promise<SecuritySettings> {
@@ -43,7 +44,7 @@ export async function getTwoFaStatus(): Promise<TwoFaStatus> {
   try {
     return await fetchJson<TwoFaStatus>("/api/settings/security/2fa");
   } catch {
-    return { enabled: false };
+    return { enabled: false, platformAllowsTwoFactor: true };
   }
 }
 

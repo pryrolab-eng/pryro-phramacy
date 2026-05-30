@@ -11,6 +11,7 @@ import {
 import { Button } from './ui/button'
 import { UserCircle, Home } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
 
 export default function DashboardNavbar() {
   const router = useRouter()
@@ -23,11 +24,11 @@ export default function DashboardNavbar() {
             Pryrox
           </Link>
           <div className="flex gap-4 text-sm font-medium">
-            <Link href="/dashboard" className="hover:text-blue-600">Dashboard</Link>
-            <Link href="/inventory" className="hover:text-blue-600">Inventory</Link>
-            <Link href="/pos" className="hover:text-blue-600">POS</Link>
-            <Link href="/sales" className="hover:text-blue-600">Sales</Link>
-            <Link href="/customers" className="hover:text-blue-600">Customers</Link>
+            <Link href="/app" className="hover:text-blue-600">App</Link>
+            <Link href={PHARMACY_ROUTES.inventory} className="hover:text-blue-600">Inventory</Link>
+            <Link href={PHARMACY_ROUTES.pos} className="hover:text-blue-600">POS</Link>
+            <Link href={PHARMACY_ROUTES.sales} className="hover:text-blue-600">Sales</Link>
+            <Link href={PHARMACY_ROUTES.customers} className="hover:text-blue-600">Customers</Link>
           </div>
         </div>
         <div className="flex gap-4 items-center">

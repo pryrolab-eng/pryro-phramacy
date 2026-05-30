@@ -70,7 +70,7 @@ export function usePaymentSuccessStatus(params: {
 }) {
   return useQuery({
     queryKey: [
-      "payment-success",
+      "payment-success-status",
       params.provider,
       params.checkoutId,
       params.tid,

@@ -15,7 +15,9 @@ import { getNavEntitlementDisplayMode } from "@/lib/subscription/nav-entitlement
 import { UpgradePlanDialog } from "@/components/subscription/upgrade-plan-dialog";
 import { usePharmacyEntitlements } from "@/hooks/usePharmacyEntitlements";
 
-const BILLING_HREF = "/pharmacy-dashboard/billing";
+import { BILLING_ROUTE } from "@/lib/subscription/subscription-grace-routes";
+
+const BILLING_HREF = BILLING_ROUTE;
 
 type Props = {
   item: NavItemConfig;

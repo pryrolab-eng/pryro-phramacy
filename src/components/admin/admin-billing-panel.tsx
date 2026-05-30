@@ -3,19 +3,31 @@
 import { useCallback, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
-import { Loader2, Receipt, RefreshCw } from 'lucide-react'
+import {
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Loader2,
+  Receipt,
+  RefreshCw,
+  Wallet,
+} from 'lucide-react'
 
 import { AdminPageHeader } from '@/components/admin/admin-page-header'
 import { AdminPharmacyDetailDialog } from '@/components/admin/admin-pharmacy-detail-dialog'
 import { adminBillingPaymentColumns } from '@/components/admin/admin-billing-payment-columns'
 import { adminBillingPharmacyColumns } from '@/components/admin/admin-billing-pharmacy-columns'
 import { adminBillingReconciliationColumns } from '@/components/admin/admin-billing-reconciliation-columns'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { DataTable } from '@/components/ui/data-table'
-import { Input } from '@/components/ui/input'
+import {
+  DashboardButton,
+  DashboardDataTable,
+  DashboardMetricGrid,
+  DashboardStatCard,
+  DashboardTabsList,
+} from '@/components/dashboard'
 import { Spinner } from '@/components/ui/spinner'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsTrigger } from '@/components/ui/tabs'
+import { cn } from '@/lib/utils'
 import {
   adminBillingQueryKey,
   adminPharmaciesQueryKey,
@@ -31,6 +43,20 @@ import type { AdminPharmacyRow } from '@/lib/http/admin/pharmacies'
 import type { AdminBillingReconciliationRow } from '@/lib/http/admin/billing'
 import { formatMoney, getPlatformCurrency } from '@/lib/platform-currency'
 import { getPendingPaymentMaxAgeDays } from '@/lib/admin/cancel-pending-billing'
+
+function BillingNotice({ message }: { message: string }) {
+  return (
+    <p
+      className={cn(
+        'rounded-lg border border-neutral-200/80 bg-neutral-50/80 px-4 py-3 text-sm text-neutral-700',
+        'dark:border-neutral-800 dark:bg-neutral-900/40 dark:text-neutral-300',
+      )}
+      role="status"
+    >
+      {message}
+    </p>
+  )
+}
 
 export function AdminBillingPanel() {
   const queryClient = useQueryClient()
@@ -95,10 +121,14 @@ export function AdminBillingPanel() {
   const detailPharmacy = useMemo((): AdminPharmacyRow | null => {
     if (!detailPharmacyId) return null
     const rows = (pharmaciesQuery.data ?? []) as AdminPharmacyRow[]
-    return rows.find((p) => p.id === detailPharmacyId) ?? {
-      id: detailPharmacyId,
-      name: pharmacies.find((x) => x.pharmacy_id === detailPharmacyId)?.pharmacy_name ?? 'Pharmacy',
-    }
+    return (
+      rows.find((p) => p.id === detailPharmacyId) ?? {
+        id: detailPharmacyId,
+        name:
+          pharmacies.find((x) => x.pharmacy_id === detailPharmacyId)?.pharmacy_name ??
+          'Pharmacy',
+      }
+    )
   }, [detailPharmacyId, pharmaciesQuery.data, pharmacies])
 
   const handleBackfill = async () => {
@@ -109,9 +139,7 @@ export function AdminBillingPanel() {
         '/api/admin/transactions/backfill',
         { method: 'POST' },
       )
-      setBackfillMsg(
-        `Created ${res.synced} invoice(s). ${res.skipped} skipped.`,
-      )
+      setBackfillMsg(`Created ${res.synced} invoice(s). ${res.skipped} skipped.`)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: adminBillingQueryKey }),
         queryClient.invalidateQueries({ queryKey: adminReportsSummaryQueryKey }),
@@ -123,17 +151,18 @@ export function AdminBillingPanel() {
     }
   }
 
-  if (billingQuery.isPending) {
+  if (billingQuery.isLoading) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center">
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3">
         <Spinner className="size-6" />
+        <p className="text-sm text-neutral-500">Loading billing data…</p>
       </div>
     )
   }
 
   if (billingQuery.isError) {
     return (
-      <p className="text-destructive p-6" role="alert">
+      <p className="text-sm text-destructive" role="alert">
         {billingQuery.error instanceof Error
           ? billingQuery.error.message
           : 'Could not load billing data.'}
@@ -151,202 +180,159 @@ export function AdminBillingPanel() {
       return a.localeCompare(b)
     })
   const expireDays = getPendingPaymentMaxAgeDays()
+  const reconCount = reconciliation.length
+
+  const volumeValue =
+    volumeByCurrency.length === 0 ? (
+      formatMoney(0, platformCurrency)
+    ) : volumeByCurrency.length === 1 ? (
+      formatMoney(volumeByCurrency[0][1], volumeByCurrency[0][0])
+    ) : (
+      <div className="space-y-1">
+        {volumeByCurrency.map(([currency, amount]) => (
+          <p key={currency} className="text-lg font-semibold leading-tight tabular-nums">
+            {formatMoney(amount, currency)}
+          </p>
+        ))}
+      </div>
+    )
 
   return (
-    <div className="space-y-6">
+    <>
       <AdminPageHeader
         pinTitle="Billing & transactions"
-        title={
-          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
-            <Receipt className="h-8 w-8 text-primary" />
-            Billing &amp; transactions
-          </h1>
-        }
+        title="Billing & transactions"
         description="Payments, pharmacy subscription state, and data issues"
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
+          <>
+            <DashboardButton
+              tone="outline"
               onClick={() => void billingQuery.refetch()}
               disabled={billingQuery.isFetching}
             >
               <RefreshCw
-                className={`mr-2 h-4 w-4 ${billingQuery.isFetching ? 'animate-spin' : ''}`}
+                className={cn(
+                  'mr-2 h-4 w-4',
+                  billingQuery.isFetching && 'animate-spin',
+                )}
+                strokeWidth={1.75}
               />
               Refresh
-            </Button>
-            <Button
-              variant="secondary"
+            </DashboardButton>
+            <DashboardButton
+              tone="outline"
               onClick={() => void handleBackfill()}
               disabled={backfilling}
             >
               {backfilling ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <Receipt className="mr-2 h-4 w-4" />
+                <Receipt className="mr-2 h-4 w-4" strokeWidth={1.75} />
               )}
               Sync invoices
-            </Button>
-            <Button variant="outline" asChild>
+            </DashboardButton>
+            <DashboardButton tone="outline" asChild>
               <Link href="/admin/reports">Reports</Link>
-            </Button>
-          </div>
+            </DashboardButton>
+          </>
         }
       />
 
-      {backfillMsg ? (
-        <p className="text-sm text-muted-foreground rounded-md border px-3 py-2 bg-muted/40">
-          {backfillMsg}
-        </p>
-      ) : null}
-      {cancelMsg ? (
-        <p className="text-sm text-muted-foreground rounded-md border px-3 py-2 bg-muted/40">
-          {cancelMsg}
-        </p>
-      ) : null}
+      {backfillMsg ? <BillingNotice message={backfillMsg} /> : null}
+      {cancelMsg ? <BillingNotice message={cancelMsg} /> : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Completed</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{summary?.completed_count ?? 0}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Pending</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{summary?.pending_count ?? 0}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Failed</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{summary?.failed_count ?? 0}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Completed volume</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            {volumeByCurrency.length === 0 ? (
-              <p className="text-2xl font-bold">0 {platformCurrency}</p>
-            ) : (
-              volumeByCurrency.map(([currency, amount]) => (
-                <p key={currency} className="text-xl font-bold leading-tight">
-                  {formatMoney(amount, currency)}
-                </p>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      <DashboardMetricGrid className="mb-4 lg:grid-cols-4">
+        <DashboardStatCard
+          label="Completed"
+          icon={CheckCircle2}
+          value={summary?.completed_count ?? 0}
+        />
+        <DashboardStatCard
+          label="Pending"
+          icon={Clock}
+          value={summary?.pending_count ?? 0}
+        />
+        <DashboardStatCard
+          label="Failed"
+          icon={AlertCircle}
+          value={summary?.failed_count ?? 0}
+          valueClassName={
+            (summary?.failed_count ?? 0) > 0
+              ? 'text-amber-700 dark:text-amber-400'
+              : undefined
+          }
+        />
+        <DashboardStatCard
+          label="Completed volume"
+          icon={Wallet}
+          value={volumeValue}
+          hint={
+            volumeByCurrency.length > 1
+              ? 'By currency'
+              : 'Successful checkouts'
+          }
+        />
+      </DashboardMetricGrid>
 
       <Tabs defaultValue="payments">
-        <TabsList>
-          <TabsTrigger value="payments">Payments</TabsTrigger>
-          <TabsTrigger value="pharmacies">Pharmacy billing</TabsTrigger>
-          <TabsTrigger value="reconciliation">
-            Reconciliation
-            {reconciliation.length > 0 ? ` (${reconciliation.length})` : ''}
+        <DashboardTabsList>
+          <TabsTrigger value="payments">
+            Payments ({payments.length})
           </TabsTrigger>
-        </TabsList>
+          <TabsTrigger value="pharmacies">
+            Pharmacy billing ({pharmacies.length})
+          </TabsTrigger>
+          <TabsTrigger value="reconciliation">
+            Reconciliation{reconCount > 0 ? ` (${reconCount})` : ''}
+          </TabsTrigger>
+        </DashboardTabsList>
 
         <TabsContent value="payments" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Payment transactions</CardTitle>
-              <CardDescription>
-                KPay and Polar subscription checkouts
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                columns={paymentColumns}
-                data={payments}
-                globalFilter={paymentFilter}
-                onGlobalFilterChange={setPaymentFilter}
-                toolbar={
-                  <Input
-                    placeholder="Search pharmacy, customer, status…"
-                    value={paymentFilter}
-                    onChange={(e) => setPaymentFilter(e.target.value)}
-                    className="max-w-sm"
-                  />
-                }
-                pageSize={15}
-                stickyHeader
-                enableSorting
-                initialSorting={[{ id: 'created_at', desc: true }]}
-                emptyMessage="No transactions yet."
-              />
-            </CardContent>
-          </Card>
+          <DashboardDataTable
+            title="Payment transactions"
+            description="KPay and Polar subscription checkouts"
+            searchPlaceholder="Search pharmacy, customer, status…"
+            searchValue={paymentFilter}
+            onSearchChange={setPaymentFilter}
+            columns={paymentColumns}
+            data={payments}
+            pageSize={15}
+            pageSizeOptions={[10, 15, 25, 50]}
+            stickyHeader
+            initialSorting={[{ id: 'created_at', desc: true }]}
+            emptyMessage="No transactions yet."
+          />
         </TabsContent>
 
         <TabsContent value="pharmacies" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Pharmacy subscriptions</CardTitle>
-              <CardDescription>
-                Effective main plan and billing status per store (click a row for
-                details)
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                columns={pharmacyColumns}
-                data={pharmacies}
-                globalFilter={pharmacyFilter}
-                onGlobalFilterChange={setPharmacyFilter}
-                onRowClick={(row) => setDetailPharmacyId(row.pharmacy_id)}
-                toolbar={
-                  <Input
-                    placeholder="Search pharmacy or plan…"
-                    value={pharmacyFilter}
-                    onChange={(e) => setPharmacyFilter(e.target.value)}
-                    className="max-w-sm"
-                  />
-                }
-                pageSize={15}
-                stickyHeader
-                enableSorting
-                emptyMessage="No pharmacies found."
-              />
-            </CardContent>
-          </Card>
+          <DashboardDataTable
+            title="Pharmacy subscriptions"
+            description="Effective main plan and billing status per store (click a row for details)"
+            searchPlaceholder="Search pharmacy or plan…"
+            searchValue={pharmacyFilter}
+            onSearchChange={setPharmacyFilter}
+            columns={pharmacyColumns}
+            data={pharmacies}
+            onRowClick={(row) => setDetailPharmacyId(row.pharmacy_id)}
+            pageSize={15}
+            pageSizeOptions={[10, 15, 25, 50]}
+            stickyHeader
+            emptyMessage="No pharmacies found."
+          />
         </TabsContent>
 
         <TabsContent value="reconciliation" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Reconciliation</CardTitle>
-              <CardDescription>
-                Orphan payments, pending upgrades, and legacy plan rows without{' '}
-                <code className="text-xs">plan_id</code>. Pending items older than{' '}
-                {expireDays} days can be auto-cancelled when a scheduled job runs
-                (see /api/cron/cancel-stale-pending-payments).
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                columns={reconColumns}
-                data={reconciliation}
-                pageSize={10}
-                onRowClick={(row) => {
-                  if (row.pharmacy_id) setDetailPharmacyId(row.pharmacy_id)
-                }}
-                emptyMessage="No issues detected."
-                enableSorting
-              />
-            </CardContent>
-          </Card>
+          <DashboardDataTable
+            title="Reconciliation"
+            description={`Orphan payments, pending upgrades, and legacy plan rows without plan_id. Pending items older than ${expireDays} days can be auto-cancelled when the scheduled job runs (see /api/cron/cancel-stale-pending-payments).`}
+            columns={reconColumns}
+            data={reconciliation}
+            pageSize={10}
+            onRowClick={(row) => {
+              if (row.pharmacy_id) setDetailPharmacyId(row.pharmacy_id)
+            }}
+            emptyMessage="No issues detected."
+          />
         </TabsContent>
       </Tabs>
 
@@ -358,9 +344,10 @@ export function AdminBillingPanel() {
           onClose={() => {
             setDetailPharmacyId(null)
             void queryClient.invalidateQueries({ queryKey: adminBillingQueryKey })
+            void queryClient.invalidateQueries({ queryKey: adminPharmaciesQueryKey })
           }}
         />
       ) : null}
-    </div>
+    </>
   )
 }

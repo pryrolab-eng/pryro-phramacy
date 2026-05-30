@@ -1,17 +1,26 @@
 ﻿'use client'
 
 import { useMemo } from 'react'
-import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Building2, CreditCard, BarChart3, AlertTriangle, MapPin, Shield, Users, Receipt } from "lucide-react";
-import { Button } from '@/components/ui/button'
+import { Building2, CreditCard, BarChart3, AlertTriangle, Users } from "lucide-react";
 import { AdminPageHeader } from '@/components/admin/admin-page-header';
-import { DashboardPageShell } from '@/components/dashboard';
-import { Spinner } from '@/components/ui/spinner';
+import {
+  DashboardPageShell,
+  DashboardStatCard,
+  DashboardSectionCard,
+  DashboardMetricGrid,
+  DashboardPanelEmpty,
+  DashboardPageLoading,
+} from '@/components/dashboard';
+import {
+  AdminPlanDistributionPanel,
+  AdminFinanceOverviewPanel,
+  AdminRecentRegistrationsPanel,
+  AdminInsuranceProvidersPanel,
+  AdminRecentPharmaciesPanel,
+} from '@/components/admin/dashboard';
+import { dashboardText } from '@/components/dashboard/dashboard-tokens';
 import {
   adminPharmaciesQueryKey,
   adminReportsSummaryQueryKey,
@@ -214,11 +223,7 @@ export default function AdminPage() {
   const totalUsers = reports?.totalUsers ?? 0
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Spinner className="size-6" />
-      </div>
-    )
+    return <DashboardPageLoading label="Loading platform dashboard…" />
   }
 
   const hasPaymentHistory = (reports?.revenueData?.length ?? 0) > 0
@@ -229,336 +234,112 @@ export default function AdminPage() {
 
   return (
     <DashboardPageShell>
-      <div className="max-w-7xl mx-auto space-y-6">
-        <AdminPageHeader
-          pinTitle="Platform Dashboard"
-          title={
-            <>
-              <h1 className="text-3xl font-bold">Platform Dashboard</h1>
-              <RealtimeStatus />
-            </>
-          }
-          description="Manage pharmacies, insurance, subscriptions, and analytics"
-          actions={<PlatformDashboardActions />}
+      <AdminPageHeader
+        pinTitle="Platform Dashboard"
+        title={
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className={dashboardText.title}>Platform Dashboard</h1>
+            <RealtimeStatus />
+          </div>
+        }
+        description="Manage pharmacies, insurance, subscriptions, and analytics"
+        actions={<PlatformDashboardActions />}
+      />
+
+      <DashboardMetricGrid className="lg:grid-cols-3">
+        <DashboardStatCard
+          label="Total shops"
+          icon={Building2}
+          value={stats.totalShops}
+          hint={`${activePharmacies} active · +${stats.newThisMonth} this month`}
         />
+        <DashboardStatCard
+          label="Expired businesses"
+          icon={AlertTriangle}
+          value={stats.expiredBusinesses}
+          hint="Requires attention"
+          valueClassName={
+            stats.expiredBusinesses > 0 ? 'text-amber-700 dark:text-amber-400' : undefined
+          }
+        />
+        <DashboardStatCard
+          label="Est. recurring"
+          icon={CreditCard}
+          value={`RWF ${(stats.subscriptionRevenue / 1000).toLocaleString()}K`}
+          hint="Active subs — plan price"
+        />
+        <DashboardStatCard
+          label="Categories"
+          icon={BarChart3}
+          value={categoriesCount || stats.totalCategories}
+          hint="Global catalog"
+        />
+        <DashboardStatCard
+          label="Platform users"
+          icon={Users}
+          value={totalUsers}
+          hint="Staff across pharmacies"
+        />
+        <DashboardStatCard
+          label="Catalog plans"
+          icon={CreditCard}
+          value={stats.totalPlans}
+          hint="Subscription tiers"
+        />
+      </DashboardMetricGrid>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Shops</CardTitle>
-              <Building2 className="h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalShops}</div>
-              <p className="text-xs text-muted-foreground">
-                {activePharmacies} active · +{stats.newThisMonth} this month
-              </p>
-            </CardContent>
-          </Card>
+      <DashboardSectionCard
+        title="Platform analytics"
+        description="Revenue and pharmacy growth over time"
+        contentClassName="p-0"
+      >
+        {!hasChartActivity && stats.totalShops === 0 ? (
+          <DashboardPanelEmpty
+            className="min-h-[240px] border-0 bg-transparent shadow-none"
+            icon={BarChart3}
+            title="No analytics yet"
+            description="Charts appear when pharmacies register or payments are recorded."
+            actionLabel="View stores"
+            actionHref="/admin/stores"
+          />
+        ) : (
+          <PlatformAnalyticsChart
+            data={chartData}
+            hasPaymentHistory={hasPaymentHistory}
+          />
+        )}
+      </DashboardSectionCard>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Expired Businesses</CardTitle>
-              <AlertTriangle className="h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.expiredBusinesses}</div>
-              <p className="text-xs text-muted-foreground">Requires attention</p>
-            </CardContent>
-          </Card>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <AdminPlanDistributionPanel
+          plans={planDistribution}
+          hasSubscriptionBreakdown={hasSubscriptionBreakdown}
+        />
+        <AdminFinanceOverviewPanel
+          plans={planDistribution}
+          subscriptionRevenue={stats.subscriptionRevenue}
+          paymentRevenue={paymentRevenue}
+        />
+        <AdminRecentRegistrationsPanel users={recentUsers} />
+      </div>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Est. Recurring</CardTitle>
-              <CreditCard className="h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                RWF {(stats.subscriptionRevenue / 1000).toLocaleString()}K
-              </div>
-              <p className="text-xs text-muted-foreground">Active subs — plan price</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Categories</CardTitle>
-              <BarChart3 className="h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{categoriesCount || stats.totalCategories}</div>
-              <p className="text-xs text-muted-foreground">Global catalog</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Platform Users</CardTitle>
-              <Users className="h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{totalUsers}</div>
-              <p className="text-xs text-muted-foreground">Staff across pharmacies</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Catalog Plans</CardTitle>
-              <CreditCard className="h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalPlans}</div>
-              <p className="text-xs text-muted-foreground">Subscription tiers</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Platform Analytics</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {!hasChartActivity && stats.totalShops === 0 ? (
-              <div className="px-6 py-4 text-center text-sm text-muted-foreground">
-                No pharmacies or payments to chart yet.
-              </div>
-            ) : (
-              <PlatformAnalyticsChart
-                data={chartData}
-                hasPaymentHistory={hasPaymentHistory}
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <Card>
-            <CardHeader>
-              <CardTitle>Subscription Plan Overview</CardTitle>
-              <CardDescription>
-                {hasSubscriptionBreakdown
-                  ? 'Active subscriptions from the subscriptions table'
-                  : 'Pharmacies grouped by subscription_plan on each store'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {planDistribution.map((plan, index) => (
-                  <div key={plan.name} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`h-3 w-3 rounded-full ${
-                          index === 0 ? 'bg-gray-800' :
-                          index === 1 ? 'bg-gray-600' : 'bg-gray-400'
-                        }`}
-                      />
-                      <span className="font-medium">{plan.name}</span>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold">
-                        {plan.count}{' '}
-                        {hasSubscriptionBreakdown ? 'subscriptions' : 'shops'}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{plan.percentage}%</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Finance Overview</CardTitle>
-              <CardDescription>
-                Estimated recurring revenue by plan (same source as Reports).
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {planDistribution.map((plan) => (
-                  <div key={plan.name} className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">{plan.name} Plans</span>
-                    <span className="font-semibold">RWF {plan.revenue.toLocaleString()}</span>
-                  </div>
-                ))}
-                <div className="border-t pt-2 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">Est. recurring total</span>
-                    <span className="font-bold text-lg">
-                      RWF {stats.subscriptionRevenue.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span>Completed payments (all time)</span>
-                    <span>RWF {paymentRevenue.toLocaleString()}</span>
-                  </div>
-                  <Button variant="outline" size="sm" className="w-full mt-2" asChild>
-                    <Link href="/admin/billing">
-                      <Receipt className="h-4 w-4 mr-2" />
-                      View transactions &amp; sync invoices
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>New Registered Users</CardTitle>
-              <CardDescription>Recent pharmacy registrations</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {recentUsers.length > 0 ? (
-                  recentUsers.map((user, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div>
-                        <p className="font-medium text-sm">{user.email}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {user.shop} · {user.date}
-                        </p>
-                      </div>
-                      <Badge variant="outline">{user.plan}</Badge>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-4 text-muted-foreground">
-                    No recent registrations
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card className="flex flex-col">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <CardTitle className="text-base">Insurance Providers</CardTitle>
-                  <CardDescription className="text-xs">
-                    Global coverage partners
-                    {insuranceProviders.length > 0
-                      ? ` · ${insuranceProviders.length} total`
-                      : ''}
-                  </CardDescription>
-                </div>
-                {insuranceProviders.length > 0 ? (
-                  <Button variant="ghost" size="sm" className="h-8 shrink-0 text-xs" asChild>
-                    <Link href="/admin/insurance-templates">Manage</Link>
-                  </Button>
-                ) : null}
-              </div>
-            </CardHeader>
-            <CardContent className="flex flex-1 flex-col pt-0">
-              {previewInsurance.length > 0 ? (
-                <ScrollArea className="h-[220px]">
-                  <div className="space-y-1.5 pr-3">
-                    {previewInsurance.map((provider) => {
-                      const active = provider.is_active !== false
-                      const coverage = Number(provider.coverage_percentage ?? 0)
-                      return (
-                        <div
-                          key={String(provider.id)}
-                          className="flex items-center gap-2 rounded-md border bg-muted/30 px-2.5 py-2"
-                        >
-                          <Shield className="h-3.5 w-3.5 shrink-0 text-blue-600" />
-                          <p className="min-w-0 flex-1 truncate text-sm font-medium">
-                            {String(provider.name ?? 'Provider')}
-                          </p>
-                          <span className="shrink-0 text-xs text-muted-foreground">
-                            {coverage}%
-                          </span>
-                          <Badge
-                            variant={active ? 'default' : 'secondary'}
-                            className="h-5 shrink-0 px-1.5 text-[10px]"
-                          >
-                            {active ? 'Active' : 'Off'}
-                          </Badge>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </ScrollArea>
-              ) : (
-                <p className="py-8 text-center text-sm text-muted-foreground">
-                  No insurance providers yet.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="flex flex-col">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <CardTitle className="text-base">Recent Pharmacies</CardTitle>
-                  <CardDescription className="text-xs">
-                    Latest registrations
-                    {recentPharmacies.length > 0
-                      ? ` · ${recentPharmacies.length} total`
-                      : ''}
-                  </CardDescription>
-                </div>
-                {recentPharmacies.length > 0 ? (
-                  <Button variant="ghost" size="sm" className="h-8 shrink-0 text-xs" asChild>
-                    <Link href="/admin/stores">View all</Link>
-                  </Button>
-                ) : null}
-              </div>
-            </CardHeader>
-            <CardContent className="flex flex-1 flex-col pt-0">
-              {previewPharmacies.length > 0 ? (
-                <ScrollArea className="h-[220px]">
-                  <div className="space-y-1.5 pr-3">
-                    {previewPharmacies.map((pharmacy) => {
-                      const location =
-                        pharmacy.address || pharmacy.city || '\u2014'
-                      const plan = resolvePharmacyPlanLabel(pharmacy, catalogPlans)
-                      return (
-                        <div
-                          key={String(pharmacy.id ?? pharmacy.name)}
-                          className="flex items-center gap-2 rounded-md border bg-muted/30 px-2.5 py-2"
-                        >
-                          <Building2 className="h-3.5 w-3.5 shrink-0 text-blue-600" />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium leading-tight">
-                              {pharmacy.name ?? 'Pharmacy'}
-                              <span className="font-normal text-muted-foreground">
-                                {' '}
-                                · {plan}
-                              </span>
-                            </p>
-                            <p className="flex items-center gap-1 truncate text-[11px] text-muted-foreground">
-                              <MapPin className="h-3 w-3 shrink-0" />
-                              {location}
-                            </p>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className="h-5 shrink-0 px-1.5 text-[10px] capitalize"
-                          >
-                            {pharmacy.status ?? 'active'}
-                          </Badge>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </ScrollArea>
-              ) : (
-                <p className="py-8 text-center text-sm text-muted-foreground">
-                  No pharmacies yet.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+      <div className="grid gap-6 md:grid-cols-2">
+        <AdminInsuranceProvidersPanel
+          providers={insuranceProviders}
+          preview={previewInsurance}
+        />
+        <AdminRecentPharmaciesPanel
+          totalCount={recentPharmacies.length}
+          preview={previewPharmacies.map((pharmacy) => ({
+            id: pharmacy.id,
+            name: pharmacy.name,
+            address: pharmacy.address,
+            city: pharmacy.city,
+            status: pharmacy.status,
+            planLabel: resolvePharmacyPlanLabel(pharmacy, catalogPlans),
+          }))}
+        />
       </div>
     </DashboardPageShell>
   )
 }
-

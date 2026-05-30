@@ -8,9 +8,11 @@ import {
   updateAdminFeature,
   type UpsertPlatformFeatureInput,
 } from "@/lib/http/admin/features";
+import { adminListQueryDefaults } from "@/lib/query/admin-query-options";
 
 export function useAdminFeatures() {
   return useQuery({
+    ...adminListQueryDefaults,
     queryKey: adminFeaturesQueryKey,
     queryFn: getAdminFeatures,
   });

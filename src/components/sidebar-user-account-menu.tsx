@@ -12,6 +12,7 @@ import {
   User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useActivePharmacy } from "@/components/providers/active-pharmacy-provider";
 import { Spinner } from "@/components/ui/spinner";
@@ -193,21 +194,21 @@ export function SidebarUserAccountMenu({
       >
         <div className="py-0.5">
           <MenuActionLink
-            href="/settings?tab=security"
+            href={`${PHARMACY_ROUTES.settings}?tab=security`}
             icon={User}
             label="View profile"
             shortcut={["⌘", "S"]}
             onNavigate={() => setOpen(false)}
           />
           <MenuActionLink
-            href="/settings?tab=general"
+            href={`${PHARMACY_ROUTES.settings}?tab=general`}
             icon={Settings}
             label="Pharmacy settings"
             shortcut={["⌘", ","]}
             onNavigate={() => setOpen(false)}
           />
           <MenuActionLink
-            href="/pharmacy-dashboard/billing"
+            href={PHARMACY_ROUTES.billing}
             icon={CreditCard}
             label="Billing & plans"
             onNavigate={() => setOpen(false)}

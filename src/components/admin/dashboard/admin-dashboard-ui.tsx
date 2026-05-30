@@ -1,0 +1,85 @@
+import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
+import { dashboardSurfaces } from "@/components/dashboard/dashboard-tokens";
+
+/** Unified status/plan chips across admin dashboard lists. */
+export function AdminStatusChip({
+  children,
+  tone = "neutral",
+  className,
+}: {
+  children: ReactNode;
+  tone?: "neutral" | "active" | "inactive" | "plan";
+  className?: string;
+}) {
+  const toneClass = {
+    neutral:
+      "border-neutral-200/80 bg-neutral-50 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-neutral-300",
+    active:
+      "border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-400",
+    inactive:
+      "border-neutral-200/80 bg-neutral-50 text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800/40 dark:text-neutral-500",
+    plan:
+      "border-neutral-200/80 bg-white text-neutral-700 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/60 dark:text-neutral-200",
+  }[tone];
+
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 shrink-0 items-center rounded-md border px-1.5 text-[10px] font-medium capitalize leading-none",
+        toneClass,
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+export function AdminRowIcon({ icon: Icon }: { icon: LucideIcon }) {
+  return (
+    <div className={cn(dashboardSurfaces.iconBox, "h-9 w-9")}>
+      <Icon className="h-4 w-4 text-blue-600 dark:text-blue-400" strokeWidth={1.75} />
+    </div>
+  );
+}
+
+/** Flat row — no card-in-card border (Untitled list style). */
+export function AdminFlatRow({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 py-3 first:pt-0 last:pb-0",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function AdminDividedList({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "divide-y divide-neutral-100 dark:divide-neutral-800",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}

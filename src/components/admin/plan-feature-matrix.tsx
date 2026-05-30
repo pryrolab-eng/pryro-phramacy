@@ -27,7 +27,7 @@ export function PlanFeatureMatrix({ selectedKeys, onChange, disabled }: Props) {
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [featuresQuery.data]);
 
-  if (featuresQuery.isPending) {
+  if (featuresQuery.isLoading) {
     return (
       <div className="flex justify-center py-6">
         <Spinner className="size-5" />

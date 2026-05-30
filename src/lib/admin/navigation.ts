@@ -5,28 +5,116 @@ import {
   CreditCard,
   FileText,
   LayoutDashboard,
-  Package,
+  Layers,
   Receipt,
   Settings,
   Tag,
-  Layers,
 } from "lucide-react";
 
 export type AdminNavItem = {
   title: string;
   url: string;
   icon: LucideIcon;
+  /** Optional search keywords for command palette */
+  keywords?: string;
 };
 
-/** Single source of truth for platform admin sidebar (SuperadminSidebar). */
-export const ADMIN_SIDEBAR_NAV: AdminNavItem[] = [
-  { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
-  { title: "Pharmacy List", url: "/admin/stores", icon: Building2 },
-  { title: "Categories", url: "/admin/categories", icon: Tag },
-  { title: "Template Designer", url: "/admin/insurance-templates", icon: FileText },
-  { title: "Subscriptions", url: "/admin/subscriptions", icon: CreditCard },
-  { title: "Features", url: "/admin/features", icon: Layers },
-  { title: "Billing", url: "/admin/billing", icon: Receipt },
-  { title: "Reports", url: "/admin/reports", icon: BarChart3 },
-  { title: "Settings", url: "/admin/settings", icon: Settings },
+export type AdminNavGroup = {
+  label: string;
+  items: AdminNavItem[];
+};
+
+/** Grouped platform admin sidebar — single source of truth. */
+export const ADMIN_SIDEBAR_GROUPS: AdminNavGroup[] = [
+  {
+    label: "Overview",
+    items: [
+      {
+        title: "Dashboard",
+        url: "/admin",
+        icon: LayoutDashboard,
+        keywords: "home overview metrics",
+      },
+    ],
+  },
+  {
+    label: "Tenants & catalog",
+    items: [
+      {
+        title: "Pharmacies",
+        url: "/admin/stores",
+        icon: Building2,
+        keywords: "stores tenants pharmacies list",
+      },
+      {
+        title: "Categories",
+        url: "/admin/categories",
+        icon: Tag,
+        keywords: "product categories catalog",
+      },
+      {
+        title: "Insurance templates",
+        url: "/admin/insurance-templates",
+        icon: FileText,
+        keywords: "template designer claims insurance",
+      },
+    ],
+  },
+  {
+    label: "Plans & revenue",
+    items: [
+      {
+        title: "Subscriptions",
+        url: "/admin/subscriptions",
+        icon: CreditCard,
+        keywords: "plans pricing saas",
+      },
+      {
+        title: "Features",
+        url: "/admin/features",
+        icon: Layers,
+        keywords: "entitlements feature flags",
+      },
+      {
+        title: "Billing",
+        url: "/admin/billing",
+        icon: Receipt,
+        keywords: "payments transactions invoices",
+      },
+    ],
+  },
+  {
+    label: "Insights",
+    items: [
+      {
+        title: "Reports",
+        url: "/admin/reports",
+        icon: BarChart3,
+        keywords: "analytics exports",
+      },
+    ],
+  },
+  {
+    label: "Platform",
+    items: [
+      {
+        title: "Settings",
+        url: "/admin/settings",
+        icon: Settings,
+        keywords: "configuration security system",
+      },
+    ],
+  },
 ];
+
+/** Flat list for command palette and legacy imports. */
+export const ADMIN_SIDEBAR_NAV: AdminNavItem[] = ADMIN_SIDEBAR_GROUPS.flatMap(
+  (group) => group.items,
+);
+
+export function isAdminNavItemActive(pathname: string, url: string): boolean {
+  if (url === "/admin") {
+    return pathname === "/admin" || pathname === "/superadmin";
+  }
+  return pathname === url || pathname.startsWith(`${url}/`);
+}

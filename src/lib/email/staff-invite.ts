@@ -1,10 +1,6 @@
 import { isSmtpConfigured, sendMail } from "./mailer";
 
-function getAppUrl(): string {
-  const url = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
-  if (!url) throw new Error("NEXT_PUBLIC_APP_URL is not configured");
-  return url;
-}
+import { getAppUrl } from "@/lib/app-url";
 
 export function staffInviteEmailHtml(options: {
   fullName: string;

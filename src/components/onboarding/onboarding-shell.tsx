@@ -40,7 +40,7 @@ export function OnboardingShell({
               </button>
             ) : (
               <Link
-                href="/dashboard"
+                href="/app"
                 className="text-sm text-neutral-500 underline-offset-4 hover:text-neutral-900 hover:underline"
               >
                 Save &amp; exit

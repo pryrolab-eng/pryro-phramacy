@@ -3,14 +3,11 @@
  * ─────────────────────────────────────────────────────
  * Route groups in parentheses are NOT part of the URL:
  *
- *   src/app/(dashboard)/pos/page.tsx      →  /pos
- *   src/app/(dashboard)/inventory/page.tsx →  /inventory
- *   src/app/(auth)/sign-in/page.tsx       →  /sign-in
- *   src/app/page.tsx                       →  /  (marketing, no middleware)
+ *   src/app/(dashboard)/pharmacy/(shared)/pos/page.tsx  →  /pharmacy/pos
+ *   src/app/(auth)/sign-in/page.tsx                     →  /sign-in
  *
- * All pharmacy app pages live under src/app/(dashboard)/ and share
- * (dashboard)/layout.tsx (server auth + sidebar). Middleware lists the
- * URL prefixes below — keep in sync when adding new page.tsx files.
+ * Pharmacy tenant pages live under src/app/(dashboard)/pharmacy/.
+ * Platform admin pages live under src/app/(dashboard)/admin/.
  */
 
 import {
@@ -19,6 +16,8 @@ import {
   PHARMACY_NAV_ITEMS,
   type NavItemConfig,
 } from "@/lib/subscription/nav-config";
+import { POST_AUTH_ENTRY_PATH } from "@/lib/auth/resolve-home-redirect";
+import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 
 function navUrls(items: NavItemConfig[]): string[] {
   return items.map((item) => {
@@ -29,7 +28,7 @@ function navUrls(items: NavItemConfig[]): string[] {
   });
 }
 
-/** Unique top-level paths from sidebar nav (pharmacy operations). */
+/** Unique paths from sidebar nav (pharmacy tenant). */
 const NAV_PROTECTED_PATHS = Array.from(
   new Set([
     ...navUrls(PHARMACY_NAV_ITEMS),
@@ -39,28 +38,29 @@ const NAV_PROTECTED_PATHS = Array.from(
 );
 
 /**
- * App routes under (dashboard)/ or top-level app shells — require login.
- * Derived from src/app/.../page.tsx files + nav-config.
+ * App routes that require login.
+ * Derived from nav-config + explicit shells.
  */
 export const PROTECTED_PATH_PREFIXES = Array.from(
   new Set([
+    PHARMACY_ROUTES.root,
     ...NAV_PROTECTED_PATHS,
-    "/dashboard",
+    POST_AUTH_ENTRY_PATH,
     "/superadmin",
     "/admin",
     "/onboarding",
-    // Explicit (dashboard) pages not always in every role's nav
-    "/activity",
-    "/patients",
-    "/reports",
   ]),
 ).sort() as readonly string[];
+
+/** Password reset after recovery email link. Lives in (auth) route group. */
+export const RESET_PASSWORD_PATH = "/reset-password";
 
 /** Login / register — public until session exists. (auth) route group. */
 export const PUBLIC_AUTH_PATH_PREFIXES = [
   "/sign-in",
   "/sign-up",
   "/forgot-password",
+  RESET_PASSWORD_PATH,
 ] as const;
 
 /** OAuth / 2FA — must not redirect mid-flow. */

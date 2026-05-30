@@ -113,7 +113,7 @@ export const updateSession = async (request: NextRequest) => {
       } = await supabase.auth.getSession();
 
       if (session?.user) {
-        return NextResponse.redirect(new URL("/dashboard", request.url));
+        return NextResponse.redirect(new URL("/app", request.url));
       }
     }
 

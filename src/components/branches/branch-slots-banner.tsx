@@ -13,6 +13,7 @@ import {
   limitUsageBorderClass,
   limitUsagePct,
 } from "@/lib/billing/limit-display";
+import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 import type { PharmacySubscriptionSummary } from "@/lib/saas/types";
 
 type Props = {
@@ -59,7 +60,7 @@ export function BranchSlotsBanner({
           ) : null}
           {!canAddBranch && !needsAddonForNewBranch && branchLimit > 0 ? (
             <DashboardButton size="sm" asChild>
-              <Link href="/pharmacy-dashboard/billing">Upgrade plan</Link>
+              <Link href={PHARMACY_ROUTES.billing}>Upgrade plan</Link>
             </DashboardButton>
           ) : null}
         </div>
@@ -100,7 +101,7 @@ export function BranchSlotsBanner({
           <p>
             No active subscription.{" "}
             <Link
-              href="/pharmacy-dashboard/billing"
+              href={PHARMACY_ROUTES.billing}
               className="font-medium underline"
             >
               Subscribe

@@ -3,6 +3,7 @@
 import {
   deleteStaffMember,
   getStaffUsers,
+  resendStaffInvite,
   staffUsersQueryKey,
   updateStaffMember,
   type StaffUpdatePayload,
@@ -40,5 +41,11 @@ export function useDeleteStaffMutation() {
     mutationFn: deleteStaffMember,
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: staffUsersQueryKey }),
+  });
+}
+
+export function useResendStaffInviteMutation() {
+  return useMutation({
+    mutationFn: resendStaffInvite,
   });
 }

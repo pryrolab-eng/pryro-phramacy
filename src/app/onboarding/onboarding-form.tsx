@@ -177,7 +177,7 @@ export default function OnboardingForm() {
   const finishOnboarding = useCallback(() => {
     markWizardComplete(pharmacyId);
     clearOnboardingIntent();
-    router.push("/dashboard");
+    router.push("/app");
     router.refresh();
   }, [markWizardComplete, pharmacyId, router]);
 
@@ -276,7 +276,7 @@ export default function OnboardingForm() {
         }
 
         if (ph?.id && localStorage.getItem(onboardingDoneKey(ph.id)) === "1") {
-          router.replace("/dashboard");
+          router.replace("/app");
           return;
         }
 
@@ -290,8 +290,8 @@ export default function OnboardingForm() {
           return;
         }
 
-        if (data.redirect === "/dashboard" || data.completed) {
-          router.replace("/dashboard");
+        if (data.redirect === "/app" || data.completed) {
+          router.replace("/app");
           return;
         }
 

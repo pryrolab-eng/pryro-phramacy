@@ -4,6 +4,7 @@ import { createClient } from "../../../supabase/server";
 import { isSmtpConfigured, sendMail } from "./mailer";
 import { confirmationEmailHtml, recoveryEmailHtml } from "./templates";
 import { isSupabaseEmailRateLimited } from "./supabase-rate-limit";
+import { RESET_PASSWORD_PATH } from "@/lib/middleware/auth-routes";
 
 export type AuthEmailResult =
   | { ok: true; provider: "supabase" | "nodemailer" }
@@ -111,7 +112,7 @@ async function generateLinkAndSend(
 /** Password reset: Supabase first, Nodemailer + admin link on rate limit. */
 export async function sendPasswordRecoveryEmail(
   email: string,
-  redirectTo = "/dashboard/reset-password"
+  redirectTo = RESET_PASSWORD_PATH
 ): Promise<AuthEmailResult> {
   const redirect = recoveryRedirectUrl(redirectTo);
 

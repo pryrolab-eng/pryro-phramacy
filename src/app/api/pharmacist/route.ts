@@ -6,14 +6,8 @@ import {
   entitlementErrorResponse,
   requirePharmacyEntitlement,
 } from '@/lib/subscription/assert-entitlement'
-
-function generateTemporaryPassword(): string {
-  return (
-    Math.random().toString(36).slice(2, 6) +
-    Math.random().toString(36).slice(2, 6).toUpperCase() +
-    '!1'
-  )
-}
+import { generateTemporaryPassword } from '@/lib/staff/temporary-password'
+import { buildStaffInviteApiPayload } from '@/lib/staff/staff-invite-response'
 
 export async function POST(request: Request) {
   try {
@@ -85,15 +79,17 @@ export async function POST(request: Request) {
       temporaryPassword: password,
     })
 
-    return NextResponse.json({
-      success: true,
-      message: emailResult.ok
-        ? 'Team member created and invitation email sent'
-        : 'Team member created; invitation email could not be sent',
-      userId: authUser.user.id,
-      emailSent: emailResult.ok,
-      emailError: emailResult.ok ? undefined : emailResult.error,
-    })
+    return NextResponse.json(
+      buildStaffInviteApiPayload({
+        email,
+        temporaryPassword: password,
+        emailResult,
+        userId: authUser.user.id,
+        messageWhenEmailOk: 'Team member created and invitation email sent',
+        messageWhenEmailFailed:
+          'Team member created; invitation email could not be sent',
+      }),
+    )
   } catch (error) {
     const mapped = entitlementErrorResponse(error)
     if (mapped) {

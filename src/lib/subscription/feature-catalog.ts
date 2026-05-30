@@ -1,3 +1,5 @@
+import { PHARMACY_GRACE_ROUTES } from "@/lib/routes/pharmacy-paths";
+
 /** Required boolean features for sellable main plans. */
 export const REQUIRED_MAIN_PLAN_FEATURE_KEYS = [
   "app.dashboard",
@@ -20,10 +22,7 @@ export const LIMIT_COLUMN_BY_KEY: Record<string, string> = {
 
 /** Routes always reachable for per-feature checks when subscription is active. */
 export const ALWAYS_ALLOWED_ROUTES = [
-  "/pharmacy-dashboard",
-  "/pharmacist-dashboard",
-  "/pos",
-  "/pharmacy-dashboard/billing",
+  ...PHARMACY_GRACE_ROUTES,
   "/sign-in",
   "/sign-out",
 ];

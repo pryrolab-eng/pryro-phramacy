@@ -10,12 +10,25 @@ export type CreatePharmacistInput = {
   pharmacy_name?: string;
 };
 
+export type StaffInviteCredentials = {
+  email: string;
+  temporaryPassword: string;
+  signInUrl: string;
+};
+
+export type StaffInviteDeliveryResult = {
+  emailSent?: boolean;
+  emailError?: string;
+  credentials?: StaffInviteCredentials;
+};
+
 type CreatePharmacistResponse = {
   success?: boolean;
   message?: string;
   userId?: string;
   emailSent?: boolean;
   emailError?: string;
+  credentials?: StaffInviteCredentials;
   error?: string;
 };
 

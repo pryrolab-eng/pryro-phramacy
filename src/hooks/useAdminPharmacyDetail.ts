@@ -5,6 +5,7 @@ import {
   getAdminPharmacyDetail,
   type AdminPharmacyDetailPayload,
 } from "@/lib/http/admin/pharmacies";
+import { adminDetailQueryDefaults } from "@/lib/query/admin-query-options";
 
 export const adminPharmacyDetailQueryKey = (id: string) =>
   ["admin", "pharmacies", id, "detail"] as const;
@@ -12,9 +13,9 @@ export const adminPharmacyDetailQueryKey = (id: string) =>
 /** Call only when `pharmacyId` is non-empty (e.g. detail panel mounted while dialog is open). */
 export function useAdminPharmacyDetail(pharmacyId: string) {
   return useQuery({
+    ...adminDetailQueryDefaults,
     queryKey: adminPharmacyDetailQueryKey(pharmacyId),
     queryFn: () => getAdminPharmacyDetail(pharmacyId),
-    staleTime: 30_000,
     retry: 1,
   });
 }

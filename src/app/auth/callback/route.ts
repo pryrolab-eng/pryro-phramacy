@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
+import { POST_AUTH_ENTRY_PATH } from "@/lib/auth/resolve-home-redirect";
 import { createRouteHandlerClient } from "../../../../supabase/route-handler";
 
 function redirectWithError(
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const redirectTo = redirect_to || "/onboarding";
+  const redirectTo = redirect_to || POST_AUTH_ENTRY_PATH;
 
   return withCookies(
     NextResponse.redirect(new URL(redirectTo, requestUrl.origin)),

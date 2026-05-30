@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createRouteHandlerClient } from "../../../../../supabase/route-handler";
 import { sendPasswordRecoveryEmail } from "@/lib/email/auth-emails";
+import { RESET_PASSWORD_PATH } from "@/lib/middleware/auth-routes";
 
 export async function POST(request: NextRequest) {
   const { json } = createRouteHandlerClient(request);
@@ -16,7 +17,7 @@ export async function POST(request: NextRequest) {
     const redirectTo =
       (body.next as string)?.trim() ||
       (body.redirect_to as string)?.trim() ||
-      "/dashboard/reset-password";
+      RESET_PASSWORD_PATH;
 
     const result = await sendPasswordRecoveryEmail(email, redirectTo);
 

@@ -29,6 +29,7 @@ import { useState, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 
 import { ADMIN_SIDEBAR_NAV } from '@/lib/admin/navigation'
+import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
 
 const superAdminNavigation = ADMIN_SIDEBAR_NAV.map((item) => ({
   name: item.title,
@@ -37,22 +38,22 @@ const superAdminNavigation = ADMIN_SIDEBAR_NAV.map((item) => ({
 }))
 
 const pharmacyOwnerNavigation = [
-  { name: 'Pharmacy Dashboard', href: '/pharmacy-dashboard', icon: LayoutDashboard },
-  { name: 'Inventory', href: '/inventory', icon: Package },
-  { name: 'POS', href: '/pos', icon: ShoppingCart },
-  { name: 'Sales', href: '/sales', icon: Receipt },
-  { name: 'Customers', href: '/customers', icon: Users },
-  { name: 'Branches', href: '/branches', icon: Building2 },
-  { name: 'Template Designer', href: '/admin/insurance-templates', icon: FileText },
-  { name: 'Staff Manage', href: '/staff', icon: UserCog },
-  { name: 'Settings', href: '/settings', icon: Settings },
+  { name: 'Pharmacy Dashboard', href: PHARMACY_ROUTES.dashboard, icon: LayoutDashboard },
+  { name: 'Inventory', href: PHARMACY_ROUTES.inventory, icon: Package },
+  { name: 'POS', href: PHARMACY_ROUTES.pos, icon: ShoppingCart },
+  { name: 'Sales', href: PHARMACY_ROUTES.sales, icon: Receipt },
+  { name: 'Customers', href: PHARMACY_ROUTES.customers, icon: Users },
+  { name: 'Branches', href: PHARMACY_ROUTES.branches, icon: Building2 },
+  { name: 'Insurance templates', href: '/admin/insurance-templates', icon: FileText },
+  { name: 'Staff Manage', href: PHARMACY_ROUTES.staff, icon: UserCog },
+  { name: 'Settings', href: PHARMACY_ROUTES.settings, icon: Settings },
 ]
 
 const pharmacistNavigation = [
-  { name: 'Pharmacist Dashboard', href: '/pharmacist-dashboard', icon: Pill },
-  { name: 'Prescriptions', href: '/prescriptions', icon: Receipt },
-  { name: 'Inventory', href: '/inventory', icon: Package },
-  { name: 'Customers', href: '/customers', icon: Users },
+  { name: 'Pharmacist Dashboard', href: PHARMACY_ROUTES.pharmacist, icon: Pill },
+  { name: 'Prescriptions', href: PHARMACY_ROUTES.prescriptions, icon: Receipt },
+  { name: 'Inventory', href: PHARMACY_ROUTES.inventory, icon: Package },
+  { name: 'Customers', href: PHARMACY_ROUTES.customers, icon: Users },
 ]
 
 function SubscriptionPlanCard() {
@@ -94,7 +95,7 @@ function SubscriptionPlanCard() {
               {planData.daysRemaining} days
             </span>
           </div>
-          <Link href="/settings" className="block">
+          <Link href={PHARMACY_ROUTES.settings} className="block">
             <Button variant="outline" size="sm" className="w-full text-[10px] h-6">
               Manage Plan
             </Button>

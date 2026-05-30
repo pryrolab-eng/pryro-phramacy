@@ -1,23 +1,23 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../../../supabase/server'
+import { NextResponse } from 'next/server'
+import { requireTwoFactorEnrollment } from '@/lib/security/require-two-factor-enrollment'
 import { authenticator } from 'otplib'
 import QRCode from 'qrcode'
 import crypto from 'crypto'
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const gate = await requireTwoFactorEnrollment()
+    if (!gate.ok) {
+      return NextResponse.json({ error: gate.error }, { status: gate.status })
     }
+
+    const { user, supabase, issuer } = gate.context
 
     // Generate secret
     const secret = authenticator.generateSecret()
     
     // Get user email for QR code
-    const otpauthUrl = authenticator.keyuri(user.email || 'user', 'Pryrox Pharmacy', secret)
+    const otpauthUrl = authenticator.keyuri(user.email || 'user', issuer, secret)
     
     // Generate QR code
     const qrCode = await QRCode.toDataURL(otpauthUrl)

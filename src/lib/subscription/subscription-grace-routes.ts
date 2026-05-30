@@ -1,6 +1,7 @@
 import { isCashierLikeRole } from "@/lib/subscription/nav-config";
+import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 
-export const BILLING_ROUTE = "/pharmacy-dashboard/billing";
+export const BILLING_ROUTE = PHARMACY_ROUTES.billing;
 
 const AUTH_ROUTES = ["/sign-in", "/sign-out"];
 
@@ -8,9 +9,9 @@ const AUTH_ROUTES = ["/sign-in", "/sign-out"];
 export function resolveSubscriptionHomePath(
   role: string | null | undefined,
 ): string {
-  if (role === "pharmacist") return "/pharmacist-dashboard";
-  if (isCashierLikeRole(role)) return "/pos";
-  return "/pharmacy-dashboard";
+  if (role === "pharmacist") return PHARMACY_ROUTES.pharmacist;
+  if (isCashierLikeRole(role)) return PHARMACY_ROUTES.pos;
+  return PHARMACY_ROUTES.dashboard;
 }
 
 export function normalizeRoutePath(pathname: string): string {
@@ -21,7 +22,9 @@ export function isBillingRoute(pathname: string): boolean {
   const normalized = normalizeRoutePath(pathname);
   return (
     normalized === BILLING_ROUTE ||
-    normalized.startsWith(`${BILLING_ROUTE}/`)
+    normalized.startsWith(`${BILLING_ROUTE}/`) ||
+    normalized === "/pharmacy-dashboard/billing" ||
+    normalized.startsWith("/pharmacy-dashboard/billing/")
   );
 }
 

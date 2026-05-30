@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { FormMessage, type Message } from "@/components/form-message";
 import { Loader2 } from "lucide-react";
+import { RESET_PASSWORD_PATH } from "@/lib/middleware/auth-routes";
 
 type Props = {
   initialMessage?: Message;
@@ -23,7 +24,7 @@ function getHashParams(): URLSearchParams | null {
 }
 
 function clearUrlCredentials() {
-  window.history.replaceState({}, "", "/dashboard/reset-password");
+  window.history.replaceState({}, "", RESET_PASSWORD_PATH);
 }
 
 export function ResetPasswordForm({ initialMessage }: Props) {

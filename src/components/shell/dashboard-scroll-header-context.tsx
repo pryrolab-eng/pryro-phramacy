@@ -20,13 +20,11 @@ type DashboardScrollHeaderContextValue = {
   config: HeaderConfig | null;
   setHeaderConfig: (config: HeaderConfig | null) => void;
   registerSentinel: (element: HTMLElement | null) => void;
+  setScrollRoot: (element: HTMLElement | null) => void;
 };
 
 const DashboardScrollHeaderContext =
   createContext<DashboardScrollHeaderContextValue | null>(null);
-
-/** Height of sticky shell bar — sentinel pins when scrolled past this offset. */
-const SHELL_BAR_OFFSET_PX = 52;
 
 export function DashboardScrollHeaderProvider({
   children,
@@ -35,26 +33,45 @@ export function DashboardScrollHeaderProvider({
 }) {
   const [isPinned, setIsPinned] = useState(false);
   const [config, setHeaderConfig] = useState<HeaderConfig | null>(null);
+  const scrollRootRef = useRef<HTMLElement | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const sentinelRef = useRef<HTMLElement | null>(null);
 
-  const registerSentinel = useCallback((element: HTMLElement | null) => {
+  const connectObserver = useCallback(() => {
     observerRef.current?.disconnect();
     observerRef.current = null;
 
-    if (!element) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
 
     observerRef.current = new IntersectionObserver(
       ([entry]) => {
         setIsPinned(!entry.isIntersecting);
       },
       {
-        root: null,
-        rootMargin: `-${SHELL_BAR_OFFSET_PX}px 0px 0px 0px`,
+        root: scrollRootRef.current,
+        rootMargin: "0px",
         threshold: 0,
       },
     );
-    observerRef.current.observe(element);
+    observerRef.current.observe(sentinel);
   }, []);
+
+  const setScrollRoot = useCallback(
+    (element: HTMLElement | null) => {
+      scrollRootRef.current = element;
+      connectObserver();
+    },
+    [connectObserver],
+  );
+
+  const registerSentinel = useCallback(
+    (element: HTMLElement | null) => {
+      sentinelRef.current = element;
+      connectObserver();
+    },
+    [connectObserver],
+  );
 
   useEffect(() => {
     return () => observerRef.current?.disconnect();
@@ -66,8 +83,9 @@ export function DashboardScrollHeaderProvider({
       config,
       setHeaderConfig,
       registerSentinel,
+      setScrollRoot,
     }),
-    [isPinned, config, registerSentinel],
+    [isPinned, config, registerSentinel, setScrollRoot],
   );
 
   return (
@@ -85,6 +103,7 @@ export function useDashboardScrollHeader() {
       config: null,
       setHeaderConfig: () => {},
       registerSentinel: () => {},
+      setScrollRoot: () => {},
     }
   );
 }

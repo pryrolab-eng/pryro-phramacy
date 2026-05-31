@@ -3,6 +3,8 @@ import { createClient } from "../../../../../supabase/server";
 import { createServiceClient } from "../../../../../supabase/service";
 import { resolveActivePharmacyContext } from "@/lib/pharmacy/active-pharmacy";
 import { getStaffAllowedBranchIds } from "@/lib/pharmacy/staff-branch-access";
+import { loadRolePermissions } from "@/lib/rbac/permissions";
+import { userMustChangePassword } from "@/lib/auth/must-change-password";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +29,7 @@ export async function GET() {
       .maybeSingle();
 
     let allowedBranchIds: string[] | null = null;
+    let permissions: string[] = [];
     if (ctx.activePharmacyId) {
       allowedBranchIds = await getStaffAllowedBranchIds(
         admin,
@@ -34,6 +37,7 @@ export async function GET() {
         ctx.activePharmacyId,
         ctx.role,
       );
+      permissions = await loadRolePermissions(admin, ctx.role);
     }
 
     return NextResponse.json({
@@ -47,6 +51,8 @@ export async function GET() {
       activeBranchId: ctx.activeBranchId,
       role: ctx.role,
       allowedBranchIds,
+      permissions,
+      mustChangePassword: userMustChangePassword(user),
       memberships: ctx.memberships.map((m) => ({
         pharmacyId: m.pharmacy_id,
         pharmacyName: m.pharmacy_name,

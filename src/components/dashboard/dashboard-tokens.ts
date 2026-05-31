@@ -1,14 +1,15 @@
 /** Shared Untitled-style class tokens for dashboard UI. Import here — do not duplicate in pages. */
 
 export const dashboardSurfaces = {
-  page: "flex-1 min-h-0 bg-neutral-50/80 dark:bg-neutral-950/40",
-  pageInner: "mx-auto w-full max-w-[1400px] space-y-6 p-6 md:p-8",
+  page: "flex min-h-full min-w-0 flex-1 flex-col bg-neutral-50/80 dark:bg-neutral-950/40",
+  pageInner:
+    "mx-auto w-full min-w-0 max-w-[1400px] space-y-4 p-4 sm:space-y-6 sm:p-6 md:p-8",
   card: "rounded-xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900/60",
   sectionHeader:
-    "flex items-start justify-between gap-3 border-b border-neutral-100 px-5 py-4 dark:border-neutral-800",
-  sectionBody: "p-5",
+    "flex flex-col gap-3 border-b border-neutral-100 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:px-5 sm:py-4 dark:border-neutral-800",
+  sectionBody: "p-4 sm:p-5",
   toolbar:
-    "flex flex-wrap items-center gap-1.5 rounded-lg border border-neutral-200/80 bg-neutral-50/80 p-1.5 dark:border-neutral-800 dark:bg-neutral-900/40",
+    "flex w-full min-w-0 flex-wrap items-center gap-2 rounded-lg border border-neutral-200/80 bg-neutral-50/80 p-2 sm:gap-1.5 sm:p-1.5 dark:border-neutral-800 dark:bg-neutral-900/40",
   pill: "inline-flex h-8 items-center gap-2 rounded-lg border border-neutral-200/80 bg-neutral-50 px-2.5 text-xs font-medium text-neutral-700 shadow-sm dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-neutral-200",
   iconBox:
     "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-neutral-200/80 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800/50",
@@ -50,7 +51,7 @@ export const dashboardChrome = {
   sidebarHeader:
     "flex shrink-0 flex-col justify-center gap-0 px-2 py-0 border-b border-neutral-200/80 dark:border-neutral-800",
   shellBar:
-    "sticky top-0 z-20 flex shrink-0 items-center gap-3 border-b border-neutral-200/80 bg-white/90 px-4 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:border-neutral-800 dark:bg-neutral-950/90 md:px-6",
+    "z-20 flex shrink-0 flex-wrap items-center gap-2 border-b border-neutral-200/80 bg-white/90 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:border-neutral-800 dark:bg-neutral-950/90 sm:gap-3 sm:px-4 md:flex-nowrap md:px-6 md:py-0",
 } as const;
 
 export const dashboardButtonClass = {

@@ -10,6 +10,7 @@ import {
   SettingsRow,
 } from "@/components/settings/settings-primitives";
 import { useSettingsPage } from "@/components/settings/settings-page-provider";
+import { ChangePasswordSettingsRow } from "@/components/auth/change-password-settings-row";
 
 export function SettingsSecurityPanel() {
   const {
@@ -27,6 +28,9 @@ export function SettingsSecurityPanel() {
       />
 
       <SettingsSection title="Your account">
+        <div className="border-b border-neutral-100 pb-4 dark:border-neutral-800">
+          <ChangePasswordSettingsRow />
+        </div>
         <SettingsRow
           title="Two-factor authentication"
           description={
@@ -85,9 +89,9 @@ export function SettingsSecurityPanel() {
       <div className="flex items-start gap-2 rounded-lg border border-neutral-200/80 bg-neutral-50/50 p-4 text-xs text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800/30 dark:text-neutral-400">
         <Shield className="mt-0.5 size-4 shrink-0" />
         <p>
-          Platform IP whitelist and API keys are managed in Admin → Settings. For
-          password changes, use your account profile or contact your pharmacy
-          administrator.
+          Platform IP whitelist and API keys are managed in Admin → Settings.
+          Team members with temporary passwords must set a new password on first
+          sign-in.
         </p>
       </div>
     </div>

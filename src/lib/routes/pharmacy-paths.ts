@@ -19,6 +19,8 @@ export const PHARMACY_ROUTES = {
   reports: "/pharmacy/reports",
   activity: "/pharmacy/activity",
   settings: "/pharmacy/settings",
+  staffDashboard: "/pharmacy/staff-dashboard",
+  staffSettings: "/pharmacy/staff-settings",
 } as const;
 
 export type PharmacyRouteKey = keyof typeof PHARMACY_ROUTES;
@@ -27,6 +29,8 @@ export type PharmacyRouteKey = keyof typeof PHARMACY_ROUTES;
 export const PHARMACY_GRACE_ROUTES = [
   PHARMACY_ROUTES.dashboard,
   PHARMACY_ROUTES.pharmacist,
+  PHARMACY_ROUTES.staffDashboard,
+  PHARMACY_ROUTES.staffSettings,
   PHARMACY_ROUTES.pos,
   PHARMACY_ROUTES.billing,
 ] as const;

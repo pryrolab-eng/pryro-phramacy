@@ -1,5 +1,6 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
+import { isStaffWorkspaceRole } from "@/lib/rbac/pharmacy-roles";
 import { selectPrimaryMembership } from "@/utils/select-pharmacy-membership";
 
 /** Post-login entry URL — role router only; not a workspace UI. */
@@ -85,8 +86,8 @@ export async function resolveAuthenticatedHomePath(
         return {
           kind: "redirect",
           path:
-            role === "pharmacist"
-              ? PHARMACY_ROUTES.pharmacist
+            isStaffWorkspaceRole(role)
+              ? PHARMACY_ROUTES.staffDashboard
               : PHARMACY_ROUTES.dashboard,
         };
       }
@@ -95,11 +96,8 @@ export async function resolveAuthenticatedHomePath(
     return { kind: "redirect", path: "/onboarding" };
   }
 
-  if (userPharmacy.role === "pharmacist") {
-    return { kind: "redirect", path: PHARMACY_ROUTES.pharmacist };
-  }
-  if (userPharmacy.role === "cashier" || userPharmacy.role === "staff") {
-    return { kind: "redirect", path: PHARMACY_ROUTES.pos };
+  if (isStaffWorkspaceRole(userPharmacy.role)) {
+    return { kind: "redirect", path: PHARMACY_ROUTES.staffDashboard };
   }
   return { kind: "redirect", path: PHARMACY_ROUTES.dashboard };
 }

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "../../../../supabase/server";
 import { selectPrimaryMembership } from "@/utils/select-pharmacy-membership";
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
-import { isCashierLikeRole } from "@/lib/subscription/nav-config";
+import { isStaffWorkspaceRole } from "@/lib/rbac/pharmacy-roles";
 
 /** Tenant root — redirect to role-appropriate home under /pharmacy. */
 export default async function PharmacyRootPage() {
@@ -24,11 +24,8 @@ export default async function PharmacyRootPage() {
   const membership = selectPrimaryMembership(membershipRows ?? undefined);
   const role = membership?.role;
 
-  if (role === "pharmacist") {
-    redirect(PHARMACY_ROUTES.pharmacist);
-  }
-  if (isCashierLikeRole(role)) {
-    redirect(PHARMACY_ROUTES.pos);
+  if (isStaffWorkspaceRole(role)) {
+    redirect(PHARMACY_ROUTES.staffDashboard);
   }
   redirect(PHARMACY_ROUTES.dashboard);
 }

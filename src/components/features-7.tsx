@@ -1,17 +1,23 @@
 import { Activity, Cpu, DraftingCompass, Lock, Mail, Sparkles, Zap } from 'lucide-react'
+import {
+    landingContainer,
+    landingH2,
+    landingLead,
+    landingSectionTight,
+} from '@/lib/landing-layout'
 
 export default function FeaturesSection() {
     return (
-        <section className="overflow-hidden pb-6 md:pb-10 pt-8 md:pt-12">
-            <div className="mx-auto max-w-6xl px-6 space-y-12">
+        <section className={`${landingSectionTight} overflow-hidden`}>
+            <div className={`${landingContainer} space-y-12 lg:space-y-16 xl:space-y-20`}>
 
                 {/* Top row: Built for Scaling (left) + Performance Analytics (right) */}
-                <div className="grid items-start gap-8 lg:grid-cols-2">
+                <div className="grid items-start gap-8 lg:grid-cols-2 lg:gap-10 xl:gap-14 2xl:gap-16">
 
                     {/* Built for Scaling teams */}
                     <div className="flex flex-col justify-center">
-                        <h2 className="text-3xl font-semibold lg:text-4xl">Built for Scaling teams</h2>
-                        <p className="mt-4 text-muted-foreground">Everything your pharmacy team needs to grow — from real-time order tracking and secure payments to collaboration tools that scale with your business.</p>
+                        <h2 className={landingH2}>Built for Scaling teams</h2>
+                        <p className={`${landingLead} mt-4`}>Everything your pharmacy team needs to grow — from real-time order tracking and secure payments to collaboration tools that scale with your business.</p>
                         <ul className="mt-6 divide-y border-y *:flex *:items-center *:gap-3 *:py-3 text-sm">
                             <li><Mail className="size-4 shrink-0" /> Email and web support</li>
                             <li><Zap className="size-4 shrink-0" /> Fast response time</li>
@@ -27,11 +33,11 @@ export default function FeaturesSection() {
                     </div>
 
                     {/* Performance Analytics dashboard */}
-                    <div className="mask-b-from-75% mask-l-from-75% mask-b-to-95% mask-l-to-95% relative -mx-4 pr-3 pt-3 md:-mx-0">
-                        <div className="perspective-midrange">
-                            <div className="rotate-x-6 -skew-2">
-                                <div className="aspect-88/36 relative bg-white dark:bg-zinc-950 rounded-xl border border-zinc-200/80 dark:border-zinc-800 shadow-2xl flex flex-col overflow-hidden">
-                                    <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/50 dark:bg-zinc-900/30">
+                    <div className="mask-b-from-75% mask-l-from-75% mask-b-to-95% mask-l-to-95% relative -mx-4 min-w-0 pr-3 pt-3 md:-mx-0">
+                        <div className="perspective-midrange max-md:perspective-none">
+                            <div className="max-md:transform-none md:rotate-x-6 md:-skew-2">
+                                <div className="relative flex min-h-[280px] flex-col overflow-hidden rounded-xl border border-zinc-200/80 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950 sm:min-h-[320px] md:aspect-88/36">
+                                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50/50 px-4 py-3 dark:border-zinc-800/60 dark:bg-zinc-900/30 sm:px-6 sm:py-4">
                                         <div className="flex items-center gap-3">
                                             <div className="size-8 rounded-lg bg-purple-100 dark:bg-purple-500/20 flex items-center justify-center">
                                                 <Sparkles className="size-4 text-purple-600 dark:text-purple-400" />
@@ -44,22 +50,22 @@ export default function FeaturesSection() {
                                             <span className="px-3 py-1 rounded-md text-xs font-medium text-zinc-500 cursor-pointer">1Y</span>
                                         </div>
                                     </div>
-                                    <div className="flex-1 flex p-6 gap-6">
-                                        <div className="flex flex-col gap-4 w-1/3">
+                                    <div className="flex flex-1 flex-col gap-4 p-4 sm:flex-row sm:gap-6 sm:p-6">
+                                        <div className="flex w-full flex-row gap-3 sm:w-1/3 sm:flex-col sm:gap-4">
                                             {[
                                                 { label: 'Total Revenue', value: '$84,203', trend: '+12.5%', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20' },
                                                 { label: 'New Patients', value: '3,291', trend: '+5.2%', color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-500/10 border-purple-100 dark:border-purple-500/20' },
                                             ].map(stat => (
-                                                <div key={stat.label} className="p-4 rounded-xl border border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/50 dark:bg-zinc-900/20 flex-1 flex flex-col justify-center">
+                                                <div key={stat.label} className="flex min-w-0 flex-1 flex-col justify-center rounded-xl border border-zinc-100 bg-zinc-50/50 p-3 dark:border-zinc-800/60 dark:bg-zinc-900/20 sm:p-4">
                                                     <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5">{stat.label}</p>
                                                     <div className="flex items-baseline gap-2.5">
-                                                        <span className="text-3xl font-bold text-zinc-900 dark:text-white tracking-tight">{stat.value}</span>
+                                                        <span className="text-xl font-bold tracking-tight text-zinc-900 dark:text-white sm:text-3xl">{stat.value}</span>
                                                         <span className={`text-[10px] font-bold ${stat.color} ${stat.bg} px-1.5 py-0.5 rounded border`}>{stat.trend}</span>
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
-                                        <div className="flex-1 rounded-xl border border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/30 dark:bg-zinc-900/20 p-5 flex flex-col relative overflow-hidden group">
+                                        <div className="relative flex min-h-[160px] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-zinc-100 bg-zinc-50/30 p-4 group dark:border-zinc-800/60 dark:bg-zinc-900/20 sm:min-h-0 sm:p-5">
                                             <div className="flex justify-between items-start mb-4">
                                                 <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Revenue Growth</p>
                                                 <div className="flex items-center gap-1.5">
@@ -98,7 +104,7 @@ export default function FeaturesSection() {
                 </div>
 
                 {/* Bottom row: 4 feature cards */}
-                <div className="grid grid-cols-2 gap-x-6 gap-y-8 sm:gap-8 lg:grid-cols-4">
+                <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 sm:gap-8 lg:grid-cols-4 xl:gap-10">
                     <div className="space-y-3">
                         <div className="flex items-center gap-2">
                             <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"><Zap className="size-4" /></div>

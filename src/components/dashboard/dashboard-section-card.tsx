@@ -28,7 +28,11 @@ export function DashboardSectionCard({
             <p className={dashboardText.sectionDescription}>{description}</p>
           ) : null}
         </div>
-        {action ? <div className="shrink-0">{action}</div> : null}
+        {action ? (
+          <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+            {action}
+          </div>
+        ) : null}
       </div>
       <div className={cn(dashboardSurfaces.sectionBody, contentClassName)}>
         {children}

@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Crown } from "lucide-react";
+import { Crown, Sparkles } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   Sidebar,
@@ -212,6 +212,20 @@ export function DashboardRoleSidebar({
             </>
           )
         ) : null}
+        <div
+          className={cn(
+            "mx-2 mb-1 flex items-center gap-2 rounded-lg border border-neutral-200/80 bg-neutral-50/80 px-2.5 py-2 text-xs text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900/40 dark:text-neutral-400",
+            dashboardSidebarTokens.collapsedHidden,
+          )}
+        >
+          <Sparkles className="size-3.5 shrink-0 text-neutral-500" />
+          <span className="min-w-0 flex-1 leading-snug">
+            <span className="font-medium text-neutral-700 dark:text-neutral-300">
+              Ctrl+K
+            </span>{" "}
+            global search
+          </span>
+        </div>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarUserAccountMenu

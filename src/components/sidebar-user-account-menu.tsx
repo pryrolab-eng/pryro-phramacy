@@ -10,7 +10,10 @@ import {
   MoreVertical,
   Settings,
   User,
+  KeyRound,
 } from "lucide-react";
+import { ChangePasswordDialog } from "@/components/auth/change-password-dialog";
+import { isStaffWorkspaceRole } from "@/lib/rbac/pharmacy-roles";
 import { cn } from "@/lib/utils";
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -97,6 +100,7 @@ export function SidebarUserAccountMenu({
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
   const { context, switchPharmacy, isPending: contextLoading } = useActivePharmacy();
 
@@ -142,7 +146,12 @@ export function SidebarUserAccountMenu({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, router]);
 
+  const settingsHref = isStaffWorkspaceRole(context.role)
+    ? PHARMACY_ROUTES.staffSettings
+    : `${PHARMACY_ROUTES.settings}?tab=security`;
+
   return (
+    <>
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <SidebarMenuButton
@@ -193,26 +202,40 @@ export function SidebarUserAccountMenu({
         className="w-[min(100vw-2rem,20rem)] rounded-xl border border-border/80 bg-popover p-1.5 shadow-lg"
       >
         <div className="py-0.5">
+          <DropdownMenuItem
+            className="flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 focus:bg-accent"
+            onSelect={() => {
+              setOpen(false);
+              setChangePasswordOpen(true);
+            }}
+          >
+            <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="flex-1 text-sm font-medium">Change password</span>
+          </DropdownMenuItem>
           <MenuActionLink
-            href={`${PHARMACY_ROUTES.settings}?tab=security`}
+            href={settingsHref}
             icon={User}
-            label="View profile"
+            label={isStaffWorkspaceRole(context.role) ? "My settings" : "View profile"}
             shortcut={["⌘", "S"]}
             onNavigate={() => setOpen(false)}
           />
-          <MenuActionLink
-            href={`${PHARMACY_ROUTES.settings}?tab=general`}
-            icon={Settings}
-            label="Pharmacy settings"
-            shortcut={["⌘", ","]}
-            onNavigate={() => setOpen(false)}
-          />
-          <MenuActionLink
-            href={PHARMACY_ROUTES.billing}
-            icon={CreditCard}
-            label="Billing & plans"
-            onNavigate={() => setOpen(false)}
-          />
+          {!isStaffWorkspaceRole(context.role) ? (
+            <>
+              <MenuActionLink
+                href={`${PHARMACY_ROUTES.settings}?tab=general`}
+                icon={Settings}
+                label="Pharmacy settings"
+                shortcut={["⌘", ","]}
+                onNavigate={() => setOpen(false)}
+              />
+              <MenuActionLink
+                href={PHARMACY_ROUTES.billing}
+                icon={CreditCard}
+                label="Billing & plans"
+                onNavigate={() => setOpen(false)}
+              />
+            </>
+          ) : null}
         </div>
 
         <DropdownMenuSeparator className="my-1.5" />
@@ -306,5 +329,10 @@ export function SidebarUserAccountMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    <ChangePasswordDialog
+      open={changePasswordOpen}
+      onOpenChange={setChangePasswordOpen}
+    />
+    </>
   );
 }

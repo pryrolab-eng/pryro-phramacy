@@ -2,6 +2,13 @@
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import Link from 'next/link'
+import {
+    landingContainer,
+    landingContainerNarrow,
+    landingH2,
+    landingLead,
+    landingSectionTight,
+} from '@/lib/landing-layout'
 
 export default function FAQsFour() {
     const faqItems = [
@@ -38,14 +45,14 @@ export default function FAQsFour() {
     ]
 
     return (
-        <section className="pt-6 md:pt-10 pb-8 md:pb-12">
-            <div className="mx-auto max-w-5xl px-4 md:px-6">
-                <div className="mx-auto max-w-xl text-center">
-                    <h2 className="text-balance text-3xl font-bold md:text-4xl lg:text-5xl">Frequently Asked Questions</h2>
-                    <p className="text-muted-foreground mt-4 text-balance">Everything you need to know about Pryrox pharmacy management platform.</p>
+        <section className={landingSectionTight}>
+            <div className={landingContainer}>
+                <div className={`${landingContainerNarrow} text-center`}>
+                    <h2 className={landingH2}>Frequently Asked Questions</h2>
+                    <p className={`${landingLead} mt-4`}>Everything you need to know about Pryrox pharmacy management platform.</p>
                 </div>
 
-                <div className="mx-auto mt-12 max-w-xl">
+                <div className={`${landingContainerNarrow} mt-12 max-w-2xl`}>
                     <Accordion type="single" collapsible className="bg-muted dark:bg-muted/50 w-full rounded-2xl p-1">
                         {faqItems.map((item) => (
                             <div className="group" key={item.id}>

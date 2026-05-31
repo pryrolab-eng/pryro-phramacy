@@ -9,6 +9,12 @@ import {
 } from "@/lib/subscription/assert-entitlement";
 import { generateTemporaryPassword } from "@/lib/staff/temporary-password";
 import { buildStaffInviteApiPayload } from "@/lib/staff/staff-invite-response";
+import {
+  permissionErrorResponse,
+  requirePharmacyPermission,
+} from "@/lib/rbac/require-pharmacy-permission";
+import { PHARMACY_PERMISSIONS } from "@/lib/rbac/permissions";
+import { MUST_CHANGE_PASSWORD_METADATA_KEY } from "@/lib/auth/must-change-password";
 
 export async function POST(
   _request: NextRequest,
@@ -27,6 +33,7 @@ export async function POST(
       );
     }
 
+    await requirePharmacyPermission(user.id, PHARMACY_PERMISSIONS.staffManage);
     const pharmacyId = await requireSessionPharmacyId(supabase, user.id);
     const admin = createServiceClient();
 
@@ -83,7 +90,13 @@ export async function POST(
 
     const { error: passwordError } = await admin.auth.admin.updateUserById(
       member.user_id,
-      { password },
+      {
+        password,
+        user_metadata: {
+          ...(authData.user.user_metadata ?? {}),
+          [MUST_CHANGE_PASSWORD_METADATA_KEY]: true,
+        },
+      },
     );
     if (passwordError) {
       return NextResponse.json(
@@ -112,6 +125,10 @@ export async function POST(
       }),
     );
   } catch (error) {
+    const forbidden = permissionErrorResponse(error);
+    if (forbidden) {
+      return NextResponse.json(forbidden.body, { status: forbidden.status });
+    }
     const mapped = entitlementErrorResponse(error);
     if (mapped) {
       return NextResponse.json(mapped.body, { status: mapped.status });

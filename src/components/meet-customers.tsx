@@ -1,10 +1,11 @@
 'use client'
 import React from 'react'
+import { landingContainer, landingSectionTight } from '@/lib/landing-layout'
 
 export default function MeetCustomers() {
     return (
-        <section className="bg-background py-6">
-            <div className="mx-auto max-w-6xl px-6 text-center">
+        <section className={`${landingSectionTight} bg-background`}>
+            <div className={`${landingContainer} text-center`}>
                 <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-6">
                     Meet Our Customers · Trusted by leading companies worldwide
                 </p>

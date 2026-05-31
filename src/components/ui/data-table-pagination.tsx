@@ -34,7 +34,7 @@ export function DataTablePagination<TData>({
   const rowCount = table.getFilteredRowModel().rows.length;
 
   return (
-    <div className="flex flex-col gap-4 px-2 py-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 px-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:py-4">
       {showRowCount ? (
         <p className="text-sm text-muted-foreground">
           {rowCount} row{rowCount === 1 ? "" : "s"}
@@ -64,7 +64,7 @@ export function DataTablePagination<TData>({
             </SelectContent>
           </Select>
         </div>
-        <div className="flex items-center justify-center text-sm font-medium">
+        <div className="flex items-center justify-start text-sm font-medium sm:justify-center">
           Page {pageCount === 0 ? 0 : pageIndex + 1} of {pageCount || 1}
         </div>
         <div className="flex items-center gap-1">

@@ -4,16 +4,19 @@ import { selectPrimaryMembership } from '@/utils/select-pharmacy-membership'
 import { SidebarInset } from '@/components/ui/sidebar'
 import { SuperadminSidebar } from '@/components/superadmin-sidebar'
 import { PharmacySidebar } from '@/components/pharmacy-sidebar'
-import { PharmacistSidebar } from '@/components/pharmacist-sidebar'
-import { CashierSidebar } from '@/components/cashier-sidebar'
-import { isCashierLikeRole } from '@/lib/subscription/nav-config'
+import { StaffWorkspaceSidebar } from '@/components/sidebar/staff-workspace-sidebar'
+import { isStaffWorkspaceRole } from '@/lib/rbac/pharmacy-roles'
 import SubscriptionBlocker from '@/components/subscription-blocker'
 import { FeatureRouteGuard } from '@/components/subscription/feature-route-guard'
+import { StaffRoleRouteGuard } from '@/components/subscription/staff-role-route-guard'
 import { createServiceClient } from '../../../supabase/service'
 import { resolvePharmacyEntitlements } from '@/lib/subscription/lifecycle/entitlements'
 import { resolveActivePharmacyContext } from '@/lib/pharmacy/active-pharmacy'
 import { DashboardShellBar } from '@/components/shell/dashboard-shell-bar'
-import { DashboardProviders } from '@/components/shell/dashboard-providers'
+import {
+  DashboardMainScroll,
+  DashboardProviders,
+} from '@/components/shell/dashboard-providers'
 import { DashboardCommandPalette, AdminCommandPalette } from '@/components/dashboard'
 
 export default async function DashboardLayout({
@@ -84,25 +87,26 @@ export default async function DashboardLayout({
 
   const getSidebar = () => {
     if (isPlatformAdmin) return <SuperadminSidebar />
-    if (userRole === 'pharmacist') return <PharmacistSidebar />
-    if (isCashierLikeRole(userRole)) return <CashierSidebar />
+    if (isStaffWorkspaceRole(userRole)) return <StaffWorkspaceSidebar />
     return <PharmacySidebar />
   }
 
   const dashboardBody = (
     <>
       {getSidebar()}
-      <SidebarInset className="flex flex-col">
+      <SidebarInset className="flex h-svh min-h-0 min-w-0 flex-col overflow-hidden">
         <SubscriptionBlocker isExpired={isSubscriptionExpired} userRole={userRole} />
         <DashboardShellBar showBranchSwitcher={!isPlatformAdmin} />
         {!isPlatformAdmin ? <DashboardCommandPalette /> : <AdminCommandPalette />}
-        <div className="flex-1 min-h-0">
+        <DashboardMainScroll>
           {!isPlatformAdmin ? (
-            <FeatureRouteGuard>{children}</FeatureRouteGuard>
+            <FeatureRouteGuard>
+              <StaffRoleRouteGuard>{children}</StaffRoleRouteGuard>
+            </FeatureRouteGuard>
           ) : (
             children
           )}
-        </div>
+        </DashboardMainScroll>
       </SidebarInset>
     </>
   )

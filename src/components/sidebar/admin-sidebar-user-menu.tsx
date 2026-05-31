@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LogOut, MoreVertical, Settings, Shield } from "lucide-react";
+import { LogOut, MoreVertical, Settings, Shield, KeyRound } from "lucide-react";
+import { ChangePasswordDialog } from "@/components/auth/change-password-dialog";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -33,6 +34,7 @@ function handleSignOut() {
 export function AdminSidebarUserMenu({ userName }: { userName: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const initial = userName ? userName.charAt(0).toUpperCase() : "A";
 
   useEffect(() => {
@@ -52,6 +54,7 @@ export function AdminSidebarUserMenu({ userName }: { userName: string }) {
   }, [open, router]);
 
   return (
+    <>
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <SidebarMenuButton
@@ -106,6 +109,16 @@ export function AdminSidebarUserMenu({ userName }: { userName: string }) {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="cursor-pointer gap-3 px-2.5 py-2"
+          onSelect={() => {
+            setOpen(false);
+            setChangePasswordOpen(true);
+          }}
+        >
+          <KeyRound className="size-4 text-muted-foreground" />
+          <span className="flex-1 font-medium">Change password</span>
+        </DropdownMenuItem>
         <DropdownMenuItem asChild className="p-0 focus:bg-accent">
           <Link
             href="/admin/settings"
@@ -141,5 +154,10 @@ export function AdminSidebarUserMenu({ userName }: { userName: string }) {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    <ChangePasswordDialog
+      open={changePasswordOpen}
+      onOpenChange={setChangePasswordOpen}
+    />
+    </>
   );
 }

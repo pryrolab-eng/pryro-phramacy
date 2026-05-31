@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerClient } from '../../../../supabase/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
+import {
+  permissionErrorResponse,
+  requirePharmacyPermission,
+} from '@/lib/rbac/require-pharmacy-permission'
+import { PHARMACY_PERMISSIONS } from '@/lib/rbac/permissions'
 
 export async function GET() {
   try {
@@ -11,6 +16,8 @@ export async function GET() {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    await requirePharmacyPermission(user.id, PHARMACY_PERMISSIONS.staffManage)
 
     const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
 
@@ -54,6 +61,10 @@ export async function GET() {
 
     return NextResponse.json(formattedStaff)
   } catch (error) {
+    const forbidden = permissionErrorResponse(error)
+    if (forbidden) {
+      return NextResponse.json(forbidden.body, { status: forbidden.status })
+    }
     console.error('Error fetching staff:', error)
     return NextResponse.json({ error: 'Failed to fetch staff' }, { status: 500 })
   }

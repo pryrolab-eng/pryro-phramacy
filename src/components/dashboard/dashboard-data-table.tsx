@@ -67,17 +67,21 @@ export function DashboardDataTable<TData, TValue>({
 
   const cardToolbar =
     hasBuiltInSearch || toolbar ? (
-      <>
+      <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {hasBuiltInSearch ? (
           <DashboardSearchInput
             placeholder={searchPlaceholder}
             value={globalFilter ?? ""}
             onChange={(e) => onGlobalFilterChange?.(e.target.value)}
-            className="min-w-[200px] flex-1 max-w-md"
+            className="w-full min-w-0 sm:max-w-md sm:flex-1"
           />
         ) : null}
-        {toolbar}
-      </>
+        {toolbar ? (
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">
+            {toolbar}
+          </div>
+        ) : null}
+      </div>
     ) : undefined;
 
   return (
@@ -89,7 +93,7 @@ export function DashboardDataTable<TData, TValue>({
       toolbar={cardToolbar}
     >
       {tableHeader}
-      <div className={cn("px-4 pb-4", tableHeader && "pt-0")}>
+      <div className={cn("min-w-0 px-3 pb-3 sm:px-4 sm:pb-4", tableHeader && "pt-0")}>
         <DataTable
           {...dataTableProps}
           columns={columns}

@@ -16,6 +16,7 @@
     "utils": "@/lib/utils"
   },
   "registries": {
-    "@tailark": "https://tailark.com/r/{name}.json"
+    "@tailark": "https://tailark.com/r/{name}.json",
+    "@shadcn-space": "https://shadcnspace.com/r/{name}.json"
   }
 }

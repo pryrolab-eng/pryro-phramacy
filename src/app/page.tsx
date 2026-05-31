@@ -1,5 +1,13 @@
 import dynamic from "next/dynamic";
-import HeroSection from "@/components/hero-section";
+
+const HeroSection = dynamic(() => import("@/components/hero-section"), {
+  loading: () => (
+    <div
+      className="min-h-[70vh] animate-pulse bg-neutral-50/80 dark:bg-neutral-950/40"
+      aria-hidden
+    />
+  ),
+});
 
 const LandingSections = dynamic(
   () => import("@/components/landing-sections"),

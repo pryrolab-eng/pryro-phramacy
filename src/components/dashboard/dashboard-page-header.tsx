@@ -36,7 +36,7 @@ export function DashboardPageHeader({
         }}
         transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
         className={cn(
-          "flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between",
+          "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between md:items-center",
           isPinned && "pointer-events-none select-none",
         )}
         aria-hidden={isPinned}
@@ -50,7 +50,7 @@ export function DashboardPageHeader({
           </div>
         </div>
         {actions ? (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
             {actions}
           </div>
         ) : null}

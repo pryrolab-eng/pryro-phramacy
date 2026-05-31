@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CommandDialog,
@@ -11,44 +11,29 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
+import { CommandPaletteAdminResults } from "@/components/dashboard/command-palette-admin-results";
+import {
+  filterPaletteItems,
+  isGlobalSearchQuery,
+  PaletteShortcut,
+  toggleSidebarFromPalette,
+  useCommandPaletteHotkey,
+} from "@/components/dashboard/command-palette-utils";
+import { useAdminGlobalSearch } from "@/hooks/useGlobalSearch";
 import {
   buildAdminCommandPaletteItems,
   groupCommandPaletteItems,
   type CommandPaletteItem,
 } from "@/lib/dashboard/command-palette-items";
+import { MIN_GLOBAL_SEARCH_LENGTH } from "@/lib/search/escape-ilike";
 
-function PaletteShortcut({ keys }: { keys: string[] }) {
-  return (
-    <span className="ml-auto flex items-center gap-0.5">
-      {keys.map((key) => (
-        <CommandShortcut key={key} className="inline">
-          {key}
-        </CommandShortcut>
-      ))}
-    </span>
-  );
-}
-
-function toggleSidebarFromPalette() {
-  const isMac =
-    typeof navigator !== "undefined" &&
-    /Mac|iPhone|iPad/i.test(navigator.platform);
-  window.dispatchEvent(
-    new KeyboardEvent("keydown", {
-      key: "b",
-      code: "KeyB",
-      ctrlKey: !isMac,
-      metaKey: isMac,
-      bubbles: true,
-      cancelable: true,
-    }),
-  );
-}
-
-/** Global Ctrl+K command palette for platform admin routes. */
+/** Global Ctrl+K — search platform data, admin pages, and shortcuts. */
 export function AdminCommandPalette() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  useCommandPaletteHotkey(setOpen);
 
   const items = useMemo(() => buildAdminCommandPaletteItems(), []);
   const { shortcuts, navigation } = useMemo(
@@ -56,20 +41,38 @@ export function AdminCommandPalette() {
     [items],
   );
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setOpen((prev) => !prev);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+  const filteredShortcuts = useMemo(
+    () => filterPaletteItems(shortcuts, query),
+    [shortcuts, query],
+  );
+  const filteredNavigation = useMemo(
+    () => filterPaletteItems(navigation, query),
+    [navigation, query],
+  );
+
+  const searchQuery = useAdminGlobalSearch(query, open);
+  const searching = isGlobalSearchQuery(query);
+  const searchData = searchQuery.data;
+  const hasDataHits = (searchData?.pharmacies.length ?? 0) > 0;
+
+  const handleOpenChange = useCallback((next: boolean) => {
+    setOpen(next);
+    if (!next) setQuery("");
   }, []);
+
+  const navigate = useCallback(
+    (href: string) => {
+      setOpen(false);
+      setQuery("");
+      router.push(href);
+    },
+    [router],
+  );
 
   const runItem = useCallback(
     (item: CommandPaletteItem) => {
       setOpen(false);
+      setQuery("");
       if (item.action === "toggle-sidebar") {
         toggleSidebarFromPalette();
         return;
@@ -81,10 +84,30 @@ export function AdminCommandPalette() {
     [router],
   );
 
+  const hasStaticHits =
+    filteredShortcuts.length > 0 || filteredNavigation.length > 0;
+
+  const emptyMessage = (() => {
+    if (searching && (searchQuery.isDebouncing || searchQuery.isFetching)) {
+      return "Searching…";
+    }
+    if (searching && !hasDataHits && !hasStaticHits) {
+      return `No results for "${query.trim()}".`;
+    }
+    if (!hasStaticHits && !searching) return "No matching commands.";
+    return "No matching commands.";
+  })();
+
   const renderItem = (item: CommandPaletteItem) => (
     <CommandItem
       key={item.id}
-      value={`${item.label} ${item.keywords ?? ""}`}
+      value={item.id}
+      keywords={[
+        item.label,
+        item.id,
+        item.href,
+        ...(item.keywords?.split(/\s+/) ?? []),
+      ].filter((k): k is string => Boolean(k))}
       onSelect={() => runItem(item)}
     >
       <item.icon className="mr-2 h-4 w-4 text-neutral-500" />
@@ -96,19 +119,67 @@ export function AdminCommandPalette() {
   );
 
   return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="Search admin pages…" />
+    <CommandDialog
+      open={open}
+      onOpenChange={handleOpenChange}
+      title="Global search"
+      description="Search pharmacies, admin pages, and shortcuts"
+      shouldFilter={false}
+    >
+      <CommandInput
+        placeholder="Search pharmacies, pages, settings…"
+        value={query}
+        onValueChange={setQuery}
+      />
       <CommandList>
-        <CommandEmpty>No matching commands.</CommandEmpty>
-        {shortcuts.length > 0 ? (
-          <CommandGroup heading="Sidebar & shortcuts">
-            {shortcuts.map(renderItem)}
+        <CommandEmpty>{emptyMessage}</CommandEmpty>
+
+        {searching && (searchQuery.isDebouncing || searchQuery.isFetching) ? (
+          <CommandGroup heading="Pharmacies">
+            <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+              Searching…
+            </div>
           </CommandGroup>
         ) : null}
-        {navigation.length > 0 ? (
-          <CommandGroup heading="Go to">{navigation.map(renderItem)}</CommandGroup>
+
+        {searching && searchData && !searchQuery.isDebouncing ? (
+          hasDataHits ? (
+            <CommandPaletteAdminResults
+              data={searchData}
+              onNavigate={navigate}
+            />
+          ) : (
+            <CommandGroup heading="Pharmacies">
+              <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+                No pharmacies found for &ldquo;{query.trim()}&rdquo;.
+              </div>
+            </CommandGroup>
+          )
+        ) : null}
+
+        {filteredShortcuts.length > 0 ? (
+          <CommandGroup heading="Sidebar & shortcuts">
+            {filteredShortcuts.map(renderItem)}
+          </CommandGroup>
+        ) : null}
+        {filteredNavigation.length > 0 ? (
+          <CommandGroup heading="Go to">{filteredNavigation.map(renderItem)}</CommandGroup>
         ) : null}
       </CommandList>
+      <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 border-t px-3 py-2 text-xs text-muted-foreground">
+        <span>
+          Type {MIN_GLOBAL_SEARCH_LENGTH}+ chars for pharmacies
+        </span>
+        <span>
+          <CommandShortcut className="inline">↑↓</CommandShortcut> navigate
+        </span>
+        <span>
+          <CommandShortcut className="inline">↵</CommandShortcut> open
+        </span>
+        <span>
+          <CommandShortcut className="inline">esc</CommandShortcut> close
+        </span>
+      </div>
     </CommandDialog>
   );
 }

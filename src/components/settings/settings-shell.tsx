@@ -19,7 +19,7 @@ export function SettingsShell({ activeTab, onTabChange, children }: Props) {
   const sectionLabel = getSettingsTabLabel(activeTab);
 
   return (
-    <DashboardPageShell className="max-w-5xl">
+    <DashboardPageShell className="max-w-5xl min-w-0">
       <DashboardPageHeader
         title="Settings"
         description={`${sectionLabel} — pharmacy profile, security, and workspace`}

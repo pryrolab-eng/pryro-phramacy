@@ -1,8 +1,22 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useBranding } from '@/hooks/useBranding'
 import { LogoIcon } from '@/components/logo'
 import Image from 'next/image'
+
+const DEFAULT_NAME = 'Pryrox'
+
+function DefaultLogoMark({ className }: { className?: string }) {
+  return (
+    <span className={`inline-flex items-center gap-2 ${className ?? ''}`}>
+      <LogoIcon />
+      <span className="font-bold text-foreground tracking-tight text-base">
+        {DEFAULT_NAME}
+      </span>
+    </span>
+  )
+}
 
 /** Top-left logo on auth pages — uses custom logo URL if set, else icon + name */
 export function AuthBrandingLogo({ className }: { className?: string }) {
@@ -54,7 +68,7 @@ export function AuthBrandingFooter() {
           <span className="text-xs font-bold text-white">{platformName}</span>
         </span>
       )}
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-gray-500" suppressHydrationWarning>
         © {new Date().getFullYear()} {platformName}. All rights reserved.
       </p>
     </div>
@@ -63,7 +77,16 @@ export function AuthBrandingFooter() {
 
 /** Dynamic logo for use anywhere in the app (header, sidebar, etc.) */
 export function DynamicLogo({ className }: { className?: string }) {
+  const [mounted, setMounted] = useState(false)
   const { platformName, platformLogoUrl } = useBranding()
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) {
+    return <DefaultLogoMark className={className} />
+  }
 
   if (platformLogoUrl) {
     return (

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../../supabase/server'
 import { getEffectiveSubscriptionLabel } from '@/lib/subscription/effective-plan'
+import { resolveActivePharmacyContext } from '@/lib/pharmacy/active-pharmacy'
+import { createServiceClient } from '../../../../../supabase/service'
+import { isPharmacyOwnerRole } from '@/lib/rbac/pharmacy-roles'
 
 export async function GET() {
   try {
@@ -55,6 +58,15 @@ export async function PUT(request: NextRequest) {
     }
 
     const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+    const admin = createServiceClient()
+    const ctx = await resolveActivePharmacyContext(admin, user.id)
+
+    if (!isPharmacyOwnerRole(ctx.role)) {
+      return NextResponse.json(
+        { error: 'Only the pharmacy owner can update business settings' },
+        { status: 403 },
+      )
+    }
 
     const body = await request.json()
     

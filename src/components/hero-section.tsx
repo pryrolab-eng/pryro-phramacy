@@ -7,6 +7,7 @@ import Image from 'next/image'
 import { TextEffect } from '@/components/ui/text-effect'
 import { AnimatedGroup } from '@/components/ui/animated-group'
 import { HeroHeader } from './header'
+import { landingContainer, landingContainerWide } from '@/lib/landing-layout'
 
 const transitionVariants = {
     item: {
@@ -58,8 +59,8 @@ export default function HeroSection() {
 
                         <div aria-hidden className="absolute inset-0 -z-10 size-full [background:radial-gradient(125%_125%_at_50%_100%,transparent_0%,var(--color-background)_75%)]" />
 
-                        <div className="mx-auto max-w-7xl px-6">
-                            <div className="text-center sm:mx-auto lg:mr-auto lg:mt-0">
+                        <div className={landingContainer}>
+                            <div className="text-center sm:mx-auto lg:mt-0 xl:max-w-4xl xl:mx-auto">
                                 <AnimatedGroup variants={transitionVariants}>
                                     <Link
                                         href="/#pricing"
@@ -79,7 +80,7 @@ export default function HeroSection() {
                                 <TextEffect preset="fade-in-blur" speedSegment={0.3} as="h1" className="mx-auto mt-8 max-w-4xl text-balance text-5xl max-md:font-semibold md:text-7xl lg:mt-16 xl:text-[5.25rem]">
                                     Pharmacy operations, built for modern teams
                                 </TextEffect>
-                                <TextEffect per="line" preset="fade-in-blur" speedSegment={0.3} delay={0.5} as="p" className="mx-auto mt-8 max-w-2xl text-balance text-lg">
+                                <TextEffect per="line" preset="fade-in-blur" speedSegment={0.3} delay={0.5} as="p" className="mx-auto mt-8 max-w-2xl text-balance text-lg md:text-xl lg:max-w-3xl">
                                     Run POS, stock, prescriptions, staff, and branches from one place  with plans that match how your pharmacy actually works.
                                 </TextEffect>
 
@@ -105,13 +106,13 @@ export default function HeroSection() {
                 </section>
 
                 {/* Dashboard Preview */}
-                <section className="bg-background pb-6 pt-8">
-                    <div className="mx-auto max-w-6xl px-6">
-                        <div className="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl shadow-zinc-200/60">
-                            <div className="flex bg-zinc-50/80" style={{ minHeight: '420px' }}>
+                <section className="overflow-x-hidden bg-background pb-8 pt-8 md:pb-10 lg:pb-12 xl:pb-14">
+                    <div className={landingContainerWide}>
+                        <div className="relative mx-auto min-w-0 max-w-6xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl shadow-zinc-200/60 lg:max-w-7xl xl:rounded-3xl">
+                            <div className="flex min-h-0 flex-col bg-zinc-50/80 md:min-h-[420px] md:flex-row lg:min-h-[460px] xl:min-h-[500px]">
 
-                                {/* Sidebar */}
-                                <div className="flex w-44 shrink-0 flex-col gap-1 border-r border-zinc-200 bg-white py-4 px-3">
+                                {/* Sidebar — desktop only */}
+                                <div className="hidden w-44 shrink-0 flex-col gap-1 border-r border-zinc-200 bg-white py-4 px-3 md:flex lg:w-48 xl:w-52 xl:px-4">
                                     <div className="mb-4 flex items-center gap-2 px-2">
                                         <div className="flex size-6 items-center justify-center rounded-md bg-zinc-900">
                                             <svg className="size-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -144,25 +145,41 @@ export default function HeroSection() {
                                 </div>
 
                                 {/* Main content */}
-                                <div className="min-w-0 flex-1 overflow-hidden p-5">
+                                <div className="min-w-0 flex-1 overflow-hidden p-4 sm:p-5 lg:p-6 xl:p-8">
 
-                                    <div className="mb-4 flex items-center justify-between">
-                                        <div>
+                                    {/* Mobile nav strip */}
+                                    <div className="mb-3 flex gap-1 overflow-x-auto pb-1 md:hidden">
+                                        {['Dashboard', 'POS', 'Inventory', 'Patients', 'Reports'].map((label, i) => (
+                                            <span
+                                                key={label}
+                                                className={`shrink-0 rounded-lg px-2.5 py-1.5 text-[10px] font-medium ${
+                                                    i === 0
+                                                        ? 'bg-zinc-900 text-white'
+                                                        : 'bg-white text-zinc-500 ring-1 ring-zinc-200'
+                                                }`}
+                                            >
+                                                {label}
+                                            </span>
+                                        ))}
+                                    </div>
+
+                                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="min-w-0">
                                             <p className="text-sm font-semibold text-zinc-900">Pharmacy dashboard</p>
                                             <p className="mt-0.5 text-xs text-zinc-500">Today · Live sales &amp; stock</p>
                                         </div>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex shrink-0 flex-wrap items-center gap-2">
                                             <div className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1">
                                                 <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
                                                 <span className="text-xs font-medium text-emerald-700">Live</span>
                                             </div>
-                                            <div className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-600">
+                                            <div className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-600 whitespace-nowrap">
                                                 Last 30 days ▾
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div className="mb-4 grid grid-cols-4 gap-3">
+                                    <div className="mb-4 grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4 lg:gap-4 xl:gap-5">
                                         {[
                                             { label: 'POS sales today', value: '428', change: '+12%', up: true },
                                             { label: 'Low stock items', value: '7', change: '3 urgent', up: false },
@@ -171,9 +188,9 @@ export default function HeroSection() {
                                         ].map((stat) => (
                                             <div
                                                 key={stat.label}
-                                                className="rounded-xl border border-zinc-200 bg-white p-3"
+                                                className="min-w-0 rounded-xl border border-zinc-200 bg-white p-2.5 sm:p-3 lg:p-4"
                                             >
-                                                <p className="mb-1 text-[10px] text-zinc-500">{stat.label}</p>
+                                                <p className="mb-1 truncate text-[10px] text-zinc-500">{stat.label}</p>
                                                 <p className="text-sm font-bold leading-none text-zinc-900">{stat.value}</p>
                                                 <p
                                                     className={`mt-1.5 text-[10px] font-medium ${
@@ -187,12 +204,12 @@ export default function HeroSection() {
                                         ))}
                                     </div>
 
-                                    <div className="grid grid-cols-3 gap-3">
-                                        <div className="col-span-2 rounded-xl border border-zinc-200 bg-white p-3">
-                                            <p className="mb-3 text-[10px] font-semibold text-zinc-700">
+                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:gap-4 xl:gap-5">
+                                        <div className="min-w-0 rounded-xl border border-zinc-200 bg-white p-3 md:col-span-2 lg:p-4 xl:p-5">
+                                            <p className="mb-3 text-[10px] font-semibold text-zinc-700 lg:text-xs">
                                                 POS sales — this week
                                             </p>
-                                            <div className="flex h-20 items-end gap-2">
+                                            <div className="flex h-20 items-end gap-2 lg:h-24 xl:h-28 xl:gap-3">
                                                 {[
                                                     { day: 'Mon', pct: 55, val: 312 },
                                                     { day: 'Tue', pct: 72, val: 408 },
@@ -214,7 +231,7 @@ export default function HeroSection() {
                                             </div>
                                         </div>
 
-                                        <div className="rounded-xl border border-zinc-200 bg-white p-3">
+                                        <div className="min-w-0 rounded-xl border border-zinc-200 bg-white p-3">
                                             <p className="mb-2.5 text-[10px] font-semibold text-zinc-700">
                                                 Recent activity
                                             </p>

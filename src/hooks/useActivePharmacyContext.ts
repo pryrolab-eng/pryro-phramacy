@@ -17,6 +17,8 @@ const EMPTY: MeContextResponse = {
   activeBranchId: null,
   role: null,
   allowedBranchIds: null,
+  permissions: [],
+  mustChangePassword: false,
   memberships: [],
 };
 
@@ -67,6 +69,7 @@ export function useActivePharmacyContext(options?: { enabled?: boolean }) {
     activePharmacyId: data.activePharmacyId,
     activeBranchId: data.activeBranchId,
     allowedBranchIds: data.allowedBranchIds ?? null,
+    permissions: data.permissions ?? [],
     memberships: data.memberships,
     switchPharmacy,
     switchBranch,

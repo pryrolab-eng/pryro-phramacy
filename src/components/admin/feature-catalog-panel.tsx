@@ -46,6 +46,12 @@ import {
   DashboardStatCard,
 } from "@/components/dashboard";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -114,6 +120,12 @@ const TYPE_LABELS: Record<PlatformFeatureRow["feature_type"], string> = {
   metered: "Usage meter",
 };
 
+const TYPE_LABELS_SHORT: Record<PlatformFeatureRow["feature_type"], string> = {
+  boolean: "Gate",
+  limit: "Limit",
+  metered: "Meter",
+};
+
 type FeatureFormState = {
   display_name: string;
   description: string;
@@ -176,27 +188,73 @@ function bodyFromForm(
   };
 }
 
+function routeChipParts(route: string) {
+  const segments = route.split("/").filter(Boolean);
+  if (segments.length === 0) {
+    return { full: route, prefix: "", leaf: route };
+  }
+  const leaf = segments[segments.length - 1]!;
+  const prefix =
+    segments.length > 1 ? `/${segments.slice(0, -1).join("/")}/` : "/";
+  return { full: route, prefix, leaf };
+}
+
+function RouteChip({ route }: { route: string }) {
+  const { full, prefix, leaf } = routeChipParts(route);
+  return (
+    <Badge
+      variant="outline"
+      title={full}
+      className="inline-flex max-w-full shrink-0 items-center gap-0 whitespace-nowrap border-neutral-200/80 py-0.5 font-mono text-[10px] font-normal dark:border-neutral-700"
+    >
+      {prefix ? (
+        <span className="max-w-[5.5rem] truncate text-neutral-400">{prefix}</span>
+      ) : null}
+      <span>{leaf}</span>
+    </Badge>
+  );
+}
+
 function RouteChips({ routes }: { routes: string[] }) {
   if (routes.length === 0) {
     return <span className="text-xs text-neutral-500">—</span>;
   }
-  const visible = routes.slice(0, 2);
-  const rest = routes.length - visible.length;
+
+  const maxVisible = 2;
+  const visible = routes.slice(0, maxVisible);
+  const hidden = routes.slice(maxVisible);
+
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="flex min-w-0 flex-col items-start gap-1.5 sm:flex-row sm:flex-wrap sm:items-center">
       {visible.map((r) => (
-        <Badge
-          key={r}
-          variant="outline"
-          className="border-neutral-200/80 font-mono text-[10px] font-normal dark:border-neutral-700"
-        >
-          {r}
-        </Badge>
+        <RouteChip key={r} route={r} />
       ))}
-      {rest > 0 ? (
-        <Badge variant="secondary" className="text-[10px]">
-          +{rest}
-        </Badge>
+      {hidden.length > 0 ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge
+              variant="secondary"
+              className="shrink-0 cursor-default whitespace-nowrap text-[10px] tabular-nums"
+            >
+              +{hidden.length}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent
+            side="top"
+            className="max-w-xs space-y-1.5 p-3 font-mono text-xs"
+          >
+            <p className="font-sans text-[10px] font-medium text-muted-foreground">
+              Additional routes
+            </p>
+            <ul className="space-y-1">
+              {hidden.map((r) => (
+                <li key={r} className="break-all text-foreground">
+                  {r}
+                </li>
+              ))}
+            </ul>
+          </TooltipContent>
+        </Tooltip>
       ) : null}
     </div>
   );
@@ -358,6 +416,7 @@ export function FeatureCatalogPanel() {
   }
 
   return (
+    <TooltipProvider delayDuration={200}>
     <>
       <AdminPageHeader
         pinTitle="Feature catalog"
@@ -496,9 +555,13 @@ export function FeatureCatalogPanel() {
                       </TableHead>
                       <TableHead className="w-[26%]">Feature</TableHead>
                       <TableHead className="w-[20%]">Key</TableHead>
-                      <TableHead>Type</TableHead>
+                      <TableHead className="min-w-[5.5rem] whitespace-nowrap">
+                        Type
+                      </TableHead>
                       <TableHead className="hidden md:table-cell">Routes</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead className="min-w-[4.5rem] whitespace-nowrap">
+                        Status
+                      </TableHead>
                       <TableHead className="w-12" />
                     </TableRow>
                   </TableHeader>
@@ -548,17 +611,20 @@ export function FeatureCatalogPanel() {
                                 {f.key}
                               </code>
                             </TableCell>
-                            <TableCell>
-                              <AdminStatusChip tone="plan">
-                                {TYPE_LABELS[f.feature_type]}
+                            <TableCell className="align-top">
+                              <AdminStatusChip
+                                tone="plan"
+                                title={TYPE_LABELS[f.feature_type]}
+                              >
+                                {TYPE_LABELS_SHORT[f.feature_type]}
                               </AdminStatusChip>
                               {f.limit_column ? (
-                                <p className="mt-1 font-mono text-[10px] text-neutral-500">
+                                <p className="mt-1 whitespace-nowrap font-mono text-[10px] text-neutral-500">
                                   {f.limit_column}
                                 </p>
                               ) : null}
                             </TableCell>
-                            <TableCell className="hidden max-w-[200px] md:table-cell">
+                            <TableCell className="hidden min-w-[12rem] md:table-cell lg:min-w-[14rem]">
                               <RouteChips routes={f.nav_routes} />
                             </TableCell>
                             <TableCell>
@@ -687,6 +753,7 @@ export function FeatureCatalogPanel() {
         </DashboardDialogContent>
       </Dialog>
     </>
+    </TooltipProvider>
   );
 }
 

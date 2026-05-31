@@ -9,6 +9,8 @@ import {
   createPharmacist,
   type StaffInviteCredentials,
 } from '@/lib/http/pharmacist'
+import { ApiError } from '@/lib/http/client'
+import { STAFF_INVITE_EMAIL_REJECTED_CODE } from '@/lib/staff/staff-invite-email'
 import type { StaffUser } from '@/lib/http/staff'
 import { staffStats } from '@/lib/staff/format-staff'
 import {
@@ -118,9 +120,21 @@ export default function StaffManagePage() {
         })
       }
     } catch (error) {
-      toast.error('Could not add staff member', {
-        description: error instanceof Error ? error.message : undefined,
-      })
+      const isEmailRejected =
+        error instanceof ApiError &&
+        (error.status === 409 ||
+          (error.body &&
+            typeof error.body === 'object' &&
+            'code' in error.body &&
+            (error.body as { code?: string }).code ===
+              STAFF_INVITE_EMAIL_REJECTED_CODE))
+
+      toast.error(
+        isEmailRejected ? "Can't use this email" : 'Could not add staff member',
+        {
+          description: error instanceof Error ? error.message : undefined,
+        },
+      )
       throw error
     } finally {
       setInvitePending(false)

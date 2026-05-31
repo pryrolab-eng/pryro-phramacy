@@ -1,6 +1,7 @@
 import { Logo } from '@/components/logo'
 import { DynamicLogo, AuthBrandingName } from '@/components/auth-branding'
 import Link from 'next/link'
+import { landingContainer, landingSectionTight } from '@/lib/landing-layout'
 
 const links = [
     {
@@ -31,8 +32,8 @@ const links = [
 
 export default function FooterSection() {
     return (
-        <footer className="pt-6 md:pt-10 pb-16 md:pb-32">
-            <div className="mx-auto max-w-5xl px-6">
+        <footer className={`${landingSectionTight} pb-16 md:pb-24 lg:pb-32`}>
+            <div className={landingContainer}>
                 <Link
                     href="/"
                     aria-label="go home"
@@ -159,7 +160,7 @@ export default function FooterSection() {
                         </svg>
                     </Link>
                 </div>
-                <span className="text-muted-foreground block text-center text-sm">
+                <span className="text-muted-foreground block text-center text-sm" suppressHydrationWarning>
                     © {new Date().getFullYear()} <AuthBrandingName />, All rights reserved
                 </span>
             </div>

@@ -40,7 +40,8 @@ export function formatPlanPriceSuffix(options: {
 }): string | null {
   if (options.price === 0) return null;
 
-  if (options.pricingToggle === "annually") return "/year";
+  /** Annual toggle shows discounted per-month rate (20% off), not the lump-sum year total. */
+  if (options.pricingToggle === "annually") return "/month";
 
   const bp = String(options.billingPeriod ?? "").toLowerCase();
   if (bp === "yearly") return "/year";

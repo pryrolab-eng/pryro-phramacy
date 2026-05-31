@@ -29,11 +29,11 @@ export function DashboardTableCard({
       contentClassName="p-0"
     >
       {toolbar ? (
-        <div className="flex flex-wrap items-center gap-2 border-b border-neutral-100 px-5 py-3 dark:border-neutral-800">
+        <div className="flex min-w-0 flex-col gap-2 border-b border-neutral-100 px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2 sm:px-5 dark:border-neutral-800">
           {toolbar}
         </div>
       ) : null}
-      <div className="overflow-x-auto">{children}</div>
+      <div className="min-w-0 overflow-x-auto">{children}</div>
     </DashboardSectionCard>
   );
 }

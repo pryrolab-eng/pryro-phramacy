@@ -3,6 +3,7 @@
 import { BranchSwitcher } from "@/components/shell/branch-switcher";
 import { useDashboardScrollHeader } from "@/components/shell/dashboard-scroll-header-context";
 import { dashboardText, dashboardChrome } from "@/components/dashboard/dashboard-tokens";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { AnimatePresence, motion } from "motion/react";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +12,7 @@ type DashboardShellBarProps = {
   showBranchSwitcher?: boolean;
 };
 
-/** Sticky top bar: page title pins on scroll; sidebar toggles via rail or Ctrl+B. */
+/** Sticky top bar: page title pins on scroll; sidebar toggles via menu or Ctrl+B. */
 export function DashboardShellBar({
   showBranchSwitcher = true,
 }: DashboardShellBarProps) {
@@ -22,10 +23,11 @@ export function DashboardShellBar({
       className={cn(
         dashboardChrome.shellBar,
         dashboardChrome.height,
-        isPinned || showBranchSwitcher ? "justify-between" : "justify-end",
+        "justify-between",
       )}
     >
-      <div className="flex min-w-0 flex-1 items-center">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <SidebarTrigger className="shrink-0 md:hidden" />
         <AnimatePresence mode="popLayout">
           {isPinned && config ? (
             <motion.span
@@ -34,14 +36,18 @@ export function DashboardShellBar({
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -8 }}
               transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-              className={cn(dashboardText.title, "truncate text-base")}
+              className={cn(dashboardText.title, "truncate text-sm sm:text-base")}
             >
               {config.title}
             </motion.span>
           ) : null}
         </AnimatePresence>
       </div>
-      {showBranchSwitcher ? <BranchSwitcher className="shrink-0" /> : null}
+      {showBranchSwitcher ? (
+        <div className="flex w-full min-w-0 justify-end md:w-auto">
+          <BranchSwitcher className="max-w-full" />
+        </div>
+      ) : null}
     </div>
   );
 }

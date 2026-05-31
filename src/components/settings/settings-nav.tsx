@@ -35,7 +35,7 @@ function NavButton({
       type="button"
       onClick={() => onSelect(item.id)}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+        "flex w-full items-center gap-2.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors lg:whitespace-normal",
         active
           ? "bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-50"
           : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800/50 dark:hover:text-neutral-100",
@@ -99,7 +99,7 @@ function FeatureNavItem({
 export function SettingsNav({ activeTab, onTabChange }: Props) {
   return (
     <nav className="w-full shrink-0 lg:w-[220px]" aria-label="Settings">
-      <div className="flex gap-6 overflow-x-auto pb-1 lg:sticky lg:top-6 lg:flex-col lg:overflow-visible lg:pb-0">
+      <div className="-mx-1 flex gap-4 overflow-x-auto px-1 pb-1 scroll-smooth lg:sticky lg:top-6 lg:mx-0 lg:flex-col lg:gap-6 lg:overflow-visible lg:px-0 lg:pb-0">
         {SETTINGS_NAV_GROUPS.map((group) => (
           <div key={group.label} className="min-w-[140px] shrink-0 lg:min-w-0">
             <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">

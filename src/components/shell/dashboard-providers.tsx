@@ -1,35 +1,74 @@
-"use client";
-
-import { ActivePharmacyProvider } from "@/components/providers/active-pharmacy-provider";
-import { PharmacyBrandingProvider } from "@/components/pharmacy/pharmacy-branding-provider";
-import { DashboardScrollHeaderProvider } from "@/components/shell/dashboard-scroll-header-context";
-import { SidebarProvider } from "@/components/ui/sidebar";
-import { PharmacyProvider } from "@/hooks/usePharmacyStore";
-
-type Props = {
-  children: React.ReactNode;
-  /** Platform admin routes skip tenant pharmacy context. */
-  withPharmacyContext?: boolean;
-};
-
-/** Client providers for dashboard routes (React Query lives in root AppProviders). */
-export function DashboardProviders({
-  children,
-  withPharmacyContext = true,
-}: Props) {
-  const body = withPharmacyContext ? (
-    <ActivePharmacyProvider>
-      <PharmacyBrandingProvider>{children}</PharmacyBrandingProvider>
-    </ActivePharmacyProvider>
-  ) : (
-    children
-  );
-
-  return (
-    <PharmacyProvider>
-      <SidebarProvider>
-        <DashboardScrollHeaderProvider>{body}</DashboardScrollHeaderProvider>
-      </SidebarProvider>
-    </PharmacyProvider>
-  );
-}
+"use client";
+
+import { ActivePharmacyProvider } from "@/components/providers/active-pharmacy-provider";
+import { PharmacyBrandingProvider } from "@/components/pharmacy/pharmacy-branding-provider";
+import {
+  DashboardScrollHeaderProvider,
+  useDashboardScrollHeader,
+} from "@/components/shell/dashboard-scroll-header-context";
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { PharmacyProvider } from "@/hooks/usePharmacyStore";
+import { MustChangePasswordGate } from "@/components/auth/must-change-password-gate";
+import { dashboardSurfaces } from "@/components/dashboard/dashboard-tokens";
+import { cn } from "@/lib/utils";
+import { useEffect, useRef, type ReactNode } from "react";
+
+type Props = {
+  children: ReactNode;
+  /** Platform admin routes skip tenant pharmacy context. */
+  withPharmacyContext?: boolean;
+};
+
+type MainScrollProps = {
+  children: ReactNode;
+  className?: string;
+};
+
+/** Scroll container for dashboard pages — shell bar stays fixed above this. */
+export function DashboardMainScroll({ children, className }: MainScrollProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { setScrollRoot } = useDashboardScrollHeader();
+
+  useEffect(() => {
+    setScrollRoot(ref.current);
+    return () => setScrollRoot(null);
+  }, [setScrollRoot]);
+
+  return (
+    <div
+      ref={ref}
+      id="dashboard-main-scroll"
+      className={cn(
+        dashboardSurfaces.page,
+        "min-h-0 flex-1 overflow-x-hidden overflow-y-auto",
+        className,
+      )}
+    >
+      <div className="flex min-h-full min-w-0 flex-1 flex-col">{children}</div>
+    </div>
+  );
+}
+
+/** Client providers for dashboard routes (React Query lives in root AppProviders). */
+export function DashboardProviders({
+  children,
+  withPharmacyContext = true,
+}: Props) {
+  const body = withPharmacyContext ? (
+    <ActivePharmacyProvider>
+      <PharmacyBrandingProvider>{children}</PharmacyBrandingProvider>
+    </ActivePharmacyProvider>
+  ) : (
+    children
+  );
+
+  return (
+    <PharmacyProvider>
+      <SidebarProvider>
+        <DashboardScrollHeaderProvider>
+          <MustChangePasswordGate>{body}</MustChangePasswordGate>
+        </DashboardScrollHeaderProvider>
+      </SidebarProvider>
+    </PharmacyProvider>
+  );
+}

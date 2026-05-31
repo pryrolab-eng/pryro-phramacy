@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../../supabase/server'
 import { createServiceClient } from '../../../../../../supabase/service'
 import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { resolveActivePharmacyContext } from '@/lib/pharmacy/active-pharmacy'
+import {
+  permissionErrorResponse,
+  requirePharmacyPermission,
+} from '@/lib/rbac/require-pharmacy-permission'
+import { PHARMACY_PERMISSIONS } from '@/lib/rbac/permissions'
 
 /** GET/PUT branch access for a pharmacy_users row (staff member). */
 export async function GET(
@@ -58,13 +62,9 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    await requirePharmacyPermission(user.id, PHARMACY_PERMISSIONS.staffManage)
     const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
     const admin = createServiceClient()
-    const ctx = await resolveActivePharmacyContext(admin, user.id)
-
-    if (!['pharmacy_owner', 'admin'].includes(ctx.role ?? '')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
 
     const { data: member } = await admin
       .from('pharmacy_users')
@@ -111,6 +111,10 @@ export async function PUT(
       unrestricted: branchIds.length === 0,
     })
   } catch (error) {
+    const forbidden = permissionErrorResponse(error)
+    if (forbidden) {
+      return NextResponse.json(forbidden.body, { status: forbidden.status })
+    }
     console.error('PUT staff branches', error)
     return NextResponse.json({ error: 'Failed to update branch access' }, { status: 500 })
   }

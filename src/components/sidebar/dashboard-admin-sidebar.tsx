@@ -108,7 +108,7 @@ export function DashboardAdminSidebar(
             <span className="font-medium text-neutral-700 dark:text-neutral-300">
               Ctrl+K
             </span>{" "}
-            quick navigation
+            global search
           </span>
         </div>
         <SidebarMenu>

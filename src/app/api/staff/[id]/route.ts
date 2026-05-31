@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { createClient } from '../../../../../supabase/server'
 import { createServiceClient } from '../../../../../supabase/service'
+import {
+  permissionErrorResponse,
+  requirePharmacyPermission,
+} from '@/lib/rbac/require-pharmacy-permission'
+import { PHARMACY_PERMISSIONS } from '@/lib/rbac/permissions'
+import { MUST_CHANGE_PASSWORD_METADATA_KEY } from '@/lib/auth/must-change-password'
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: pharmacyUserId } = await params
@@ -12,6 +18,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
+    await requirePharmacyPermission(user.id, PHARMACY_PERMISSIONS.staffManage)
     await requireSessionPharmacyId(supabase, user.id)
     const admin = createServiceClient()
     const body = await request.json()
@@ -55,8 +62,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     if (body.password && String(body.password).trim()) {
+      const { data: authUser } = await admin.auth.admin.getUserById(authUserId)
       const { error: passwordError } = await admin.auth.admin.updateUserById(authUserId, {
         password: body.password,
+        user_metadata: {
+          ...(authUser?.user?.user_metadata ?? {}),
+          [MUST_CHANGE_PASSWORD_METADATA_KEY]: true,
+        },
       })
       if (passwordError) {
         console.error('Password update error:', passwordError)
@@ -66,6 +78,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    const forbidden = permissionErrorResponse(error)
+    if (forbidden) {
+      return NextResponse.json(forbidden.body, { status: forbidden.status })
+    }
     console.error('Error updating staff:', error)
     return NextResponse.json({ success: false, error: 'Failed to update staff member' })
   }
@@ -80,6 +96,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
+    await requirePharmacyPermission(user.id, PHARMACY_PERMISSIONS.staffManage)
     await requireSessionPharmacyId(supabase, user.id)
     const admin = createServiceClient()
 
@@ -92,6 +109,10 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    const forbidden = permissionErrorResponse(error)
+    if (forbidden) {
+      return NextResponse.json(forbidden.body, { status: forbidden.status })
+    }
     console.error('Error deleting staff:', error)
     return NextResponse.json({ success: false, error: 'Failed to delete staff member' })
   }

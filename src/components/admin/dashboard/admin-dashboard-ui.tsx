@@ -8,10 +8,12 @@ export function AdminStatusChip({
   children,
   tone = "neutral",
   className,
+  title,
 }: {
   children: ReactNode;
   tone?: "neutral" | "active" | "inactive" | "plan";
   className?: string;
+  title?: string;
 }) {
   const toneClass = {
     neutral:
@@ -26,8 +28,9 @@ export function AdminStatusChip({
 
   return (
     <span
+      title={title}
       className={cn(
-        "inline-flex h-5 shrink-0 items-center rounded-md border px-1.5 text-[10px] font-medium capitalize leading-none",
+        "inline-flex min-h-5 shrink-0 items-center whitespace-nowrap rounded-md border px-2 py-0.5 text-[10px] font-medium leading-none",
         toneClass,
         className,
       )}

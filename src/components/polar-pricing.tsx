@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { buildSignUpUrl } from '@/lib/onboarding/intent'
 import { usePublicMainPlans } from '@/hooks/usePlans'
@@ -8,6 +8,8 @@ import type { PlanRow } from '@/lib/http/plans'
 import { planMarketingBlurb } from '@/lib/subscription/plan-marketing-features'
 import { formatPlanPriceSuffix } from '@/lib/subscription/plan-period'
 import { PlanFeatureList } from '@/components/subscription/plan-feature-list'
+import { landingContainerWide } from '@/lib/landing-layout'
+import { AnimatedTextRoller } from '@/components/shadcn-space/animated-text/animated-text-04'
 
 export type SubscriptionPlanRow = {
   id: string
@@ -42,11 +44,16 @@ function toDisplayPlan(plan: PlanRow): SubscriptionPlanRow {
 }
 
 export default function PolarPricing() {
+    const [mounted, setMounted] = useState(false)
     const plansQuery = usePublicMainPlans()
     const plans = (plansQuery.data ?? []).map(toDisplayPlan)
     const [billing, setBilling] = useState<'monthly' | 'annually'>('monthly')
 
-    if (plansQuery.isPending) {
+    useEffect(() => {
+        setMounted(true)
+    }, [])
+
+    if (!mounted || plansQuery.isPending) {
         return (
             <div className="w-full flex justify-center py-12">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -54,13 +61,20 @@ export default function PolarPricing() {
         )
     }
 
-    const getDisplayPrice = (price: number) => {
-        if (price === 0) return 0
-        return billing === 'annually' ? Math.round(price * 0.8) : price
+    /** Monthly list price; annual toggle shows 20% off that monthly rate. */
+    const getDisplayPrice = (monthly: number) => {
+        if (monthly === 0) return 0
+        return billing === 'annually' ? Math.round(monthly * 0.8) : monthly
+    }
+
+    /** What the customer pays once per year at checkout (monthly × 12 × 0.8). */
+    const getAnnualTotal = (monthly: number) => {
+        if (monthly === 0) return 0
+        return Math.round(monthly * 12 * 0.8)
     }
 
     return (
-        <div className="w-full relative mx-auto max-w-6xl">
+        <div className={`relative w-full ${landingContainerWide}`}>
             <div className="flex justify-center mb-10">
                 <div className="inline-flex items-center rounded-xl border border-gray-200/80 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/50 p-1 shadow-sm">
                     <button 
@@ -80,9 +94,10 @@ export default function PolarPricing() {
             </div>
 
             <div className="relative">
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 lg:gap-6 items-stretch">
+                <div className="grid grid-cols-1 items-stretch gap-5 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6 xl:grid-cols-4 2xl:gap-8">
                     {plans.map((plan) => {
                         const displayPrice = getDisplayPrice(plan.price)
+                        const annualTotal = getAnnualTotal(plan.price)
                         const priceSuffix = formatPlanPriceSuffix({
                           price: displayPrice,
                           period: plan.period,
@@ -119,6 +134,25 @@ export default function PolarPricing() {
                                 {priceSuffix ? (
                                   <span className="text-sm font-medium text-gray-500 dark:text-gray-400 w-full">
                                     {priceSuffix}
+                                    {billing === "annually" && plan.price > 0 ? (
+                                      <AnimatedTextRoller
+                                        className="mt-1.5 w-full"
+                                        lineClassName="h-5 flex items-center text-xs font-medium"
+                                        intervalMs={2800}
+                                        lines={[
+                                          {
+                                            text: "20% off",
+                                            className:
+                                              "text-emerald-700 dark:text-emerald-400",
+                                          },
+                                          {
+                                            text: `${annualTotal.toLocaleString()} RWF billed yearly`,
+                                            className:
+                                              "text-gray-600 dark:text-gray-400",
+                                          },
+                                        ]}
+                                      />
+                                    ) : null}
                                   </span>
                                 ) : null}
                             </div>

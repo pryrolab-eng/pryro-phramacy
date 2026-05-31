@@ -9,6 +9,7 @@ import {
   SettingsRow,
 } from "@/components/settings/settings-primitives";
 import { useAdminSettings } from "@/components/admin/settings/admin-settings-provider";
+import { ChangePasswordSettingsRow } from "@/components/auth/change-password-settings-row";
 
 export function AdminSettingsSecurityPanel() {
   const {
@@ -28,6 +29,9 @@ export function AdminSettingsSecurityPanel() {
       />
 
       <SettingsSection title="Your account">
+        <div className="border-b border-neutral-100 pb-4 dark:border-neutral-800">
+          <ChangePasswordSettingsRow description="Update your platform admin sign-in password." />
+        </div>
         <SettingsRow
           title="Two-factor authentication"
           description="Protect your platform admin sign-in with an authenticator app"

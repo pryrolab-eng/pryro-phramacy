@@ -19,6 +19,10 @@ export type MeContextResponse = {
   role: string | null;
   /** null = all branches; array = restricted list */
   allowedBranchIds: string[] | null;
+  /** RBAC capability keys from pharmacy_role_permissions */
+  permissions: string[];
+  /** True when user must replace a temporary invite password before using the app. */
+  mustChangePassword: boolean;
   memberships: MeContextMembership[];
 };
 

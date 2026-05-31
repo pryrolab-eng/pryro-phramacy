@@ -79,7 +79,13 @@ export function BranchSwitcher({ className }: Props) {
       value={activeBranchId ?? branches[0]?.id ?? ""}
       onValueChange={(id) => void switchBranch(id)}
     >
-      <SelectTrigger className={cn(dashboardSurfaces.pill, "w-[min(100%,14rem)]", className)}>
+      <SelectTrigger
+        className={cn(
+          dashboardSurfaces.pill,
+          "h-8 w-full max-w-[min(100%,14rem)]",
+          className,
+        )}
+      >
         <GitBranch className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
         <SelectValue placeholder="Select branch" />
       </SelectTrigger>

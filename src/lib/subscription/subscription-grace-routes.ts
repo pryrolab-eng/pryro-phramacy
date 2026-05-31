@@ -1,5 +1,8 @@
-import { isCashierLikeRole } from "@/lib/subscription/nav-config";
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
+import {
+  isPharmacyOwnerRole,
+  isStaffWorkspaceRole,
+} from "@/lib/rbac/pharmacy-roles";
 
 export const BILLING_ROUTE = PHARMACY_ROUTES.billing;
 
@@ -9,8 +12,7 @@ const AUTH_ROUTES = ["/sign-in", "/sign-out"];
 export function resolveSubscriptionHomePath(
   role: string | null | undefined,
 ): string {
-  if (role === "pharmacist") return PHARMACY_ROUTES.pharmacist;
-  if (isCashierLikeRole(role)) return PHARMACY_ROUTES.pos;
+  if (isStaffWorkspaceRole(role)) return PHARMACY_ROUTES.staffDashboard;
   return PHARMACY_ROUTES.dashboard;
 }
 
@@ -56,10 +58,4 @@ export function canReachRouteWhenSubscriptionInactive(href: string): boolean {
   return isBillingRoute(href);
 }
 
-export function isPharmacyOwnerRole(role: string | null | undefined): boolean {
-  return (
-    role === "pharmacy_owner" ||
-    role === "admin" ||
-    role === "superadmin"
-  );
-}
+export { isPharmacyOwnerRole } from "@/lib/rbac/pharmacy-roles";

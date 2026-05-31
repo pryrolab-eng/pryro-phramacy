@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Building2, CreditCard, Plus, Wrench } from "lucide-react";
 
@@ -144,11 +145,19 @@ function pharmacyMatchesPlanFilter(
 
 export function AdminStoresPanel() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
   const pharmaciesQuery = useAdminPharmacies();
   const plansQuery = useAdminPlans();
   const insuranceQuery = useInsuranceProviders();
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(
+    () => searchParams.get("search")?.trim() ?? "",
+  );
+
+  useEffect(() => {
+    const fromUrl = searchParams.get("search")?.trim() ?? "";
+    if (fromUrl) setSearch(fromUrl);
+  }, [searchParams]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [planFilter, setPlanFilter] = useState<string>("all");
 

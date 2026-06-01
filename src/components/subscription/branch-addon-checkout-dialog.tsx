@@ -28,6 +28,11 @@ import {
   startPolarSubscriptionCheckout,
 } from '@/lib/subscription/checkout-client'
 import { usePolarConfig } from '@/hooks/useOnboarding'
+import {
+  INVALID_EMAIL_MESSAGE,
+  isValidEmail,
+  normalizeEmail,
+} from '@/lib/validation/email'
 
 export type BranchAddonCheckoutMode = 'new_branch' | 'existing_branch'
 
@@ -98,8 +103,13 @@ export function BranchAddonCheckoutDialog({
       setError('Branch name is required')
       return
     }
-    if (!email.trim()) {
+    const normalizedEmail = normalizeEmail(email)
+    if (!normalizedEmail) {
       setError('Email is required for payment')
+      return
+    }
+    if (!isValidEmail(normalizedEmail)) {
+      setError(INVALID_EMAIL_MESSAGE)
       return
     }
     if (paymentMethod === 'kpay' && !phone.trim()) {
@@ -129,7 +139,7 @@ export function BranchAddonCheckoutDialog({
         const polar = await startPolarSubscriptionCheckout({
           planId: selectedPlan.id,
           subscriptionId: subscription.id,
-          customerEmail: email.trim(),
+          customerEmail: normalizedEmail,
           customerName,
           customerPhone: phone.trim() || undefined,
           returnContext: 'settings',
@@ -143,7 +153,7 @@ export function BranchAddonCheckoutDialog({
         subscriptionId: subscription.id,
         customerName,
         customerPhone: phone.trim(),
-        customerEmail: email.trim(),
+        customerEmail: normalizedEmail,
       })
 
       if (kpay.success && kpay.transaction?.checkoutUrl) {
@@ -318,6 +328,8 @@ export function BranchAddonCheckoutDialog({
             <Label>Email</Label>
             <Input
               type="email"
+              autoComplete="email"
+              placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={loading}

@@ -3,6 +3,11 @@
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { isEmailNotConfirmedMessage } from "@/lib/auth/email-not-confirmed";
+import {
+  isVerificationRelatedError,
+  showVerificationToast,
+} from "@/components/auth/verification-toast";
 
 const AUTH_ERROR_LABELS: Record<string, string> = {
   "no-pharmacy": "No pharmacy access found. Please contact support.",
@@ -12,6 +17,9 @@ const AUTH_ERROR_LABELS: Record<string, string> = {
 };
 
 function resolveErrorMessage(raw: string) {
+    if (isEmailNotConfirmedMessage(raw)) {
+    return "Please confirm your email before signing in. Use Resend email in this notification.";
+  }
   return AUTH_ERROR_LABELS[raw] ?? decodeURIComponent(raw);
 }
 
@@ -25,6 +33,7 @@ export function AuthSearchParamsToast() {
   useEffect(() => {
     const error = searchParams.get("error");
     const success = searchParams.get("success");
+    const email = searchParams.get("email")?.trim() ?? undefined;
     if (!error && !success) {
       shown.current = null;
       return;
@@ -34,7 +43,20 @@ export function AuthSearchParamsToast() {
     if (shown.current === key) return;
     shown.current = key;
 
-    if (error) toast.error(resolveErrorMessage(error));
+    if (error) {
+      const decoded = decodeURIComponent(error);
+      if (
+        isEmailNotConfirmedMessage(decoded) ||
+        isVerificationRelatedError(decoded)
+      ) {
+        showVerificationToast({
+          message: resolveErrorMessage(error),
+          email,
+        });
+      } else {
+        toast.error(resolveErrorMessage(error));
+      }
+    }
     if (success) toast.success(decodeURIComponent(success));
 
     const params = new URLSearchParams(searchParams.toString());

@@ -59,6 +59,7 @@ export const RESET_PASSWORD_PATH = "/reset-password";
 export const PUBLIC_AUTH_PATH_PREFIXES = [
   "/sign-in",
   "/sign-up",
+  "/verify-email",
   "/forgot-password",
   RESET_PASSWORD_PATH,
 ] as const;

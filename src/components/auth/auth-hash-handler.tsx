@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { createClient } from "../../../supabase/client";
+import { showVerificationToast } from "@/components/auth/verification-toast";
 
 function decodeAuthMessage(raw: string) {
   return decodeURIComponent(raw.replace(/\+/g, " "));
@@ -41,14 +41,21 @@ export function AuthHashHandler() {
           ? decodeAuthMessage(error)
           : "Could not complete sign in.";
 
+      clearHash();
+
       if (errorCode === "otp_expired") {
-        message =
-          "This confirmation link has expired. Sign in with your email and password, or sign up again to receive a new link.";
+        showVerificationToast({
+          message:
+            "This confirmation link has expired. Resend a new confirmation email.",
+        });
+        router.replace("/verify-email?expired=1");
+        return;
       }
 
-      clearHash();
-      toast.error(message);
-      router.replace("/sign-in");
+      showVerificationToast({
+        message,
+      });
+      router.replace("/sign-in?expired=1");
       return;
     }
 

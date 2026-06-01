@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 import { getSupabaseAnonKey, getSupabaseUrl } from "./env";
+import { isStaleRefreshTokenError } from "@/lib/auth/stale-session";
 import {
   isAuthProcessingPath,
   isProtectedPath,
@@ -36,18 +37,35 @@ function createSupabaseClient(
   });
 }
 
+async function clearStaleAuthCookies(
+  request: NextRequest,
+  response: NextResponse,
+  supabase: ReturnType<typeof createServerClient>,
+) {
+  try {
+    await supabase.auth.signOut();
+  } catch {
+    /* ignore — cookies are cleared below regardless */
+  }
+  for (const { name } of request.cookies.getAll()) {
+    if (name.startsWith("sb-") && name.includes("auth-token")) {
+      response.cookies.set(name, "", { path: "/", maxAge: 0 });
+    }
+  }
+}
+
 async function getUserWithTimeout(
   supabase: ReturnType<typeof createServerClient>,
 ) {
   return Promise.race([
     supabase.auth.getUser(),
-    new Promise<{ data: { user: null }; error: { message: string } }>(
+    new Promise<{ data: { user: null }; error: { message: string; code?: string } }>(
       (resolve) => {
         setTimeout(
           () =>
             resolve({
               data: { user: null },
-              error: { message: "auth_timeout" },
+              error: { message: "auth_timeout", code: "auth_timeout" },
             }),
           AUTH_TIMEOUT_MS,
         );
@@ -63,12 +81,10 @@ export const updateSession = async (request: NextRequest) => {
     return NextResponse.next();
   }
 
-  // Public auth pages, no session cookie → allow through (sign-in form)
   if (isPublicAuthPath(pathname) && !hasAuthCookies(request)) {
     return NextResponse.next();
   }
 
-  // OAuth / 2FA callbacks — no redirects here
   if (isAuthProcessingPath(pathname)) {
     return NextResponse.next();
   }
@@ -80,23 +96,15 @@ export const updateSession = async (request: NextRequest) => {
   try {
     const supabase = createSupabaseClient(request, response);
 
-    // ── Protected app routes (/pos, /inventory, …): must validate with Supabase ──
     if (isProtectedPath(pathname)) {
       const {
         data: { user },
         error,
       } = await getUserWithTimeout(supabase);
 
-      if (
-        error?.message?.includes("refresh_token_not_found") ||
-        error?.message?.includes("Invalid Refresh Token")
-      ) {
-        await supabase.auth.signOut();
-        for (const { name } of request.cookies.getAll()) {
-          if (name.startsWith("sb-") && name.includes("auth-token")) {
-            response.cookies.set(name, "", { path: "/", maxAge: 0 });
-          }
-        }
+      if (isStaleRefreshTokenError(error)) {
+        await clearStaleAuthCookies(request, response, supabase);
+        return NextResponse.redirect(new URL("/sign-in", request.url));
       }
 
       if (!user) {
@@ -106,13 +114,18 @@ export const updateSession = async (request: NextRequest) => {
       return response;
     }
 
-    // ── Public auth pages only: light session read for “already logged in” redirect ──
-    if (isPublicAuthPath(pathname)) {
+    if (isPublicAuthPath(pathname) && hasAuthCookies(request)) {
       const {
-        data: { session },
-      } = await supabase.auth.getSession();
+        data: { user },
+        error,
+      } = await getUserWithTimeout(supabase);
 
-      if (session?.user) {
+      if (isStaleRefreshTokenError(error)) {
+        await clearStaleAuthCookies(request, response, supabase);
+        return response;
+      }
+
+      if (user) {
         return NextResponse.redirect(new URL("/app", request.url));
       }
     }
@@ -120,8 +133,24 @@ export const updateSession = async (request: NextRequest) => {
     return response;
   } catch {
     if (isProtectedPath(pathname)) {
-      return NextResponse.redirect(new URL("/sign-in", request.url));
+      const fallback = NextResponse.redirect(new URL("/sign-in", request.url));
+      if (hasAuthCookies(request)) {
+        for (const { name } of request.cookies.getAll()) {
+          if (name.startsWith("sb-") && name.includes("auth-token")) {
+            fallback.cookies.set(name, "", { path: "/", maxAge: 0 });
+          }
+        }
+      }
+      return fallback;
     }
-    return NextResponse.next();
+
+    if (hasAuthCookies(request)) {
+      for (const { name } of request.cookies.getAll()) {
+        if (name.startsWith("sb-") && name.includes("auth-token")) {
+          response.cookies.set(name, "", { path: "/", maxAge: 0 });
+        }
+      }
+    }
+    return response;
   }
 };

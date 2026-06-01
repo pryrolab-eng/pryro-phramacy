@@ -21,6 +21,30 @@ export async function sendRecoveryEmail(
   });
 }
 
+export type ResendConfirmationInput = {
+  email: string;
+};
+
+export type ResendConfirmationResponse = {
+  success?: boolean;
+  message?: string;
+  error?: string;
+};
+
+export async function sendResendConfirmationEmail(
+  body: ResendConfirmationInput,
+): Promise<ResendConfirmationResponse> {
+  return fetchJson<ResendConfirmationResponse>(
+    "/api/auth/resend-confirmation",
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
 export type Verify2FAInput = {
   sessionToken: string | null;
   token: string;

@@ -1,20 +1,21 @@
-import { createClient as createAdminClient } from "@supabase/supabase-js";
-import type { AuthError, SupabaseClient } from "@supabase/supabase-js";
+import type { AuthError } from "@supabase/supabase-js";
 import { createClient } from "../../../supabase/server";
+import {
+  authConfirmLandingUrl,
+  authCallbackUrl,
+  recoveryRedirectUrl,
+} from "@/lib/auth/auth-redirect-urls";
+import { sendConfirmationLinkViaSmtp } from "@/lib/email/send-confirmation-link";
+import { recoveryEmailHtml } from "./templates";
 import { isSmtpConfigured, sendMail } from "./mailer";
-import { confirmationEmailHtml, recoveryEmailHtml } from "./templates";
 import { isSupabaseEmailRateLimited } from "./supabase-rate-limit";
 import { RESET_PASSWORD_PATH } from "@/lib/middleware/auth-routes";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type AuthEmailResult =
   | { ok: true; provider: "supabase" | "nodemailer" }
   | { ok: false; error: string };
-
-function getAppUrl(): string {
-  const url = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
-  if (!url) throw new Error("NEXT_PUBLIC_APP_URL is not configured");
-  return url;
-}
 
 function getAdminClient(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -27,22 +28,9 @@ function getAdminClient(): SupabaseClient {
   });
 }
 
-function callbackUrl(redirectTo: string): string {
-  const url = new URL("/auth/callback", getAppUrl());
-  url.searchParams.set("next", redirectTo);
-  return url.toString();
-}
-
-/** Recovery links go straight to the reset page so the client can exchange the code. */
-function recoveryRedirectUrl(redirectTo: string): string {
-  return new URL(redirectTo, getAppUrl()).toString();
-}
-
-async function sendViaNodemailer(
-  to: string,
-  subject: string,
-  html: string,
-  text: string
+async function sendRecoveryViaSmtp(
+  email: string,
+  redirectTo: string,
 ): Promise<AuthEmailResult> {
   if (!isSmtpConfigured()) {
     return {
@@ -52,40 +40,14 @@ async function sendViaNodemailer(
     };
   }
 
-  try {
-    await sendMail({ to, subject, html, text });
-    return { ok: true, provider: "nodemailer" };
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "Failed to send email";
-    return { ok: false, error: message };
-  }
-}
-
-async function generateLinkAndSend(
-  type: "signup" | "recovery",
-  email: string,
-  redirectTo: string,
-  password?: string,
-  redirectOverride?: string
-): Promise<AuthEmailResult> {
   const admin = getAdminClient();
-  const redirect =
-    redirectOverride ??
-    (type === "recovery" ? recoveryRedirectUrl(redirectTo) : callbackUrl(redirectTo));
+  const redirect = recoveryRedirectUrl(redirectTo);
 
-  const { data, error } =
-    type === "signup"
-      ? await admin.auth.admin.generateLink({
-          type: "signup",
-          email,
-          password: password ?? "",
-          options: { redirectTo: redirect },
-        })
-      : await admin.auth.admin.generateLink({
-          type: "recovery",
-          email,
-          options: { redirectTo: redirect },
-        });
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "recovery",
+    email,
+    options: { redirectTo: redirect },
+  });
 
   if (error || !data?.properties?.action_link) {
     return {
@@ -95,24 +57,23 @@ async function generateLinkAndSend(
   }
 
   const link = data.properties.action_link;
-  const subject =
-    type === "signup" ? "Confirm your Pryrox account" : "Reset your Pryrox password";
-  const html =
-    type === "signup"
-      ? confirmationEmailHtml(link)
-      : recoveryEmailHtml(link);
-  const text =
-    type === "signup"
-      ? `Confirm your Pryrox account: ${link}`
-      : `Reset your Pryrox password: ${link}`;
+  const subject = "Reset your Pryrox password";
+  const html = recoveryEmailHtml(link);
+  const text = `Reset your Pryrox password: ${link}`;
 
-  return sendViaNodemailer(email, subject, html, text);
+  try {
+    await sendMail({ to: email, subject, html, text });
+    return { ok: true, provider: "nodemailer" };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Failed to send email";
+    return { ok: false, error: message };
+  }
 }
 
 /** Password reset: Supabase first, Nodemailer + admin link on rate limit. */
 export async function sendPasswordRecoveryEmail(
   email: string,
-  redirectTo = RESET_PASSWORD_PATH
+  redirectTo = RESET_PASSWORD_PATH,
 ): Promise<AuthEmailResult> {
   const redirect = recoveryRedirectUrl(redirectTo);
 
@@ -127,9 +88,9 @@ export async function sendPasswordRecoveryEmail(
 
   if (isSupabaseEmailRateLimited(error)) {
     console.warn(
-      "[email] Supabase recovery rate limited, falling back to nodemailer"
+      "[email] Supabase recovery rate limited, falling back to nodemailer",
     );
-    return generateLinkAndSend("recovery", email, redirectTo, undefined, redirect);
+    return sendRecoveryViaSmtp(email, redirectTo);
   }
 
   return { ok: false, error: error.message };
@@ -148,8 +109,7 @@ export async function sendSignupConfirmationEmail(options: {
   }
 > {
   const { email, password, fullName, redirectTo = "/onboarding" } = options;
-  const appUrl = getAppUrl();
-  const redirect = callbackUrl(redirectTo);
+  const redirect = authConfirmLandingUrl(redirectTo);
 
   const supabase = await createClient();
 
@@ -176,16 +136,20 @@ export async function sendSignupConfirmationEmail(options: {
 
   if (isSupabaseEmailRateLimited(error as AuthError)) {
     console.warn(
-      "[email] Supabase signup email rate limited, falling back to nodemailer"
+      "[email] Supabase signup email rate limited, falling back to nodemailer",
     );
-    const fallback = await generateLinkAndSend(
-      "signup",
+    const fallback = await sendConfirmationLinkViaSmtp(
       email,
       redirectTo,
-      password
+      password,
     );
     return { ...fallback, sessionCreated: false };
   }
 
   return { ok: false, error: error.message };
+}
+
+/** @deprecated Use authConfirmLandingUrl from auth-redirect-urls */
+export function callbackUrl(redirectTo: string): string {
+  return authCallbackUrl(redirectTo);
 }

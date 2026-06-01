@@ -9,11 +9,25 @@ import {
   sendSignupConfirmationEmail,
 } from "@/lib/email/auth-emails";
 import crypto from "crypto";
+import { isEmailNotConfirmedError } from "@/lib/auth/email-not-confirmed";
+import {
+  INVALID_CREDENTIALS_MESSAGE,
+  isInvalidLoginCredentials,
+} from "@/lib/auth/invalid-credentials";
 import { POST_AUTH_ENTRY_PATH } from "@/lib/auth/resolve-home-redirect";
 import { getAllowUserTwoFactor } from "@/lib/platform-security-policy";
 import { RESET_PASSWORD_PATH } from "@/lib/middleware/auth-routes";
 
-export const signInAction = async (formData: FormData) => {
+export type SignInFormState = {
+  error?: string;
+  unconfirmed?: boolean;
+  email?: string;
+} | null;
+
+export const signInAction = async (
+  _prevState: SignInFormState,
+  formData: FormData,
+): Promise<SignInFormState> => {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
 
@@ -31,7 +45,19 @@ export const signInAction = async (formData: FormData) => {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    return encodedRedirect("error", "/sign-in", error.message);
+    const trimmedEmail = email.trim();
+    if (isEmailNotConfirmedError(error)) {
+      return {
+        unconfirmed: true,
+        email: trimmedEmail,
+        error:
+          "Please confirm your email before signing in. Use Resend email in this notification.",
+      };
+    }
+    if (isInvalidLoginCredentials(error)) {
+      return { error: INVALID_CREDENTIALS_MESSAGE, email: trimmedEmail };
+    }
+    return { error: error.message, email: trimmedEmail };
   }
 
   const platformAllows2FA = await getAllowUserTwoFactor(supabase);
@@ -87,13 +113,8 @@ export const signUpAction = async (formData: FormData) => {
     redirect("/onboarding");
   }
 
-  const viaFallback = result.provider === "nodemailer" ? " (sent via backup email service)" : "";
-
-  return encodedRedirect(
-    "success",
-    "/sign-in",
-    `Check your email to confirm your account, then sign in.${viaFallback}`
-  );
+  const params = new URLSearchParams({ email });
+  redirect(`/verify-email?${params.toString()}`);
 };
 
 export const signInWithGoogleAction = async () => {

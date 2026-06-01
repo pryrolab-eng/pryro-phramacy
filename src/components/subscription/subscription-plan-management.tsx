@@ -57,6 +57,11 @@ import {
 } from "@/lib/subscription/checkout-client";
 import { getPlanLimits } from "@/lib/http/subscription";
 import {
+  INVALID_EMAIL_MESSAGE,
+  isValidEmail,
+  normalizeEmail,
+} from "@/lib/validation/email";
+import {
   useCancelScheduledChangeMutation,
   useInvalidateSubscriptionManagement,
   usePharmacySubscriptionPlan,
@@ -398,8 +403,13 @@ export function SubscriptionPlanManagement({
     const plan = selectedUpgradePlan;
     const { paymentMethod, phone, email } = upgradePaymentData;
 
-    if (!email) {
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) {
       alert("Please enter your email.");
+      return;
+    }
+    if (!isValidEmail(normalizedEmail)) {
+      alert(INVALID_EMAIL_MESSAGE);
       return;
     }
     if (paymentMethod === "kpay" && !phone) {
@@ -415,7 +425,7 @@ export function SubscriptionPlanManagement({
         const polar = await startPolarSubscriptionCheckout({
           planId: plan.id || plan.name,
           subscriptionId: subscription.id,
-          customerEmail: email,
+          customerEmail: normalizedEmail,
           customerName,
           customerPhone: phone,
           returnContext: checkoutReturnContext,
@@ -437,7 +447,7 @@ export function SubscriptionPlanManagement({
         subscriptionId: subscription.id,
         customerName,
         customerPhone: phoneResult.phone.formatted,
-        customerEmail: email,
+        customerEmail: normalizedEmail,
         bankId: phoneResult.phone.kpayBankId,
       });
 
@@ -740,6 +750,8 @@ export function SubscriptionPlanManagement({
                 <Label>Email</Label>
                 <Input
                   type="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
                   value={upgradePaymentData.email}
                   disabled={isUpgradePaymentLoading}
                   onChange={(e) =>

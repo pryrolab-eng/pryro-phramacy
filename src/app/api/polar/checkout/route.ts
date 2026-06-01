@@ -6,7 +6,13 @@ import {
   isPolarConfigured,
   polarSuccessUrl,
 } from "@/lib/polar/client";
+import { formatPolarCheckoutError } from "@/lib/polar/checkout-errors";
 import { polarTransactionAmounts } from "@/lib/polar/payment-record";
+import {
+  INVALID_EMAIL_MESSAGE,
+  isValidEmail,
+  normalizeEmail,
+} from "@/lib/validation/email";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -36,8 +42,18 @@ export async function POST(request: NextRequest) {
     const planId = body.planId as string | undefined;
     const subscriptionId = body.subscriptionId as string | undefined;
     const returnContext = (body.returnContext as string) || "settings";
-    const customerEmail = (body.customerEmail as string) || user.email || "";
+    const customerEmailRaw =
+      (body.customerEmail as string) || user.email || "";
+    const customerEmail = normalizeEmail(customerEmailRaw);
     const customerName = (body.customerName as string) || "Pharmacy customer";
+
+    if (!customerEmail) {
+      return json({ error: INVALID_EMAIL_MESSAGE }, { status: 400 });
+    }
+
+    if (!isValidEmail(customerEmail)) {
+      return json({ error: INVALID_EMAIL_MESSAGE }, { status: 400 });
+    }
 
     if (!planId || !subscriptionId) {
       return json(
@@ -98,7 +114,7 @@ export async function POST(request: NextRequest) {
     const checkout = await polar.checkouts.create({
       products: [polarProductId],
       successUrl: polarSuccessUrl(returnContext),
-      customerEmail: customerEmail || undefined,
+      customerEmail,
       customerName,
       metadata: {
         pharmacy_id: membership.pharmacy_id,
@@ -148,7 +164,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (e: unknown) {
     console.error("POST /api/polar/checkout", e);
-    const message = e instanceof Error ? e.message : "Checkout failed";
-    return json({ error: message }, { status: 500 });
+    return json(
+      { error: formatPolarCheckoutError(e) },
+      { status: 500 },
+    );
   }
 }

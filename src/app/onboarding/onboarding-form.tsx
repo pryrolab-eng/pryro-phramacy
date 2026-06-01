@@ -61,6 +61,11 @@ import {
   startKpaySubscriptionCheckout,
   type KpayCheckoutResponse,
 } from "@/lib/http/subscription";
+import {
+  INVALID_EMAIL_MESSAGE,
+  isValidEmail,
+  normalizeEmail,
+} from "@/lib/validation/email";
 
 type PlanRow = {
   id: string;
@@ -401,8 +406,13 @@ export default function OnboardingForm() {
 
   const payForPlan = async () => {
     if (!selectedPlan) return;
-    if (!paymentEmail.trim()) {
+    const email = normalizeEmail(paymentEmail);
+    if (!email) {
       toast.error("Enter an email for your receipt.");
+      return;
+    }
+    if (!isValidEmail(email)) {
+      toast.error(INVALID_EMAIL_MESSAGE);
       return;
     }
     if (paymentChannel === "kpay" && !paymentPhone.trim()) {
@@ -420,7 +430,7 @@ export default function OnboardingForm() {
         const polar = await startPolarSubscriptionCheckout({
           planId: selectedPlan.id || selectedPlan.name,
           subscriptionId: subscription.id,
-          customerEmail: paymentEmail,
+          customerEmail: email,
           customerName: pharmacy.name || "Pharmacy owner",
           customerPhone: paymentPhone,
           returnContext: "onboarding",
@@ -441,7 +451,7 @@ export default function OnboardingForm() {
         subscriptionId: subscription.id,
         customerName: pharmacy.name || "Pharmacy owner",
         customerPhone: phoneResult.phone.formatted ?? paymentPhone,
-        customerEmail: paymentEmail,
+        customerEmail: email,
         bankId: phoneResult.phone.kpayBankId ?? "63510",
       });
 
@@ -889,9 +899,11 @@ export default function OnboardingForm() {
                 <Input
                   id="pay-email"
                   type="email"
+                  autoComplete="email"
                   className="border-neutral-200"
                   value={paymentEmail}
                   onChange={(e) => setPaymentEmail(e.target.value)}
+                  placeholder="you@example.com"
                 />
               </div>
             </div>

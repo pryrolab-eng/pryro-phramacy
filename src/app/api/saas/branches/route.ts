@@ -9,7 +9,11 @@ import {
   getBranchCurrentUsage,
   createBranch,
 } from '@/lib/saas/subscription-engine'
-import { resolveActivePharmacyId } from '@/lib/pharmacy/active-pharmacy'
+import { resolveActivePharmacyContext } from '@/lib/pharmacy/active-pharmacy'
+import { getStaffAllowedBranchIds } from '@/lib/pharmacy/staff-branch-access'
+import { getBranchCapacity } from '@/lib/subscription/branch-addon-capacity'
+import { resolvePharmacyEntitlements } from '@/lib/subscription/lifecycle/entitlements'
+import { resolveSwitcherBranches } from '@/lib/branches/entitled-branches'
 
 export async function GET() {
   try {
@@ -18,20 +22,48 @@ export async function GET() {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const admin = createServiceClient()
-    const pharmacyId = await resolveActivePharmacyId(admin, user.id)
+    const ctx = await resolveActivePharmacyContext(admin, user.id)
+    const pharmacyId = ctx.activePharmacyId
     if (!pharmacyId) {
       return NextResponse.json({ error: 'Pharmacy not found' }, { status: 404 })
     }
 
-    const branches = await getPharmacyBranches(admin, pharmacyId)
+    const [rawBranches, entitlements, capacity] = await Promise.all([
+      getPharmacyBranches(admin, pharmacyId),
+      resolvePharmacyEntitlements(admin, pharmacyId),
+      getBranchCapacity(admin, pharmacyId),
+    ])
+
+    const allowedBranchIds = await getStaffAllowedBranchIds(
+      admin,
+      user.id,
+      pharmacyId,
+      ctx.role,
+    )
+
+    const entitled = resolveSwitcherBranches({
+      branches: rawBranches,
+      maxSlots: capacity.totalSlots,
+      allowedBranchIds,
+      activeBranchId: ctx.activeBranchId,
+      accessBlocked: !entitlements.isAccessAllowed,
+    })
+
     const branchesWithUsage = await Promise.all(
-      branches.map(async (b) => ({
+      entitled.map(async (b) => ({
         ...b,
         usage: await getBranchCurrentUsage(admin, b.id),
       }))
     )
 
-    return NextResponse.json({ branches: branchesWithUsage })
+    return NextResponse.json({
+      branches: branchesWithUsage,
+      meta: {
+        totalActive: rawBranches.length,
+        entitledSlots: capacity.totalSlots,
+        accessBlocked: !entitlements.isAccessAllowed,
+      },
+    })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Failed to load branches'
     return NextResponse.json({ error: msg }, { status: 500 })
@@ -45,7 +77,8 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const admin = createServiceClient()
-    const pharmacyId = await resolveActivePharmacyId(admin, user.id)
+    const pharmacyId = (await resolveActivePharmacyContext(admin, user.id))
+      .activePharmacyId
     if (!pharmacyId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }

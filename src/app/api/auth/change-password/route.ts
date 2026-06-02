@@ -6,6 +6,7 @@ import {
   userMustChangePassword,
   validateNewPasswordPair,
 } from "@/lib/auth/must-change-password";
+import { assertActivePharmacyDashboardAccess } from "@/lib/subscription/assert-pharmacy-access";
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,8 +33,22 @@ export async function POST(request: NextRequest) {
     }
 
     const forced = userMustChangePassword(user);
+    const admin = createServiceClient();
 
     if (!forced) {
+      try {
+        await assertActivePharmacyDashboardAccess(supabase, admin, user.id);
+      } catch {
+        return NextResponse.json(
+          {
+            error:
+              "Your pharmacy access is paused. You cannot change your password until access is restored.",
+            code: "access_blocked",
+          },
+          { status: 403 },
+        );
+      }
+
       if (!currentPassword?.trim()) {
         return NextResponse.json(
           { error: "Current password is required." },
@@ -60,7 +75,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: updateError.message }, { status: 400 });
     }
 
-    const admin = createServiceClient();
     await clearMustChangePasswordFlag(
       admin,
       user.id,

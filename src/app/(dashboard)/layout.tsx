@@ -10,7 +10,6 @@ import SubscriptionBlocker from '@/components/subscription-blocker'
 import { FeatureRouteGuard } from '@/components/subscription/feature-route-guard'
 import { StaffRoleRouteGuard } from '@/components/subscription/staff-role-route-guard'
 import { createServiceClient } from '../../../supabase/service'
-import { resolvePharmacyEntitlements } from '@/lib/subscription/lifecycle/entitlements'
 import { resolveActivePharmacyContext } from '@/lib/pharmacy/active-pharmacy'
 import { DashboardShellBar } from '@/components/shell/dashboard-shell-bar'
 import {
@@ -52,37 +51,12 @@ export default async function DashboardLayout({
     userProfile?.role === 'superadmin' ||
     userProfile?.role === 'admin'
 
-  let isSubscriptionExpired = false
-  let activePharmacyId: string | null = userProfile?.pharmacy_id ?? null
   let userRole = userProfile?.role || 'pharmacy_owner'
 
   if (!isPlatformAdmin && user) {
     const admin = createServiceClient()
     const activeCtx = await resolveActivePharmacyContext(admin, user.id)
-    activePharmacyId = activeCtx.activePharmacyId
     userRole = activeCtx.role ?? userRole
-
-    if (activePharmacyId) {
-      const { data: pharmacy } = await supabase
-        .from('pharmacies')
-        .select('status')
-        .eq('id', activePharmacyId)
-        .maybeSingle()
-
-      let accessAllowed = true
-      try {
-        const entitlements = await resolvePharmacyEntitlements(
-          admin,
-          activePharmacyId,
-        )
-        accessAllowed = entitlements.isAccessAllowed
-      } catch (entErr) {
-        console.error('DashboardLayout: entitlements resolve failed', entErr)
-      }
-
-      isSubscriptionExpired =
-        pharmacy?.status === 'suspended' || !accessAllowed
-    }
   }
 
   const getSidebar = () => {
@@ -95,7 +69,7 @@ export default async function DashboardLayout({
     <>
       {getSidebar()}
       <SidebarInset className="flex h-svh min-h-0 min-w-0 flex-col overflow-hidden">
-        <SubscriptionBlocker isExpired={isSubscriptionExpired} userRole={userRole} />
+        <SubscriptionBlocker userRole={userRole} />
         <DashboardShellBar showBranchSwitcher={!isPlatformAdmin} />
         {!isPlatformAdmin ? <DashboardCommandPalette /> : <AdminCommandPalette />}
         <DashboardMainScroll>

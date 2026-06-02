@@ -2,6 +2,8 @@ export type AdminPlatformSettings = {
   platformName: string;
   platformLogoUrl: string;
   adminEmail: string;
+  /** Shown on blocked-access screens and “Contact support” links for pharmacies. */
+  supportEmail: string;
   maxPharmacies: number;
   enableRegistrations: boolean;
   enableNotifications: boolean;
@@ -24,6 +26,7 @@ export const defaultAdminPlatformSettings = (): AdminPlatformSettings => ({
   platformName: "Pryrox",
   platformLogoUrl: "",
   adminEmail: "admin@pryrox.com",
+  supportEmail: "support@pryrox.com",
   maxPharmacies: 100,
   enableRegistrations: true,
   enableNotifications: true,

@@ -18,6 +18,8 @@ import type { TooltipContent } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { dashboardSidebarTokens } from "@/components/sidebar/dashboard-sidebar-tokens";
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
+import { useAccessBlockMessaging } from "@/hooks/useAccessBlockMessaging";
+import { usePlatformSupport } from "@/hooks/usePlatformSupport";
 import { cn } from "@/lib/utils";
 
 export type SidebarPlanSummaryProps = {
@@ -100,6 +102,7 @@ function PlanPopoverBody({
   branchesUsed,
   branchesLimit,
 }: SidebarPlanSummaryProps) {
+  const { messaging, canAccessBilling } = useAccessBlockMessaging();
   const displayName = formatPlanName(planLabel);
   const showDays = daysLeft !== null && daysLeft >= 0 && !isExpired;
   const showUsage =
@@ -107,6 +110,7 @@ function PlanPopoverBody({
     staffLimit !== undefined &&
     branchesUsed !== undefined &&
     branchesLimit !== undefined;
+  const blockIsDestructive = messaging.badgeVariant === "destructive";
 
   return (
     <SidebarPopoverShell>
@@ -123,9 +127,16 @@ function PlanPopoverBody({
               {displayName}
             </p>
             {isExpired ? (
-              <p className="mt-0.5 flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400">
+              <p
+                className={cn(
+                  "mt-0.5 flex items-center gap-1 text-xs",
+                  blockIsDestructive
+                    ? "text-red-700 dark:text-red-400"
+                    : "text-amber-700 dark:text-amber-400",
+                )}
+              >
                 <AlertTriangle className="size-3 shrink-0" />
-                Subscription inactive
+                {messaging.shortLabel}
               </p>
             ) : showDays && daysLeft !== null ? (
               <p className="mt-0.5 text-xs text-muted-foreground">
@@ -152,7 +163,11 @@ function PlanPopoverBody({
       <div className="flex items-center gap-3 rounded-md px-2.5 py-2">
         <CreditCard className="h-4 w-4 shrink-0 text-muted-foreground" />
         <span className="flex-1 text-sm font-medium text-foreground">
-          {isExpired ? "Renew or change plan" : "Billing & plans"}
+          {isExpired
+            ? canAccessBilling
+              ? messaging.billingCta
+              : "Contact support"
+            : "Billing & plans"}
         </span>
         <ArrowUpRight className="size-3 shrink-0 opacity-60" />
       </div>
@@ -218,7 +233,13 @@ export function DashboardSidebarPlanCollapsed(props: SidebarPlanSummaryProps) {
     planLabel,
     isExpired,
   } = props;
+  const { canAccessBilling } = useAccessBlockMessaging();
+  const { supportMailto } = usePlatformSupport();
   const displayName = formatPlanName(planLabel);
+  const footerHref =
+    isExpired && !canAccessBilling
+      ? supportMailto("Pharmacy dashboard support")
+      : billingHref;
 
   return (
     <SidebarMenu className={dashboardSidebarTokens.collapsedOnly}>
@@ -231,7 +252,7 @@ export function DashboardSidebarPlanCollapsed(props: SidebarPlanSummaryProps) {
             isExpired && "text-amber-700 dark:text-amber-400",
           )}
         >
-          <Link href={billingHref}>
+          <Link href={footerHref}>
             <Sparkles className="size-4 shrink-0" strokeWidth={1.75} />
             <span className="sr-only">Current plan: {displayName}</span>
           </Link>
@@ -252,6 +273,8 @@ export function DashboardSidebarUpgrade({
   branchesUsed,
   branchesLimit,
 }: SidebarPlanSummaryProps) {
+  const { messaging, canAccessBilling } = useAccessBlockMessaging();
+  const { supportMailto } = usePlatformSupport();
   const displayName = formatPlanName(planLabel);
   const showDays = daysLeft !== null && daysLeft >= 0 && !isExpired;
   const showUsage =
@@ -259,14 +282,36 @@ export function DashboardSidebarUpgrade({
     staffLimit !== undefined &&
     branchesUsed !== undefined &&
     branchesLimit !== undefined;
+  const blockIsDestructive = messaging.badgeVariant === "destructive";
 
   return (
     <div className={cn(dashboardSidebarTokens.upgradeCard, "space-y-1.5 p-2")}>
       {isExpired ? (
-        <div className="flex items-center gap-1.5 rounded-md border border-amber-200/80 bg-amber-50/90 px-2 py-1 dark:border-amber-900/40 dark:bg-amber-950/40">
-          <AlertTriangle className="size-3 shrink-0 text-amber-600 dark:text-amber-400" />
-          <p className="text-[10px] font-medium leading-tight text-amber-900 dark:text-amber-100">
-            Subscription inactive
+        <div
+          className={cn(
+            "flex items-center gap-1.5 rounded-md border px-2 py-1",
+            blockIsDestructive
+              ? "border-red-200/80 bg-red-50/90 dark:border-red-900/40 dark:bg-red-950/40"
+              : "border-amber-200/80 bg-amber-50/90 dark:border-amber-900/40 dark:bg-amber-950/40",
+          )}
+        >
+          <AlertTriangle
+            className={cn(
+              "size-3 shrink-0",
+              blockIsDestructive
+                ? "text-red-600 dark:text-red-400"
+                : "text-amber-600 dark:text-amber-400",
+            )}
+          />
+          <p
+            className={cn(
+              "text-[10px] font-medium leading-tight",
+              blockIsDestructive
+                ? "text-red-900 dark:text-red-100"
+                : "text-amber-900 dark:text-amber-100",
+            )}
+          >
+            {messaging.shortLabel}
           </p>
         </div>
       ) : null}
@@ -304,18 +349,28 @@ export function DashboardSidebarUpgrade({
         </p>
       ) : null}
 
-      <Link
-        href={billingHref}
-        className={cn(
-          "inline-flex w-full items-center justify-center gap-1 rounded-md py-1 text-[10px] font-semibold transition-colors",
-          isExpired
-            ? "bg-primary text-primary-foreground hover:bg-primary/90"
-            : "text-foreground hover:bg-muted/80",
-        )}
-      >
-        {isExpired ? "Renew or change plan" : "Manage plan"}
-        <ArrowUpRight className="size-3 opacity-60" />
-      </Link>
+      {isExpired && !canAccessBilling ? (
+        <a
+          href={supportMailto("Pharmacy dashboard support")}
+          className="inline-flex w-full items-center justify-center gap-1 rounded-md border border-neutral-200 py-1 text-[10px] font-semibold text-foreground transition-colors hover:bg-muted/80 dark:border-neutral-700"
+        >
+          Contact support
+          <ArrowUpRight className="size-3 opacity-60" />
+        </a>
+      ) : (
+        <Link
+          href={billingHref}
+          className={cn(
+            "inline-flex w-full items-center justify-center gap-1 rounded-md py-1 text-[10px] font-semibold transition-colors",
+            isExpired
+              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+              : "text-foreground hover:bg-muted/80",
+          )}
+        >
+          {isExpired ? messaging.billingCta : "Manage plan"}
+          <ArrowUpRight className="size-3 opacity-60" />
+        </Link>
+      )}
     </div>
   );
 }

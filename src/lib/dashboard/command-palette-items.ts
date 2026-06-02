@@ -9,7 +9,8 @@ import {
 import { CreditCard, Package, PanelLeft, Plus, ShoppingCart } from "lucide-react";
 import { ADMIN_SIDEBAR_NAV } from "@/lib/admin/navigation";
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
-import { canReachRouteWhenSubscriptionInactive } from "@/lib/subscription/subscription-grace-routes";
+import type { PharmacyAccessBlockReason } from "@/lib/subscription/access-block";
+import { canReachRouteWhenAccessBlocked } from "@/lib/subscription/subscription-grace-routes";
 
 export type CommandPaletteGroup = "navigation" | "actions" | "shortcuts";
 
@@ -112,8 +113,9 @@ function quickToCommands(
 function isAlwaysReachable(
   href: string,
   subscriptionActive: boolean,
+  accessBlockReason: PharmacyAccessBlockReason,
 ): boolean {
-  if (canReachRouteWhenSubscriptionInactive(href)) return true;
+  if (canReachRouteWhenAccessBlocked(href, accessBlockReason)) return true;
   if (!subscriptionActive) return false;
   return href.startsWith(PHARMACY_ROUTES.settings);
 }
@@ -127,18 +129,20 @@ export function getNavItemsForRole(role: string | null | undefined): NavItemConf
 export type BuildCommandPaletteOptions = {
   isAccessAllowed?: boolean;
   isEntitlementsReady?: boolean;
+  accessBlockReason?: PharmacyAccessBlockReason;
 };
 
 function resolveItemAccess(
   item: CommandPaletteItem,
   can: (featureKey: string) => boolean,
   subscriptionActive: boolean,
+  accessBlockReason: PharmacyAccessBlockReason,
 ): CommandPaletteItem {
   if (item.action || !item.href) {
     return item;
   }
 
-  if (isAlwaysReachable(item.href, subscriptionActive)) {
+  if (isAlwaysReachable(item.href, subscriptionActive, accessBlockReason)) {
     return { ...item, locked: false };
   }
 
@@ -149,13 +153,21 @@ function resolveItemAccess(
     return { ...item, locked: false };
   }
 
+  const billingReachable = canReachRouteWhenAccessBlocked(
+    BILLING_HREF,
+    accessBlockReason,
+  );
+
   return {
     ...item,
     locked: true,
-    href: subscriptionActive ? item.href : BILLING_HREF,
+    href:
+      subscriptionActive || !billingReachable ? item.href : BILLING_HREF,
     lockHint: subscriptionActive
       ? "Upgrade your plan to unlock"
-      : "Renew subscription to unlock",
+      : billingReachable
+        ? "Renew subscription to unlock"
+        : "Unavailable while access is blocked",
   };
 }
 
@@ -166,9 +178,12 @@ export function buildCommandPaletteItems(
 ): CommandPaletteItem[] {
   const subscriptionActive = options?.isAccessAllowed !== false;
   const ready = options?.isEntitlementsReady !== false;
+  const accessBlockReason =
+    options?.accessBlockReason ??
+    (subscriptionActive ? "none" : "subscription_expired");
 
   const nav = navToCommands(getNavItemsForRole(role)).map((item) =>
-    resolveItemAccess(item, can, subscriptionActive),
+    resolveItemAccess(item, can, subscriptionActive, accessBlockReason),
   );
 
   const quickSource =
@@ -179,7 +194,7 @@ export function buildCommandPaletteItems(
         : QUICK_ACTIONS_OWNER;
 
   const actions = quickToCommands(quickSource).map((item) =>
-    resolveItemAccess(item, can, subscriptionActive),
+    resolveItemAccess(item, can, subscriptionActive, accessBlockReason),
   );
 
   const navUrls = new Set(nav.map((n) => n.href));
@@ -187,7 +202,11 @@ export function buildCommandPaletteItems(
 
   const shortcuts = [
     SIDEBAR_TOGGLE,
-    ...(ready && !subscriptionActive ? EXPIRED_SHORTCUTS : []),
+    ...(ready &&
+    !subscriptionActive &&
+    canReachRouteWhenAccessBlocked(BILLING_HREF, accessBlockReason)
+      ? EXPIRED_SHORTCUTS
+      : []),
   ];
 
   return [...shortcuts, ...dedupedActions, ...nav];

@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useActivePharmacy } from "@/components/providers/active-pharmacy-provider";
+import { useDashboardGraceNav } from "@/hooks/useDashboardGraceNav";
 import { Spinner } from "@/components/ui/spinner";
 import {
   DropdownMenu,
@@ -87,6 +88,77 @@ function MenuActionLink({
   );
 }
 
+function MenuActionLocked({
+  icon: Icon,
+  label,
+  shortcut,
+  lockedHint,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  shortcut?: string[];
+  lockedHint: string;
+}) {
+  return (
+    <DropdownMenuItem
+      disabled
+      className="flex cursor-not-allowed items-center gap-3 rounded-md px-2.5 py-2 opacity-50"
+      onSelect={(e) => e.preventDefault()}
+      title={`Unavailable — ${lockedHint}`}
+    >
+      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <span className="flex-1 text-sm font-medium text-muted-foreground">
+        {label}
+      </span>
+      {shortcut ? (
+        <MenuShortcut keys={shortcut} />
+      ) : (
+        <span className="ml-auto max-w-[5.5rem] truncate text-[10px] text-muted-foreground">
+          {lockedHint}
+        </span>
+      )}
+    </DropdownMenuItem>
+  );
+}
+
+function MenuNavAction({
+  href,
+  icon,
+  label,
+  shortcut,
+  onNavigate,
+  enabled,
+  lockedHint,
+}: {
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  shortcut?: string[];
+  onNavigate?: () => void;
+  enabled: boolean;
+  lockedHint: string;
+}) {
+  if (!enabled) {
+    return (
+      <MenuActionLocked
+        icon={icon}
+        label={label}
+        shortcut={shortcut}
+        lockedHint={lockedHint}
+      />
+    );
+  }
+  return (
+    <MenuActionLink
+      href={href}
+      icon={icon}
+      label={label}
+      shortcut={shortcut}
+      onNavigate={onNavigate}
+    />
+  );
+}
+
 function handleSignOut() {
   if (confirm("Are you sure you want to sign out?")) {
     window.location.href = "/api/auth/signout";
@@ -103,10 +175,18 @@ export function SidebarUserAccountMenu({
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
   const { context, switchPharmacy, isPending: contextLoading } = useActivePharmacy();
+  const { canReachHref, canChangePassword, lockedHint } = useDashboardGraceNav();
 
   const email = context.user.email ?? "";
   const memberships = context.memberships;
   const initial = userName ? userName.charAt(0).toUpperCase() : "U";
+
+  const settingsHref = isStaffWorkspaceRole(context.role)
+    ? PHARMACY_ROUTES.staffSettings
+    : `${PHARMACY_ROUTES.settings}?tab=security`;
+  const profileLabel = isStaffWorkspaceRole(context.role)
+    ? "My settings"
+    : "View profile";
 
   const handleSwitchPharmacy = async (pharmacyId: string) => {
     if (pharmacyId === context.activePharmacyId) return;
@@ -125,15 +205,17 @@ export function SidebarUserAccountMenu({
     const onKeyDown = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === "s") {
+        if (!canReachHref(settingsHref)) return;
         e.preventDefault();
         setOpen(false);
-        router.push("/settings?tab=security");
+        router.push(settingsHref);
         return;
       }
       if (mod && e.key === ",") {
+        if (!canReachHref(`${PHARMACY_ROUTES.settings}?tab=general`)) return;
         e.preventDefault();
         setOpen(false);
-        router.push("/settings?tab=general");
+        router.push(`${PHARMACY_ROUTES.settings}?tab=general`);
         return;
       }
       if (e.altKey && e.shiftKey && e.key.toLowerCase() === "q") {
@@ -144,11 +226,7 @@ export function SidebarUserAccountMenu({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, router]);
-
-  const settingsHref = isStaffWorkspaceRole(context.role)
-    ? PHARMACY_ROUTES.staffSettings
-    : `${PHARMACY_ROUTES.settings}?tab=security`;
+  }, [open, router, canReachHref, settingsHref]);
 
   return (
     <>
@@ -202,36 +280,50 @@ export function SidebarUserAccountMenu({
         className="w-[min(100vw-2rem,20rem)] rounded-xl border border-border/80 bg-popover p-1.5 shadow-lg"
       >
         <div className="py-0.5">
-          <DropdownMenuItem
-            className="flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 focus:bg-accent"
-            onSelect={() => {
-              setOpen(false);
-              setChangePasswordOpen(true);
-            }}
-          >
-            <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="flex-1 text-sm font-medium">Change password</span>
-          </DropdownMenuItem>
-          <MenuActionLink
+          {canChangePassword ? (
+            <DropdownMenuItem
+              className="flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 focus:bg-accent"
+              onSelect={() => {
+                setOpen(false);
+                setChangePasswordOpen(true);
+              }}
+            >
+              <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="flex-1 text-sm font-medium">Change password</span>
+            </DropdownMenuItem>
+          ) : (
+            <MenuActionLocked
+              icon={KeyRound}
+              label="Change password"
+              lockedHint={lockedHint}
+            />
+          )}
+          <MenuNavAction
             href={settingsHref}
             icon={User}
-            label={isStaffWorkspaceRole(context.role) ? "My settings" : "View profile"}
+            label={profileLabel}
             shortcut={["⌘", "S"]}
+            enabled={canReachHref(settingsHref)}
+            lockedHint={lockedHint}
             onNavigate={() => setOpen(false)}
           />
           {!isStaffWorkspaceRole(context.role) ? (
             <>
-              <MenuActionLink
+              <MenuNavAction
                 href={`${PHARMACY_ROUTES.settings}?tab=general`}
                 icon={Settings}
                 label="Pharmacy settings"
                 shortcut={["⌘", ","]}
+                enabled={canReachHref(`${PHARMACY_ROUTES.settings}?tab=general`)}
+                lockedHint={lockedHint}
                 onNavigate={() => setOpen(false)}
               />
-              <MenuActionLink
+              <MenuNavAction
                 href={PHARMACY_ROUTES.billing}
                 icon={CreditCard}
                 label="Billing & plans"
+                enabled={canReachHref(PHARMACY_ROUTES.billing)}
+                lockedHint={lockedHint}
                 onNavigate={() => setOpen(false)}
               />
             </>

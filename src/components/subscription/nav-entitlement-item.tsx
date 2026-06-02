@@ -15,6 +15,7 @@ import { getNavEntitlementDisplayMode } from "@/lib/subscription/nav-entitlement
 import { UpgradePlanDialog } from "@/components/subscription/upgrade-plan-dialog";
 import { usePharmacyEntitlements } from "@/hooks/usePharmacyEntitlements";
 
+import { canAccessBillingWhenBlocked } from "@/lib/subscription/access-block";
 import { BILLING_ROUTE } from "@/lib/subscription/subscription-grace-routes";
 
 const BILLING_HREF = BILLING_ROUTE;
@@ -33,15 +34,17 @@ export function NavEntitlementItem({
   isAccessAllowed,
 }: Props) {
   const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const { featureLabel, isHydrating } = usePharmacyEntitlements();
+  const { featureLabel, isHydrating, entitlements } = usePharmacyEntitlements();
   const isActive = pathname === item.url;
   const isBilling = item.url.includes("/billing");
+  const blockReason = entitlements.accessBlockReason ?? "subscription_expired";
+  const billingWhenBlocked = canAccessBillingWhenBlocked(blockReason);
 
   if (isHydrating) {
     return null;
   }
 
-  if (allowed || (isBilling && !isAccessAllowed)) {
+  if (allowed || (isBilling && !isAccessAllowed && billingWhenBlocked)) {
     return (
       <SidebarMenuItem>
         <SidebarMenuButton
@@ -63,14 +66,19 @@ export function NavEntitlementItem({
   }
 
   if (!isAccessAllowed) {
-    return (
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          asChild
-          isActive={isActive}
-          tooltip={lockedNavTooltip(`${item.title} — renew to unlock`)}
-          className={cn(dashboardSidebarTokens.navLocked, "opacity-90")}
-        >
+    const lockHint = billingWhenBlocked
+      ? `${item.title} — renew to unlock`
+      : `${item.title} — unavailable`;
+
+    const lockedButton = (
+      <SidebarMenuButton
+        asChild={billingWhenBlocked}
+        isActive={isActive}
+        tooltip={lockedNavTooltip(lockHint)}
+        className={cn(dashboardSidebarTokens.navLocked, "opacity-90")}
+        disabled={!billingWhenBlocked}
+      >
+        {billingWhenBlocked ? (
           <Link href={BILLING_HREF}>
             <item.icon className="size-4 shrink-0 opacity-60" strokeWidth={1.75} />
             <span>{item.title}</span>
@@ -81,9 +89,22 @@ export function NavEntitlementItem({
               )}
             />
           </Link>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
+        ) : (
+          <>
+            <item.icon className="size-4 shrink-0 opacity-60" strokeWidth={1.75} />
+            <span>{item.title}</span>
+            <Lock
+              className={cn(
+                "ml-auto size-3 shrink-0 text-neutral-400",
+                dashboardSidebarTokens.collapsedHidden,
+              )}
+            />
+          </>
+        )}
+      </SidebarMenuButton>
     );
+
+    return <SidebarMenuItem>{lockedButton}</SidebarMenuItem>;
   }
 
   if (getNavEntitlementDisplayMode() === "hide") {

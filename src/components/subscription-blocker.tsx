@@ -1,33 +1,43 @@
-'use client'
+"use client";
 
-import { useEffect } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { usePharmacyEntitlements } from "@/hooks/usePharmacyEntitlements";
 import {
-  isRouteAllowedWhenSubscriptionInactive,
+  isRouteAllowedWhenAccessBlocked,
   resolveSubscriptionHomePath,
-} from '@/lib/subscription/subscription-grace-routes'
+} from "@/lib/subscription/subscription-grace-routes";
 
 interface SubscriptionBlockerProps {
-  isExpired: boolean
-  userRole: string
+  userRole: string;
 }
 
 /**
- * When subscription is inactive, keep role home + billing open.
- * Everything else redirects to the role dashboard welcome screen.
+ * When access is blocked, keep role home open and billing only when payment can help.
  */
 export default function SubscriptionBlocker({
-  isExpired,
   userRole,
 }: SubscriptionBlockerProps) {
-  const pathname = usePathname()
-  const router = useRouter()
+  const pathname = usePathname();
+  const router = useRouter();
+  const { entitlements, isEntitlementsReady } = usePharmacyEntitlements();
 
   useEffect(() => {
-    if (!isExpired) return
-    if (isRouteAllowedWhenSubscriptionInactive(pathname, userRole)) return
-    router.replace(resolveSubscriptionHomePath(userRole))
-  }, [isExpired, pathname, router, userRole])
+    if (!isEntitlementsReady) return;
+    if (entitlements.isAccessAllowed) return;
 
-  return null
+    const reason = entitlements.accessBlockReason ?? "subscription_expired";
+    if (isRouteAllowedWhenAccessBlocked(pathname, userRole, reason)) return;
+
+    router.replace(resolveSubscriptionHomePath(userRole));
+  }, [
+    entitlements.accessBlockReason,
+    entitlements.isAccessAllowed,
+    isEntitlementsReady,
+    pathname,
+    router,
+    userRole,
+  ]);
+
+  return null;
 }

@@ -1,8 +1,9 @@
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
+import { isStaffWorkspaceRole } from "@/lib/rbac/pharmacy-roles";
 import {
-  isPharmacyOwnerRole,
-  isStaffWorkspaceRole,
-} from "@/lib/rbac/pharmacy-roles";
+  canAccessBillingWhenBlocked,
+  type PharmacyAccessBlockReason,
+} from "@/lib/subscription/access-block";
 
 export const BILLING_ROUTE = PHARMACY_ROUTES.billing;
 
@@ -39,21 +40,51 @@ export function isSubscriptionHomePath(
   return normalized === home;
 }
 
-/** Routes reachable while the pharmacy subscription is inactive (renew flow only). */
+/** Routes reachable while dashboard access is blocked. */
+export function isRouteAllowedWhenAccessBlocked(
+  pathname: string,
+  role: string | null | undefined,
+  reason: PharmacyAccessBlockReason,
+): boolean {
+  if (reason === "none") return true;
+
+  const normalized = normalizeRoutePath(pathname);
+
+  if (
+    AUTH_ROUTES.some(
+      (route) => normalized === route || normalized.startsWith(`${route}/`),
+    )
+  ) {
+    return true;
+  }
+
+  if (isSubscriptionHomePath(pathname, role)) return true;
+
+  if (canAccessBillingWhenBlocked(reason) && isBillingRoute(pathname)) {
+    return true;
+  }
+
+  return false;
+}
+
+/** @deprecated Use `isRouteAllowedWhenAccessBlocked` with `accessBlockReason`. */
 export function isRouteAllowedWhenSubscriptionInactive(
   pathname: string,
   role?: string | null,
+  reason: PharmacyAccessBlockReason = "subscription_expired",
 ): boolean {
-  const normalized = normalizeRoutePath(pathname);
-
-  if (isSubscriptionHomePath(pathname, role)) return true;
-  if (isBillingRoute(pathname)) return true;
-
-  return AUTH_ROUTES.some(
-    (route) => normalized === route || normalized.startsWith(`${route}/`),
-  );
+  return isRouteAllowedWhenAccessBlocked(pathname, role, reason);
 }
 
+export function canReachRouteWhenAccessBlocked(
+  href: string,
+  reason: PharmacyAccessBlockReason,
+): boolean {
+  if (reason === "none") return true;
+  return canAccessBillingWhenBlocked(reason) && isBillingRoute(href);
+}
+
+/** @deprecated Use `canReachRouteWhenAccessBlocked`. */
 export function canReachRouteWhenSubscriptionInactive(href: string): boolean {
   return isBillingRoute(href);
 }

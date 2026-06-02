@@ -13,6 +13,10 @@ import {
   type WithinLimitResult,
 } from "./types";
 import { isBranchAddonCatalogName } from "../normalize-plan";
+import {
+  getWithinLimitBlockReason,
+  resolveAccessBlockReason,
+} from "@/lib/subscription/access-block";
 import { normalizeLifecycleStatus, statusGrantsAccess } from "./status";
 
 const DEFAULT_MAX_USERS = 5;
@@ -73,6 +77,18 @@ async function loadPlanById(
   };
 }
 
+async function loadPharmacyStatus(
+  admin: SupabaseClient,
+  pharmacyId: string,
+): Promise<string> {
+  const { data } = await admin
+    .from("pharmacies")
+    .select("status")
+    .eq("id", pharmacyId)
+    .maybeSingle();
+  return String(data?.status ?? "active").toLowerCase();
+}
+
 async function loadUsage(
   admin: SupabaseClient,
   pharmacyId: string,
@@ -112,9 +128,11 @@ function buildEntitlementHelpers(
   limits: EntitlementLimits,
   usage: EntitlementUsage,
   isAccessAllowed: boolean,
+  accessBlockReason: PharmacyEntitlements["accessBlockReason"],
 ): Pick<PharmacyEntitlements, "can" | "withinLimit"> {
   const keySet = new Set(featureKeys);
   const enforced = isEntitlementsEnforced();
+  const blockedReason = getWithinLimitBlockReason(accessBlockReason);
 
   return {
     can(featureKey: string) {
@@ -129,7 +147,7 @@ function buildEntitlementHelpers(
       if (!isAccessAllowed) {
         return {
           allowed: false,
-          reason: "Subscription inactive",
+          reason: blockedReason,
           current: 0,
           limit: 0,
         };
@@ -165,18 +183,31 @@ function buildEntitlementHelpers(
   };
 }
 
-function emptyEntitlements(pharmacyId: string): PharmacyEntitlements {
+function emptyEntitlements(
+  pharmacyId: string,
+  pharmacyStatus: string,
+  accessBlockReason: PharmacyEntitlements["accessBlockReason"],
+): PharmacyEntitlements {
   const limits = buildLimits(null, DEFAULT_MAX_BRANCHES);
   const usage: EntitlementUsage = { activeUsers: 0, activeBranches: 0 };
-  const helpers = buildEntitlementHelpers([], limits, usage, false);
+  const isAccessAllowed = accessBlockReason === "none";
+  const helpers = buildEntitlementHelpers(
+    [],
+    limits,
+    usage,
+    isAccessAllowed,
+    accessBlockReason,
+  );
   return {
     pharmacyId,
+    pharmacyStatus,
     effectivePlan: null,
     effectivePlanLabel: "standard",
     subscriptionId: null,
     lifecycleStatus: null,
     expiresAt: null,
-    isAccessAllowed: false,
+    isAccessAllowed,
+    accessBlockReason,
     isExpired: true,
     daysRemaining: null,
     scheduledChange: null,
@@ -191,6 +222,8 @@ export async function resolvePharmacyEntitlements(
   admin: SupabaseClient,
   pharmacyId: string,
 ): Promise<PharmacyEntitlements> {
+  const pharmacyStatus = await loadPharmacyStatus(admin, pharmacyId);
+
   const { data: rows, error } = await admin
     .from("subscriptions")
     .select(
@@ -240,7 +273,16 @@ export async function resolvePharmacyEntitlements(
     candidates.find((r) => r.is_active && isMainTierSub(r)) ??
     null;
 
-  if (!main) return emptyEntitlements(pharmacyId);
+  if (!main) {
+    const accessBlockReason = resolveAccessBlockReason({
+      pharmacyStatus,
+      hasMainSubscription: false,
+      lifecycleStatus: null,
+      isExpired: true,
+      subscriptionAccessAllowed: false,
+    });
+    return emptyEntitlements(pharmacyId, pharmacyStatus, accessBlockReason);
+  }
 
   const lifecycleStatus = normalizeLifecycleStatus(main.status, {
     is_active: main.is_active,
@@ -262,8 +304,16 @@ export async function resolvePharmacyEntitlements(
   const expiresAt = main.expires_at;
   const now = Date.now();
   const isExpired = !expiresAt || new Date(expiresAt).getTime() <= now;
-  const isAccessAllowed =
+  const subscriptionAccessAllowed =
     statusGrantsAccess(lifecycleStatus) && !isExpired;
+  const accessBlockReason = resolveAccessBlockReason({
+    pharmacyStatus,
+    hasMainSubscription: true,
+    lifecycleStatus,
+    isExpired,
+    subscriptionAccessAllowed,
+  });
+  const isAccessAllowed = accessBlockReason === "none";
 
   let daysRemaining: number | null = null;
   if (expiresAt && !isExpired) {
@@ -308,10 +358,12 @@ export async function resolvePharmacyEntitlements(
     limits,
     usage,
     isAccessAllowed,
+    accessBlockReason,
   );
 
   return {
     pharmacyId,
+    pharmacyStatus,
     effectivePlan,
     effectivePlanLabel: (effectivePlan?.name ?? main.plan ?? "standard")
       .toString()
@@ -320,6 +372,7 @@ export async function resolvePharmacyEntitlements(
     lifecycleStatus,
     expiresAt,
     isAccessAllowed,
+    accessBlockReason,
     isExpired,
     daysRemaining,
     scheduledChange,
@@ -362,9 +415,11 @@ export async function toEntitlementsSnapshot(
   }
   return {
     pharmacyId: ent.pharmacyId,
+    pharmacyStatus: ent.pharmacyStatus,
     effectivePlan: ent.effectivePlan,
     effectivePlanLabel: ent.effectivePlanLabel,
     isAccessAllowed: ent.isAccessAllowed,
+    accessBlockReason: ent.accessBlockReason,
     isExpired: ent.isExpired,
     daysRemaining: ent.daysRemaining,
     featureKeys: ent.featureKeys,

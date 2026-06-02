@@ -7,9 +7,12 @@ import {
   type PlatformBranding,
 } from "@/lib/http/platform-branding";
 
+import { DEFAULT_PLATFORM_SUPPORT_EMAIL } from "@/lib/platform/support-email";
+
 const DEFAULT_BRANDING: PlatformBranding = {
   platformName: "Pryrox",
   platformLogoUrl: null,
+  supportEmail: DEFAULT_PLATFORM_SUPPORT_EMAIL,
 };
 
 export function useBranding(): PlatformBranding {

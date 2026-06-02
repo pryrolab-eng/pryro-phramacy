@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { GitBranch } from "lucide-react";
-import { useSaasBranches } from "@/hooks/useSaasSubscription";
+import { useEntitledBranches } from "@/hooks/useEntitledBranches";
 import {
   Select,
   SelectContent,
@@ -23,15 +23,14 @@ type Props = {
 
 /** Report scope: all branches vs one. Hidden when only one branch (shell bar shows active branch). */
 export function BranchScopeFilter({ value, onChange, className }: Props) {
-  const branchesQuery = useSaasBranches();
-  const branches = branchesQuery.data ?? [];
+  const { branches, canSwitchBranch, isAccessBlocked } = useEntitledBranches();
 
   const label = useMemo(() => {
     if (value === "all") return "All branches";
     return branches.find((b) => b.id === value)?.name ?? "Branch";
   }, [value, branches]);
 
-  if (branches.length <= 1) {
+  if (!canSwitchBranch || branches.length <= 1 || isAccessBlocked) {
     return null;
   }
 

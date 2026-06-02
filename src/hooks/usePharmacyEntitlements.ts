@@ -8,15 +8,18 @@ import {
 import { ApiError } from "@/lib/http/client";
 import type { PharmacyEntitlementsSnapshot } from "@/lib/subscription/lifecycle/types";
 import { getFeatureLabel } from "@/lib/subscription/feature-labels";
+import { getWithinLimitBlockReason } from "@/lib/subscription/access-block";
 
 export type { PharmacyEntitlementsSnapshot };
 
 /** Placeholder only — never treat as real subscription state. */
 const EMPTY: PharmacyEntitlementsSnapshot = {
   pharmacyId: "",
+  pharmacyStatus: "active",
   effectivePlan: null,
   effectivePlanLabel: "standard",
   isAccessAllowed: false,
+  accessBlockReason: "no_subscription",
   isExpired: true,
   daysRemaining: null,
   featureKeys: [],
@@ -78,7 +81,9 @@ export function usePharmacyEntitlements(options?: { enabled?: boolean }) {
           allowed: false,
           reason: isHydrating
             ? undefined
-            : "Subscription inactive",
+            : getWithinLimitBlockReason(
+                data.accessBlockReason ?? "subscription_expired",
+              ),
           current: 0,
           limit: 0,
         };

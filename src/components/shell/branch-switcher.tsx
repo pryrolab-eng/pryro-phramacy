@@ -1,8 +1,8 @@
 "use client";
 
-import { GitBranch } from "lucide-react";
+import { GitBranch, Lock } from "lucide-react";
 import { useActivePharmacy } from "@/components/providers/active-pharmacy-provider";
-import { useSaasBranches } from "@/hooks/useSaasSubscription";
+import { useEntitledBranches } from "@/hooks/useEntitledBranches";
 import {
   Select,
   SelectContent,
@@ -18,19 +18,14 @@ type Props = {
 };
 
 export function BranchSwitcher({ className }: Props) {
-  const { activeBranchId, allowedBranchIds, switchBranch, isHydrating: ctxHydrating } =
-    useActivePharmacy();
-  const branchesQuery = useSaasBranches();
-  const allBranches = branchesQuery.data ?? [];
-  const branches =
-    allowedBranchIds === null
-      ? allBranches
-      : allBranches.filter((b) => allowedBranchIds.includes(b.id));
-
-  const isLoading =
-    ctxHydrating ||
-    branchesQuery.isPending ||
-    (branchesQuery.isFetching && branchesQuery.data === undefined);
+  const { activeBranchId } = useActivePharmacy();
+  const {
+    branches,
+    isLoading,
+    isError,
+    canSwitchBranch,
+    isAccessBlocked,
+  } = useEntitledBranches();
 
   if (isLoading) {
     return (
@@ -49,7 +44,7 @@ export function BranchSwitcher({ className }: Props) {
     );
   }
 
-  if (branchesQuery.isError) {
+  if (isError) {
     return (
       <div
         className={cn(dashboardSurfaces.pill, "text-muted-foreground", className)}
@@ -65,14 +60,43 @@ export function BranchSwitcher({ className }: Props) {
     return null;
   }
 
-  if (branches.length === 1) {
+  const activeBranch =
+    branches.find((b) => b.id === activeBranchId) ?? branches[0];
+
+  if (!canSwitchBranch) {
     return (
-      <div className={cn(dashboardSurfaces.pill, className)} title="Active branch">
+      <div
+        className={cn(dashboardSurfaces.pill, className)}
+        title={
+          isAccessBlocked
+            ? "Branch switching is disabled while pharmacy access is paused"
+            : "Active branch"
+        }
+      >
         <GitBranch className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
-        <span className="max-w-[160px] truncate">{branches[0].name}</span>
+        <span className="max-w-[160px] truncate">{activeBranch.name}</span>
+        {isAccessBlocked ? (
+          <Lock className="h-3 w-3 shrink-0 text-neutral-400" aria-hidden />
+        ) : null}
       </div>
     );
   }
+
+  return (
+    <BranchSwitcherSelect branches={branches} activeBranchId={activeBranchId} className={className} />
+  );
+}
+
+function BranchSwitcherSelect({
+  branches,
+  activeBranchId,
+  className,
+}: {
+  branches: { id: string; name: string }[];
+  activeBranchId: string | null;
+  className?: string;
+}) {
+  const { switchBranch } = useActivePharmacy();
 
   return (
     <Select

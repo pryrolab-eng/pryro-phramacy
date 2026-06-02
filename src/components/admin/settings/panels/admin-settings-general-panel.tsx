@@ -61,6 +61,26 @@ export function AdminSettingsGeneralPanel() {
                 setSettings({ ...settings, adminEmail: e.target.value })
               }
             />
+            <p className="text-xs text-muted-foreground">
+              Internal platform contact (not shown to pharmacy users).
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <label className="text-sm font-medium text-neutral-900 dark:text-neutral-50">
+              Support email
+            </label>
+            <Input
+              type="email"
+              placeholder="support@yourcompany.com"
+              value={settings.supportEmail}
+              onChange={(e) =>
+                setSettings({ ...settings, supportEmail: e.target.value })
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              Used for “Contact support” on suspended subscriptions, billing
+              blocks, and staff dashboards.
+            </p>
           </div>
         </div>
       </SettingsSection>

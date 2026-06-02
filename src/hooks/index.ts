@@ -23,6 +23,9 @@ export {
   type WeeklySalesChartPoint,
 } from "./usePharmacyDashboard";
 export { useBranding } from "./useBranding";
+export { usePlatformSupport } from "./usePlatformSupport";
+export { useDashboardGraceNav } from "./useDashboardGraceNav";
+export { useEntitledBranches } from "./useEntitledBranches";
 export { useCreatePharmacistMutation } from "./useCreatePharmacist";
 export { PharmacyProvider, usePharmacyStore } from "./usePharmacyStore";
 export { useRealtimeUpdates } from "./useRealtimeUpdates";

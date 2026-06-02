@@ -4,7 +4,14 @@ import {
   selectPrimaryMembership,
   type PharmacyMembership,
 } from "@/utils/select-pharmacy-membership";
-import { assertBranchAllowedForUser } from "@/lib/pharmacy/staff-branch-access";
+import {
+  assertBranchAllowedForUser,
+  getStaffAllowedBranchIds,
+} from "@/lib/pharmacy/staff-branch-access";
+import { resolveSwitcherBranches } from "@/lib/branches/entitled-branches";
+import { getBranchCapacity } from "@/lib/subscription/branch-addon-capacity";
+import { resolvePharmacyEntitlements } from "@/lib/subscription/lifecycle/entitlements";
+import { getPharmacyBranches } from "@/lib/saas/subscription-engine";
 
 export type PharmacyMembershipDetail = PharmacyMembership & {
   pharmacy_name: string | null;
@@ -192,6 +199,37 @@ export async function setActiveBranchId(
     ctx.role,
     branchId,
   );
+
+  const [entitlements, rawBranches, capacity, allowedBranchIds] =
+    await Promise.all([
+      resolvePharmacyEntitlements(admin, ctx.activePharmacyId),
+      getPharmacyBranches(admin, ctx.activePharmacyId),
+      getBranchCapacity(admin, ctx.activePharmacyId),
+      getStaffAllowedBranchIds(
+        admin,
+        userId,
+        ctx.activePharmacyId,
+        ctx.role,
+      ),
+    ]);
+
+  if (!entitlements.isAccessAllowed) {
+    throw new Error(
+      "Branch switching is disabled while pharmacy access is paused",
+    );
+  }
+
+  const entitled = resolveSwitcherBranches({
+    branches: rawBranches,
+    maxSlots: capacity.totalSlots,
+    allowedBranchIds,
+    activeBranchId: ctx.activeBranchId,
+    accessBlocked: false,
+  });
+
+  if (!entitled.some((b) => b.id === branchId)) {
+    throw new Error("This branch is not included in your current plan");
+  }
 
   await persistActiveContext(admin, userId, ctx.activePharmacyId, branchId);
   return resolveActivePharmacyContext(admin, userId);

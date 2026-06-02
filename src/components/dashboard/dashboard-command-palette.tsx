@@ -51,8 +51,15 @@ export function DashboardCommandPalette() {
       buildCommandPaletteItems(context.role, can, {
         isAccessAllowed: entitlements.isAccessAllowed,
         isEntitlementsReady,
+        accessBlockReason: entitlements.accessBlockReason,
       }),
-    [context.role, can, entitlements.isAccessAllowed, isEntitlementsReady],
+    [
+      context.role,
+      can,
+      entitlements.isAccessAllowed,
+      entitlements.accessBlockReason,
+      isEntitlementsReady,
+    ],
   );
 
   const { shortcuts, actions, navigation } = useMemo(

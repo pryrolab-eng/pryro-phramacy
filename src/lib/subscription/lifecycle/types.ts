@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { PharmacyAccessBlockReason } from "@/lib/subscription/access-block";
 
 /** Canonical subscription lifecycle status (authoritative). */
 export type SubscriptionLifecycleStatus =
@@ -66,12 +67,14 @@ export type ScheduledChangeInfo = {
 
 export type PharmacyEntitlements = {
   pharmacyId: string;
+  pharmacyStatus: string;
   effectivePlan: EntitlementPlan | null;
   effectivePlanLabel: string;
   subscriptionId: string | null;
   lifecycleStatus: SubscriptionLifecycleStatus | null;
   expiresAt: string | null;
   isAccessAllowed: boolean;
+  accessBlockReason: PharmacyAccessBlockReason;
   isExpired: boolean;
   daysRemaining: number | null;
   scheduledChange: ScheduledChangeInfo | null;
@@ -85,9 +88,11 @@ export type PharmacyEntitlements = {
 /** JSON-safe shape for client hooks */
 export type PharmacyEntitlementsSnapshot = {
   pharmacyId: string;
+  pharmacyStatus: string;
   effectivePlan: EntitlementPlan | null;
   effectivePlanLabel: string;
   isAccessAllowed: boolean;
+  accessBlockReason: PharmacyAccessBlockReason;
   isExpired: boolean;
   daysRemaining: number | null;
   featureKeys: string[];

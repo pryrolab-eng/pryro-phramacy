@@ -73,13 +73,14 @@ export function PaymentSuccessContent() {
   return (
     <PaymentStatusScreen status={uiStatus} title={title} message={message}>
       {uiStatus === "success" ? (
-        <PaymentStatusPrimaryButton onClick={goNext}>
+        <PaymentStatusPrimaryButton status="success" onClick={goNext}>
           Continue
         </PaymentStatusPrimaryButton>
       ) : null}
       {uiStatus === "failed" ? (
         <>
           <PaymentStatusPrimaryButton
+            status="failed"
             onClick={() => router.push(PHARMACY_ROUTES.settings)}
           >
             Try again

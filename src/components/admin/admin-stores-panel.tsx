@@ -19,11 +19,7 @@ import {
   DashboardSearchInput,
   DashboardStatCard,
   DashboardDataTable,
-  DashboardAlertDialogContent,
-  DashboardAlertDialogHeader,
-  DashboardAlertDialogTitle,
-  DashboardAlertDialogDescription,
-  DashboardAlertDialogActions,
+  DashboardConfirmDialog,
 } from "@/components/dashboard";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -42,7 +38,6 @@ import { AdminPharmacyDetailDialog } from "@/components/admin/admin-pharmacy-det
 import { createAdminStoresColumns } from "@/components/admin/admin-stores-columns";
 import { toast } from "@/components/ui/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { AlertDialog } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import {
   adminPharmaciesQueryKey,
@@ -170,6 +165,11 @@ export function AdminStoresPanel() {
   const [repairing, setRepairing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [deletingOne, setDeletingOne] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const catalog = (plansQuery.data?.plans ?? []) as CatalogPlanLike[];
@@ -339,19 +339,24 @@ export function AdminStoresPanel() {
     }
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  const confirmDeleteOne = async () => {
+    if (!deleteTarget) return;
+    const { id } = deleteTarget;
+    setDeletingOne(true);
     try {
       await deleteAdminPharmacy(id);
-      await invalidate();
+      setDeleteTarget(null);
       setSelectedIds((prev) => prev.filter((x) => x !== id));
       toast({ title: "Pharmacy deleted" });
+      void invalidate();
     } catch (e) {
       toast({
         title: "Could not delete",
         description: e instanceof Error ? e.message : "Unknown error",
         variant: "destructive",
       });
+    } finally {
+      setDeletingOne(false);
     }
   };
 
@@ -379,8 +384,7 @@ export function AdminStoresPanel() {
         }
       }
 
-      await invalidate();
-      await pharmaciesQuery.refetch();
+      setBulkDeleteOpen(false);
       setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
 
       if (blocked.length > 0) {
@@ -392,9 +396,11 @@ export function AdminStoresPanel() {
       } else {
         toast({ title: "Pharmacies deleted", description: `${deleted} deleted.` });
       }
+
+      void invalidate();
+      void pharmaciesQuery.refetch();
     } finally {
       setBulkDeleting(false);
-      setBulkDeleteOpen(false);
     }
   };
 
@@ -455,7 +461,9 @@ export function AdminStoresPanel() {
         ...createAdminStoresColumns(catalog, {
         onView: setViewPharmacy,
         onEdit: openEdit,
-        onDelete: handleDelete,
+        onDelete: (id, name) => {
+          setDeleteTarget({ id, name });
+        },
       }),
       ];
     },
@@ -629,29 +637,40 @@ export function AdminStoresPanel() {
           }
         />
 
-      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
-        <DashboardAlertDialogContent>
-          <DashboardAlertDialogHeader>
-            <DashboardAlertDialogTitle>
-              Delete selected pharmacies?
-            </DashboardAlertDialogTitle>
-            <DashboardAlertDialogDescription>
-              This cannot be undone. Pharmacies with active or pending subscriptions
-              will be blocked.
-            </DashboardAlertDialogDescription>
-          </DashboardAlertDialogHeader>
-          <DashboardAlertDialogActions
-            cancelLabel="Cancel"
-            confirmLabel={
-              bulkDeleting ? "Deleting…" : `Delete ${selectedInView.length}`
-            }
-            onCancel={() => !bulkDeleting && setBulkDeleteOpen(false)}
-            onConfirm={() => void handleBulkDelete()}
-            confirmTone="destructive"
-            confirmDisabled={bulkDeleting}
-          />
-        </DashboardAlertDialogContent>
-      </AlertDialog>
+      <DashboardConfirmDialog
+        open={deleteTarget != null}
+        onOpenChange={(open) => {
+          if (open || deletingOne) return;
+          setDeleteTarget(null);
+        }}
+        title="Delete pharmacy?"
+        description={
+          <>
+            <span className="font-medium text-neutral-900 dark:text-neutral-50">
+              {deleteTarget?.name}
+            </span>{" "}
+            will be removed permanently. Unpaid checkouts are cancelled
+            automatically; stores with an active paid plan cannot be deleted.
+          </>
+        }
+        confirmLabel="Delete"
+        onConfirm={() => void confirmDeleteOne()}
+        confirmDisabled={deletingOne}
+        loading={deletingOne}
+      />
+
+      <DashboardConfirmDialog
+        open={bulkDeleteOpen}
+        onOpenChange={(open) => {
+          if (!bulkDeleting) setBulkDeleteOpen(open);
+        }}
+        title="Delete selected pharmacies?"
+        description="This cannot be undone. Pending checkouts are cancelled first. Stores with an active subscription will be skipped."
+        confirmLabel={`Delete ${selectedInView.length}`}
+        onConfirm={() => void handleBulkDelete()}
+        confirmDisabled={bulkDeleting || selectedInView.length === 0}
+        loading={bulkDeleting}
+      />
 
       {viewPharmacy ? (
         <AdminPharmacyDetailDialog

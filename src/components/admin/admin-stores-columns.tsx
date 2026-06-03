@@ -131,15 +131,24 @@ export function createAdminStoresColumns(
       ),
     },
     {
-      accessorKey: "status",
+      id: "access",
+      accessorFn: (row) =>
+        String(row.access_label ?? row.access_status ?? row.status ?? "active"),
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="Access" />
       ),
       cell: ({ row }) => {
-        const status = String(row.original.status ?? "active");
+        const p = row.original;
+        const accessStatus = String(
+          p.access_status ?? p.status ?? "active",
+        );
+        const accessLabel = String(
+          p.access_label ??
+            pharmacyAccessLabel(accessStatus),
+        );
         return (
-          <Badge variant={pharmacyAccessVariant(status)}>
-            {pharmacyAccessLabel(status)}
+          <Badge variant={pharmacyAccessVariant(accessStatus)}>
+            {accessLabel}
           </Badge>
         );
       },

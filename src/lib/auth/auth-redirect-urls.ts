@@ -1,10 +1,8 @@
 /** Shared auth redirect URLs for email links and OAuth. */
 
-export function getAppUrl(): string {
-  const url = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
-  if (!url) throw new Error("NEXT_PUBLIC_APP_URL is not configured");
-  return url;
-}
+export { getAppUrl } from "@/lib/app-url";
+
+import { getAppUrl } from "@/lib/app-url";
 
 /** Server route: exchange PKCE `code` and set session cookies. */
 export function authCallbackUrl(nextPath: string): string {

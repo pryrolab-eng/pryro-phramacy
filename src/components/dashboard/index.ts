@@ -65,4 +65,5 @@ export {
   DashboardAlertDialogTitle,
   DashboardAlertDialogDescription,
   DashboardAlertDialogActions,
+  DashboardConfirmDialog,
 } from "./dashboard-alert-dialog";

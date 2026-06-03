@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  resolveAdminPharmacyListFields,
+  type AdminMainSubRow,
+} from "@/lib/admin/pharmacy-list-enrichment";
 import { isFreePlanPrice } from "@/lib/admin/plan-stats";
 import { planNameToEnum } from "@/lib/subscription/plan-enum";
 import {
@@ -29,10 +33,16 @@ export async function GET() {
       supabase
         .from("subscriptions")
         .select(
-          "pharmacy_id, plan, status, subscription_type, subscription_plans!plan_id(name, price, plan_type)",
+          "pharmacy_id, plan, status, is_active, payment_method, pending_change_status, expires_at, created_at, subscription_type, subscription_plans!plan_id(name, price, plan_type)",
         )
-        .eq("status", "active")
-        .eq("subscription_type", "main"),
+        .eq("subscription_type", "main")
+        .in("status", [
+          "active",
+          "pending_payment",
+          "pending",
+          "scheduled_change",
+        ])
+        .order("created_at", { ascending: false }),
       supabase
         .from("subscriptions")
         .select("pharmacy_id")
@@ -59,25 +69,13 @@ export async function GET() {
       );
     }
 
-    type SubPlan = { name: string; price: number };
-    const subPlanByPharmacy = new Map<string, SubPlan>();
+    const mainSubsByPharmacy = new Map<string, AdminMainSubRow[]>();
     for (const row of subsResult.data ?? []) {
       const pharmacyId = (row as { pharmacy_id?: string | null }).pharmacy_id;
       if (!pharmacyId) continue;
-      const embedded = (row as {
-        subscription_plans?: {
-          name?: string;
-          price?: unknown;
-          plan_type?: string;
-        } | null;
-      }).subscription_plans;
-      if (!embedded || !isMainTierCatalogRow(embedded)) continue;
-      const name = embedded.name?.trim();
-      if (!name || isBranchAddonCatalogName(name)) continue;
-      subPlanByPharmacy.set(pharmacyId, {
-        name,
-        price: Number(embedded.price ?? 0),
-      });
+      const list = mainSubsByPharmacy.get(pharmacyId) ?? [];
+      list.push(row as AdminMainSubRow);
+      mainSubsByPharmacy.set(pharmacyId, list);
     }
 
     const { data: catalogPlans } = await supabase
@@ -99,7 +97,17 @@ export async function GET() {
 
     const enriched = (pharmacies ?? []).map((p) => {
       const id = String((p as { id?: string }).id ?? "");
-      const sub = subPlanByPharmacy.get(id);
+      const mainSubs = mainSubsByPharmacy.get(id) ?? [];
+      const listFields = resolveAdminPharmacyListFields(
+        {
+          status: (p as { status?: string }).status,
+          subscription_plan: (p as { subscription_plan?: string })
+            .subscription_plan,
+        },
+        mainSubs,
+        mainCatalogPlans,
+      );
+
       const enumKey = planNameToEnum(
         String((p as { subscription_plan?: string }).subscription_plan ?? ""),
       );
@@ -108,16 +116,16 @@ export async function GET() {
           planNameToEnum(String((c as { name?: string }).name)) === enumKey,
       ) as { name?: string } | undefined;
 
-      let catalog_plan_name =
-        sub?.name ??
-        (fallbackPlan?.name ? String(fallbackPlan.name) : null);
-      if (catalog_plan_name && isBranchAddonCatalogName(catalog_plan_name)) {
+      let catalog_plan_name = listFields.catalog_plan_name;
+      let catalog_plan_price = listFields.catalog_plan_price;
+      if (!catalog_plan_name) {
         catalog_plan_name = fallbackPlan?.name
           ? String(fallbackPlan.name)
           : null;
+        if (catalog_plan_name && isBranchAddonCatalogName(catalog_plan_name)) {
+          catalog_plan_name = null;
+        }
       }
-
-      let catalog_plan_price: number | null = sub?.price ?? null;
       if (catalog_plan_price == null && catalog_plan_name) {
         catalog_plan_price =
           priceByCatalogName.get(catalog_plan_name.toLowerCase()) ?? null;
@@ -128,17 +136,17 @@ export async function GET() {
           ? isFreePlanPrice(catalog_plan_price)
           : enumKey === "trial";
 
-      const rawStatus = String((p as { status?: string }).status ?? "active");
-      /** Legacy: status `trial` meant free plan, not blocked access. */
-      const status = rawStatus === "trial" ? "active" : rawStatus;
-
       const branch_addons_active =
         branchAddonCountByPharmacy.get(id) ?? 0;
 
       return {
         ...p,
-        status,
+        status: listFields.status,
+        access_status: listFields.access_status,
+        access_label: listFields.access_label,
         branch_addons_active,
+        subscription_expires_at: listFields.subscription_expires_at,
+        pending_plan_name: listFields.pending_plan_name,
         ...(catalog_plan_name
           ? {
               catalog_plan_name,

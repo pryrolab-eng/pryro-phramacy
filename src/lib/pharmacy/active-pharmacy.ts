@@ -11,6 +11,7 @@ import {
 import { resolveSwitcherBranches } from "@/lib/branches/entitled-branches";
 import { getBranchCapacity } from "@/lib/subscription/branch-addon-capacity";
 import { resolvePharmacyEntitlements } from "@/lib/subscription/lifecycle/entitlements";
+import { ensureHeadquartersBranch } from "@/lib/pharmacy/branch-hq";
 import { getPharmacyBranches } from "@/lib/saas/subscription-engine";
 
 export type PharmacyMembershipDetail = PharmacyMembership & {
@@ -67,21 +68,6 @@ async function persistActiveContext(
   if (error) throw new Error(error.message);
 }
 
-async function defaultBranchForPharmacy(
-  admin: SupabaseClient,
-  pharmacyId: string,
-): Promise<string | null> {
-  const { data } = await admin
-    .from("branches")
-    .select("id")
-    .eq("pharmacy_id", pharmacyId)
-    .eq("is_active", true)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  return (data?.id as string) ?? null;
-}
-
 export async function resolveActivePharmacyId(
   admin: SupabaseClient,
   userId: string,
@@ -121,7 +107,7 @@ export async function resolveActivePharmacyContext(
     const primary = selectPrimaryMembership(memberships);
     activePharmacyId = primary?.pharmacy_id ?? memberships[0].pharmacy_id ?? null;
     activeBranchId = activePharmacyId
-      ? await defaultBranchForPharmacy(admin, activePharmacyId)
+      ? await ensureHeadquartersBranch(admin, activePharmacyId)
       : null;
     if (activePharmacyId) {
       await persistActiveContext(admin, userId, activePharmacyId, activeBranchId);
@@ -133,11 +119,11 @@ export async function resolveActivePharmacyContext(
       .eq("id", activeBranchId)
       .maybeSingle();
     if (branch?.pharmacy_id !== activePharmacyId) {
-      activeBranchId = await defaultBranchForPharmacy(admin, activePharmacyId);
+      activeBranchId = await ensureHeadquartersBranch(admin, activePharmacyId);
       await persistActiveContext(admin, userId, activePharmacyId, activeBranchId);
     }
   } else {
-    activeBranchId = await defaultBranchForPharmacy(admin, activePharmacyId);
+    activeBranchId = await ensureHeadquartersBranch(admin, activePharmacyId);
     if (activeBranchId) {
       await persistActiveContext(admin, userId, activePharmacyId, activeBranchId);
     }
@@ -165,7 +151,7 @@ export async function setActivePharmacyId(
     throw new Error("You do not have access to this pharmacy");
   }
 
-  const branchId = await defaultBranchForPharmacy(admin, pharmacyId);
+  const branchId = await ensureHeadquartersBranch(admin, pharmacyId);
   await persistActiveContext(admin, userId, pharmacyId, branchId);
 
   return resolveActivePharmacyContext(admin, userId);

@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { isHeadquartersBranch } from "@/lib/pharmacy/branch-hq";
 import { cn } from "@/lib/utils";
 import { dashboardSurfaces } from "@/components/dashboard/dashboard-tokens";
 
@@ -92,7 +93,7 @@ function BranchSwitcherSelect({
   activeBranchId,
   className,
 }: {
-  branches: { id: string; name: string }[];
+  branches: { id: string; name: string; is_headquarters?: boolean }[];
   activeBranchId: string | null;
   className?: string;
 }) {
@@ -117,6 +118,7 @@ function BranchSwitcherSelect({
         {branches.map((b) => (
           <SelectItem key={b.id} value={b.id}>
             {b.name}
+            {isHeadquartersBranch(b) ? " · HQ" : ""}
           </SelectItem>
         ))}
       </SelectContent>

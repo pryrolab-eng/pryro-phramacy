@@ -159,7 +159,7 @@ function PharmacyBillingPageContent() {
       : 0
 
   return (
-      <DashboardPageShell className="mx-auto">
+      <DashboardPageShell>
         <DashboardPageHeader
           title="Billing"
           description="Plans, branch add-ons, usage, and invoices"

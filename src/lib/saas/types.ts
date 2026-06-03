@@ -66,6 +66,8 @@ export interface Branch {
   phone: string | null
   email: string | null
   is_active: boolean
+  /** Main distribution site; satellite branches stock via transfers from HQ. */
+  is_headquarters?: boolean
   created_at: string
   updated_at: string
 }

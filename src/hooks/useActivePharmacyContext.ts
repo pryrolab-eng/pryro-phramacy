@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
@@ -45,6 +46,17 @@ export function useActivePharmacyContext(options?: { enabled?: boolean }) {
   const isHydrating = !hasSnapshot && !query.isError;
 
   const data = query.data ?? EMPTY;
+
+  const branchRepairAttempted = useRef(false);
+
+  /** Server auto-creates a default branch; refetch session once if still missing. */
+  useEffect(() => {
+    if (branchRepairAttempted.current || isHydrating) return;
+    if (data.activePharmacyId && !data.activeBranchId) {
+      branchRepairAttempted.current = true;
+      void query.refetch();
+    }
+  }, [data.activePharmacyId, data.activeBranchId, isHydrating, query.refetch]);
 
   const invalidateTenantQueries = async () => {
     await queryClient.invalidateQueries();

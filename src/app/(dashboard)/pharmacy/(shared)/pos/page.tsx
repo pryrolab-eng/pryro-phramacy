@@ -95,7 +95,7 @@ function POSPageContent() {
   const searchParams = useSearchParams()
   const preloadedCustomerIdRef = useRef<string | null>(null)
   const { can } = usePharmacyEntitlements()
-  const { activeBranchId } = useActivePharmacy()
+  const { activeBranchId, isHydrating: isContextHydrating } = useActivePharmacy()
   const productsQuery = usePosProducts({ branchId: activeBranchId })
   const fastMovingQuery = usePosFastMoving({ branchId: activeBranchId })
   const categoriesQuery = usePosCategories()
@@ -132,7 +132,10 @@ function POSPageContent() {
   const [checkoutAfterRx, setCheckoutAfterRx] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const loading =
-    productsQuery.isPending || fastMovingQuery.isPending || categoriesQuery.isPending
+    isContextHydrating ||
+    productsQuery.isLoading ||
+    fastMovingQuery.isLoading ||
+    categoriesQuery.isLoading
 
   const saleMutation = useProcessPosSaleMutation()
   const holdSaleMutation = useHoldPosSaleMutation()
@@ -588,6 +591,27 @@ function POSPageContent() {
 
   if (loading) {
     return <DashboardPageLoading label="Loading POS…" />
+  }
+
+  if (!activeBranchId) {
+    return (
+      <DashboardPageShell>
+        <DashboardPageHeader
+          title="Point of Sale"
+          description="Scan, sell, and settle — FEFO stock, Rx gate, shifts & returns"
+        />
+        <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-neutral-200 bg-neutral-50/80 px-6 py-12 text-center dark:border-neutral-800 dark:bg-neutral-900/40">
+          <p className="text-sm font-medium text-neutral-900 dark:text-neutral-50">
+            Select a location to open POS
+          </p>
+          <p className="max-w-md text-sm text-neutral-600 dark:text-neutral-400">
+            Stock is per location: Headquarters (HQ) distributes to satellite
+            branches via Inventory → Transfer. Use the branch switcher in the top
+            bar, or open Branches to add an outlet.
+          </p>
+        </div>
+      </DashboardPageShell>
+    )
   }
 
   const lowStockCount = products.filter((p) => p.stock <= 20).length

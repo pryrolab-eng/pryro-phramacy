@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
+import { isHeadquartersBranch } from '@/lib/pharmacy/branch-hq'
 import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
 import {
   useAddInventoryProductMutation,
@@ -127,6 +128,13 @@ export default function InventoryPage() {
   const { activeBranchId } = useActivePharmacy()
   const branchesQuery = useSaasBranches()
   const branches = branchesQuery.data ?? []
+  const headquartersBranchId = useMemo(
+    () =>
+      branches.find((b) => isHeadquartersBranch(b))?.id ??
+      branches[0]?.id ??
+      "",
+    [branches],
+  )
   const showAnalyticsTab =
     can('inventory.analytics') ||
     !shouldHideLockedFeature('inventory.analytics', can)
@@ -1412,9 +1420,15 @@ export default function InventoryPage() {
                 <DashboardButton
                   className="w-full"
                   onClick={() => {
+                    const toBranch =
+                      activeBranchId &&
+                      activeBranchId !== headquartersBranchId
+                        ? activeBranchId
+                        : ""
                     setTransferForm((f) => ({
                       ...f,
-                      fromBranchId: activeBranchId ?? f.fromBranchId,
+                      fromBranchId: headquartersBranchId || f.fromBranchId,
+                      toBranchId: toBranch || f.toBranchId,
                     }))
                     setTransferDialogOpen(true)
                   }}

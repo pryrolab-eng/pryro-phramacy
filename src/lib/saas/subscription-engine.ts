@@ -120,6 +120,7 @@ export async function getPharmacyBranches(
     .select('*')
     .eq('pharmacy_id', pharmacyId)
     .eq('is_active', true)
+    .order('is_headquarters', { ascending: false })
     .order('created_at', { ascending: true })
 
   if (error) throw new Error(`getPharmacyBranches: ${error.message}`)
@@ -361,6 +362,7 @@ export async function createBranch(
       phone: data.phone ?? null,
       email: data.email ?? null,
       is_active: true,
+      is_headquarters: false,
     })
     .select()
     .single()

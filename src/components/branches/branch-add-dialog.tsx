@@ -62,8 +62,9 @@ export function BranchAddDialog({
         <DashboardDialogHeader>
           <DashboardDialogTitle>Add branch</DashboardDialogTitle>
           <DashboardDialogDescription>
-            Create a new pharmacy location. Usage limits apply per branch each
-            billing cycle.
+            Add a satellite outlet. It starts with its own stock — receive drugs from
+            Headquarters (HQ) using Inventory → Transfer. Plan limits apply per
+            location each billing cycle.
           </DashboardDialogDescription>
         </DashboardDialogHeader>
         <DashboardDialogBody className="grid gap-4">

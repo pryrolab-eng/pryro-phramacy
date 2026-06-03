@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
 import { isHeadquartersBranch } from '@/lib/pharmacy/branch-hq'
 import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
+import { CategorySelect } from '@/components/catalog/category-select'
 import {
   useAddInventoryProductMutation,
   useAdjustInventoryMutation,
@@ -179,8 +180,6 @@ export default function InventoryPage() {
   const [barcodeDialogOpen, setBarcodeDialogOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<InventoryItem | null>(null)
   const [barcodeType, setBarcodeType] = useState('name')
-  const [quickAddCategoryOpen, setQuickAddCategoryOpen] = useState(false)
-  const [newCategoryName, setNewCategoryName] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [bulkMode, setBulkMode] = useState(false)
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
@@ -845,21 +844,15 @@ export default function InventoryPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label>Category / Family</Label>
-                  <div className="flex gap-2">
-                    <Select value={newProduct.category} onValueChange={(value) => setNewProduct({...newProduct, category: value})}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map(category => (
-                          <SelectItem key={category.id} value={category.name}>{category.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <DashboardButton size="icon" onClick={() => setQuickAddCategoryOpen(true)}>
-                      <Plus className="h-4 w-4" />
-                    </DashboardButton>
-                  </div>
+                  <CategorySelect
+                    value={newProduct.category}
+                    onValueChange={(value) =>
+                      setNewProduct({ ...newProduct, category: value })
+                    }
+                    categories={categories}
+                    onCreateCategory={(name) => createCategoryMutation.mutateAsync(name)}
+                    placeholder="Select category"
+                  />
                 </div>
                 <div className="grid gap-2">
                   <Label>Classification Code</Label>
@@ -1003,63 +996,6 @@ export default function InventoryPage() {
                 handleAddProduct()
               }} disabled={!newProduct.name || !newProduct.category || !newProduct.stock || !newProduct.minStock}>
                 Add Product
-              </DashboardButton>
-            </DashboardDialogFooter>
-          </DashboardDialogContent>
-        </Dialog>
-        
-        <Dialog open={quickAddCategoryOpen} onOpenChange={setQuickAddCategoryOpen}>
-          <DashboardDialogContent>
-            <DashboardDialogHeader>
-              <DashboardDialogTitle>Add New Category</DashboardDialogTitle>
-              <DashboardDialogDescription>Create a new product category</DashboardDialogDescription>
-            </DashboardDialogHeader>
-            <DashboardDialogBody className="space-y-4">
-              <Input
-                placeholder="Category name (e.g., Supplements)"
-                value={newCategoryName}
-                onChange={(e) => setNewCategoryName(e.target.value)}
-              />
-            </DashboardDialogBody>
-            <DashboardDialogFooter>
-              <DashboardButton onClick={() => { setQuickAddCategoryOpen(false); setNewCategoryName('') }}>
-                Cancel
-              </DashboardButton>
-              <DashboardButton tone="primary" onClick={async () => {
-                if (newCategoryName.trim()) {
-                  try {
-                    const result = await createCategoryMutation.mutateAsync(
-                      newCategoryName.trim(),
-                    )
-                    if (result.success) {
-                      setNewProduct({ ...newProduct, category: newCategoryName.trim() })
-                      setQuickAddCategoryOpen(false)
-                      setNewCategoryName('')
-                      toast({
-                        title: "Success",
-                        description: "Category added successfully",
-                      })
-                    } else {
-                      toast({
-                        title: "Error",
-                        description: result.error || "Failed to add category",
-                        variant: "destructive",
-                      })
-                    }
-                  } catch (error) {
-                    console.error('Error adding category:', error)
-                    toast({
-                      title: "Error",
-                      description:
-                        error instanceof Error
-                          ? error.message
-                          : "Failed to add category",
-                      variant: "destructive",
-                    })
-                  }
-                }
-              }} disabled={!newCategoryName.trim()}>
-                Add Category
               </DashboardButton>
             </DashboardDialogFooter>
           </DashboardDialogContent>

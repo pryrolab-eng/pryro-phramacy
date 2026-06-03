@@ -47,11 +47,11 @@ node_modules/
 **/tempobook/storyboards/
 
 # remove git history
-.git
+.git/*
 
 .github/
 # Node modules backup
 node_modules_backup/
-.kiro/
-.vscode/
-.cursor/
+.kiro/*
+.vscode/*
+.cursor/*

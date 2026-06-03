@@ -32,6 +32,10 @@ type Props = {
   onSubmit: (input: CreateCustomerInput) => Promise<void>;
   isPending?: boolean;
   trigger?: React.ReactNode;
+  /** Override dialog copy (e.g. patients page). */
+  title?: string;
+  description?: string;
+  confirmLabel?: string;
 };
 
 export function CustomersAddDialog({
@@ -40,6 +44,9 @@ export function CustomersAddDialog({
   onSubmit,
   isPending,
   trigger,
+  title = "Add customer",
+  description = "Create a pharmacy customer for POS lookup and visit history.",
+  confirmLabel = "Add customer",
 }: Props) {
   const [form, setForm] = useState<CreateCustomerInput>(emptyForm);
 
@@ -62,10 +69,8 @@ export function CustomersAddDialog({
       {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
       <DashboardDialogContent className="sm:max-w-md">
         <DashboardDialogHeader>
-          <DashboardDialogTitle>Add customer</DashboardDialogTitle>
-          <DashboardDialogDescription>
-            Create a pharmacy customer for POS lookup and visit history.
-          </DashboardDialogDescription>
+          <DashboardDialogTitle>{title}</DashboardDialogTitle>
+          <DashboardDialogDescription>{description}</DashboardDialogDescription>
         </DashboardDialogHeader>
         <DashboardDialogBody className="grid gap-4">
           <div className="grid gap-2">
@@ -130,7 +135,7 @@ export function CustomersAddDialog({
         </DashboardDialogBody>
         <DashboardDialogActions
           cancelLabel="Cancel"
-          confirmLabel="Add customer"
+          confirmLabel={confirmLabel}
           onCancel={() => onOpenChange(false)}
           onConfirm={() => void handleSubmit()}
           confirmDisabled={!form.name.trim() || !form.phone.trim()}
@@ -143,13 +148,15 @@ export function CustomersAddDialog({
 
 export function CustomersAddDialogTrigger({
   onClick,
+  label = "Add customer",
 }: {
   onClick?: () => void;
+  label?: string;
 }) {
   return (
     <DashboardButton tone="primary" onClick={onClick}>
       <Plus className="mr-1.5 h-4 w-4" />
-      Add customer
+      {label}
     </DashboardButton>
   );
 }

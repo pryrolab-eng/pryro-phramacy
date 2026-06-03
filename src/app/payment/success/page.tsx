@@ -1,20 +1,11 @@
 import { Suspense } from "react";
+import { PaymentStatusScreenFallback } from "@/components/payment/payment-status-screen";
 import { PaymentSuccessContent } from "./payment-success-content";
-
-function PaymentSuccessFallback() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-6">
-      <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white px-8 py-10 text-center shadow-sm">
-        <p className="text-sm text-neutral-500">Loading…</p>
-      </div>
-    </div>
-  );
-}
 
 /** Post-checkout return for KPay and Polar subscription payments. */
 export default function PaymentSuccessPage() {
   return (
-    <Suspense fallback={<PaymentSuccessFallback />}>
+    <Suspense fallback={<PaymentStatusScreenFallback />}>
       <PaymentSuccessContent />
     </Suspense>
   );

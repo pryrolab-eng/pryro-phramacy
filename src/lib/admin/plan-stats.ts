@@ -191,6 +191,15 @@ export function pharmacyAccessVariant(
   const s = String(status ?? "active").trim().toLowerCase();
   if (s === "suspended") return "destructive";
   if (s === "inactive") return "outline";
+  if (
+    s === "pending_payment" ||
+    s === "subscription_expired" ||
+    s === "no_subscription" ||
+    s === "past_due" ||
+    s === "subscription_cancelled"
+  ) {
+    return "secondary";
+  }
   return "default";
 }
 

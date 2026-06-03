@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { buildAdminPharmacyDetail } from "@/lib/admin/pharmacy-detail";
+import { preparePharmacyForAdminDelete } from "@/lib/admin/pharmacy-delete";
 import { resolveSubscriptionPlanEnum } from "@/lib/admin/resolve-subscription-plan-enum";
 import { createClient as createAuthClient, createServiceClient } from "../../../../../../supabase/server";
 import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
@@ -145,53 +146,66 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    );
 
-    // Prevent deleting a pharmacy that still has active/pending subscriptions.
-    const { data: subs, error: subsErr } = await supabase
-      .from("subscriptions")
-      .select("id, status, subscription_type, is_active")
-      .eq("pharmacy_id", id)
-      .in("status", ["active", "pending_payment", "pending", "scheduled_change"])
-      .limit(1);
+    const prep = await preparePharmacyForAdminDelete(supabase, id);
 
-    if (subsErr) {
+    if (!prep.ok) {
+      if (prep.reason === "active_subscriptions") {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Cannot delete this pharmacy while it has an active subscription. Cancel or expire the plan first.",
+          },
+          { status: 400 },
+        );
+      }
+      console.error("DELETE pharmacy subscription check:", prep.message);
       return NextResponse.json(
-        { success: false, error: "Failed to validate subscriptions before delete." },
+        {
+          success: false,
+          error: "Could not verify subscriptions before delete. Try again.",
+        },
         { status: 500 },
       );
     }
 
-    if ((subs ?? []).length > 0) {
+    const { error } = await supabase.from("pharmacies").delete().eq("id", id);
+
+    if (error) {
+      console.error("DELETE pharmacy:", error);
       return NextResponse.json(
         {
           success: false,
           error:
-            "Cannot delete this pharmacy because it has active or pending subscriptions. Cancel subscriptions first.",
+            error.code === "23503"
+              ? "Cannot delete this pharmacy because related records still exist."
+              : "Failed to delete pharmacy",
         },
-        { status: 400 },
+        { status: 500 },
       );
     }
 
-    const { error } = await supabase
-      .from('pharmacies')
-      .delete()
-      .eq('id', id)
-
-    if (error) throw error
-
-    return NextResponse.json({ success: true })
+    return NextResponse.json({
+      success: true,
+      cancelledSubscriptions: prep.cancelledSubscriptionIds.length,
+    });
   } catch (error) {
-    console.error('Error deleting pharmacy:', error)
+    console.error("Error deleting pharmacy:", error);
     return NextResponse.json(
-      { success: false, error: 'Failed to delete pharmacy' },
+      { success: false, error: "Failed to delete pharmacy" },
       { status: 500 },
-    )
+    );
   }
 }

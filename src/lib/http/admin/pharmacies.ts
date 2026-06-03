@@ -19,6 +19,10 @@ export type AdminPharmacyRow = Record<string, unknown> & {
   /** Active branch add-on subscriptions (not the main plan). */
   branch_addons_active?: number;
   subscription_expires_at?: string | null;
+  /** Subscription-aware access (pending payment, expired, etc.). */
+  access_status?: string;
+  access_label?: string;
+  pending_plan_name?: string | null;
 };
 
 export async function getAdminPharmacies(): Promise<AdminPharmacyRow[]> {

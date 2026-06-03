@@ -102,3 +102,75 @@ export function DashboardAlertDialogActions({
     </AlertDialogFooter>
   );
 }
+
+type ConfirmDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description: React.ReactNode;
+  confirmLabel: string;
+  cancelLabel?: string;
+  onConfirm: () => void | Promise<void>;
+  onCancel?: () => void;
+  confirmTone?: DashboardButtonTone;
+  confirmDisabled?: boolean;
+  loading?: boolean;
+};
+
+/** Reusable destructive / confirm pattern (replaces window.confirm). */
+export function DashboardConfirmDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  confirmLabel,
+  cancelLabel = "Cancel",
+  onConfirm,
+  onCancel,
+  confirmTone = "destructive",
+  confirmDisabled = false,
+  loading = false,
+}: ConfirmDialogProps) {
+  const disabled = confirmDisabled || loading;
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <DashboardAlertDialogContent>
+        <DashboardAlertDialogHeader>
+          <DashboardAlertDialogTitle>{title}</DashboardAlertDialogTitle>
+          <DashboardAlertDialogDescription>
+            {description}
+          </DashboardAlertDialogDescription>
+        </DashboardAlertDialogHeader>
+        <AlertDialogFooter className={dashboardSurfaces.dialogFooter}>
+          <AlertDialogCancel asChild>
+            <DashboardButton
+              disabled={disabled}
+              onClick={() => {
+                if (disabled) return;
+                onCancel?.();
+                onOpenChange(false);
+              }}
+            >
+              {cancelLabel}
+            </DashboardButton>
+          </AlertDialogCancel>
+          <AlertDialogAction asChild onClick={(e) => e.preventDefault()}>
+            <DashboardButton
+              tone={confirmTone}
+              disabled={disabled}
+              onClick={() => {
+                if (disabled) return;
+                void Promise.resolve(onConfirm()).catch(() => {
+                  /* Caller handles errors; keep dialog open for retry. */
+                });
+              }}
+            >
+              {loading ? "Please wait…" : confirmLabel}
+            </DashboardButton>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </DashboardAlertDialogContent>
+    </AlertDialog>
+  );
+}

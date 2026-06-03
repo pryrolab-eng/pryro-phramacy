@@ -258,7 +258,20 @@ export async function resolvePharmacyEntitlements(
     return true;
   };
 
+  const pendingPaidMain = candidates.find((r) => {
+    if (!isMainTierSub(r)) return false;
+    const lifecycle = normalizeLifecycleStatus(r.status, {
+      is_active: r.is_active,
+      payment_method: r.payment_method,
+      pending_change_status: r.pending_change_status,
+    });
+    if (lifecycle !== "pending_payment") return false;
+    const joined = resolveJoinedPlan(r);
+    return joined != null && Number(joined.price) > 0;
+  });
+
   const main =
+    pendingPaidMain ??
     candidates.find(
       (r) =>
         isMainTierSub(r) &&

@@ -1,25 +1,45 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AuthBrandingLogo } from "@/components/auth-branding";
 import { LogoIcon } from "@/components/logo";
+import { Button } from "@/components/ui/button";
 
-const STATUS_LINES = [
+const RESOLVE_LINES = [
   "Preparing your workspace",
   "Checking your role",
   "Almost there",
 ] as const;
 
-export function AppEntryLoader() {
+export type AppEntryLoaderPhase = "resolving" | "redirecting" | "error";
+
+type AppEntryLoaderProps = {
+  phase?: AppEntryLoaderPhase;
+  errorMessage?: string | null;
+  onRetry?: () => void;
+};
+
+export function AppEntryLoader({
+  phase = "resolving",
+  errorMessage = null,
+  onRetry,
+}: AppEntryLoaderProps) {
   const [lineIndex, setLineIndex] = useState(0);
 
+  const statusLine = useMemo(() => {
+    if (phase === "redirecting") return "Taking you to your workspace";
+    if (phase === "error") return errorMessage ?? "Something went wrong";
+    return RESOLVE_LINES[lineIndex];
+  }, [phase, errorMessage, lineIndex]);
+
   useEffect(() => {
+    if (phase !== "resolving") return;
     const id = window.setInterval(() => {
-      setLineIndex((i) => (i + 1) % STATUS_LINES.length);
+      setLineIndex((i) => (i + 1) % RESOLVE_LINES.length);
     }, 2200);
     return () => window.clearInterval(id);
-  }, []);
+  }, [phase]);
 
   return (
     <div
@@ -65,34 +85,62 @@ export function AppEntryLoader() {
           <AuthBrandingLogo />
         </motion.div>
 
-        <div className="h-6 w-full overflow-hidden">
+        <div
+          className={
+            phase === "error"
+              ? "min-h-6 w-full"
+              : "h-6 w-full overflow-hidden"
+          }
+        >
           <AnimatePresence mode="wait">
             <motion.p
-              key={STATUS_LINES[lineIndex]}
-              className="text-sm font-medium text-neutral-600"
+              key={statusLine}
+              className={
+                phase === "error"
+                  ? "text-sm font-medium text-red-600"
+                  : "text-sm font-medium text-neutral-600"
+              }
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.35 }}
             >
-              {STATUS_LINES[lineIndex]}
-              <span
-                className="inline-block w-[1.25em] overflow-hidden text-left align-bottom animate-app-entry-dots"
-                aria-hidden
-              >
-                …
-              </span>
+              {statusLine}
+              {phase !== "error" ? (
+                <span
+                  className="inline-block w-[1.25em] overflow-hidden text-left align-bottom animate-app-entry-dots"
+                  aria-hidden
+                >
+                  …
+                </span>
+              ) : null}
             </motion.p>
           </AnimatePresence>
         </div>
 
-        <div className="mt-8 h-1 w-full overflow-hidden rounded-full bg-neutral-200">
-          <motion.div
-            className="h-full w-1/3 rounded-full bg-blue-600"
-            animate={{ x: ["-120%", "280%"] }}
-            transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
-          />
-        </div>
+        {phase === "error" && onRetry ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={onRetry}
+          >
+            Try again
+          </Button>
+        ) : (
+          <div className="mt-8 h-1 w-full overflow-hidden rounded-full bg-neutral-200">
+            <motion.div
+              className="h-full w-1/3 rounded-full bg-blue-600"
+              animate={{ x: ["-120%", "280%"] }}
+              transition={{
+                duration: phase === "redirecting" ? 1.1 : 1.6,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
+            />
+          </div>
+        )}
 
         <p className="mt-6 text-xs text-neutral-500">
           Pharmacy management platform

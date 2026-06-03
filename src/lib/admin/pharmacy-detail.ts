@@ -226,17 +226,27 @@ export async function buildAdminPharmacyDetail(
     }
   }
 
+  const pendingPlan = pendingMainSubscription;
+  const showPendingPlan =
+    !ent.isAccessAllowed &&
+    pendingPlan != null &&
+    (ent.accessBlockReason === "pending_payment" ||
+      ent.accessBlockReason === "no_subscription");
+
   const enrichedPlan = resolvePharmacyPlanDisplay(
     {
       subscription_plan: String(pharmacy.subscription_plan ?? ""),
-      // Always prefer effective plan name (current access-granting plan),
-      // not an upgrade waiting payment.
-      catalog_plan_name: ent.effectivePlan?.name ?? mainSubscription?.planName,
-      catalog_plan_price:
-        mainSubscription?.price ?? ent.effectivePlan?.price ?? null,
-      is_free_plan: ent.effectivePlan
-        ? Number(ent.effectivePlan.price) <= 0
-        : null,
+      catalog_plan_name: showPendingPlan
+        ? pendingPlan!.planName
+        : ent.effectivePlan?.name ?? mainSubscription?.planName,
+      catalog_plan_price: showPendingPlan
+        ? pendingPlan!.price
+        : mainSubscription?.price ?? ent.effectivePlan?.price ?? null,
+      is_free_plan: showPendingPlan
+        ? pendingPlan!.price <= 0
+        : ent.effectivePlan
+          ? Number(ent.effectivePlan.price) <= 0
+          : null,
     },
     catalog,
   );

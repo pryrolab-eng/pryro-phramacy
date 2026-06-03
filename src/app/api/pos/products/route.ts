@@ -86,7 +86,20 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(formattedProducts)
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error fetching products'
     console.error('Error fetching products:', error)
+    if (message.includes('No active branch')) {
+      return NextResponse.json(
+        { error: message, code: 'NO_ACTIVE_BRANCH' },
+        { status: 400 },
+      )
+    }
+    if (message.includes('Pharmacy not found')) {
+      return NextResponse.json(
+        { error: message, code: 'NO_PHARMACY' },
+        { status: 403 },
+      )
+    }
     return NextResponse.json([])
   }
 }

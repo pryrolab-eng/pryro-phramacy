@@ -5,10 +5,22 @@
 ```text
 Owner user
   → pharmacy_users (membership + role)
-  → Pharmacy (tenant)
-      → Branches
+  → Pharmacy (tenant / legal entity)
+      → Headquarters (HQ) — main stocking & distribution site (always one per tenant)
+      → Satellite branches (optional) — own stock; receive drugs from HQ via transfers
       → Staff, inventory, sales, reports
 ```
+
+### HQ vs satellite branches (real-world model)
+
+| Location | Role | Stock |
+|----------|------|--------|
+| **Headquarters (HQ)** | Main site; procurement, central warehouse | Receives purchases / imports; sends stock to branches |
+| **Satellite branch** | Retail outlet (optional, plan slots) | Branch-specific `inventory.branch_id`; no automatic copy from HQ |
+
+- A **single-site** pharmacy is just **HQ** — no extra branches required.
+- **Multi-site** pharmacies add branches under **Branches**; staff transfer stock **from HQ → branch** in Inventory.
+- POS and inventory always scope to the **active location** (HQ or a branch) via `BranchSwitcher`.
 
 ## Active context (implemented)
 
@@ -60,7 +72,10 @@ Layout uses **active pharmacy role** from `resolveActivePharmacyContext`, not th
 ## Branch stock transfers
 
 - `POST /api/inventory/transfers` with `productId`, `fromBranchId`, `toBranchId`, `quantity`
+- Typical flow: **from HQ** (`is_headquarters`) **to** a satellite branch
 - Deducts source branch row; merges or creates destination row (same medication + batch)
+
+Migration: `20260529120000_branches_headquarters.sql` adds `branches.is_headquarters`. Auto-provisioned site is **Headquarters (HQ)** (`src/lib/pharmacy/branch-hq.ts`).
 
 ## Staff branch access
 

@@ -169,6 +169,10 @@ export function useQuickAddPosEntityMutation() {
           queryKey: pharmacyCategoriesCatalogQueryKey,
         });
       }
+      if (variables.endpoint === "/api/pos/quick-add-drug") {
+        void queryClient.invalidateQueries({ queryKey: posKeys.products() });
+        void queryClient.invalidateQueries({ queryKey: posKeys.fastMoving() });
+      }
     },
   });
 }

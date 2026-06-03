@@ -67,8 +67,7 @@ export type PosWorkspaceProps = {
   onPriceAdjustment: (id: string, price: number) => void;
   onAddGroup: (group: PosProductGroup) => void;
   onAddProduct: (product: PosProduct) => void;
-  onQuickAddDrug: () => void;
-  onQuickAddCategory: () => void;
+  onQuickAddProduct: () => void;
   onScan: () => void;
   cart: PosCartItem[];
   customer: PosCustomer;
@@ -143,8 +142,7 @@ export function PosWorkspace(props: PosWorkspaceProps) {
     onPriceAdjustment,
     onAddGroup,
     onAddProduct,
-    onQuickAddDrug,
-    onQuickAddCategory,
+    onQuickAddProduct,
     onScan,
     cart,
     customer,
@@ -234,11 +232,13 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                 <Scan className="h-4 w-4" />
               </DashboardButton>
               <DashboardButton
-                size="icon"
-                className="h-10 w-10"
-                onClick={onQuickAddDrug}
+                size="sm"
+                className="h-10 shrink-0 gap-1.5 px-3"
+                onClick={onQuickAddProduct}
+                title="Add product"
               >
                 <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">Add product</span>
               </DashboardButton>
             </div>
 
@@ -267,14 +267,6 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                   {cat.name}
                 </button>
               ))}
-              <DashboardButton
-                tone="ghost"
-                size="sm"
-                className="shrink-0"
-                onClick={onQuickAddCategory}
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </DashboardButton>
             </div>
           </div>
 

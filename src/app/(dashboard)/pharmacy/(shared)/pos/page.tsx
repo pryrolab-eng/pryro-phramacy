@@ -26,6 +26,7 @@ import {
   type PosProduct,
   type PrescriptionConfirmation,
 } from '@/hooks/usePos'
+import { useCreateInventoryCategoryMutation } from '@/hooks/useInventory'
 import {
   cartHasNearExpiry,
   cartRequiresPrescription,
@@ -67,6 +68,7 @@ import { usePharmacyEntitlements } from '@/hooks/usePharmacyEntitlements'
 import { useActivePharmacy } from '@/components/providers/active-pharmacy-provider'
 import { PosReturnsDialog } from '@/components/pos/pos-returns-dialog'
 import { PosWorkspace } from '@/components/pos/pos-workspace'
+import { CategorySelect } from '@/components/catalog/category-select'
 import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
 
 type Product = PosProduct
@@ -116,7 +118,8 @@ function POSPageContent() {
   const [cashAmount, setCashAmount] = useState('')
   const [insuranceAmount, setInsuranceAmount] = useState('')
   const [insurancePricing, setInsurancePricing] = useState<{[key: string]: InsurancePricing}>({})
-  const [quickAddDialog, setQuickAddDialog] = useState<'drug' | 'patient' | 'insurance' | 'rama-beneficiary' | 'category' | null>(null)
+  const [quickAddDialog, setQuickAddDialog] = useState<'product' | 'patient' | 'insurance' | 'rama-beneficiary' | null>(null)
+  const [quickAddProductCategory, setQuickAddProductCategory] = useState('')
   const [insuranceInterfaceOpen, setInsuranceInterfaceOpen] = useState(false)
   const [ramaBeneficiaryOpen, setRamaBeneficiaryOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
@@ -144,6 +147,7 @@ function POSPageContent() {
   const priceCheckMutation = usePosPriceCheckMutation()
   const quickAddPatientMutation = useQuickAddPosPatientMutation()
   const quickAddEntityMutation = useQuickAddPosEntityMutation()
+  const createCategoryMutation = useCreateInventoryCategoryMutation()
   const aiSafetyMutation = useAnalyzeCartSafetyMutation()
   const insuranceLookupMutation = useInsuranceLookupMutation()
   const insuranceProcessMutation = useInsuranceProcessMutation()
@@ -632,9 +636,12 @@ function POSPageContent() {
             >
               <Brain className="h-4 w-4 text-violet-600" />
             </DashboardButton>
-            <DashboardButton tone="outline" onClick={() => setQuickAddDialog('drug')}>
+            <DashboardButton tone="outline" onClick={() => {
+              setQuickAddProductCategory('')
+              setQuickAddDialog('product')
+            }}>
               <Plus className="mr-1.5 h-4 w-4" />
-              Quick add
+              Add product
             </DashboardButton>
             <DashboardButton tone="outline" onClick={() => setAlertsOpen(true)}>
               Alerts
@@ -676,8 +683,10 @@ function POSPageContent() {
         }
         onAddGroup={handleAddGroup}
         onAddProduct={(p) => void handleAddProduct(p)}
-        onQuickAddDrug={() => setQuickAddDialog('drug')}
-        onQuickAddCategory={() => setQuickAddDialog('category')}
+        onQuickAddProduct={() => {
+          setQuickAddProductCategory('')
+          setQuickAddDialog('product')
+        }}
         onScan={() => {
           searchInputRef.current?.focus()
           tryBarcodeAdd()
@@ -1111,33 +1120,29 @@ function POSPageContent() {
         <DashboardDialogContent>
           <DashboardDialogHeader>
             <DashboardDialogTitle>
-              {quickAddDialog === 'drug' && 'Quick add drug'}
+              {quickAddDialog === 'product' && 'Add product'}
               {quickAddDialog === 'patient' && 'Quick add patient'}
               {quickAddDialog === 'insurance' && 'Quick add insurance'}
               {quickAddDialog === 'rama-beneficiary' && 'RAMA beneficiary'}
-              {quickAddDialog === 'category' && 'Add category'}
             </DashboardDialogTitle>
           </DashboardDialogHeader>
           <DashboardDialogBody>
           <form className="space-y-4">
-            {quickAddDialog === 'drug' && (
+            {quickAddDialog === 'product' && (
               <div className="max-h-96 overflow-y-auto space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <Input name="productCode" placeholder="Product Code (SKU)" />
                   <Input name="barcode" placeholder="Barcode" />
                 </div>
-                <Input name="productName" placeholder="Product Name (e.g., Paracetamol 500mg)" />
+                <Input name="productName" placeholder="Product Name (e.g., Paracetamol 500mg)" required />
                 <div className="grid grid-cols-2 gap-4">
-                  <Select name="category">
-                    <SelectTrigger>
-                      <SelectValue placeholder="Category / Family" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map(category => (
-                        <SelectItem key={category.id} value={category.name}>{category.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <CategorySelect
+                    value={quickAddProductCategory}
+                    onValueChange={setQuickAddProductCategory}
+                    categories={categories}
+                    onCreateCategory={(name) => createCategoryMutation.mutateAsync(name)}
+                    placeholder="Category / Family"
+                  />
                   <Input name="classificationCode" placeholder="Classification Code (e.g., N02BE01)" />
                 </div>
                 <Input name="manufacturer" placeholder="Manufacturer / Supplier" />
@@ -1194,12 +1199,6 @@ function POSPageContent() {
               <>
                 <Input name="insuranceName" placeholder="Insurance name" />
                 <Input name="coveragePercentage" placeholder="Coverage percentage" type="number" />
-              </>
-            )}
-            {quickAddDialog === 'category' && (
-              <>
-                <Input name="categoryName" placeholder="Category name" />
-                <Input name="categoryDescription" placeholder="Category description (optional)" />
               </>
             )}
             {quickAddDialog === 'rama-beneficiary' && (
@@ -1340,28 +1339,47 @@ function POSPageContent() {
               const data = Object.fromEntries(formData)
               
               let endpoint = ''
-              if (quickAddDialog === 'drug') endpoint = '/api/pos/quick-add-drug'
+              if (quickAddDialog === 'product') endpoint = '/api/pos/quick-add-drug'
               if (quickAddDialog === 'insurance') endpoint = '/api/pos/quick-add-insurance'
-              if (quickAddDialog === 'category') endpoint = '/api/pos/quick-add-category'
-              
+
+              if (endpoint === '/api/pos/quick-add-drug') {
+                const productName = String(data.productName ?? '').trim()
+                if (!productName) {
+                  alert('Product name is required')
+                  return
+                }
+                if (!quickAddProductCategory.trim()) {
+                  alert('Please select or add a category')
+                  return
+                }
+                data.category = quickAddProductCategory
+              }
+
               if (endpoint) {
                 try {
                   const result = await quickAddEntityMutation.mutateAsync({
-                    endpoint: endpoint as '/api/pos/quick-add-drug' | '/api/pos/quick-add-insurance' | '/api/pos/quick-add-category',
+                    endpoint: endpoint as '/api/pos/quick-add-drug' | '/api/pos/quick-add-insurance',
                     body: data,
                   })
-                  alert(result.success ? 'Added successfully!' : result.error)
+                  alert(
+                    result.success
+                      ? quickAddDialog === 'product'
+                        ? 'Product added successfully!'
+                        : 'Added successfully!'
+                      : result.error || 'Request failed',
+                  )
                   if (result.success) {
                     setQuickAddDialog(null)
+                    setQuickAddProductCategory('')
                     form?.reset()
                     if (quickAddDialog === 'insurance') {
                       window.location.reload()
                     }
                   }
-                } catch {
-                  alert('Added successfully!')
-                  setQuickAddDialog(null)
-                  form?.reset()
+                } catch (err) {
+                  alert(
+                    err instanceof Error ? err.message : 'Failed to save. Try again.',
+                  )
                 }
               }
             }}>Add</DashboardButton>

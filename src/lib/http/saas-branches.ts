@@ -1,7 +1,11 @@
 import { fetchJson } from "./client";
 import type { Branch, BranchUsage } from "@/lib/saas/types";
 
-export type SaasBranchWithUsage = Branch & { usage: BranchUsage | null };
+export type SaasBranchWithUsage = Branch & {
+  usage: BranchUsage | null;
+  /** True when this row exists in DB but exceeds plan branch slots (duplicate/orphan). */
+  over_plan_limit?: boolean;
+};
 
 /** @deprecated Use `SaasBranchWithUsage` */
 export type SaasBranchRow = SaasBranchWithUsage;

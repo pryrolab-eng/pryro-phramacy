@@ -188,7 +188,7 @@ Last reviewed against `src/app/(dashboard)/pos/page.tsx` and `src/app/api/pos/*`
 | Area | Status | Notes |
 | ---- | ------ | ----- |
 | **Returns + disposition** | ✅ | Lookup by receipt → line qty → `restock` / `damaged` / `destroy`; expired/defective block restock |
-| **Cashier shifts** | ✅ | `cashier_shifts` — open float, live sales, close with variance |
+| **Cashier shifts** | ✅ | `cashier_shifts` — open float, live sales, close with variance; **required** before sale/return; owners see **On duty** list |
 | **Barcode** | ✅ | USB wedge via search field; Enter / Scan adds exact barcode or single match |
 
 Key paths: `src/app/api/pos/returns`, `src/app/api/pos/sales/lookup`, `src/app/api/pos/shifts`, `src/components/pos/pos-returns-dialog.tsx`, `src/lib/pos/return-disposition.ts`.

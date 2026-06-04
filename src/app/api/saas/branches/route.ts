@@ -48,11 +48,14 @@ export async function GET() {
       activeBranchId: ctx.activeBranchId,
       accessBlocked: !entitlements.isAccessAllowed,
     })
+    const entitledIds = new Set(entitled.map((b) => b.id))
 
+    // Management UI lists every active branch; switcher applies slot limit client-side.
     const branchesWithUsage = await Promise.all(
-      entitled.map(async (b) => ({
+      rawBranches.map(async (b) => ({
         ...b,
         usage: await getBranchCurrentUsage(admin, b.id),
+        over_plan_limit: !entitledIds.has(b.id),
       }))
     )
 
@@ -60,7 +63,9 @@ export async function GET() {
       branches: branchesWithUsage,
       meta: {
         totalActive: rawBranches.length,
+        entitledCount: entitled.length,
         entitledSlots: capacity.totalSlots,
+        overLimitCount: Math.max(0, rawBranches.length - capacity.totalSlots),
         accessBlocked: !entitlements.isAccessAllowed,
       },
     })

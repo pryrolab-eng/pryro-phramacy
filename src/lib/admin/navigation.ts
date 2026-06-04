@@ -10,6 +10,7 @@ import {
   Settings,
   Tag,
 } from "lucide-react";
+import { ADMIN_ROUTES } from "@/lib/routes/admin-paths";
 
 export type AdminNavItem = {
   title: string;
@@ -54,9 +55,9 @@ export const ADMIN_SIDEBAR_GROUPS: AdminNavGroup[] = [
       },
       {
         title: "Insurance templates",
-        url: "/admin/insurance-templates",
+        url: ADMIN_ROUTES.insuranceTemplates,
         icon: FileText,
-        keywords: "template designer claims insurance",
+        keywords: "template designer claims insurance providers",
       },
     ],
   },

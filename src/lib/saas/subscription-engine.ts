@@ -152,22 +152,19 @@ export async function getPharmacySubscriptionSummary(
   admin: SupabaseClient,
   pharmacyId: string
 ): Promise<PharmacySubscriptionSummary> {
-  const [subscriptions, branches] = await Promise.all([
+  const [subscriptions, branches, capacity] = await Promise.all([
     getPharmacySubscriptions(admin, pharmacyId),
     getPharmacyBranches(admin, pharmacyId),
+    getBranchCapacity(admin, pharmacyId),
   ])
 
   const mainSub = subscriptions.find(s => s.subscription_type === 'main') ?? null
   const branchSubs = subscriptions.filter(s => s.subscription_type === 'branch_addon')
 
-  const mainPlanSlots =
-    (mainSub?.plan as SubscriptionPlan | undefined)?.max_branches ?? 0
-  const branchCount = branches.length
-  const addonSlots = branchSubs.filter((s) => {
-    const st = s.status
-    return st === 'active' || st === 'pending'
-  }).length
-  const branchLimit = mainPlanSlots + addonSlots
+  const mainPlanSlots = capacity.mainPlanSlots
+  const branchCount = capacity.branchCount
+  const addonSlots = capacity.addonSlots
+  const branchLimit = capacity.totalSlots
 
   // Fetch usage for all branches in parallel
   const branchesWithUsage = await Promise.all(
@@ -190,7 +187,7 @@ export async function getPharmacySubscriptionSummary(
     total_monthly_cost: totalMonthlyCost,
     branch_limit: branchLimit,
     branch_count: branchCount,
-    can_add_branch: branchCount < branchLimit,
+    can_add_branch: capacity.canAddBranch,
     main_plan_branch_slots: mainPlanSlots,
     addon_subscription_count: addonSlots,
   }

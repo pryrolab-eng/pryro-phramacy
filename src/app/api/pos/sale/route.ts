@@ -17,6 +17,11 @@ import {
   validatePrescriptionForSale,
   type PrescriptionConfirmation,
 } from '@/lib/pos/pharmacy-rules'
+import {
+  fetchOpenCashierShift,
+  SHIFT_REQUIRED_CODE,
+  SHIFT_REQUIRED_MESSAGE,
+} from '@/lib/pos/cashier-shift'
 
 type SaleLine = {
   id: string
@@ -156,7 +161,7 @@ export async function POST(request: NextRequest) {
         batch_number,
         quantity_in_stock,
         expiry_date,
-        medications ( name, requires_prescription )
+        medications ( id, name, requires_prescription )
       `,
       )
       .in('id', inventoryIds)
@@ -228,25 +233,64 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    let insuranceProviderId = null
-    if (customer?.insuranceType && customer.insuranceType !== 'cash') {
-      const { data: insuranceProvider } = await supabase
-        .from('insurance_providers')
-        .select('id')
-        .eq('name', customer.insuranceType as string)
-        .eq('pharmacy_id', pharmacy_id)
-        .single()
+    let insuranceProviderId: string | null = null
+    let resolvedInsuranceCoverage = parseFloat(String(insuranceCoverage)) || 0
+    let resolvedPatientAmount =
+      parseFloat(String(patientAmount)) ||
+      parseFloat(String(subtotal)) ||
+      0
+    let resolvedSubtotal = parseFloat(String(subtotal)) || 0
+    let insuranceCoverageLines: import('@/lib/insurance/types').CoverageLineResult[] =
+      []
 
-      insuranceProviderId = insuranceProvider?.id
+    if (customer?.insuranceType && customer.insuranceType !== 'cash') {
+      const { createServiceClient } = await import('../../../../../supabase/service')
+      const { computeInsuranceCoverage } = await import('@/lib/insurance/coverage-engine')
+      const { resolveInsuranceProvider } = await import('@/lib/insurance/resolve-provider')
+      const admin = createServiceClient()
+      const provider = await resolveInsuranceProvider(
+        admin,
+        pharmacy_id,
+        customer.insuranceType as string,
+      )
+      insuranceProviderId = provider?.id ?? null
+
+      const engineLines = saleItems
+        .map((item) => {
+          const inv = inventoryById.get(item.id)
+          const med = firstRelation(inv?.medications) as { id?: string } | null
+          return {
+            inventoryId: item.id,
+            medicationId: med?.id ?? '',
+            medicationName: item.name,
+            quantity: item.quantity,
+            shelfUnitPrice: item.price ?? 0,
+          }
+        })
+        .filter((l) => l.medicationId)
+
+      if (provider && engineLines.length > 0) {
+        const totals = await computeInsuranceCoverage(admin, {
+          pharmacyId: pharmacy_id,
+          providerIdOrName: provider.id,
+          lines: engineLines,
+        })
+        if (totals) {
+          resolvedSubtotal = totals.subtotal
+          resolvedInsuranceCoverage = totals.insuranceCoverage
+          resolvedPatientAmount = totals.patientCopay
+          insuranceCoverageLines = totals.lines
+        }
+      }
     }
 
-    const { data: openShift } = await supabase
-      .from('cashier_shifts')
-      .select('id, total_sales, transaction_count')
-      .eq('cashier_id', user.id)
-      .eq('branch_id', branchId)
-      .eq('status', 'open')
-      .maybeSingle()
+    const openShift = await fetchOpenCashierShift(supabase, user.id, branchId)
+    if (!openShift) {
+      return NextResponse.json(
+        { error: SHIFT_REQUIRED_MESSAGE, code: SHIFT_REQUIRED_CODE },
+        { status: 403 },
+      )
+    }
 
     const dbPaymentMethod = mapPaymentMethod(paymentMethod ?? 'cash')
     const noteParts: string[] = []
@@ -280,18 +324,15 @@ export async function POST(request: NextRequest) {
         customer_name: (customer?.name as string) || 'Walk-in Customer',
         customer_phone: (customer?.phone as string) || null,
         insurance_provider_id: insuranceProviderId,
-        subtotal: parseFloat(String(subtotal)) || 0,
-        insurance_amount: parseFloat(String(insuranceCoverage)) || 0,
-        customer_amount:
-          parseFloat(String(patientAmount)) ||
-          parseFloat(String(subtotal)) ||
-          0,
-        total_amount: parseFloat(String(subtotal)) || 0,
+        subtotal: resolvedSubtotal,
+        insurance_amount: resolvedInsuranceCoverage,
+        customer_amount: resolvedPatientAmount,
+        total_amount: resolvedSubtotal,
         payment_method: dbPaymentMethod,
         status: 'completed',
         receipt_number: `RCP-${Date.now()}`,
         notes: noteParts.length > 0 ? noteParts.join(' | ') : null,
-        shift_id: openShift?.id ?? null,
+        shift_id: openShift.id,
       })
       .select()
       .single()
@@ -312,13 +353,22 @@ export async function POST(request: NextRequest) {
       expiry_date: item.expiryDate,
     }))
 
-    const { error: itemsError } = await supabase
+    const { data: insertedSaleItems, error: itemsError } = await supabase
       .from('sale_items')
       .insert(saleItemRows)
+      .select('id, inventory_id')
 
     if (itemsError) {
       console.error('Sale items error:', itemsError)
       throw itemsError
+    }
+
+    const saleItemIdByInventoryId = new Map<string, string>()
+    for (const row of insertedSaleItems ?? []) {
+      const invId = row.inventory_id as string | null
+      if (invId && row.id) {
+        saleItemIdByInventoryId.set(invId, row.id as string)
+      }
     }
 
     for (const item of saleItems) {
@@ -349,33 +399,54 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (openShift) {
-      const saleTotal =
-        parseFloat(String(patientAmount)) ||
-        parseFloat(String(subtotal)) ||
-        0
-      await supabase
-        .from('cashier_shifts')
-        .update({
-          total_sales: Number(openShift.total_sales ?? 0) + saleTotal,
-          transaction_count: Number(openShift.transaction_count ?? 0) + 1,
-        })
-        .eq('id', openShift.id)
-    }
-
-    if (insuranceProviderId && Number(insuranceCoverage) > 0) {
-      const { error: claimError } = await supabase.from('insurance_claims').insert({
-        pharmacy_id,
-        sale_id: sale.id,
-        insurance_provider_id: insuranceProviderId,
-        patient_name: (customer?.name as string) || 'Unknown',
-        patient_id_number: (customer?.insuranceNumber as string) || null,
-        claim_amount: parseFloat(String(insuranceCoverage)),
-        status: 'pending',
+    const saleTotal =
+      parseFloat(String(patientAmount)) ||
+      parseFloat(String(subtotal)) ||
+      0
+    await supabase
+      .from('cashier_shifts')
+      .update({
+        total_sales: Number(openShift.total_sales ?? 0) + saleTotal,
+        transaction_count: Number(openShift.transaction_count ?? 0) + 1,
       })
+      .eq('id', openShift.id)
+
+    if (insuranceProviderId && resolvedInsuranceCoverage > 0) {
+      const { createServiceClient } = await import('../../../../../supabase/service')
+      const { insertInsuranceClaimLines } = await import('@/lib/insurance/claim-lines')
+      const admin = createServiceClient()
+
+      const { data: claim, error: claimError } = await admin
+        .from('insurance_claims')
+        .insert({
+          pharmacy_id,
+          sale_id: sale.id,
+          insurance_provider_id: insuranceProviderId,
+          patient_name: (customer?.name as string) || 'Unknown',
+          patient_id_number: (customer?.insuranceNumber as string) || null,
+          claim_amount: resolvedInsuranceCoverage,
+          covered_amount: resolvedInsuranceCoverage,
+          patient_copay: resolvedPatientAmount,
+          status: 'pending',
+          metadata: {},
+        })
+        .select('id')
+        .single()
 
       if (claimError) {
         console.error('Insurance claim error:', claimError)
+      } else if (claim?.id && insuranceCoverageLines.length > 0) {
+        try {
+          await insertInsuranceClaimLines(admin, {
+            claimId: claim.id,
+            pharmacyId: pharmacy_id,
+            providerId: insuranceProviderId,
+            lines: insuranceCoverageLines,
+            saleItemIdByInventoryId,
+          })
+        } catch (linesError) {
+          console.error('Insurance claim lines error:', linesError)
+        }
       }
     }
 

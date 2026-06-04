@@ -8,6 +8,14 @@ Insurance providers are referenced at the Point of Sale when a customer pays wit
 
 The module has a documented history of Row Level Security (RLS) issues that required multiple fix migrations before reaching a stable state. See [Known Limitations](#known-limitations) for the full history.
 
+### Implementation guides
+
+| Doc | Description |
+|-----|-------------|
+| [Insurance implementation plan](../insurance-implementation-plan.md) | Phased rollout (medication flags, engine, reports) |
+| [Insurance-covered medicines](../insurance-covered-medicines.md) | Per-medication coverage JSON (no formulary table) |
+| In-app: `/admin/insurance-templates` | Global providers, templates & claim layouts |
+
 ---
 
 ## Key Files
@@ -17,9 +25,11 @@ The module has a documented history of Row Level Security (RLS) issues that requ
 | File | Route | Methods | Auth Required | Description |
 |---|---|---|---|---|
 | `route.ts` | `/api/insurance` | `GET`, `POST` | `GET`: No (returns global only) / Yes (returns pharmacy + global); `POST`: Yes | Core CRUD for insurance providers. `GET` returns global providers for unauthenticated users, pharmacy + global for authenticated users, and all providers for the superadmin. `POST` creates a new provider; superadmin creates global providers (`pharmacy_id = NULL`), pharmacy owners create tenant-scoped providers. |
-| `lookup/route.ts` | `/api/insurance/lookup` | `POST` | No | **Stub.** Looks up an insurance number against a hardcoded in-memory map (`INS001` → RSSB 80%, `INS002` → Radiant 70%, `INS003` → MMI 90%). Not connected to the database. |
-| `pricing/route.ts` | `/api/insurance/pricing` | `GET`, `POST` | No | **Stub.** Returns hardcoded per-drug prices for MMI, RSSB, and Radiant. `POST` updates the in-memory price map (resets on server restart). Not persisted to the database. |
-| `process/route.ts` | `/api/insurance/process` | `POST` | No | **Stub.** Generates a mock insurance claim with a random approval code. No database writes; no real claim processing. |
+| `lookup/route.ts` | `/api/insurance/lookup` | `POST` | Yes (pharmacy session) | Resolves member from `customers.insurance_number` plus demo IDs; returns provider default coverage %. |
+| `pricing/route.ts` | `/api/insurance/pricing` | `GET`, `POST` | Yes | Single-line preview; POST marks meds covered by name. |
+| `process/route.ts` | `/api/insurance/process` | `POST` | Yes | Inserts `insurance_claims` and `insurance_claim_lines` with metadata. |
+| `coverage/preview/route.ts` | `/api/insurance/coverage/preview` | `POST` | Yes | POS cart preview (per-line reasons and totals). |
+| `../pharmacy/insurance-covered-medications/route.ts` | `/api/pharmacy/insurance-covered-medications` | `GET`, `PATCH` | Yes | List/update `medications.insurance_coverage` per provider. |
 
 ### Reports API (`src/app/api/reports/insurance-claims/`)
 

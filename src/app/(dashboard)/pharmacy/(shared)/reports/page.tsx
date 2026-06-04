@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import { Suspense } from "react"
+import { useSearchParams } from "next/navigation"
 import {
   Area,
   AreaChart,
@@ -34,6 +36,8 @@ import {
   ShoppingCart,
   Users,
 } from "lucide-react"
+import { FeatureGate } from "@/components/subscription/feature-gate"
+import { InsuranceClaimsReportPanel } from "@/components/reports/insurance-claims-report-panel"
 import {
   useInvalidateReports,
   useReportsInventory,
@@ -106,12 +110,29 @@ interface InventoryAlert {
 }
 
 export default function ReportsPage() {
+  return (
+    <Suspense fallback={<DashboardPageLoading label="Loading reports…" />}>
+      <ReportsPageInner />
+    </Suspense>
+  )
+}
+
+function ReportsPageInner() {
+  const searchParams = useSearchParams()
   const [timeRange, setTimeRange] = React.useState("30d")
   const [error, setError] = React.useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
   const [startDate, setStartDate] = React.useState("")
   const [endDate, setEndDate] = React.useState("")
-  const [reportType, setReportType] = React.useState("all")
+  const [reportType, setReportType] = React.useState(
+    () => searchParams.get("type") === "insurance" ? "insurance" : "all",
+  )
+
+  React.useEffect(() => {
+    if (searchParams.get("type") === "insurance") {
+      setReportType("insurance")
+    }
+  }, [searchParams])
   const { branchScope, setBranchScope, scopeQuery: baseScopeQuery } =
     useBranchReportScope({ defaultDays: 30 })
 
@@ -158,7 +179,10 @@ export default function ReportsPage() {
     }
   }, [salesReportQuery.isSuccess, salesReportQuery.isError])
 
-  const loading = salesReportQuery.isPending || inventoryReportQuery.isPending
+  const loading =
+    reportType === "insurance"
+      ? false
+      : salesReportQuery.isPending || inventoryReportQuery.isPending
 
   React.useEffect(() => {
     const interval = setInterval(() => {
@@ -188,7 +212,7 @@ export default function ReportsPage() {
 
   if (loading) return <DashboardPageLoading label="Loading reports…" />
 
-  if (error) {
+  if (error && reportType !== "insurance") {
     return (
       <DashboardPageError message={error} onRetry={fetchReportsData} />
     )
@@ -198,6 +222,7 @@ export default function ReportsPage() {
   const showInventory = reportType === "all" || reportType === "inventory"
   const showProducts = reportType === "all" || reportType === "products"
   const showPayments = reportType === "all" || reportType === "payments"
+  const showInsurance = reportType === "insurance"
 
   return (
     <DashboardPageShell>
@@ -242,6 +267,7 @@ export default function ReportsPage() {
               <SelectItem value="inventory">Inventory only</SelectItem>
               <SelectItem value="products">Top products</SelectItem>
               <SelectItem value="payments">Payment methods</SelectItem>
+              <SelectItem value="insurance">Insurance claims</SelectItem>
             </SelectContent>
           </Select>
         </DashboardFilterField>
@@ -499,6 +525,18 @@ export default function ReportsPage() {
             </DashboardSectionCard>
           ) : null}
         </div>
+      ) : null}
+
+      {showInsurance ? (
+        <FeatureGate
+          featureKey="pos.insurance"
+          compact={false}
+          loadingFallback={
+            <DashboardPageLoading label="Loading insurance report…" />
+          }
+        >
+          <InsuranceClaimsReportPanel />
+        </FeatureGate>
       ) : null}
     </DashboardPageShell>
   )

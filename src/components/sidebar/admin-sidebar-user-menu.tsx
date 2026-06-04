@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogOut, MoreVertical, Settings, Shield, KeyRound } from "lucide-react";
 import { ChangePasswordDialog } from "@/components/auth/change-password-dialog";
+import { SignOutConfirmDialog } from "@/components/auth/sign-out-confirm-dialog";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -25,16 +26,16 @@ function Kbd({ children }: { children: React.ReactNode }) {
   );
 }
 
-function handleSignOut() {
-  if (confirm("Sign out of the platform admin console?")) {
-    window.location.href = "/api/auth/signout";
-  }
-}
-
 export function AdminSidebarUserMenu({ userName }: { userName: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [signOutOpen, setSignOutOpen] = useState(false);
+
+  const requestSignOut = () => {
+    setOpen(false);
+    setSignOutOpen(true);
+  };
   const initial = userName ? userName.charAt(0).toUpperCase() : "A";
 
   useEffect(() => {
@@ -46,7 +47,7 @@ export function AdminSidebarUserMenu({ userName }: { userName: string }) {
       }
       if (e.altKey && e.shiftKey && e.key.toLowerCase() === "q") {
         e.preventDefault();
-        handleSignOut();
+        requestSignOut();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -142,7 +143,10 @@ export function AdminSidebarUserMenu({ userName }: { userName: string }) {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="cursor-pointer gap-3 px-2.5 py-2 text-destructive focus:text-destructive"
-          onSelect={handleSignOut}
+          onSelect={(e) => {
+            e.preventDefault();
+            requestSignOut();
+          }}
         >
           <LogOut className="size-4" />
           <span className="flex-1 font-medium">Sign out</span>
@@ -157,6 +161,11 @@ export function AdminSidebarUserMenu({ userName }: { userName: string }) {
     <ChangePasswordDialog
       open={changePasswordOpen}
       onOpenChange={setChangePasswordOpen}
+    />
+    <SignOutConfirmDialog
+      open={signOutOpen}
+      onOpenChange={setSignOutOpen}
+      variant="admin"
     />
     </>
   );

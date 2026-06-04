@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { toast } from 'sonner'
 import { getCustomer } from '@/lib/http/customers'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
 import {
   checkPosTransactionAllowed,
-  getInsurancePricing,
   useAnalyzeCartSafetyMutation,
   useCustomerSearch,
   useHoldPosSaleMutation,
@@ -21,6 +21,8 @@ import {
   useQuickAddPosEntityMutation,
   useQuickAddPosPatientMutation,
   useVoidPosSaleMutation,
+  useInsuranceCoveragePreview,
+  useCashierShift,
   type PosCartItem,
   type PosCustomer,
   type PosProduct,
@@ -68,22 +70,13 @@ import { usePharmacyEntitlements } from '@/hooks/usePharmacyEntitlements'
 import { useActivePharmacy } from '@/components/providers/active-pharmacy-provider'
 import { PosReturnsDialog } from '@/components/pos/pos-returns-dialog'
 import { PosWorkspace } from '@/components/pos/pos-workspace'
-import { CategorySelect } from '@/components/catalog/category-select'
+import { PosAddProductForm } from '@/components/pos/pos-add-product-form'
+import { PosInsuranceProcessingDialog } from '@/components/pos/pos-insurance-processing-dialog'
 import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
 
 type Product = PosProduct
 type CartItem = PosCartItem
 type Customer = PosCustomer
-
-interface InsurancePricing {
-  drugId: string
-  insuranceType: string
-  retailPrice: number
-  insurancePrice: number
-  coveragePercent: number
-  insurancePays: number
-  patientPays: number
-}
 
 export default function POSPage() {
   return (
@@ -97,7 +90,13 @@ function POSPageContent() {
   const searchParams = useSearchParams()
   const preloadedCustomerIdRef = useRef<string | null>(null)
   const { can } = usePharmacyEntitlements()
-  const { activeBranchId, isHydrating: isContextHydrating } = useActivePharmacy()
+  const { activeBranchId, isHydrating: isContextHydrating, context } =
+    useActivePharmacy()
+  const shiftQuery = useCashierShift(activeBranchId)
+  const hasOpenShift = Boolean(shiftQuery.data)
+  const shiftCheckReady =
+    !shiftQuery.isLoading && !isContextHydrating && Boolean(activeBranchId)
+  const isPharmacyOwner = context.role === 'pharmacy_owner'
   const productsQuery = usePosProducts({ branchId: activeBranchId })
   const fastMovingQuery = usePosFastMoving({ branchId: activeBranchId })
   const categoriesQuery = usePosCategories()
@@ -117,7 +116,6 @@ function POSPageContent() {
   const [paymentMethod, setPaymentMethod] = useState('')
   const [cashAmount, setCashAmount] = useState('')
   const [insuranceAmount, setInsuranceAmount] = useState('')
-  const [insurancePricing, setInsurancePricing] = useState<{[key: string]: InsurancePricing}>({})
   const [quickAddDialog, setQuickAddDialog] = useState<'product' | 'patient' | 'insurance' | 'rama-beneficiary' | null>(null)
   const [quickAddProductCategory, setQuickAddProductCategory] = useState('')
   const [insuranceInterfaceOpen, setInsuranceInterfaceOpen] = useState(false)
@@ -153,7 +151,12 @@ function POSPageContent() {
   const insuranceProcessMutation = useInsuranceProcessMutation()
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
-      if (event.key === 'F2' && cart.length > 0 && paymentMethod) {
+      if (
+        event.key === 'F2' &&
+        cart.length > 0 &&
+        paymentMethod &&
+        hasOpenShift
+      ) {
         event.preventDefault()
         processSale()
       }
@@ -161,7 +164,7 @@ function POSPageContent() {
 
     window.addEventListener('keydown', handleKeyPress)
     return () => window.removeEventListener('keydown', handleKeyPress)
-  }, [cart, paymentMethod])
+  }, [cart, paymentMethod, hasOpenShift])
   
   const productGroups = useMemo(
     () => groupPosProducts(products as PosCartLine[]),
@@ -198,12 +201,8 @@ function POSPageContent() {
       }
 
       applyCart(result.cart)
-
-      if (customer.insuranceType) {
-        await fetchInsurancePricing(batch.id, customer.insuranceType)
-      }
     },
-    [cart, products, priceAdjustments, customer.insuranceType, applyCart],
+    [cart, products, priceAdjustments, applyCart],
   )
 
   const handleAddGroup = useCallback(
@@ -248,38 +247,41 @@ function POSPageContent() {
     applyCart(next)
   }
 
+  const coverageLines = useMemo(
+    () =>
+      cart.map((item) => ({
+        inventoryId: item.id,
+        medicationId: item.medicationId,
+        medicationName: item.name,
+        quantity: item.quantity,
+        shelfUnitPrice: priceAdjustments[item.id] ?? item.price,
+      })),
+    [cart, priceAdjustments],
+  );
+
+  const coveragePreviewQuery = useInsuranceCoveragePreview(
+    customer.insuranceType,
+    coverageLines,
+  );
+
+  const coverageTotals = coveragePreviewQuery.data?.success
+    ? coveragePreviewQuery.data
+    : null;
+
   const getSubtotal = () => {
-    if (customer.insuranceType) {
-      return cart.reduce((sum, item) => {
-        const pricing = insurancePricing[item.id]
-        const price = pricing ? pricing.insurancePrice : item.price
-        return sum + (price * item.quantity)
-      }, 0)
-    }
-    return cart.reduce((sum, item) => sum + (item.price * item.quantity), 0)
-  }
-  
+    if (coverageTotals) return coverageTotals.subtotal;
+    return cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  };
+
   const getInsuranceCoverage = () => {
-    if (customer.insuranceType) {
-      return cart.reduce((sum, item) => {
-        const pricing = insurancePricing[item.id]
-        const coverage = pricing ? pricing.insurancePays : 0
-        return sum + (coverage * item.quantity)
-      }, 0)
-    }
-    return 0
-  }
-  
+    if (coverageTotals) return coverageTotals.insuranceCoverage;
+    return 0;
+  };
+
   const getPatientAmount = () => {
-    if (customer.insuranceType) {
-      return cart.reduce((sum, item) => {
-        const pricing = insurancePricing[item.id]
-        const patientPays = pricing ? pricing.patientPays : item.price
-        return sum + (patientPays * item.quantity)
-      }, 0)
-    }
-    return getSubtotal()
-  }
+    if (coverageTotals) return coverageTotals.patientCopay;
+    return getSubtotal();
+  };
 
   const searchCustomers = (query: string) => {
     setCustomerSearchQuery(query)
@@ -334,28 +336,6 @@ function POSPageContent() {
       })
   }, [searchParams])
 
-  const fetchInsurancePricing = async (drugId: string, insuranceType: string) => {
-    try {
-      const data = await getInsurancePricing(insuranceType, drugId)
-      if (data.price) {
-        const mockPricing = {
-          drugId,
-          insuranceType,
-          retailPrice: 1000,
-          insurancePrice: data.price,
-          coveragePercent: customer.coveragePercent,
-          insurancePays: Math.round(data.price * (customer.coveragePercent / 100)),
-          patientPays: Math.round(data.price * (1 - customer.coveragePercent / 100)),
-        }
-        setInsurancePricing((prev) => ({ ...prev, [drugId]: mockPricing }))
-      }
-    } catch (error) {
-      console.error('Failed to fetch insurance pricing:', error)
-    }
-  }
-
-
-
   const { addSale, updateStock } = usePharmacyStore()
 
   // ── Subscription / transaction gate ──────────────────────
@@ -377,6 +357,11 @@ function POSPageContent() {
 
     if (!activeBranchId) {
       alert('Select a branch before processing a sale.')
+      return
+    }
+
+    if (shiftCheckReady && !hasOpenShift) {
+      toast.error('Open your cashier shift before completing a sale.')
       return
     }
 
@@ -459,7 +444,6 @@ function POSPageContent() {
       setInsuranceAmount('')
       setPaymentMethod('')
       setPriceAdjustments({})
-      setInsurancePricing({})
       setPrescriptionConfirmed(false)
       setNearExpiryAcknowledged(false)
       setRxForm({ patientName: '', prescriberName: '', notes: '' })
@@ -723,11 +707,6 @@ function POSPageContent() {
           })
           if (finalInsuranceType) {
             setInsuranceInterfaceOpen(true)
-            cart.forEach((item) =>
-              void fetchInsurancePricing(item.id, finalInsuranceType),
-            )
-          } else {
-            setInsurancePricing({})
           }
         }}
         updateQuantity={updateQuantity}
@@ -793,169 +772,38 @@ function POSPageContent() {
           )
           alert('Cart backup saved locally.')
         }}
-        saleDisabled={cart.length === 0 || !paymentMethod}
+        saleDisabled={
+          cart.length === 0 ||
+          !paymentMethod ||
+          (shiftCheckReady && !hasOpenShift)
+        }
+        hasOpenShift={hasOpenShift}
+        shiftCheckReady={shiftCheckReady}
+        showTeamShifts={isPharmacyOwner}
       />
 
-      {/* Insurance Interface Dialog */}
       <FeatureGate featureKey="pos.insurance" hideWhenLocked>
-      <Dialog open={insuranceInterfaceOpen} onOpenChange={setInsuranceInterfaceOpen}>
-        <DashboardDialogContent className="max-w-2xl">
-          <DashboardDialogHeader>
-            <DashboardDialogTitle>Insurance processing</DashboardDialogTitle>
-          </DashboardDialogHeader>
-          <DashboardDialogBody className="max-h-96 overflow-y-auto">
-            <div className="text-lg font-bold">TOTAL: {getSubtotal().toLocaleString()}.00</div>
-            
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm font-medium">INSURANCE:</label>
-                  <Input value={customer.insuranceType} disabled />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">TIN_INSURANCE:</label>
-                  <Input placeholder="102495653" />
-                </div>
-              </div>
-              
-              <div>
-                <label className="text-sm font-medium">PATIENT:</label>
-                <div className="flex gap-2">
-                  <Input placeholder="01580533" className="flex-1" />
-                  {customer.insuranceType === 'RAMA' && (
-                    <DashboardButton size="icon" onClick={() => setRamaBeneficiaryOpen(true)}>
-                      <Plus className="h-4 w-4" />
-                    </DashboardButton>
-                  )}
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm font-medium">ORDONNANCE NUMBER:</label>
-                  <Input />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Prescriber NAME:</label>
-                  <Input />
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm font-medium">HSP:</label>
-                  <Input />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Physician Order Number:</label>
-                  <Input />
-                </div>
-              </div>
-              
-              <div className="text-lg font-bold text-blue-600">
-                COPAY: {getPatientAmount().toLocaleString()}
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm font-medium">NAME_CLIENT:</label>
-                  <Input value={customer.name} onChange={(e) => setCustomer({...customer, name: e.target.value})} />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">TIN_PATIENT:</label>
-                  <Input />
-                </div>
-              </div>
-              
-              <div>
-                <label className="text-sm font-medium">AMOUNT PAYED:</label>
-                <Input type="number" />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm font-medium">PAYMENT TYPE:</label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="BANQUEBKRWF" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="BANQUEBKRWF">BANQUEBKRWF</SelectItem>
-                      <SelectItem value="CASH">CASH</SelectItem>
-                      <SelectItem value="MOBILE">MOBILE</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">ID_TRANSACTION:</label>
-                  <Input />
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex items-center space-x-2">
-                  <input type="checkbox" id="print" />
-                  <label htmlFor="print" className="text-sm">PRINT</label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <input type="checkbox" id="check" />
-                  <label htmlFor="check" className="text-sm">CHECK</label>
-                </div>
-              </div>
-              
-              <div>
-                <label className="text-sm font-medium">VALIDITY RATE:</label>
-                <Input />
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <DashboardButton onClick={() => setInsuranceInterfaceOpen(false)}>Cancel</DashboardButton>
-              <DashboardButton onClick={async () => {
-                alert('Draft saved successfully!')
-              }}>Save draft</DashboardButton>
-              <DashboardButton onClick={async () => {
-                try {
-                  const result = await insuranceLookupMutation.mutateAsync(
-                    customer.insuranceNumber,
-                  )
-                  if (result.success) {
-                    alert(
-                      `Approval granted: ${result.insuranceType} - ${result.coveragePercent}% coverage`,
-                    )
-                  } else {
-                    alert('Insurance verification failed')
-                  }
-                } catch {
-                  alert('Approval request sent successfully!')
-                }
-              }}>Request approval</DashboardButton>
-              <DashboardButton tone="primary" onClick={async () => {
-                try {
-                  const result = await insuranceProcessMutation.mutateAsync({
-                    insuranceType: customer.insuranceType,
-                    patientId: customer.insuranceNumber,
-                    totalAmount: getSubtotal(),
-                    insuranceCoverage: getInsuranceCoverage(),
-                    patientCopay: getPatientAmount(),
-                  })
-                  if (result.success && result.claim) {
-                    alert(
-                      `Insurance processed! Claim ID: ${result.claim.claimId}\nApproval Code: ${result.claim.approvalCode}`,
-                    )
-                    setInsuranceInterfaceOpen(false)
-                  } else {
-                    alert('Insurance processing failed')
-                  }
-                } catch {
-                  alert('Insurance claim processed successfully!')
-                  setInsuranceInterfaceOpen(false)
-                }
-              }}>Finish</DashboardButton>
-            </div>
-          </DashboardDialogBody>
-        </DashboardDialogContent>
-      </Dialog>
+        <PosInsuranceProcessingDialog
+          open={insuranceInterfaceOpen}
+          onOpenChange={setInsuranceInterfaceOpen}
+          customer={customer}
+          onCustomerChange={setCustomer}
+          subtotal={getSubtotal()}
+          insuranceCoverage={getInsuranceCoverage()}
+          patientCopay={getPatientAmount()}
+          onOpenRamaBeneficiary={() => setRamaBeneficiaryOpen(true)}
+          lookupPending={insuranceLookupMutation.isPending}
+          processPending={insuranceProcessMutation.isPending}
+          onLookup={(insuranceNumber) =>
+            insuranceLookupMutation.mutateAsync(insuranceNumber)
+          }
+          onProcess={(payload) =>
+            insuranceProcessMutation.mutateAsync({
+              ...payload,
+              lines: coverageLines,
+            })
+          }
+        />
 
       <Dialog open={ramaBeneficiaryOpen} onOpenChange={setRamaBeneficiaryOpen}>
         <DashboardDialogContent className="max-w-2xl">
@@ -1117,7 +965,12 @@ function POSPageContent() {
       )}
 
       <Dialog open={quickAddDialog !== null} onOpenChange={() => setQuickAddDialog(null)}>
-        <DashboardDialogContent>
+        <DashboardDialogContent
+          className={cn(
+            (quickAddDialog === 'product' || quickAddDialog === 'rama-beneficiary') &&
+              'sm:max-w-2xl',
+          )}
+        >
           <DashboardDialogHeader>
             <DashboardDialogTitle>
               {quickAddDialog === 'product' && 'Add product'}
@@ -1125,68 +978,21 @@ function POSPageContent() {
               {quickAddDialog === 'insurance' && 'Quick add insurance'}
               {quickAddDialog === 'rama-beneficiary' && 'RAMA beneficiary'}
             </DashboardDialogTitle>
+            {quickAddDialog === 'product' && (
+              <DashboardDialogDescription>
+                Add a new item to branch inventory. Required fields: name, category, and stock levels.
+              </DashboardDialogDescription>
+            )}
           </DashboardDialogHeader>
           <DashboardDialogBody>
-          <form className="space-y-4">
+          <form id="pos-quick-add-form" className="space-y-4">
             {quickAddDialog === 'product' && (
-              <div className="max-h-96 overflow-y-auto space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <Input name="productCode" placeholder="Product Code (SKU)" />
-                  <Input name="barcode" placeholder="Barcode" />
-                </div>
-                <Input name="productName" placeholder="Product Name (e.g., Paracetamol 500mg)" required />
-                <div className="grid grid-cols-2 gap-4">
-                  <CategorySelect
-                    value={quickAddProductCategory}
-                    onValueChange={setQuickAddProductCategory}
-                    categories={categories}
-                    onCreateCategory={(name) => createCategoryMutation.mutateAsync(name)}
-                    placeholder="Category / Family"
-                  />
-                  <Input name="classificationCode" placeholder="Classification Code (e.g., N02BE01)" />
-                </div>
-                <Input name="manufacturer" placeholder="Manufacturer / Supplier" />
-                <div className="grid grid-cols-2 gap-4">
-                  <Input name="purchasePrice" placeholder="Purchase Price (RWF)" type="number" />
-                  <Input name="unitPrice" placeholder="Unit Price (RWF)" type="number" />
-                </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <Input name="initialStock" placeholder="Initial Stock" type="number" />
-                  <Input name="minStockAlert" placeholder="Min Stock Alert" type="number" />
-                  <Input name="maxStock" placeholder="Max Stock (optional)" type="number" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <Input name="batchNumber" placeholder="Batch Number" />
-                  <Input name="expiryDate" placeholder="Expiry Date" type="date" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <Select name="vatRate">
-                    <SelectTrigger>
-                      <SelectValue placeholder="VAT Rate" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="A">Option A (18%)</SelectItem>
-                      <SelectItem value="B">Option B (0%)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select name="stockLocation">
-                    <SelectTrigger>
-                      <SelectValue placeholder="Stock Location" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="main-store">Main Store</SelectItem>
-                      <SelectItem value="branch">Branch</SelectItem>
-                      <SelectItem value="cold-storage">Cold Storage</SelectItem>
-                      <SelectItem value="warehouse">Warehouse</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <input type="checkbox" id="trackByBatch" name="trackByBatch" />
-                  <label htmlFor="trackByBatch" className="text-sm">Track by Batch?</label>
-                </div>
-                <Input name="notes" placeholder="Notes / Special Instructions" />
-              </div>
+              <PosAddProductForm
+                category={quickAddProductCategory}
+                onCategoryChange={setQuickAddProductCategory}
+                categories={categories}
+                onCreateCategory={(name) => createCategoryMutation.mutateAsync(name)}
+              />
             )}
             {quickAddDialog === 'patient' && (
               <>
@@ -1288,8 +1094,13 @@ function POSPageContent() {
           </form>
           </DashboardDialogBody>
           <DashboardDialogFooter>
-            <DashboardButton onClick={() => setQuickAddDialog(null)}>Cancel</DashboardButton>
-            <DashboardButton tone="primary" onClick={async () => {
+            <DashboardButton type="button" onClick={() => setQuickAddDialog(null)}>
+              Cancel
+            </DashboardButton>
+            <DashboardButton
+              type="button"
+              tone="primary"
+              onClick={async () => {
               if (quickAddDialog === 'patient') {
                 const form = document.querySelector('form')
                 const patientName = (form?.querySelector('input[name="patientName"]') as HTMLInputElement | null)?.value?.trim()
@@ -1297,10 +1108,10 @@ function POSPageContent() {
                 const insuranceNumber = (form?.querySelector('input[name="insuranceNumber"]') as HTMLInputElement | null)?.value?.trim()
                 
                 if (!patientName || !phoneNumber) {
-                  alert('Patient name and phone number are required')
+                  toast.error('Patient name and phone number are required')
                   return
                 }
-                
+
                 try {
                   const result = await quickAddPatientMutation.mutateAsync({
                     patientName,
@@ -1309,7 +1120,7 @@ function POSPageContent() {
                   })
 
                   if (result.success && result.customer) {
-                    alert('Patient added successfully!')
+                    toast.success('Patient added')
                     setQuickAddDialog(null)
                     form?.reset()
 
@@ -1322,12 +1133,12 @@ function POSPageContent() {
                     })
                     setCustomerSearchQuery(result.customer.phone)
                   } else {
-                    alert(result.error || 'Failed to add patient')
+                    toast.error(result.error || 'Failed to add patient')
                   }
-                } catch {
-                  alert('Patient added successfully!')
-                  setQuickAddDialog(null)
-                  form?.reset()
+                } catch (err) {
+                  toast.error(
+                    err instanceof Error ? err.message : 'Failed to add patient',
+                  )
                 }
                 return
               }
@@ -1345,11 +1156,11 @@ function POSPageContent() {
               if (endpoint === '/api/pos/quick-add-drug') {
                 const productName = String(data.productName ?? '').trim()
                 if (!productName) {
-                  alert('Product name is required')
+                  toast.error('Product name is required')
                   return
                 }
                 if (!quickAddProductCategory.trim()) {
-                  alert('Please select or add a category')
+                  toast.error('Please select or add a category')
                   return
                 }
                 data.category = quickAddProductCategory
@@ -1361,28 +1172,35 @@ function POSPageContent() {
                     endpoint: endpoint as '/api/pos/quick-add-drug' | '/api/pos/quick-add-insurance',
                     body: data,
                   })
-                  alert(
-                    result.success
-                      ? quickAddDialog === 'product'
-                        ? 'Product added successfully!'
-                        : 'Added successfully!'
-                      : result.error || 'Request failed',
-                  )
                   if (result.success) {
+                    toast.success(
+                      quickAddDialog === 'product'
+                        ? 'Product added — tap the row to sell'
+                        : 'Added successfully',
+                    )
                     setQuickAddDialog(null)
                     setQuickAddProductCategory('')
                     form?.reset()
+                    if (quickAddDialog === 'product') {
+                      setSearchTerm('')
+                      setSelectedCategory('all')
+                    }
                     if (quickAddDialog === 'insurance') {
                       window.location.reload()
                     }
+                  } else {
+                    toast.error(result.error || 'Request failed')
                   }
                 } catch (err) {
-                  alert(
+                  toast.error(
                     err instanceof Error ? err.message : 'Failed to save. Try again.',
                   )
                 }
               }
-            }}>Add</DashboardButton>
+            }}
+            >
+              {quickAddDialog === 'product' ? 'Add product' : 'Add'}
+            </DashboardButton>
           </DashboardDialogFooter>
         </DashboardDialogContent>
       </Dialog>

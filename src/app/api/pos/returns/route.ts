@@ -10,6 +10,11 @@ import {
   stockMovementTypeForDisposition,
   type ReturnDisposition,
 } from "@/lib/pos/return-disposition";
+import {
+  fetchOpenCashierShift,
+  SHIFT_REQUIRED_CODE,
+  SHIFT_REQUIRED_MESSAGE,
+} from "@/lib/pos/cashier-shift";
 
 type ReturnLinePayload = {
   saleItemId: string;
@@ -57,6 +62,14 @@ export async function POST(request: NextRequest) {
       feature: "pos.returns",
       branchId,
     });
+
+    const openShift = await fetchOpenCashierShift(supabase, user.id, branchId);
+    if (!openShift) {
+      return NextResponse.json(
+        { error: SHIFT_REQUIRED_MESSAGE, code: SHIFT_REQUIRED_CODE },
+        { status: 403 },
+      );
+    }
 
     const { data: sale, error: saleError } = await supabase
       .from("sales")
@@ -258,23 +271,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { data: openShift } = await supabase
+    await supabase
       .from("cashier_shifts")
-      .select("id, total_refunds")
-      .eq("cashier_id", user.id)
-      .eq("branch_id", branchId)
-      .eq("status", "open")
-      .maybeSingle();
-
-    if (openShift) {
-      await supabase
-        .from("cashier_shifts")
-        .update({
-          total_refunds:
-            Number(openShift.total_refunds ?? 0) + finalRefund,
-        })
-        .eq("id", openShift.id);
-    }
+      .update({
+        total_refunds: Number(openShift.total_refunds ?? 0) + finalRefund,
+      })
+      .eq("id", openShift.id);
 
     return NextResponse.json({
       success: true,

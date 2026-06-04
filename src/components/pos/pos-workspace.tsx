@@ -1,6 +1,6 @@
 "use client";
 
-import type { RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   AlertTriangle,
   Banknote,
@@ -34,8 +34,16 @@ import {
 } from "@/components/dashboard";
 import { FeatureGate } from "@/components/subscription/feature-gate";
 import { InsuranceSelector } from "@/components/insurance-selector";
+import {
+  paginateList,
+  PosCatalogPagination,
+} from "@/components/pos/pos-catalog-pagination";
 import { PosShiftPanel } from "@/components/pos/pos-shift-panel";
-import { posSurfaces } from "@/components/pos/pos-tokens";
+import {
+  POS_CART_SCROLL_AFTER_LINES,
+  POS_CATALOG_DEFAULT_PAGE_SIZE,
+  posSurfaces,
+} from "@/components/pos/pos-tokens";
 import { cn } from "@/lib/utils";
 import {
   formatProductGroupLabel,
@@ -101,6 +109,9 @@ export type PosWorkspaceProps = {
   onVoidSale: () => void;
   onBackupCart?: () => void;
   saleDisabled: boolean;
+  hasOpenShift?: boolean;
+  shiftCheckReady?: boolean;
+  showTeamShifts?: boolean;
 };
 
 function PaymentMethodButton({
@@ -176,13 +187,56 @@ export function PosWorkspace(props: PosWorkspaceProps) {
     onVoidSale,
     onBackupCart,
     saleDisabled,
+    hasOpenShift = true,
+    shiftCheckReady = true,
+    showTeamShifts = false,
   } = props;
+
+  const shiftBlocksSale = shiftCheckReady && !hasOpenShift;
 
   const itemCount = cart.reduce((n, i) => n + i.quantity, 0);
   const displayTotal = customer.insuranceType ? patientAmount : subtotal;
 
+  const [catalogTab, setCatalogTab] = useState("all");
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [pageSize, setPageSize] = useState(POS_CATALOG_DEFAULT_PAGE_SIZE);
+  const catalogListRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setCatalogPage(1);
+  }, [searchTerm, selectedCategory, catalogTab, pageSize]);
+
+  const paginatedGroups = useMemo(
+    () => paginateList(filteredGroups, catalogPage, pageSize),
+    [filteredGroups, catalogPage, pageSize],
+  );
+
+  const paginatedFastMoving = useMemo(
+    () => paginateList(fastMoving, catalogPage, pageSize),
+    [fastMoving, catalogPage, pageSize],
+  );
+
+  const catalogTotal =
+    catalogTab === "all" ? filteredGroups.length : fastMoving.length;
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(catalogTotal / pageSize) || 1);
+    if (catalogPage > totalPages) setCatalogPage(totalPages);
+  }, [catalogTotal, pageSize, catalogPage]);
+
+  const scrollCatalogToTop = () => {
+    catalogListRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const goToCatalogPage = (page: number) => {
+    setCatalogPage(page);
+    scrollCatalogToTop();
+  };
+
+  const cartNeedsScroll = cart.length > POS_CART_SCROLL_AFTER_LINES;
+
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <DashboardMetricGrid className="grid-cols-2 sm:grid-cols-4">
         <DashboardStatCard
           label="Cart"
@@ -270,8 +324,15 @@ export function PosWorkspace(props: PosWorkspaceProps) {
             </div>
           </div>
 
-          <Tabs defaultValue="all" className="flex min-h-0 flex-1 flex-col">
-            <div className="border-b border-neutral-100 px-4 py-2 dark:border-neutral-800">
+          <Tabs
+            value={catalogTab}
+            onValueChange={(value) => {
+              setCatalogTab(value);
+              setCatalogPage(1);
+            }}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          >
+            <div className="shrink-0 border-b border-neutral-100 px-4 py-2 dark:border-neutral-800">
               <DashboardTabsList>
                 <TabsTrigger value="all">All products</TabsTrigger>
                 <TabsTrigger value="favorites">
@@ -281,8 +342,14 @@ export function PosWorkspace(props: PosWorkspaceProps) {
               </DashboardTabsList>
             </div>
 
-            <div className={posSurfaces.catalogBody}>
-              <TabsContent value="all" className="mt-0 space-y-2">
+            <TabsContent
+              value="all"
+              className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden data-[state=inactive]:hidden"
+            >
+              <div
+                ref={catalogTab === "all" ? catalogListRef : undefined}
+                className={cn(posSurfaces.catalogList, "space-y-2")}
+              >
                 {filteredGroups.length === 0 ? (
                   <DashboardPanelEmpty
                     icon={Package}
@@ -290,7 +357,7 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                     description="Try another search, category, or scan a barcode."
                   />
                 ) : (
-                  filteredGroups.map((group) => (
+                  paginatedGroups.map((group) => (
                     <div
                       key={group.medicationId}
                       className={posSurfaces.productCard}
@@ -331,12 +398,22 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                         </p>
                       </div>
                       <div
-                        className="shrink-0 text-right"
+                        className="flex shrink-0 flex-col items-end gap-1"
                         onClick={(e) => e.stopPropagation()}
                       >
+                        <p className="text-sm font-semibold tabular-nums text-neutral-900 dark:text-neutral-50">
+                          {(
+                            priceAdjustments[group.fefoBatch.id] ??
+                            group.fefoBatch.price
+                          ).toLocaleString()}{" "}
+                          <span className="text-xs font-medium text-neutral-500">
+                            RWF
+                          </span>
+                        </p>
                         <Input
                           type="number"
-                          className="h-8 w-24 text-right text-sm tabular-nums"
+                          aria-label={`Adjust price for ${group.name}`}
+                          className="h-7 w-28 text-right text-xs tabular-nums"
                           value={
                             priceAdjustments[group.fefoBatch.id] ??
                             group.fefoBatch.price
@@ -348,16 +425,30 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                             )
                           }
                         />
-                        <p className="mt-1 text-xs font-medium tabular-nums text-neutral-600">
-                          RWF
-                        </p>
                       </div>
                     </div>
                   ))
                 )}
-              </TabsContent>
+              </div>
+              {filteredGroups.length > 0 ? (
+                <PosCatalogPagination
+                  page={catalogPage}
+                  pageSize={pageSize}
+                  totalItems={filteredGroups.length}
+                  onPageChange={goToCatalogPage}
+                  onPageSizeChange={setPageSize}
+                />
+              ) : null}
+            </TabsContent>
 
-              <TabsContent value="favorites" className="mt-0 space-y-2">
+            <TabsContent
+              value="favorites"
+              className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden data-[state=inactive]:hidden"
+            >
+              <div
+                ref={catalogTab === "favorites" ? catalogListRef : undefined}
+                className={cn(posSurfaces.catalogList, "space-y-2")}
+              >
                 {fastMoving.length === 0 ? (
                   <DashboardPanelEmpty
                     icon={Star}
@@ -365,7 +456,7 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                     description="Sales velocity data will appear here."
                   />
                 ) : (
-                  fastMoving.map((product) => {
+                  paginatedFastMoving.map((product) => {
                     const group = productGroups.find(
                       (g) => g.medicationId === product.medicationId,
                     );
@@ -374,9 +465,7 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                         key={product.id}
                         className={posSurfaces.productCard}
                         onClick={() =>
-                          group
-                            ? onAddGroup(group)
-                            : onAddProduct(product)
+                          group ? onAddGroup(group) : onAddProduct(product)
                         }
                       >
                         <p className="flex-1 text-sm font-medium">
@@ -389,15 +478,24 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                     );
                   })
                 )}
-              </TabsContent>
-            </div>
+              </div>
+              {fastMoving.length > 0 ? (
+                <PosCatalogPagination
+                  page={catalogPage}
+                  pageSize={pageSize}
+                  totalItems={fastMoving.length}
+                  onPageChange={goToCatalogPage}
+                  onPageSizeChange={setPageSize}
+                />
+              ) : null}
+            </TabsContent>
           </Tabs>
         </section>
 
         {/* Order sidebar */}
         <aside className={posSurfaces.sidebar} aria-label="Order checkout">
-          <div className={posSurfaces.sidebarScroll}>
-            <div className="mb-4 flex items-center justify-between">
+          <div className={posSurfaces.sidebarTop}>
+            <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">
                 Current order
               </h2>
@@ -406,7 +504,7 @@ export function PosWorkspace(props: PosWorkspaceProps) {
               </Badge>
             </div>
 
-            <div className="mb-4 space-y-2 rounded-xl border border-neutral-200/80 bg-neutral-50/50 p-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+            <div className="space-y-2 rounded-xl border border-neutral-200/80 bg-neutral-50/50 p-3 dark:border-neutral-800 dark:bg-neutral-900/40">
               <Label className="text-xs text-neutral-500">Customer</Label>
               <div className="relative flex gap-2">
                 <Input
@@ -472,62 +570,79 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                 ) : null}
               </FeatureGate>
             </div>
+          </div>
 
+          <div
+            className={cn(
+              posSurfaces.sidebarCart,
+              cartNeedsScroll && posSurfaces.sidebarCartCap,
+            )}
+            aria-label="Cart line items"
+            role="region"
+          >
             {cart.length === 0 ? (
               <DashboardPanelEmpty
                 icon={ShoppingCart}
                 title="Cart is empty"
                 description="Select products from the catalog or scan a barcode."
-                className="min-h-[160px]"
+                className="min-h-[120px] border-0 bg-transparent py-6 shadow-none"
               />
             ) : (
-              <ul className="space-y-2">
-                {cart.map((item) => (
-                  <li key={item.id} className={posSurfaces.cartLine}>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{item.name}</p>
-                      <p className="text-xs text-neutral-500">
-                        Batch {item.batch} · {item.price.toLocaleString()} RWF
-                      </p>
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {item.requiresPrescription && (
-                          <Badge variant="destructive" className="text-[10px]">
-                            Rx
-                          </Badge>
-                        )}
-                        {item.daysToExpiry <= 30 && (
-                          <Badge variant="destructive" className="text-[10px]">
-                            Exp {item.daysToExpiry}d
-                          </Badge>
-                        )}
+              <>
+                {cartNeedsScroll ? (
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+                    {cart.length} lines — scroll to see all
+                  </p>
+                ) : null}
+                <ul className="space-y-2 pr-0.5">
+                  {cart.map((item) => (
+                    <li key={item.id} className={posSurfaces.cartLine}>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">{item.name}</p>
+                        <p className="text-xs text-neutral-500">
+                          Batch {item.batch} · {item.price.toLocaleString()}{" "}
+                          RWF
+                        </p>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {item.requiresPrescription && (
+                            <Badge variant="destructive" className="text-[10px]">
+                              Rx
+                            </Badge>
+                          )}
+                          {item.daysToExpiry <= 30 && (
+                            <Badge variant="destructive" className="text-[10px]">
+                              Exp {item.daysToExpiry}d
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <DashboardButton
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() =>
-                          updateQuantity(item.id, item.quantity - 1)
-                        }
-                      >
-                        <Minus className="h-3 w-3" />
-                      </DashboardButton>
-                      <span className="w-6 text-center text-sm font-medium tabular-nums">
-                        {item.quantity}
-                      </span>
-                      <DashboardButton
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() =>
-                          updateQuantity(item.id, item.quantity + 1)
-                        }
-                      >
-                        <Plus className="h-3 w-3" />
-                      </DashboardButton>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                      <div className="flex items-center gap-1">
+                        <DashboardButton
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() =>
+                            updateQuantity(item.id, item.quantity - 1)
+                          }
+                        >
+                          <Minus className="h-3 w-3" />
+                        </DashboardButton>
+                        <span className="w-6 text-center text-sm font-medium tabular-nums">
+                          {item.quantity}
+                        </span>
+                        <DashboardButton
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() =>
+                            updateQuantity(item.id, item.quantity + 1)
+                          }
+                        >
+                          <Plus className="h-3 w-3" />
+                        </DashboardButton>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </div>
 
@@ -551,7 +666,11 @@ export function PosWorkspace(props: PosWorkspaceProps) {
               )}
             </div>
 
-            <PosShiftPanel branchId={activeBranchId} />
+            <PosShiftPanel
+              branchId={activeBranchId}
+              showTeamShifts={showTeamShifts}
+              shiftRequired
+            />
 
             <div className="space-y-2">
               <Label className="text-xs text-neutral-500">Payment method</Label>
@@ -615,6 +734,11 @@ export function PosWorkspace(props: PosWorkspaceProps) {
               </div>
             )}
 
+            {shiftBlocksSale ? (
+              <p className="text-center text-xs font-medium text-amber-800 dark:text-amber-200">
+                Open your cashier shift above to complete a sale.
+              </p>
+            ) : null}
             <DashboardButton
               tone="primary"
               className="h-12 w-full text-base"

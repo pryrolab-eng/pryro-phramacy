@@ -21,6 +21,8 @@ export const PHARMACY_ROUTES = {
   settings: "/pharmacy/settings",
   staffDashboard: "/pharmacy/staff-dashboard",
   staffSettings: "/pharmacy/staff-settings",
+  helpInsurance: "/pharmacy/help/insurance",
+  insuranceMedicines: "/pharmacy/insurance/medicines",
 } as const;
 
 export type PharmacyRouteKey = keyof typeof PHARMACY_ROUTES;

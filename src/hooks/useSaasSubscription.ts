@@ -78,7 +78,8 @@ export function useSaasBranches() {
       const data = await getSaasBranches()
       return data.branches
     },
-    staleTime: 30 * 1000,
+    staleTime: 15 * 1000,
+    refetchOnWindowFocus: true,
   })
 }
 

@@ -50,50 +50,26 @@ export async function resolveDefaultStockingBranchId(
 
 /**
  * Ensures exactly one HQ exists for POS/inventory when a pharmacy has no locations yet.
- * Satellite branches are added later via Branches (plan slots) and stocked by transfer from HQ.
+ * Uses DB advisory lock via `ensure_pharmacy_hq_branch` to avoid duplicate rows on concurrent requests.
  */
 export async function ensureHeadquartersBranch(
   admin: SupabaseClient,
   pharmacyId: string,
 ): Promise<string | null> {
-  const existing = await resolveDefaultStockingBranchId(admin, pharmacyId);
-  if (existing) return existing;
+  const { data: rpcId, error: rpcError } = await admin.rpc(
+    "ensure_pharmacy_hq_branch",
+    { p_pharmacy_id: pharmacyId },
+  );
 
-  const { count } = await admin
-    .from("branches")
-    .select("id", { count: "exact", head: true })
-    .eq("pharmacy_id", pharmacyId);
-
-  if ((count ?? 0) > 0) {
-    return resolveDefaultStockingBranchId(admin, pharmacyId);
+  if (!rpcError && rpcId) {
+    return rpcId as string;
   }
 
-  const { data: pharmacy } = await admin
-    .from("pharmacies")
-    .select("name, address, phone, email")
-    .eq("id", pharmacyId)
-    .maybeSingle();
-
-  const { data: branch, error } = await admin
-    .from("branches")
-    .insert({
-      pharmacy_id: pharmacyId,
-      name: HEADQUARTERS_BRANCH_NAME,
-      address: pharmacy?.address ?? null,
-      phone: pharmacy?.phone ?? null,
-      email: pharmacy?.email ?? null,
-      is_active: true,
-      is_headquarters: true,
-    })
-    .select("id")
-    .single();
-
-  if (error) {
-    console.error("ensureHeadquartersBranch:", error.message);
-    return resolveDefaultStockingBranchId(admin, pharmacyId);
+  if (rpcError) {
+    console.error("ensureHeadquartersBranch rpc:", rpcError.message);
   }
 
-  return (branch?.id as string) ?? null;
+  return resolveDefaultStockingBranchId(admin, pharmacyId);
 }
 
 export function isHeadquartersBranch(
@@ -102,5 +78,10 @@ export function isHeadquartersBranch(
   if (!branch) return false;
   if (branch.is_headquarters === true) return true;
   const n = String(branch.name ?? "").toLowerCase();
-  return n.includes("headquarters") || n.includes("(hq)");
+  return (
+    n.includes("headquarters") ||
+    n.includes("(hq)") ||
+    n.endsWith("— main") ||
+    n.endsWith("- main")
+  );
 }

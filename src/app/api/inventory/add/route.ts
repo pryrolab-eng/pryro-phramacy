@@ -77,10 +77,11 @@ export async function POST(request: NextRequest) {
         
         if (updateError) throw updateError
         
-        return NextResponse.json({ 
-          success: true, 
+        return NextResponse.json({
+          success: true,
           message: 'Quantity updated',
-          inventory: { id: existingInventory.id, quantity_in_stock: newQuantity }
+          medicationId,
+          inventory: { id: existingInventory.id, quantity_in_stock: newQuantity },
         })
       }
     } else {
@@ -127,7 +128,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('Successfully added inventory:', inventory)
-    return NextResponse.json({ success: true, inventory })
+    return NextResponse.json({ success: true, medicationId, inventory })
   } catch (error) {
     console.error('Error adding inventory:', error)
     return NextResponse.json({ 

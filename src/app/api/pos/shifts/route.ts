@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "../../../../../supabase/server";
+import { createServiceClient } from "../../../../../supabase/service";
 import {
   guardPharmacyFeature,
   handleEntitlementRouteError,
@@ -60,6 +61,77 @@ export async function GET(request: NextRequest) {
       feature: "pos.access",
       branchId,
     });
+
+    const teamView =
+      new URL(request.url).searchParams.get("team") === "open";
+
+    if (teamView) {
+      const { data: membership } = await supabase
+        .from("pharmacy_users")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("pharmacy_id", pharmacyId)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (membership?.role !== "pharmacy_owner") {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+
+      const { data: openShifts, error: teamError } = await supabase
+        .from("cashier_shifts")
+        .select("id, cashier_id, opened_at, opening_cash, status")
+        .eq("pharmacy_id", pharmacyId)
+        .eq("branch_id", branchId)
+        .eq("status", "open")
+        .order("opened_at", { ascending: true });
+
+      if (teamError) throw teamError;
+
+      const cashierIds = Array.from(
+        new Set((openShifts ?? []).map((s) => s.cashier_id as string)),
+      );
+      const nameById = new Map<string, string>();
+      if (cashierIds.length > 0) {
+        const admin = createServiceClient();
+        const { data: profiles } = await admin
+          .from("users")
+          .select("id, full_name, name, email")
+          .in("id", cashierIds);
+        for (const p of profiles ?? []) {
+          const label =
+            p.full_name ||
+            p.name ||
+            (typeof p.email === "string" ? p.email.split("@")[0] : null) ||
+            "Staff";
+          nameById.set(p.id as string, label);
+        }
+      }
+
+      const team = await Promise.all(
+        (openShifts ?? []).map(async (row) => {
+          const summary = await summarizeShiftSales(
+            supabase,
+            pharmacyId,
+            branchId,
+            row.cashier_id as string,
+            row.opened_at as string,
+          );
+          return {
+            id: row.id,
+            cashierId: row.cashier_id,
+            cashierName: nameById.get(row.cashier_id as string) ?? "Staff",
+            openedAt: row.opened_at,
+            openingCash: Number(row.opening_cash),
+            isCurrentUser: row.cashier_id === user.id,
+            liveTotalSales: summary.totalSales,
+            liveTransactionCount: summary.transactionCount,
+          };
+        }),
+      );
+
+      return NextResponse.json({ team });
+    }
 
     const { data: shift, error } = await supabase
       .from("cashier_shifts")
@@ -239,6 +311,21 @@ export async function POST(request: NextRequest) {
     const entitlement = handleEntitlementRouteError(error);
     if (entitlement) return entitlement;
     console.error("POST /api/pos/shifts", error);
-    return NextResponse.json({ error: "Shift action failed" }, { status: 500 });
+    const message =
+      error &&
+      typeof error === "object" &&
+      "message" in error &&
+      typeof (error as { message: unknown }).message === "string"
+        ? (error as { message: string }).message
+        : "Shift action failed";
+    const isRls = message.includes("row-level security");
+    return NextResponse.json(
+      {
+        error: isRls
+          ? "Could not save shift (database access). Run the latest Supabase migrations, then try again."
+          : message,
+      },
+      { status: 500 },
+    );
   }
 }

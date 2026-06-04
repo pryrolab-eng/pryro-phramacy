@@ -241,6 +241,7 @@ export type Database = {
           dosage_form: string | null
           generic_name: string | null
           id: string
+          insurance_coverage: Json
           is_active: boolean | null
           manufacturer: string | null
           name: string
@@ -258,6 +259,7 @@ export type Database = {
           dosage_form?: string | null
           generic_name?: string | null
           id?: string
+          insurance_coverage?: Json
           is_active?: boolean | null
           manufacturer?: string | null
           name: string
@@ -275,6 +277,7 @@ export type Database = {
           dosage_form?: string | null
           generic_name?: string | null
           id?: string
+          insurance_coverage?: Json
           is_active?: boolean | null
           manufacturer?: string | null
           name?: string

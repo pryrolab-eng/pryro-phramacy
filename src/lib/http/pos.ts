@@ -93,6 +93,19 @@ export const posKeys = {
   priceCheck: (q: string) => [...posKeys.all, "price-check", q] as const,
   shift: (branchId?: string | null) =>
     [...posKeys.all, "shift", branchId ?? "none"] as const,
+  teamOpenShifts: (branchId?: string | null) =>
+    [...posKeys.all, "team-open-shifts", branchId ?? "none"] as const,
+};
+
+export type TeamOpenCashierShift = {
+  id: string;
+  cashierId: string;
+  cashierName: string;
+  openedAt: string;
+  openingCash: number;
+  isCurrentUser: boolean;
+  liveTotalSales: number;
+  liveTransactionCount: number;
 };
 
 export async function getPosProducts(
@@ -300,6 +313,15 @@ export async function getCurrentCashierShift(
   return data.shift ?? null;
 }
 
+export async function getTeamOpenCashierShifts(
+  branchId: string,
+): Promise<TeamOpenCashierShift[]> {
+  const data = await fetchJson<{ team: TeamOpenCashierShift[] }>(
+    `/api/pos/shifts?branchId=${encodeURIComponent(branchId)}&team=open`,
+  );
+  return data.team ?? [];
+}
+
 export async function openCashierShift(payload: {
   branchId: string;
   openingCash: number;
@@ -316,6 +338,9 @@ export async function openCashierShift(payload: {
       }),
     },
   );
+  if (!data.shift) {
+    throw new Error("Shift was not created");
+  }
   return data.shift;
 }
 

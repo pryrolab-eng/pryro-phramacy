@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../../supabase/server'
+import { resolveMedicationCategoryEnum } from '@/lib/pharmacy/medication-category'
 import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
 import { requireSessionBranchId } from '@/lib/pharmacy/get-session-branch'
 
@@ -21,26 +22,6 @@ function readNumber(body: Record<string, unknown>, ...keys: string[]): number {
   return 0
 }
 
-const categoryMap: Record<string, string> = {
-  'pain relief': 'otc',
-  'antibiotics': 'prescription',
-  'vitamins': 'supplement',
-  'supplements': 'supplement',
-  'prescription': 'prescription',
-  'prescription medications': 'prescription',
-  'over-the-counter': 'otc',
-  'otc': 'otc',
-  'controlled': 'controlled',
-  'medical device': 'medical_device',
-  'medical devices': 'medical_device',
-  'general': 'otc',
-}
-
-function resolveMedicationCategory(label: string): string {
-  const key = label.trim().toLowerCase()
-  return categoryMap[key] ?? 'otc'
-}
-
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -56,7 +37,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as Record<string, unknown>
     const name = readString(body, 'productName', 'name')
     const categoryLabel = readString(body, 'category')
-    const category = resolveMedicationCategory(categoryLabel)
+    const category = resolveMedicationCategoryEnum(categoryLabel)
 
     if (!name) {
       return NextResponse.json(

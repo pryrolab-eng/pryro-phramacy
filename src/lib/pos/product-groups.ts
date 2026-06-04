@@ -1,3 +1,4 @@
+import { medicationCategoryMatchesFilter } from "@/lib/pharmacy/medication-category";
 import {
   type PosBatchLine,
   allocateFefo,
@@ -68,7 +69,10 @@ export function filterProductGroups(
 ): PosProductGroup[] {
   const q = searchTerm.trim().toLowerCase();
   return groups.filter((g) => {
-    const matchesCategory = category === "all" || g.category === category;
+    const matchesCategory = medicationCategoryMatchesFilter(
+      category,
+      g.category,
+    );
     if (!matchesCategory) return false;
     if (!q) return true;
     return (

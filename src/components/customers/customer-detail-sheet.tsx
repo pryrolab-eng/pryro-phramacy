@@ -37,6 +37,12 @@ import {
   useUpdateCustomerMutation,
 } from "@/hooks/useCustomers";
 import type { UpdateCustomerInput } from "@/lib/http/customers";
+import {
+  buildCustomerInsuranceValue,
+  CustomerInsuranceFields,
+  splitCustomerInsuranceValue,
+} from "@/components/customers/customer-insurance-fields";
+import { useInsuranceProviders } from "@/hooks/useInsuranceProviders";
 
 type Props = {
   customerId: string | null;
@@ -58,7 +64,10 @@ export function CustomerDetailSheet({
   const [editing, setEditing] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [form, setForm] = useState<UpdateCustomerInput>({});
+  const [insuranceProvider, setInsuranceProvider] = useState("");
+  const [insuranceMemberNumber, setInsuranceMemberNumber] = useState("");
 
+  const providersQuery = useInsuranceProviders({ enabled: open });
   const customer = detailQuery.data?.customer;
   const recentSales = detailQuery.data?.recentSales ?? [];
 
@@ -73,18 +82,32 @@ export function CustomerDetailSheet({
         customer.allergies && customer.allergies !== "None"
           ? customer.allergies
           : "",
-      insurance: customer.insurance ?? "",
       status: customer.status === "inactive" ? "inactive" : "active",
     });
+    const providerNames = (providersQuery.data ?? [])
+      .map((p) => String(p.name ?? "").trim())
+      .filter(Boolean);
+    const split = splitCustomerInsuranceValue(
+      customer.insurance,
+      providerNames,
+    );
+    setInsuranceProvider(split.provider);
+    setInsuranceMemberNumber(split.memberNumber);
     setEditing(false);
-  }, [customer?.id, customer]);
+  }, [customer?.id, customer, providersQuery.data]);
 
   const handleSave = async () => {
     if (!customerId) return;
     try {
       const result = await updateMutation.mutateAsync({
         id: customerId,
-        body: form,
+        body: {
+          ...form,
+          insurance: buildCustomerInsuranceValue(
+            insuranceProvider ?? "",
+            insuranceMemberNumber ?? "",
+          ),
+        },
       });
       if (result.success) {
         toast.success("Customer updated");
@@ -187,15 +210,12 @@ export function CustomerDetailSheet({
                     }
                   />
                 </div>
-                <div className="grid gap-2">
-                  <Label>Insurance number</Label>
-                  <Input
-                    value={form.insurance ?? ""}
-                    onChange={(e) =>
-                      setForm({ ...form, insurance: e.target.value })
-                    }
-                  />
-                </div>
+                <CustomerInsuranceFields
+                  provider={insuranceProvider}
+                  memberNumber={insuranceMemberNumber}
+                  onProviderChange={setInsuranceProvider}
+                  onMemberNumberChange={setInsuranceMemberNumber}
+                />
                 <div className="grid gap-2">
                   <Label>Status</Label>
                   <Select

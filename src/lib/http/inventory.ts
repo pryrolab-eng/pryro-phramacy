@@ -2,6 +2,7 @@ import { ensureApiSuccess, fetchJson } from "./client";
 
 export type InventoryListRow = {
   id: string;
+  medicationId?: string;
   name: string;
   category: string;
   stock: number;
@@ -30,6 +31,7 @@ export type ApiSuccessResult = {
   success: boolean;
   error?: string;
   newStock?: number;
+  medicationId?: string;
 };
 
 export type AddInventoryProductInput = {

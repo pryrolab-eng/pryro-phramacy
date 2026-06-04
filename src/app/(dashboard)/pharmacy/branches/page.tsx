@@ -71,6 +71,8 @@ export default function BranchesPage() {
     (p) => p.plan_type === 'branch_addon' && p.is_active,
   )
 
+  const overPlanCount = branches.filter((b) => b.over_plan_limit).length
+
   const filtered = useMemo(() => {
     const q = searchTerm.trim().toLowerCase()
     if (!q) return branches
@@ -163,6 +165,22 @@ export default function BranchesPage() {
             </DashboardToolbar>
           }
         />
+
+        {overPlanCount > 0 ? (
+          <div className="rounded-lg border border-amber-300/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+            <p className="font-medium">
+              {overPlanCount} extra branch{overPlanCount !== 1 ? "es" : ""} from an
+              earlier bug
+            </p>
+            <p className="mt-1 text-xs text-amber-900/90 dark:text-amber-200/90">
+              Your plan includes {branchLimit} slot{branchLimit !== 1 ? "s" : ""}, but{" "}
+              {branchCount} active locations exist in the database. Rows marked{" "}
+              <span className="font-medium">Extra — not on plan</span> should be removed
+              (run <code className="text-[11px]">scripts/cleanup-duplicate-branches.sql</code>{" "}
+              in Supabase SQL, then refresh).
+            </p>
+          </div>
+        ) : null}
 
         <BranchSlotsBanner
           summary={summary}

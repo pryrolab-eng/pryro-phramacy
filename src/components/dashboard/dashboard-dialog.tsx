@@ -18,7 +18,7 @@ import { dashboardDialogText, dashboardSurfaces } from "./dashboard-tokens";
 export { Dialog, DialogTrigger, DialogClose };
 
 const contentBase =
-  "fixed left-[50%] top-[50%] z-50 grid w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-1.5rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] overflow-y-auto duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:w-full sm:max-w-lg";
+  "fixed left-[50%] top-[50%] z-50 flex w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-1.5rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] flex-col overflow-hidden duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:w-full sm:max-w-lg";
 
 export const DashboardDialogContent = React.forwardRef<
   React.ElementRef<typeof DialogContent>,
@@ -43,7 +43,7 @@ export function DashboardDialogHeader({
     <DialogHeader
       className={cn(
         dashboardSurfaces.dialogHeader,
-        "space-y-1 text-left",
+        "shrink-0 space-y-1 text-left",
         className,
       )}
       {...props}
@@ -86,7 +86,7 @@ export function DashboardDialogBody({
     <div
       className={cn(
         dashboardSurfaces.dialogBody,
-        "max-h-[min(70vh,28rem)] overflow-y-auto",
+        "min-h-0 flex-1 overflow-y-auto",
         className,
       )}
       {...props}
@@ -103,7 +103,11 @@ export function DashboardDialogFooter({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <DialogFooter
-      className={cn(dashboardSurfaces.dialogFooter, className)}
+      className={cn(
+        dashboardSurfaces.dialogFooter,
+        "shrink-0 bg-white dark:bg-neutral-900",
+        className,
+      )}
       {...props}
     >
       {children}

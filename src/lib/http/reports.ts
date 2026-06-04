@@ -9,6 +9,8 @@ export const reportsKeys = {
   sales: (scope?: BranchScopeQuery) =>
     [...reportsKeys.all, "sales", scope ?? {}] as const,
   inventory: () => [...reportsKeys.all, "inventory"] as const,
+  insuranceClaims: (month: number, year: number, providerId?: string | null) =>
+    [...reportsKeys.all, "insurance-claims", month, year, providerId ?? "all"] as const,
 };
 
 export type ReportsSalesData = {

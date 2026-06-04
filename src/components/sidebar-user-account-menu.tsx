@@ -13,6 +13,7 @@ import {
   KeyRound,
 } from "lucide-react";
 import { ChangePasswordDialog } from "@/components/auth/change-password-dialog";
+import { SignOutConfirmDialog } from "@/components/auth/sign-out-confirm-dialog";
 import { isStaffWorkspaceRole } from "@/lib/rbac/pharmacy-roles";
 import { cn } from "@/lib/utils";
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
@@ -159,12 +160,6 @@ function MenuNavAction({
   );
 }
 
-function handleSignOut() {
-  if (confirm("Are you sure you want to sign out?")) {
-    window.location.href = "/api/auth/signout";
-  }
-}
-
 export function SidebarUserAccountMenu({
   userName,
   roleLabel,
@@ -173,7 +168,13 @@ export function SidebarUserAccountMenu({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [signOutOpen, setSignOutOpen] = useState(false);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
+
+  const requestSignOut = () => {
+    setOpen(false);
+    setSignOutOpen(true);
+  };
   const { context, switchPharmacy, isPending: contextLoading } = useActivePharmacy();
   const { canReachHref, canChangePassword, lockedHint } = useDashboardGraceNav();
 
@@ -220,7 +221,7 @@ export function SidebarUserAccountMenu({
       }
       if (e.altKey && e.shiftKey && e.key.toLowerCase() === "q") {
         e.preventDefault();
-        handleSignOut();
+        requestSignOut();
       }
     };
 
@@ -413,7 +414,10 @@ export function SidebarUserAccountMenu({
 
         <DropdownMenuItem
           className="flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 focus:bg-accent"
-          onClick={handleSignOut}
+          onSelect={(e) => {
+            e.preventDefault();
+            requestSignOut();
+          }}
         >
           <LogOut className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="flex-1 text-sm font-medium">Sign out</span>
@@ -425,6 +429,7 @@ export function SidebarUserAccountMenu({
       open={changePasswordOpen}
       onOpenChange={setChangePasswordOpen}
     />
+    <SignOutConfirmDialog open={signOutOpen} onOpenChange={setSignOutOpen} />
     </>
   );
 }

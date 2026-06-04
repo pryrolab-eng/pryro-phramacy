@@ -27,7 +27,7 @@ export default async function SignInPage({ searchParams }: LoginProps) {
 
       <SignInForm initialEmail={initialEmail} />
 
-      <p className="text-sm text-gray-500">
+      <p className="mt-6 text-sm text-gray-500">
         Don&apos;t have an account?{" "}
         <Suspense
           fallback={

@@ -143,7 +143,6 @@ export {
   useQuickAddPosPatientMutation,
   useSaasBranches,
   useVoidPosSaleMutation,
-  getInsurancePricing,
   type PosCartItem,
   type PosCustomer,
   type PosProduct,

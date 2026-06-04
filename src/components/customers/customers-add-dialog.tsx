@@ -16,14 +16,29 @@ import {
   DashboardButton,
 } from "@/components/dashboard";
 import type { CreateCustomerInput } from "@/lib/http/customers";
+import {
+  buildCustomerInsuranceValue,
+  CustomerInsuranceFields,
+} from "@/components/customers/customer-insurance-fields";
 
-const emptyForm: CreateCustomerInput = {
+type CustomerFormState = {
+  name: string;
+  phone: string;
+  email: string;
+  dateOfBirth: string;
+  allergies: string;
+  insuranceProvider: string;
+  insuranceMemberNumber: string;
+};
+
+const emptyForm: CustomerFormState = {
   name: "",
   phone: "",
   email: "",
   dateOfBirth: "",
   allergies: "",
-  insurance: "",
+  insuranceProvider: "",
+  insuranceMemberNumber: "",
 };
 
 type Props = {
@@ -48,12 +63,23 @@ export function CustomersAddDialog({
   description = "Create a pharmacy customer for POS lookup and visit history.",
   confirmLabel = "Add customer",
 }: Props) {
-  const [form, setForm] = useState<CreateCustomerInput>(emptyForm);
+  const [form, setForm] = useState<CustomerFormState>(emptyForm);
 
   const reset = () => setForm(emptyForm);
 
   const handleSubmit = async () => {
-    await onSubmit(form);
+    const payload: CreateCustomerInput = {
+      name: form.name,
+      phone: form.phone,
+      email: form.email,
+      dateOfBirth: form.dateOfBirth,
+      allergies: form.allergies,
+      insurance: buildCustomerInsuranceValue(
+        form.insuranceProvider ?? "",
+        form.insuranceMemberNumber ?? "",
+      ),
+    };
+    await onSubmit(payload);
     reset();
     onOpenChange(false);
   };
@@ -63,7 +89,16 @@ export function CustomersAddDialog({
       open={open}
       onOpenChange={(next) => {
         onOpenChange(next);
-        if (!next) reset();
+        if (next) {
+          setForm((prev) => ({
+            ...emptyForm,
+            ...prev,
+            insuranceProvider: prev.insuranceProvider ?? "",
+            insuranceMemberNumber: prev.insuranceMemberNumber ?? "",
+          }));
+        } else {
+          reset();
+        }
       }}
     >
       {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
@@ -123,15 +158,16 @@ export function CustomersAddDialog({
               onChange={(e) => setForm({ ...form, allergies: e.target.value })}
             />
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="cust-insurance">Insurance / RSSB number</Label>
-            <Input
-              id="cust-insurance"
-              placeholder="e.g. RSSB, MMI, Radiant"
-              value={form.insurance ?? ""}
-              onChange={(e) => setForm({ ...form, insurance: e.target.value })}
-            />
-          </div>
+          <CustomerInsuranceFields
+            provider={form.insuranceProvider}
+            memberNumber={form.insuranceMemberNumber}
+            onProviderChange={(insuranceProvider) =>
+              setForm({ ...form, insuranceProvider })
+            }
+            onMemberNumberChange={(insuranceMemberNumber) =>
+              setForm({ ...form, insuranceMemberNumber })
+            }
+          />
         </DashboardDialogBody>
         <DashboardDialogActions
           cancelLabel="Cancel"

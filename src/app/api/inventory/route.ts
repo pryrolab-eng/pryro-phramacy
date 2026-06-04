@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
         minimum_stock_level,
         expiry_date,
         unit_cost,
+        medication_id,
         medications!inner (
           name,
           category,
@@ -57,6 +58,7 @@ export async function GET(request: NextRequest) {
       const medications = firstRelation(item.medications)
       return {
       id: item.id,
+      medicationId: item.medication_id as string,
       name: medications?.name || 'Unknown',
       category: medications?.category || 'general',
       stock: item.quantity_in_stock,

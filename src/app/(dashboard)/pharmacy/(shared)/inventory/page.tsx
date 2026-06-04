@@ -29,7 +29,7 @@ import {
   DashboardMetricGrid,
   DashboardStatCard,
   DashboardTabsList,
-  DashboardTableCard,
+  DashboardDataTable,
   DashboardSearchInput,
   DashboardSectionCard,
   DashboardChartCard,
@@ -57,23 +57,30 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsTrigger } from "@/components/ui/tabs"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
-import { Package, Plus, AlertTriangle, Calendar, Upload, Download, QrCode, Scan, Search, Filter, MoreHorizontal, Edit, Trash2, Eye, TrendingUp, TrendingDown } from 'lucide-react'
+import { Package, Plus, AlertTriangle, Calendar, Upload, Download, QrCode, Scan, Search, Filter, TrendingUp, TrendingDown } from 'lucide-react'
+import {
+  inventoryColumns,
+  type InventoryTableRow,
+} from '@/components/inventory/inventory-columns'
 import { Spinner } from '@/components/ui/spinner'
 import { FeatureGate } from '@/components/subscription/feature-gate'
+import { InventoryInlineInsuranceCoverage } from '@/components/inventory/inventory-inline-insurance-coverage'
 import { usePharmacyEntitlements } from '@/hooks/usePharmacyEntitlements'
+import {
+  applyInsuranceCoverageDraft,
+  emptyInsuranceCoverageDraft,
+  type InsuranceCoverageDraft,
+} from '@/lib/http/insurance-covered-medications'
 import { useActivePharmacy } from '@/components/providers/active-pharmacy-provider'
 import { useSaasBranches } from '@/hooks/useSaasSubscription'
 import { shouldHideLockedFeature } from '@/lib/subscription/nav-entitlement-display'
@@ -83,6 +90,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar } 
 
 interface InventoryItem {
   id: string
+  medicationId?: string
   productCode: string
   name: string
   category: string
@@ -105,6 +113,7 @@ interface InventoryItem {
 function toInventoryItem(row: InventoryListRow): InventoryItem {
   return {
     id: row.id,
+    medicationId: row.medicationId,
     productCode: '',
     name: row.name,
     category: row.category,
@@ -139,6 +148,7 @@ export default function InventoryPage() {
   const showAnalyticsTab =
     can('inventory.analytics') ||
     !shouldHideLockedFeature('inventory.analytics', can)
+  const canInsurance = can('pos.insurance')
   const { inventory, setInventory } = usePharmacyStore()
   const inventoryQuery = useInventoryList()
   const analyticsQuery = useInventoryAnalytics()
@@ -201,7 +211,13 @@ export default function InventoryPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [productToDelete, setProductToDelete] = useState<string | null>(null)
   const [isEditingProduct, setIsEditingProduct] = useState(false)
-  const [editProduct, setEditProduct] = useState<any>(null)
+  const [editProduct, setEditProduct] = useState<InventoryItem | null>(null)
+  const [addInsuranceDraft, setAddInsuranceDraft] = useState<InsuranceCoverageDraft>(
+    () => emptyInsuranceCoverageDraft(),
+  )
+  const [editInsuranceDraft, setEditInsuranceDraft] = useState<InsuranceCoverageDraft>(
+    () => emptyInsuranceCoverageDraft(),
+  )
   const [commandOpen, setCommandOpen] = useState(false)
   const [newProduct, setNewProduct] = useState({
     productCode: '',
@@ -241,11 +257,15 @@ export default function InventoryPage() {
       
       // Validate required fields
       if (!newProduct.name || !newProduct.category || !newProduct.stock || !newProduct.minStock) {
-        alert('❌ Please fill in all required fields')
+        toast({
+          title: 'Missing fields',
+          description: 'Please fill in all required fields',
+          variant: 'destructive',
+        })
         return
       }
-      
-      await addProductMutation.mutateAsync({
+
+      const result = await addProductMutation.mutateAsync({
         name: newProduct.name,
         category: newProduct.category,
         batch_number: newProduct.batchNumber || 'BATCH001',
@@ -256,30 +276,120 @@ export default function InventoryPage() {
         expiry_date: newProduct.expiryDate || '2025-12-31',
       })
 
+      if (canInsurance && result.medicationId) {
+        try {
+          await applyInsuranceCoverageDraft(result.medicationId, addInsuranceDraft)
+        } catch (coverageError) {
+          console.error('Insurance coverage save failed:', coverageError)
+          toast({
+            title: 'Product saved',
+            description:
+              coverageError instanceof Error
+                ? `Stock saved, but insurer coverage failed: ${coverageError.message}`
+                : 'Stock saved, but insurer coverage could not be saved.',
+            variant: 'destructive',
+          })
+        }
+      }
+
       setIsAddingProduct(false)
+      setAddInsuranceDraft(emptyInsuranceCoverageDraft())
       setNewProduct({ productCode: '', name: '', category: '', classificationCode: '', barcode: '', manufacturer: '', purchasePrice: '', price: '', stock: '', minStock: '', maxStock: '', batchNumber: '', expiryDate: '', trackByBatch: false, vatRate: 'A', stockLocation: 'main-store', notes: '' })
-      alert('✅ Product saved to database successfully!')
+      toast({
+        title: 'Success',
+        description: 'Product saved to branch inventory',
+      })
     } catch (error) {
       console.error('Error saving product:', error)
-      alert('❌ Error saving product to database: ' + (error instanceof Error ? error.message : 'Unknown error'))
+      toast({
+        title: 'Error',
+        description:
+          error instanceof Error ? error.message : 'Failed to save product',
+        variant: 'destructive',
+      })
     }
   }
 
-  const getStockStatus = (stock: number, minStock: number) => {
-    if (stock <= minStock) return { label: 'Low Stock', variant: 'destructive' as const }
-    if (stock <= minStock * 2) return { label: 'Medium', variant: 'secondary' as const }
-    return { label: 'In Stock', variant: 'default' as const }
+  const filteredInventory = useMemo(() => {
+    const term = searchTerm.toLowerCase()
+    return localInventory.filter((item) => {
+      const matchesSearch =
+        item.name.toLowerCase().includes(term) ||
+        item.category.toLowerCase().includes(term) ||
+        item.batchNumber.toLowerCase().includes(term)
+      const matchesCategory =
+        selectedCategory === 'all' || item.category === selectedCategory
+      return matchesSearch && matchesCategory
+    })
+  }, [localInventory, searchTerm, selectedCategory])
+
+  const filteredInventoryIds = useMemo(
+    () => filteredInventory.map((item) => item.id),
+    [filteredInventory],
+  )
+
+  const allFilteredSelected =
+    filteredInventoryIds.length > 0 &&
+    filteredInventoryIds.every((id) => selectedItems.includes(id))
+
+  const someFilteredSelected = filteredInventoryIds.some((id) =>
+    selectedItems.includes(id),
+  )
+
+  const toggleSelectAllFiltered = (checked: boolean) => {
+    if (checked) {
+      setSelectedItems((prev) =>
+        Array.from(new Set([...prev, ...filteredInventoryIds])),
+      )
+      return
+    }
+    setSelectedItems((prev) =>
+      prev.filter((id) => !filteredInventoryIds.includes(id)),
+    )
   }
 
-  const getExpiryStatus = (expiryDate: string) => {
-    const today = new Date()
-    const expiry = new Date(expiryDate)
-    const daysToExpiry = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-    
-    if (daysToExpiry <= 30) return { label: `${daysToExpiry}d`, variant: 'destructive' as const }
-    if (daysToExpiry <= 60) return { label: `${daysToExpiry}d`, variant: 'secondary' as const }
-    return { label: `${daysToExpiry}d`, variant: 'outline' as const }
+  const toggleSelectRow = (id: string, checked: boolean) => {
+    setSelectedItems((prev) => {
+      if (checked) return prev.includes(id) ? prev : [...prev, id]
+      return prev.filter((itemId) => itemId !== id)
+    })
   }
+
+  const inventoryTableColumns = useMemo(
+    () =>
+      inventoryColumns({
+        selectedIds: selectedItems,
+        allFilteredSelected,
+        someFilteredSelected,
+        onToggleSelectAll: toggleSelectAllFiltered,
+        onToggleRow: toggleSelectRow,
+        onEdit: (item: InventoryTableRow) => {
+          const full = localInventory.find((row) => row.id === item.id)
+          if (!full) return
+          setEditProduct(full)
+          setEditInsuranceDraft(emptyInsuranceCoverageDraft())
+          setIsEditingProduct(true)
+        },
+        onGenerateBarcode: (item: InventoryTableRow) => {
+          const full = localInventory.find((row) => row.id === item.id)
+          if (!full) return
+          setBulkMode(false)
+          setSelectedProducts([])
+          setSelectedProduct(full)
+          setBarcodeDialogOpen(true)
+        },
+        onDelete: (id) => {
+          setProductToDelete(id)
+          setDeleteDialogOpen(true)
+        },
+      }),
+    [
+      selectedItems,
+      allFilteredSelected,
+      someFilteredSelected,
+      localInventory,
+    ],
+  )
 
   const exportToExcel = () => {
     const worksheet = XLSX.utils.json_to_sheet(localInventory.map(item => ({
@@ -641,21 +751,43 @@ export default function InventoryPage() {
   }
 
   const handleEditProduct = async () => {
+    if (!editProduct) return
     try {
       await updateMutation.mutateAsync({
         id: editProduct.id,
         body: {
-          quantity: parseInt(editProduct.stock),
-          selling_price: parseFloat(editProduct.price),
-          minimum_stock_level: parseInt(editProduct.minStock),
+          quantity: parseInt(String(editProduct.stock), 10),
+          selling_price: parseFloat(String(editProduct.price)),
+          minimum_stock_level: parseInt(String(editProduct.minStock), 10),
         },
       })
+
+      if (canInsurance && editProduct.medicationId) {
+        try {
+          await applyInsuranceCoverageDraft(editProduct.medicationId, editInsuranceDraft, {
+            syncAll: true,
+          })
+        } catch (coverageError) {
+          console.error('Insurance coverage save failed:', coverageError)
+          toast({
+            title: 'Stock updated',
+            description:
+              coverageError instanceof Error
+                ? `Stock saved, but insurer coverage failed: ${coverageError.message}`
+                : 'Stock saved, but insurer coverage could not be saved.',
+            variant: 'destructive',
+          })
+          return
+        }
+      }
+
       toast({
         title: "Success",
         description: "Product updated successfully",
       })
       setIsEditingProduct(false)
       setEditProduct(null)
+      setEditInsuranceDraft(emptyInsuranceCoverageDraft())
     } catch (error) {
       console.error('Edit error:', error)
       toast({
@@ -802,19 +934,25 @@ export default function InventoryPage() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Dialog open={isAddingProduct} onOpenChange={setIsAddingProduct}>
+          <Dialog
+            open={isAddingProduct}
+            onOpenChange={(open) => {
+              setIsAddingProduct(open)
+              if (!open) setAddInsuranceDraft(emptyInsuranceCoverageDraft())
+            }}
+          >
             <DialogTrigger asChild>
               <DashboardButton tone="primary">
                 <Plus className="h-4 w-4" />
                 Add product
               </DashboardButton>
             </DialogTrigger>
-          <DashboardDialogContent>
+          <DashboardDialogContent className="flex max-h-[min(92dvh,52rem)] flex-col overflow-hidden sm:max-w-2xl">
             <DashboardDialogHeader>
               <DashboardDialogTitle>Add New Product</DashboardDialogTitle>
               <DashboardDialogDescription>Add medication with custom stock alert thresholds</DashboardDialogDescription>
             </DashboardDialogHeader>
-            <DashboardDialogBody className="grid gap-4">
+            <DashboardDialogBody className="grid min-h-0 flex-1 gap-4 overflow-y-auto">
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label>Product Code (SKU)</Label>
@@ -983,6 +1121,12 @@ export default function InventoryPage() {
                   onChange={(e) => setNewProduct({...newProduct, notes: e.target.value})}
                 />
               </div>
+              <FeatureGate featureKey="pos.insurance" hideWhenLocked>
+                <InventoryInlineInsuranceCoverage
+                  value={addInsuranceDraft}
+                  onChange={setAddInsuranceDraft}
+                />
+              </FeatureGate>
             </DashboardDialogBody>
             <DashboardDialogFooter>
               <DashboardButton tone="primary" onClick={() => {
@@ -1042,7 +1186,7 @@ export default function InventoryPage() {
         </DashboardTabsList>
         
         <TabsContent value="inventory" className="space-y-4">
-          <DashboardTableCard
+          <DashboardDataTable
             title="Inventory items"
             description="Manage your pharmacy stock levels"
             toolbar={
@@ -1051,10 +1195,10 @@ export default function InventoryPage() {
                   placeholder="Search products…"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-64"
+                  className="w-full min-w-0 sm:max-w-md sm:flex-1"
                 />
                 <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="h-8 w-40 rounded-lg">
+                  <SelectTrigger className="h-8 w-full rounded-lg sm:w-40">
                     <SelectValue placeholder="Category" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1068,138 +1212,17 @@ export default function InventoryPage() {
                 </Select>
               </>
             }
-          >
-              <div className="min-w-full">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">
-                        <Checkbox />
-                      </TableHead>
-                      <TableHead>Product</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Stock</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Expiry</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {localInventory
-                      .filter(item => {
-                        const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                            item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                            item.batchNumber.toLowerCase().includes(searchTerm.toLowerCase())
-                        const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory
-                        return matchesSearch && matchesCategory
-                      })
-                      .map((item) => {
-                        const stockStatus = getStockStatus(item.stock, item.minStock)
-                        const expiryStatus = getExpiryStatus(item.expiryDate)
-                        const stockPercentage = (item.stock / (item.maxStock || item.minStock * 3)) * 100
-                        
-                        return (
-                          <TableRow key={item.id}>
-                            <TableCell>
-                              <Checkbox />
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-3">
-                                <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
-                                  <Package className="h-4 w-4 text-blue-600" />
-                                </div>
-                                <div>
-                                  <div className="font-medium">{item.name}</div>
-                                  <div className="text-sm text-muted-foreground">Batch: {item.batchNumber}</div>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline">{item.category}</Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium">{item.stock}</span>
-                                  <span className="text-sm text-muted-foreground">/ {item.minStock} min</span>
-                                </div>
-                                <DashboardProgressTrack value={Math.min(stockPercentage, 100)} className="h-1" />
-                              </div>
-                            </TableCell>
-                            <TableCell className="font-medium">{item.price.toLocaleString()} RWF</TableCell>
-                            <TableCell>
-                              <Badge variant={stockStatus.variant}>{stockStatus.label}</Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={expiryStatus.variant}>{expiryStatus.label}</Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <DashboardButton tone="ghost" className="h-8 w-8 p-0">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </DashboardButton>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                  <DropdownMenuItem onClick={() => {
-                                    setEditProduct(item)
-                                    setIsEditingProduct(true)
-                                  }}>
-                                    <Edit className="mr-2 h-4 w-4" />
-                                    Edit
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => {
-                                    setBulkMode(false)
-                                    setSelectedProducts([])
-                                    setSelectedProduct(item)
-                                    setBarcodeDialogOpen(true)
-                                  }}>
-                                    <QrCode className="mr-2 h-4 w-4" />
-                                    Generate Barcode
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem className="text-red-600" onClick={() => {
-                                    setProductToDelete(item.id)
-                                    setDeleteDialogOpen(true)
-                                  }}>
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        )
-                      })}
-                  </TableBody>
-                </Table>
-              </div>
-              
-              {/* Pagination */}
-              <div className="flex items-center justify-between border-t border-neutral-100 px-5 py-4 dark:border-neutral-800">
-                <div className="text-sm text-neutral-500">
-                  Showing 1 to 10 of {localInventory.length} products
-                </div>
-                <Pagination>
-                  <PaginationContent>
-                    <PaginationItem>
-                      <PaginationPrevious />
-                    </PaginationItem>
-                    <PaginationItem>
-                      <PaginationLink isActive>1</PaginationLink>
-                    </PaginationItem>
-                    <PaginationItem>
-                      <PaginationLink>2</PaginationLink>
-                    </PaginationItem>
-                    <PaginationItem>
-                      <PaginationNext />
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
-              </div>
-          </DashboardTableCard>
+            columns={inventoryTableColumns}
+            data={filteredInventory}
+            getRowId={(row) => row.id}
+            showIndexColumn={false}
+            pageSize={10}
+            pageSizeOptions={[10, 20, 50]}
+            stickyHeader
+            initialSorting={[{ id: "name", desc: false }]}
+            emptyMessage="No products match your search or filters."
+            isLoading={inventoryQuery.isPending && localInventory.length === 0}
+          />
         </TabsContent>
         
         <TabsContent value="alerts" className="space-y-4">
@@ -1799,14 +1822,23 @@ export default function InventoryPage() {
         </DashboardDialogContent>
       </Dialog>
 
-      <Dialog open={isEditingProduct} onOpenChange={setIsEditingProduct}>
-        <DashboardDialogContent>
+      <Dialog
+        open={isEditingProduct}
+        onOpenChange={(open) => {
+          setIsEditingProduct(open)
+          if (!open) {
+            setEditProduct(null)
+            setEditInsuranceDraft(emptyInsuranceCoverageDraft())
+          }
+        }}
+      >
+        <DashboardDialogContent className="flex max-h-[min(92dvh,52rem)] flex-col overflow-hidden sm:max-w-2xl">
           <DashboardDialogHeader>
             <DashboardDialogTitle>Edit Product</DashboardDialogTitle>
-            <DashboardDialogDescription>Update product details</DashboardDialogDescription>
+            <DashboardDialogDescription>Update stock levels and insurer coverage</DashboardDialogDescription>
           </DashboardDialogHeader>
           {editProduct && (
-            <DashboardDialogBody className="space-y-4">
+            <DashboardDialogBody className="min-h-0 flex-1 space-y-4 overflow-y-auto">
               <div>
                 <Label>Product Name</Label>
                 <Input value={editProduct.name} disabled />
@@ -1816,7 +1848,12 @@ export default function InventoryPage() {
                 <Input 
                   type="number" 
                   value={editProduct.stock}
-                  onChange={(e) => setEditProduct({...editProduct, stock: e.target.value})}
+                  onChange={(e) =>
+                    setEditProduct({
+                      ...editProduct,
+                      stock: Number(e.target.value) || 0,
+                    })
+                  }
                 />
               </div>
               <div>
@@ -1824,7 +1861,12 @@ export default function InventoryPage() {
                 <Input 
                   type="number" 
                   value={editProduct.price}
-                  onChange={(e) => setEditProduct({...editProduct, price: e.target.value})}
+                  onChange={(e) =>
+                    setEditProduct({
+                      ...editProduct,
+                      price: Number(e.target.value) || 0,
+                    })
+                  }
                 />
               </div>
               <div>
@@ -1832,13 +1874,35 @@ export default function InventoryPage() {
                 <Input 
                   type="number" 
                   value={editProduct.minStock}
-                  onChange={(e) => setEditProduct({...editProduct, minStock: e.target.value})}
+                  onChange={(e) =>
+                    setEditProduct({
+                      ...editProduct,
+                      minStock: Number(e.target.value) || 0,
+                    })
+                  }
                 />
               </div>
+              {editProduct.medicationId ? (
+                <FeatureGate featureKey="pos.insurance" hideWhenLocked>
+                  <InventoryInlineInsuranceCoverage
+                    medicationId={editProduct.medicationId}
+                    value={editInsuranceDraft}
+                    onChange={setEditInsuranceDraft}
+                  />
+                </FeatureGate>
+              ) : null}
             </DashboardDialogBody>
           )}
           <DashboardDialogFooter>
-            <DashboardButton onClick={() => setIsEditingProduct(false)}>Cancel</DashboardButton>
+            <DashboardButton
+              onClick={() => {
+                setIsEditingProduct(false)
+                setEditProduct(null)
+                setEditInsuranceDraft(emptyInsuranceCoverageDraft())
+              }}
+            >
+              Cancel
+            </DashboardButton>
             <DashboardButton tone="primary" onClick={handleEditProduct}>Save Changes</DashboardButton>
           </DashboardDialogFooter>
         </DashboardDialogContent>

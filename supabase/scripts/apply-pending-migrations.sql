@@ -68,3 +68,32 @@ GRANT SELECT, INSERT, UPDATE ON TABLE public.users TO authenticated;
 GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.is_superadmin() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_user_pharmacy_ids() TO authenticated;
+
+-- ─── 3) cashier_shifts RLS (from 20260531140000_cashier_shifts_rls.sql) ───
+ALTER TABLE public.cashier_shifts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Pharmacy staff can view cashier shifts" ON public.cashier_shifts;
+DROP POLICY IF EXISTS "Pharmacy staff can open cashier shifts" ON public.cashier_shifts;
+DROP POLICY IF EXISTS "Cashier can update own shift" ON public.cashier_shifts;
+
+CREATE POLICY "Pharmacy staff can view cashier shifts" ON public.cashier_shifts
+  FOR SELECT
+  USING (pharmacy_id = ANY (public.get_user_pharmacy_ids()));
+
+CREATE POLICY "Pharmacy staff can open cashier shifts" ON public.cashier_shifts
+  FOR INSERT
+  WITH CHECK (
+    pharmacy_id = ANY (public.get_user_pharmacy_ids())
+    AND cashier_id = auth.uid()
+  );
+
+CREATE POLICY "Cashier can update own shift" ON public.cashier_shifts
+  FOR UPDATE
+  USING (
+    pharmacy_id = ANY (public.get_user_pharmacy_ids())
+    AND cashier_id = auth.uid()
+  )
+  WITH CHECK (
+    pharmacy_id = ANY (public.get_user_pharmacy_ids())
+    AND cashier_id = auth.uid()
+  );

@@ -8,7 +8,6 @@ import {
 } from "@/components/shell/dashboard-scroll-header-context";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { PharmacyProvider } from "@/hooks/usePharmacyStore";
-import { MustChangePasswordGate } from "@/components/auth/must-change-password-gate";
 import { dashboardSurfaces } from "@/components/dashboard/dashboard-tokens";
 import { cn } from "@/lib/utils";
 import { useEffect, useRef, type ReactNode } from "react";
@@ -49,7 +48,7 @@ export function DashboardMainScroll({ children, className }: MainScrollProps) {
   );
 }
 
-/** Client providers for dashboard routes (React Query lives in root AppProviders). */
+/** Client providers for dashboard routes (password gate lives on `/app` only). */
 export function DashboardProviders({
   children,
   withPharmacyContext = true,
@@ -65,9 +64,7 @@ export function DashboardProviders({
   return (
     <PharmacyProvider>
       <SidebarProvider>
-        <DashboardScrollHeaderProvider>
-          <MustChangePasswordGate>{body}</MustChangePasswordGate>
-        </DashboardScrollHeaderProvider>
+        <DashboardScrollHeaderProvider>{body}</DashboardScrollHeaderProvider>
       </SidebarProvider>
     </PharmacyProvider>
   );

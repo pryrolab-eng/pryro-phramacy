@@ -5,12 +5,14 @@ import { pharmacyCategoriesCatalogQueryKey } from "@/lib/http/catalog";
 import { getPharmacyCategoriesCatalog } from "@/lib/http/catalog";
 import { customersKeys, searchCustomers } from "@/lib/http/customers";
 import {
-  getInsurancePricing,
-  insurancePosKeys,
   lookupInsurance,
   processInsuranceClaim,
   type InsuranceProcessPayload,
 } from "@/lib/http/insurance";
+import {
+  previewInsuranceCoverage,
+  type InsuranceCoveragePreviewResult,
+} from "@/lib/http/insurance-coverage";
 import {
   analyzeCartSafety,
   checkPosPrice,
@@ -22,6 +24,7 @@ import {
   processPosReturn,
   lookupPosSale,
   getCurrentCashierShift,
+  getTeamOpenCashierShifts,
   openCashierShift,
   closeCashierShift,
   processPosSale,
@@ -35,6 +38,7 @@ import {
   type PosReturnPayload,
   type PosSaleLookup,
   type CashierShift,
+  type TeamOpenCashierShift,
 } from "@/lib/http/pos";
 import {
   checkBranchTransactionAllowed,
@@ -100,25 +104,17 @@ export function useSaasBranches(options?: { enabled?: boolean }) {
   });
 }
 
-export function useInsurancePricing(
-  insurance: string,
-  product: string,
-  options?: { enabled?: boolean },
-) {
-  return useQuery({
-    queryKey: insurancePosKeys.pricing(insurance, product),
-    queryFn: () => getInsurancePricing(insurance, product),
-    enabled: (options?.enabled ?? true) && !!insurance && !!product,
-  });
-}
-
 export function useProcessPosSaleMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: PosSalePayload) => processPosSale(payload),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: posKeys.products() });
-      void queryClient.invalidateQueries({ queryKey: posKeys.fastMoving() });
+      void queryClient.invalidateQueries({
+        queryKey: [...posKeys.all, "products"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: [...posKeys.all, "fast-moving"],
+      });
     },
   });
 }
@@ -170,8 +166,12 @@ export function useQuickAddPosEntityMutation() {
         });
       }
       if (variables.endpoint === "/api/pos/quick-add-drug") {
-        void queryClient.invalidateQueries({ queryKey: posKeys.products() });
-        void queryClient.invalidateQueries({ queryKey: posKeys.fastMoving() });
+        void queryClient.invalidateQueries({
+          queryKey: [...posKeys.all, "products"],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: [...posKeys.all, "fast-moving"],
+        });
       }
     },
   });
@@ -202,6 +202,18 @@ export function useCashierShift(branchId: string | null) {
   });
 }
 
+export function useTeamOpenCashierShifts(
+  branchId: string | null,
+  enabled = false,
+) {
+  return useQuery({
+    queryKey: posKeys.teamOpenShifts(branchId),
+    queryFn: () => getTeamOpenCashierShifts(branchId!),
+    enabled: Boolean(branchId) && enabled,
+    refetchInterval: 60_000,
+  });
+}
+
 export function useOpenCashierShiftMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -209,6 +221,9 @@ export function useOpenCashierShiftMutation() {
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({
         queryKey: posKeys.shift(variables.branchId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: posKeys.teamOpenShifts(variables.branchId),
       });
     },
   });
@@ -222,11 +237,19 @@ export function useCloseCashierShiftMutation() {
       void queryClient.invalidateQueries({
         queryKey: posKeys.shift(variables.branchId),
       });
+      void queryClient.invalidateQueries({
+        queryKey: posKeys.teamOpenShifts(variables.branchId),
+      });
     },
   });
 }
 
-export type { PosReturnPayload, PosSaleLookup, CashierShift };
+export type {
+  PosReturnPayload,
+  PosSaleLookup,
+  CashierShift,
+  TeamOpenCashierShift,
+};
 
 export function useAnalyzeCartSafetyMutation() {
   return useMutation({
@@ -246,6 +269,38 @@ export function useInsuranceProcessMutation() {
       processInsuranceClaim(payload),
   });
 }
+
+export function useInsuranceCoveragePreview(
+  insuranceType: string,
+  lines: Array<{
+    inventoryId?: string;
+    medicationId: string;
+    medicationName?: string;
+    quantity: number;
+    shelfUnitPrice: number;
+  }>,
+  options?: { enabled?: boolean },
+) {
+  const lineKey = lines
+    .map((l) => `${l.medicationId}:${l.quantity}:${l.shelfUnitPrice}`)
+    .join("|");
+  return useQuery({
+    queryKey: ["insurance", "coverage-preview", insuranceType, lineKey],
+    queryFn: () =>
+      previewInsuranceCoverage({
+        insuranceType,
+        lines,
+      }),
+    enabled:
+      (options?.enabled ?? true) &&
+      Boolean(insuranceType) &&
+      insuranceType !== "cash" &&
+      lines.length > 0,
+    staleTime: 10_000,
+  });
+}
+
+export type { InsuranceCoveragePreviewResult };
 
 /** Imperative usage gate before sale (fail-closed on errors). */
 export async function checkPosTransactionAllowed(
@@ -285,5 +340,3 @@ export function useIncrementBranchUsageMutation() {
   });
 }
 
-/** Fetch insurance pricing for cart line (imperative, used when adding to cart). */
-export { getInsurancePricing };

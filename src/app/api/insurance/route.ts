@@ -107,10 +107,12 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    const coveragePct = parseFloat(body.coverage_percentage)
     const insuranceData = {
       pharmacy_id: pharmacyId,
       name: body.name.trim(),
-      coverage_percentage: parseFloat(body.coverage_percentage),
+      coverage_percentage: coveragePct,
+      default_coverage_percent: coveragePct,
       contact_email: body.contact_email?.trim() || null,
       contact_phone: body.contact_phone?.trim() || null,
       policy_number: body.policy_number?.trim() || null,

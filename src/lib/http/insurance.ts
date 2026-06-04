@@ -30,6 +30,37 @@ type CreateInsuranceResponse = {
   error?: string;
 };
 
+export type UpdateInsuranceProviderInput = {
+  name?: string;
+  coverage_percentage?: number;
+  default_coverage_percent?: number;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  policy_number?: string | null;
+  is_active?: boolean;
+};
+
+type UpdateInsuranceResponse = {
+  success: boolean;
+  insurance?: InsuranceProviderRow;
+  message?: string;
+  error?: string;
+};
+
+/** `PATCH /api/insurance/[id]` — update provider (platform admin or pharmacy owner for own). */
+export async function updateInsuranceProvider(
+  id: string,
+  body: UpdateInsuranceProviderInput,
+): Promise<UpdateInsuranceResponse> {
+  const data = await fetchJson<UpdateInsuranceResponse>(`/api/insurance/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  ensureApiSuccess(data, "Failed to update insurance provider");
+  return data;
+}
+
 /** `POST /api/insurance` — creates a provider (global for platform admin, scoped otherwise). */
 export async function createInsuranceProvider(
   body: CreateInsuranceProviderInput,
@@ -93,9 +124,19 @@ export async function lookupInsurance(
 export type InsuranceProcessPayload = {
   insuranceType: string;
   patientId: string;
+  patientName?: string;
   totalAmount: number;
   insuranceCoverage: number;
   patientCopay: number;
+  saleId?: string;
+  metadata?: Record<string, unknown>;
+  lines?: Array<{
+    inventoryId?: string;
+    medicationId: string;
+    medicationName?: string;
+    quantity: number;
+    shelfUnitPrice: number;
+  }>;
 };
 
 export type InsuranceProcessResult = {

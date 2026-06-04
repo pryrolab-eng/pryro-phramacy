@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useBranding } from '@/hooks/useBranding'
 import { LogoIcon } from '@/components/logo'
 import Image from 'next/image'
+import { cn } from '@/lib/utils'
 
 const DEFAULT_NAME = 'Pryrox'
 
@@ -18,8 +19,15 @@ function DefaultLogoMark({ className }: { className?: string }) {
   )
 }
 
-/** Top-left logo on auth pages — uses custom logo URL if set, else icon + name */
-export function AuthBrandingLogo({ className }: { className?: string }) {
+/** Logo on auth pages — custom image URL if set, else gradient mark + name */
+export function AuthBrandingLogo({
+  className,
+  prominent = false,
+}: {
+  className?: string
+  /** Larger mark for mobile auth header */
+  prominent?: boolean
+}) {
   const { platformName, platformLogoUrl } = useBranding()
 
   if (platformLogoUrl) {
@@ -29,15 +37,25 @@ export function AuthBrandingLogo({ className }: { className?: string }) {
         alt={platformName}
         width={120}
         height={32}
-        className={className ?? 'h-8 w-auto object-contain'}
+        className={cn(
+          prominent ? 'h-10 w-auto object-contain' : 'h-8 w-auto object-contain',
+          className,
+        )}
       />
     )
   }
 
   return (
-    <span className="inline-flex items-center gap-2">
-      <LogoIcon />
-      <span className="font-bold text-foreground tracking-tight text-base">{platformName}</span>
+    <span className={cn('inline-flex items-center gap-2.5', className)}>
+      <LogoIcon className={prominent ? 'size-9' : 'size-6'} />
+      <span
+        className={cn(
+          'font-bold tracking-tight text-foreground',
+          prominent ? 'text-lg' : 'text-base',
+        )}
+      >
+        {platformName}
+      </span>
     </span>
   )
 }
@@ -49,11 +67,16 @@ export function AuthBrandingName({ className }: { className?: string }) {
 }
 
 /** Footer on the black right panel of auth pages */
-export function AuthBrandingFooter() {
+export function AuthBrandingFooter({ className }: { className?: string }) {
   const { platformName, platformLogoUrl } = useBranding()
 
   return (
-    <div className="absolute bottom-6 left-0 right-0 flex flex-col items-center gap-1">
+    <div
+      className={cn(
+        'flex flex-col items-center gap-1',
+        className ?? 'absolute bottom-6 left-0 right-0',
+      )}
+    >
       {platformLogoUrl ? (
         <Image
           src={platformLogoUrl}

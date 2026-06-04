@@ -42,5 +42,8 @@ export function useInvalidateReports() {
     Promise.all([
       queryClient.invalidateQueries({ queryKey: [...reportsKeys.all, "sales"] }),
       queryClient.invalidateQueries({ queryKey: reportsKeys.inventory() }),
+      queryClient.invalidateQueries({
+        queryKey: [...reportsKeys.all, "insurance-claims"],
+      }),
     ]);
 }

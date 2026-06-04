@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import {
+  useCashierShift,
   useLookupPosSaleMutation,
   useProcessPosReturnMutation,
   type PosSaleLookup,
@@ -55,6 +56,8 @@ type Props = {
 export function PosReturnsDialog({ open, onOpenChange, branchId }: Props) {
   const lookupMutation = useLookupPosSaleMutation();
   const returnMutation = useProcessPosReturnMutation();
+  const shiftQuery = useCashierShift(branchId);
+  const hasOpenShift = Boolean(shiftQuery.data);
 
   const [receipt, setReceipt] = useState("");
   const [sale, setSale] = useState<PosSaleLookup | null>(null);
@@ -116,6 +119,11 @@ export function PosReturnsDialog({ open, onOpenChange, branchId }: Props) {
   const submit = async () => {
     if (!branchId || !sale) return;
 
+    if (!hasOpenShift) {
+      alert("Open your cashier shift before processing a return.");
+      return;
+    }
+
     const items = lines
       .filter((l) => l.returnQty > 0 && l.inventoryId)
       .map((l) => ({
@@ -167,6 +175,11 @@ export function PosReturnsDialog({ open, onOpenChange, branchId }: Props) {
         </DashboardDialogHeader>
 
         <DashboardDialogBody className="space-y-4">
+          {branchId && !shiftQuery.isLoading && !hasOpenShift ? (
+            <p className="rounded-lg border border-amber-300/80 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+              Open your cashier shift on POS before processing returns.
+            </p>
+          ) : null}
           <div className="flex gap-2">
             <DashboardSearchInput
               placeholder="Receipt number (e.g. RCP-…)"
@@ -359,7 +372,11 @@ export function PosReturnsDialog({ open, onOpenChange, branchId }: Props) {
                 <DashboardButton
                   tone="primary"
                   className="flex-1"
-                  disabled={returnMutation.isPending || refundTotal <= 0}
+                  disabled={
+                    returnMutation.isPending ||
+                    refundTotal <= 0 ||
+                    !hasOpenShift
+                  }
                   onClick={() => void submit()}
                 >
                   {returnMutation.isPending ? "Processing…" : "Process return"}

@@ -45,6 +45,11 @@ export function BranchListRow({ branch, className, onSelect }: Props) {
             <p className="font-medium text-neutral-900 dark:text-neutral-50">
               {branch.name}
             </p>
+            {branch.over_plan_limit ? (
+              <Badge variant="outline" className="h-5 text-[10px] text-amber-800 border-amber-300">
+                Extra — not on plan
+              </Badge>
+            ) : null}
             {blocked ? (
               <Badge variant="destructive" className="h-5 gap-0.5 text-[10px]">
                 <AlertTriangle className="size-3" />

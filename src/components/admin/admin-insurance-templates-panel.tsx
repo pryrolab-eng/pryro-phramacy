@@ -2,7 +2,15 @@
 
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { FileText, Layers, Printer, Save, ShieldPlus, Trash2 } from "lucide-react";
+import {
+  FileText,
+  Layers,
+  Printer,
+  Save,
+  ShieldPlus,
+  Table2,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
@@ -17,7 +25,9 @@ import {
   DashboardPageLoading,
   DashboardSectionCard,
   DashboardStatCard,
+  DashboardTabsList,
 } from "@/components/dashboard";
+import { Tabs, TabsContent, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import {
   DashboardAlertDialogActions,
@@ -45,6 +55,7 @@ import {
   loadInsuranceTemplatePreset,
   type InsuranceTemplatePresetId,
 } from "@/lib/admin/insurance-template-presets";
+import { AdminInsuranceProvidersPanel } from "@/components/admin/admin-insurance-providers-panel";
 import { createInsuranceProvider } from "@/lib/http/insurance";
 import { insuranceProvidersQueryKey } from "@/lib/http/insurance";
 import {
@@ -82,6 +93,7 @@ export function AdminInsuranceTemplatesPanel() {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [providerForm, setProviderForm] = useState(emptyProviderForm);
   const [providerSubmitting, setProviderSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState<"design" | "providers">("design");
 
   const savedTemplates = templatesQuery.data ?? [];
   const providerOptions = useMemo(() => {
@@ -170,6 +182,7 @@ export function AdminInsuranceTemplatesPanel() {
       });
       setInsuranceProvider(providerForm.name.trim());
       setProviderForm(emptyProviderForm());
+      setActiveTab("providers");
       toast.success("Insurance provider added");
     } catch (error) {
       toast.error(
@@ -218,10 +231,13 @@ export function AdminInsuranceTemplatesPanel() {
         }
         description={
           <>
-            Build printable insurance claim layouts for all pharmacies. Designs
-            are stored as platform templates (
-            <code className="text-xs">insurance_templates</code>). POS print
-            integration is still planned.
+            Build printable monthly claim layouts for all pharmacies. Match the
+            insurer name exactly (e.g. RSSB, MMI). Use placeholders in HTML:{" "}
+            <code className="text-xs">
+              {"{{pharmacy_name}}"}, {"{{insurance_provider}}"}, {"{{report_month}}"},
+              {"{{report_year}}"}, {"{{total_claim_amount}}"}, {"{{claims_table}}"}
+            </code>
+            . Pharmacies print from Reports → Insurance claims.
             {templatesQuery.isError ? (
               <p className="mt-2 text-sm text-destructive" role="alert">
                 {templatesQuery.error instanceof Error
@@ -232,95 +248,108 @@ export function AdminInsuranceTemplatesPanel() {
           </>
         }
         actions={
-          <div className="flex flex-wrap gap-2">
-            <DashboardButton tone="outline" onClick={() => window.print()}>
-              <Printer className="mr-1.5 size-4" />
-              Print preview
-            </DashboardButton>
-            <DashboardButton
-              tone="primary"
-              onClick={() => void handleSave()}
-              disabled={
-                createMutation.isPending ||
-                updateMutation.isPending ||
-                !templateName.trim() ||
-                !insuranceProvider.trim()
-              }
-            >
-              <Save className="mr-1.5 size-4" />
-              {savedTemplateId ? "Update template" : "Save template"}
-            </DashboardButton>
-          </div>
+          activeTab === "design" ? (
+            <div className="flex flex-wrap gap-2">
+              <DashboardButton tone="outline" onClick={() => window.print()}>
+                <Printer className="mr-1.5 size-4" />
+                Print preview
+              </DashboardButton>
+              <DashboardButton
+                tone="primary"
+                onClick={() => void handleSave()}
+                disabled={
+                  createMutation.isPending ||
+                  updateMutation.isPending ||
+                  !templateName.trim() ||
+                  !insuranceProvider.trim()
+                }
+              >
+                <Save className="mr-1.5 size-4" />
+                {savedTemplateId ? "Update template" : "Save template"}
+              </DashboardButton>
+            </div>
+          ) : null
         }
       />
 
-      <DashboardMetricGrid className="mb-4 lg:grid-cols-3">
-        <DashboardStatCard
-          label="Saved templates"
-          icon={FileText}
-          value={savedTemplates.length}
-        />
-        <DashboardStatCard
-          label="Canvas elements"
-          icon={Layers}
-          value={elements.length}
-        />
-        <DashboardStatCard
-          label="Insurance providers"
-          icon={ShieldPlus}
-          value={providerOptions.length}
-        />
-      </DashboardMetricGrid>
-
-      <DashboardSectionCard
-        title="Starter layouts"
-        description="Load a preset onto the canvas (replaces current elements)"
-        className="mb-4"
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as "design" | "providers")}
+        className="space-y-4"
       >
-        <div className="grid gap-3 sm:grid-cols-3">
-          {(Object.keys(INSURANCE_PRESET_LABELS) as InsuranceTemplatePresetId[]).map(
-            (key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => applyPreset(key)}
-                className={cn(
-                  "rounded-lg border border-neutral-200/80 bg-neutral-50/50 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/40 dark:border-neutral-700 dark:bg-neutral-800/30 dark:hover:border-blue-800",
-                )}
-              >
-                <p className="font-medium text-neutral-900 dark:text-neutral-100">
-                  {INSURANCE_PRESET_LABELS[key].title}
-                </p>
-                <p className="mt-1 text-xs text-neutral-500">
-                  {INSURANCE_PRESET_LABELS[key].subtitle}
-                </p>
-              </button>
-            ),
-          )}
-        </div>
-      </DashboardSectionCard>
+        <DashboardTabsList>
+          <TabsTrigger value="design">
+            <Layers className="mr-1.5 size-4" />
+            Template design
+          </TabsTrigger>
+          <TabsTrigger value="providers">
+            <ShieldPlus className="mr-1.5 size-4" />
+            Insurance providers
+          </TabsTrigger>
+        </DashboardTabsList>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200/80 bg-white px-4 py-3 dark:border-neutral-700 dark:bg-neutral-900/40">
-        <DashboardButton tone="outline" size="sm" onClick={handleNewDraft}>
-          New draft
-        </DashboardButton>
-        <DashboardButton
-          tone="outline"
-          size="sm"
-          onClick={() => {
-            setElements([]);
-            setSelectedElement(null);
-          }}
-        >
-          Clear canvas
-        </DashboardButton>
-        <span className="text-sm text-neutral-500">
-          {savedTemplateId ? "Editing saved template" : "Unsaved draft"}
-        </span>
-      </div>
+        <TabsContent value="design" className="mt-0 space-y-4">
+          <DashboardMetricGrid className="lg:grid-cols-2">
+            <DashboardStatCard
+              label="Saved templates"
+              icon={FileText}
+              value={savedTemplates.length}
+            />
+            <DashboardStatCard
+              label="Canvas elements"
+              icon={Layers}
+              value={elements.length}
+            />
+          </DashboardMetricGrid>
 
-      <div className="grid gap-6 lg:grid-cols-12">
-        <div className="space-y-4 lg:col-span-3">
+          <DashboardSectionCard
+            title="Starter layouts"
+            description="Load a preset onto the canvas (replaces current elements)"
+          >
+            <div className="grid gap-3 sm:grid-cols-3">
+              {(
+                Object.keys(INSURANCE_PRESET_LABELS) as InsuranceTemplatePresetId[]
+              ).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => applyPreset(key)}
+                  className={cn(
+                    "rounded-lg border border-neutral-200/80 bg-neutral-50/50 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/40 dark:border-neutral-700 dark:bg-neutral-800/30 dark:hover:border-blue-800",
+                  )}
+                >
+                  <p className="font-medium text-neutral-900 dark:text-neutral-100">
+                    {INSURANCE_PRESET_LABELS[key].title}
+                  </p>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    {INSURANCE_PRESET_LABELS[key].subtitle}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </DashboardSectionCard>
+
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200/80 bg-white px-4 py-3 dark:border-neutral-700 dark:bg-neutral-900/40">
+            <DashboardButton tone="outline" size="sm" onClick={handleNewDraft}>
+              New draft
+            </DashboardButton>
+            <DashboardButton
+              tone="outline"
+              size="sm"
+              onClick={() => {
+                setElements([]);
+                setSelectedElement(null);
+              }}
+            >
+              Clear canvas
+            </DashboardButton>
+            <span className="text-sm text-neutral-500">
+              {savedTemplateId ? "Editing saved template" : "Unsaved draft"}
+            </span>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-12">
+            <div className="space-y-4 lg:col-span-3">
           <DashboardSectionCard title="Saved templates" description="Platform-wide layouts">
             <div className="space-y-3">
               <Select
@@ -387,58 +416,14 @@ export function AdminInsuranceTemplatesPanel() {
             </div>
           </DashboardSectionCard>
 
-          <DashboardSectionCard title="Components">
-            <InsuranceComponentPalette onDragStart={() => undefined} />
-          </DashboardSectionCard>
-
-          <DashboardSectionCard
-            title="Add insurance provider"
-            description="Creates a global provider visible to pharmacies"
-          >
-            <div className="space-y-3">
-              <Input
-                placeholder="Provider name"
-                value={providerForm.name}
-                onChange={(e) =>
-                  setProviderForm({ ...providerForm, name: e.target.value })
-                }
-              />
-              <Input
-                type="number"
-                placeholder="Coverage %"
-                value={providerForm.coverage_percentage}
-                onChange={(e) =>
-                  setProviderForm({
-                    ...providerForm,
-                    coverage_percentage: Number(e.target.value) || 0,
-                  })
-                }
-              />
-              <Input
-                placeholder="Contact email"
-                value={providerForm.contact_email}
-                onChange={(e) =>
-                  setProviderForm({
-                    ...providerForm,
-                    contact_email: e.target.value,
-                  })
-                }
-              />
-              <DashboardButton
-                tone="outline"
-                className="w-full"
-                disabled={providerSubmitting || !providerForm.name.trim()}
-                onClick={() => void handleAddProvider()}
-              >
-                {providerSubmitting ? "Adding…" : "Add provider"}
-              </DashboardButton>
+              <DashboardSectionCard title="Components">
+                <InsuranceComponentPalette onDragStart={() => undefined} />
+              </DashboardSectionCard>
             </div>
-          </DashboardSectionCard>
-        </div>
 
-        <div className="lg:col-span-6">
-          <DashboardSectionCard
-            title="Design canvas"
+            <div className="lg:col-span-6">
+              <DashboardSectionCard
+                title="Design canvas"
             description="Drag components from the left; click to select and resize"
             contentClassName="p-4"
           >
@@ -539,7 +524,72 @@ export function AdminInsuranceTemplatesPanel() {
             </DashboardSectionCard>
           )}
         </div>
-      </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="providers" className="mt-0 space-y-4">
+          <DashboardMetricGrid className="lg:grid-cols-2">
+            <DashboardStatCard
+              label="Insurance providers"
+              icon={ShieldPlus}
+              value={providerOptions.length}
+            />
+            <DashboardStatCard
+              label="Active insurers"
+              icon={Table2}
+              value={
+                (providersQuery.data ?? []).filter((p) => p.is_active !== false)
+                  .length
+              }
+            />
+          </DashboardMetricGrid>
+
+          <DashboardSectionCard
+            title="Add insurance provider"
+            description="Creates a global provider visible to pharmacies at POS"
+          >
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Input
+                placeholder="Provider name"
+                value={providerForm.name}
+                onChange={(e) =>
+                  setProviderForm({ ...providerForm, name: e.target.value })
+                }
+              />
+              <Input
+                type="number"
+                placeholder="Coverage %"
+                value={providerForm.coverage_percentage}
+                onChange={(e) =>
+                  setProviderForm({
+                    ...providerForm,
+                    coverage_percentage: Number(e.target.value) || 0,
+                  })
+                }
+              />
+              <Input
+                placeholder="Contact email"
+                value={providerForm.contact_email}
+                onChange={(e) =>
+                  setProviderForm({
+                    ...providerForm,
+                    contact_email: e.target.value,
+                  })
+                }
+              />
+              <DashboardButton
+                tone="primary"
+                disabled={providerSubmitting || !providerForm.name.trim()}
+                onClick={() => void handleAddProvider()}
+              >
+                {providerSubmitting ? "Adding…" : "Add provider"}
+              </DashboardButton>
+            </div>
+          </DashboardSectionCard>
+
+          <AdminInsuranceProvidersPanel />
+        </TabsContent>
+      </Tabs>
 
       <AlertDialog
         open={Boolean(deleteTargetId)}

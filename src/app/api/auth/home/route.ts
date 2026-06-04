@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createRouteHandlerClient } from "../../../../../supabase/route-handler";
 import { resolveAuthenticatedHomePath } from "@/lib/auth/resolve-home-redirect";
+import { userMustChangePassword } from "@/lib/auth/must-change-password";
 
 /** Resolves post-login destination for `/app` (same logic as server redirect). */
 export async function GET(request: NextRequest) {
@@ -17,7 +18,11 @@ export async function GET(request: NextRequest) {
 
   const result = await resolveAuthenticatedHomePath(supabase, user);
   if (result.kind === "redirect") {
-    return json({ ok: true as const, path: result.path });
+    return json({
+      ok: true as const,
+      path: result.path,
+      mustChangePassword: userMustChangePassword(user),
+    });
   }
 
   return json({ ok: false as const, reason: "unauthenticated" }, { status: 401 });

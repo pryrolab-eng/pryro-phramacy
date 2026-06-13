@@ -32,6 +32,7 @@ import {
   useVerifyTwoFaMutation,
 } from "@/hooks/usePharmacySettingsPage";
 import { updateAdminSystemSettings } from "@/lib/http/admin/system-settings";
+import { parseNumberSetting } from "@/lib/platform-settings";
 import {
   defaultAdminPlatformSettings,
   type AdminPlatformSettings,
@@ -68,8 +69,10 @@ export type AdminSettingsContextValue = {
   setIsAddApiKeyOpen: (open: boolean) => void;
   isEditApiKeyOpen: boolean;
   setIsEditApiKeyOpen: (open: boolean) => void;
-  newApiKey: { name: string; key: string };
-  setNewApiKey: Dispatch<SetStateAction<{ name: string; key: string }>>;
+  newApiKey: { name: string; key: string; permissions: string[] };
+  setNewApiKey: Dispatch<
+    SetStateAction<{ name: string; key: string; permissions: string[] }>
+  >;
   selectedApiKey: (AdminApiKeyRow & { status?: string; key?: string }) | null;
   setSelectedApiKey: Dispatch<
     SetStateAction<(AdminApiKeyRow & { status?: string; key?: string }) | null>
@@ -134,7 +137,11 @@ function useAdminSettingsState(): AdminSettingsContextValue {
   const [isIpWhitelistOpen, setIsIpWhitelistOpen] = useState(false);
   const [is2FASetupOpen, setIs2FASetupOpen] = useState(false);
   const [newLocation, setNewLocation] = useState({ name: "", description: "" });
-  const [newApiKey, setNewApiKey] = useState({ name: "", key: "" });
+  const [newApiKey, setNewApiKey] = useState({
+    name: "",
+    key: "",
+    permissions: [] as string[],
+  });
   const [newIp, setNewIp] = useState({ ip: "", description: "" });
   const [selectedApiKey, setSelectedApiKey] = useState<
     (AdminApiKeyRow & { status?: string; key?: string }) | null
@@ -155,9 +162,20 @@ function useAdminSettingsState(): AdminSettingsContextValue {
     const payload = settingsQuery.data;
     if (!payload) return;
     if (payload.settings) {
+      const raw = payload.settings as Partial<AdminPlatformSettings>;
       setSettings((prev) => ({
         ...prev,
-        ...(payload.settings as Partial<AdminPlatformSettings>),
+        ...raw,
+        apiRateLimit: parseNumberSetting(raw.apiRateLimit, prev.apiRateLimit),
+        maxPharmacies: parseNumberSetting(raw.maxPharmacies, prev.maxPharmacies),
+        maxUsersPerPharmacy: parseNumberSetting(
+          raw.maxUsersPerPharmacy,
+          prev.maxUsersPerPharmacy,
+        ),
+        dataRetentionDays: parseNumberSetting(
+          raw.dataRetentionDays,
+          prev.dataRetentionDays,
+        ),
       }));
     }
     if (payload.analytics) {

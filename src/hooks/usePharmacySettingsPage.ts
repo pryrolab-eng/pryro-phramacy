@@ -44,6 +44,12 @@ import {
   stockLocationsQueryKey,
   type CreateStockLocationInput,
 } from "@/lib/http/settings-locations";
+import {
+  getNotificationPreferences,
+  notificationPrefsKeys,
+  updateNotificationPreferences,
+  type NotificationPrefsApi,
+} from "@/lib/http/notification-preferences";
 
 export { pharmacySettingsKeys } from "@/lib/http/pharmacy-settings";
 export { pharmacyBrandingKeys } from "@/lib/http/pharmacy-branding";
@@ -150,9 +156,14 @@ export function useUpdateSecuritySettingsMutation() {
   return useMutation({
     mutationFn: updateSecuritySettings,
     onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: settingsSecurityKeys.settings(),
-      }),
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: settingsSecurityKeys.settings(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: settingsSecurityKeys.ipWhitelist(),
+        }),
+      ]),
   });
 }
 
@@ -227,6 +238,24 @@ export function useCreateSettingsLocationMutation() {
   });
 }
 
+export function useNotificationPreferences(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: notificationPrefsKeys.all,
+    queryFn: getNotificationPreferences,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+export function useUpdateNotificationPreferencesMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: NotificationPrefsApi) =>
+      updateNotificationPreferences(body),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: notificationPrefsKeys.all }),
+  });
+}
+
 export function useInvalidatePharmacySettingsPage() {
   const queryClient = useQueryClient();
   return () =>
@@ -234,5 +263,6 @@ export function useInvalidatePharmacySettingsPage() {
       queryClient.invalidateQueries({ queryKey: pharmacySettingsKeys.info() }),
       queryClient.invalidateQueries({ queryKey: pharmacyBrandingKeys.all }),
       queryClient.invalidateQueries({ queryKey: billingKeys.invoices() }),
+      queryClient.invalidateQueries({ queryKey: notificationPrefsKeys.all }),
     ]);
 }

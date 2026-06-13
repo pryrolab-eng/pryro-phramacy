@@ -2,8 +2,9 @@
 // POST /api/saas/plans  — admin: create a plan
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../supabase/server'
-import { createServiceClient } from '../../../../../supabase/service'
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { prisma } from '@/lib/db/prisma'
+import { resolveIsAppPlatformAdmin } from '@/lib/platform-admin'
 import { createPlan, getActivePlans } from '@/lib/saas/subscription-engine'
 import {
   findPlanNameConflict,
@@ -11,15 +12,14 @@ import {
   normalizePlanType,
 } from '@/lib/subscription/plan-name-validation'
 import {
-  syncPlanFeatures,
-  syncPlanMarketingFeatures,
-  validateRequiredMainPlanKeys,
-} from '@/lib/subscription/plan-features'
+  storeSyncPlanFeatures,
+  storeSyncPlanMarketingFeatures,
+} from '@/lib/db/plan-features-store'
+import { validateRequiredMainPlanKeys } from '@/lib/subscription/plan-features'
 
 export async function GET() {
   try {
-    const admin = createServiceClient()
-    const plans = await getActivePlans(admin)
+    const plans = await getActivePlans()
     return NextResponse.json({ plans })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Failed to load plans'
@@ -29,18 +29,11 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getAuthUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // Only platform admins can create plans
-    const { data: profile } = await supabase
-      .from('users')
-      .select('is_platform_admin')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    if (!profile?.is_platform_admin) {
+    const isAdmin = await resolveIsAppPlatformAdmin(user.id)
+    if (!isAdmin) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -62,21 +55,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    const admin = createServiceClient()
     const planName = String(name).trim()
-    const { data: existing } = await admin
-      .from('subscription_plans')
-      .select('id, name, plan_type, is_active')
-      .eq('is_active', true)
+    const existing = await prisma.subscription_plans.findMany({
+      where: { is_active: true },
+      select: { id: true, name: true, plan_type: true, is_active: true },
+    })
 
     const requestedType = normalizePlanType(plan_type)
     const conflict = findPlanNameConflict(
-      (existing ?? []) as {
-        id: string
-        name: string
-        plan_type?: string | null
-        is_active?: boolean | null
-      }[],
+      existing,
       planName,
       requestedType,
     )
@@ -87,7 +74,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const plan = await createPlan(admin, {
+    const plan = await createPlan({
       name: planName,
       price: Number(price),
       billing_period,
@@ -104,8 +91,8 @@ export async function POST(request: NextRequest) {
       if (validation) {
         return NextResponse.json({ error: validation }, { status: 400 })
       }
-      await syncPlanFeatures(admin, plan.id as string, featureKeys)
-      await syncPlanMarketingFeatures(admin, plan.id as string, featureKeys)
+      await storeSyncPlanFeatures(plan.id, featureKeys)
+      await storeSyncPlanMarketingFeatures(plan.id, featureKeys)
     }
 
     return NextResponse.json(

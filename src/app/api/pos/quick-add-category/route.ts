@@ -1,46 +1,41 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../supabase/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { createServiceClient } from '../../../../../supabase/service'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { createPharmacyCategoryFromDb } from "@/lib/db/categories-pharmacy";
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-    
-    const body = await request.json()
-    
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
-    const name = String(body.categoryName || body.name || '').trim()
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 },
+      );
+    }
+
+    const body = await request.json();
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const name = String(body.categoryName || body.name || "").trim();
+
     if (!name) {
       return NextResponse.json(
-        { success: false, error: 'Category name is required' },
+        { success: false, error: "Category name is required" },
         { status: 400 },
-      )
+      );
     }
 
-    const admin = createServiceClient()
-    const { data: category, error } = await admin
-      .from('categories')
-      .insert({
-        pharmacy_id: pharmacyId,
-        name,
-        description: body.categoryDescription || body.description || '',
-        is_active: true
-      })
-      .select()
-      .single()
+    const category = await createPharmacyCategoryFromDb({
+      pharmacyId,
+      name,
+      description: body.categoryDescription || body.description || "",
+    });
 
-    if (error) {
-      console.error('Category insert error:', error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
-    }
-    
-    return NextResponse.json({ success: true, category })
+    return NextResponse.json({ success: true, category });
   } catch (error) {
-    console.error('Quick add category error:', error)
-    return NextResponse.json({ success: false, error: 'Failed to add category' }, { status: 500 })
+    console.error("Quick add category error:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to add category" },
+      { status: 500 },
+    );
   }
 }

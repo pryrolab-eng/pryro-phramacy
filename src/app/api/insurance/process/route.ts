@@ -1,29 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "../../../../../supabase/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+
 import { insertInsuranceClaimLines } from "@/lib/insurance/claim-lines";
 import { computeInsuranceCoverage } from "@/lib/insurance/coverage-engine";
 import type { CoverageLineResult } from "@/lib/insurance/types";
-import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { resolveInsuranceProvider } from "@/lib/insurance/resolve-provider";
-import { createServiceClient } from "../../../../../supabase/service";
+import { storeCreateInsuranceClaim } from "@/lib/db/insurance-store";
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id);
+    const pharmacyId = await requireUserPharmacyId(user.id);
     const body = await request.json();
-    const admin = createServiceClient();
 
     const provider = await resolveInsuranceProvider(
-      admin,
       pharmacyId,
       String(body.insuranceType ?? body.insurance ?? ""),
     );
@@ -42,7 +37,7 @@ export async function POST(request: NextRequest) {
     let coverageLines: CoverageLineResult[] = [];
 
     if (lines.length > 0) {
-      const totals = await computeInsuranceCoverage(admin, {
+      const totals = await computeInsuranceCoverage({
         pharmacyId,
         providerIdOrName: provider.id,
         lines: lines.map(
@@ -86,37 +81,23 @@ export async function POST(request: NextRequest) {
             validityRate: body.validityRate,
           };
 
-    const { data: claim, error } = await admin
-      .from("insurance_claims")
-      .insert({
-        pharmacy_id: pharmacyId,
-        sale_id: body.saleId ?? null,
-        insurance_provider_id: provider.id,
-        patient_name: String(body.patientName ?? body.clientName ?? "Unknown"),
-        patient_id_number: String(
-          body.patientId ?? body.patient_id ?? body.patientNumber ?? "",
-        ),
-        claim_amount: insuranceCoverage,
-        covered_amount: insuranceCoverage,
-        patient_copay: patientCopay,
-        approved_amount: 0,
-        status: "pending",
-        notes: body.notes ?? null,
-        metadata,
-      })
-      .select("id, claim_number, status")
-      .single();
-
-    if (error) {
-      console.error("Insurance claim insert error:", error);
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 500 },
-      );
-    }
+    const claim = await storeCreateInsuranceClaim({
+      pharmacyId,
+      saleId: body.saleId ?? null,
+      providerId: provider.id,
+      patientName: String(body.patientName ?? body.clientName ?? "Unknown"),
+      patientIdNumber: String(
+        body.patientId ?? body.patient_id ?? body.patientNumber ?? "",
+      ),
+      claimAmount: insuranceCoverage,
+      coveredAmount: insuranceCoverage,
+      patientCopay,
+      notes: body.notes ?? null,
+      metadata,
+    });
 
     if (claim && coverageLines.length > 0) {
-      await insertInsuranceClaimLines(admin, {
+      await insertInsuranceClaimLines({
         claimId: claim.id,
         pharmacyId,
         providerId: provider.id,

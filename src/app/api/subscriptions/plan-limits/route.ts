@@ -1,37 +1,27 @@
-import { NextRequest } from "next/server";
-import { createRouteHandlerClient } from "../../../../../supabase/route-handler";
-import { createServiceClient } from "../../../../../supabase/service";
+import { NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import {
   canAddPharmacyUser,
   getPharmacyUsage,
   getPlanLimitsForPharmacy,
 } from "@/lib/subscription/plan-limits";
-import { resolveActivePharmacyId } from "@/lib/pharmacy/active-pharmacy";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 
-export async function GET(request: NextRequest) {
-  const { supabase, json } = createRouteHandlerClient(request);
-
+export async function GET() {
   try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getAuthUser();
     if (!user) {
-      return json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const admin = createServiceClient();
-    const pharmacyId = await resolveActivePharmacyId(admin, user.id);
-    if (!pharmacyId) {
-      return json({ error: "Pharmacy not found" }, { status: 403 });
-    }
+    const pharmacyId = await requireUserPharmacyId(user.id);
     const [limits, usage, canAdd] = await Promise.all([
-      getPlanLimitsForPharmacy(admin, pharmacyId),
-      getPharmacyUsage(admin, pharmacyId),
-      canAddPharmacyUser(admin, pharmacyId),
+      getPlanLimitsForPharmacy(pharmacyId),
+      getPharmacyUsage(pharmacyId),
+      canAddPharmacyUser(pharmacyId),
     ]);
 
-    return json({
+    return NextResponse.json({
       limits,
       usage,
       canAddUser: canAdd,
@@ -39,6 +29,6 @@ export async function GET(request: NextRequest) {
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "Failed to load plan limits";
-    return json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

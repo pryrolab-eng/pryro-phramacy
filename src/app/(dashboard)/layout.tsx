@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '../../../supabase/server'
+import { getAuthUser } from '@/lib/auth/get-auth-user'
 import { selectPrimaryMembership } from '@/utils/select-pharmacy-membership'
 import { SidebarInset } from '@/components/ui/sidebar'
 import { SuperadminSidebar } from '@/components/superadmin-sidebar'
@@ -9,7 +9,6 @@ import { isStaffWorkspaceRole } from '@/lib/rbac/pharmacy-roles'
 import SubscriptionBlocker from '@/components/subscription-blocker'
 import { FeatureRouteGuard } from '@/components/subscription/feature-route-guard'
 import { StaffRoleRouteGuard } from '@/components/subscription/staff-role-route-guard'
-import { createServiceClient } from '../../../supabase/service'
 import { resolveActivePharmacyContext } from '@/lib/pharmacy/active-pharmacy'
 import { DashboardShellBar } from '@/components/shell/dashboard-shell-bar'
 import {
@@ -17,45 +16,35 @@ import {
   DashboardProviders,
 } from '@/components/shell/dashboard-providers'
 import { DashboardCommandPalette, AdminCommandPalette } from '@/components/dashboard'
+import { storeListActiveMembershipsForUser } from '@/lib/db/pharmacy-users-store'
+import { storeGetIsPlatformAdmin } from '@/lib/db/public-users-store'
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createClient()
-  
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
+  const user = await getAuthUser();
+    if (!user) {
     redirect('/sign-in')
   }
 
-  const [{ data: publicProfile }, { data: membershipRows }, ] = await Promise.all([
-    supabase
-      .from('users')
-      .select('is_platform_admin')
-      .eq('id', user.id)
-      .maybeSingle(),
-    supabase
-      .from('pharmacy_users')
-      .select('role, pharmacy_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true),
+  const [isPlatformAdminFlag, membershipRows] = await Promise.all([
+    storeGetIsPlatformAdmin(user.id),
+    storeListActiveMembershipsForUser(user.id),
   ])
 
-  const userProfile = selectPrimaryMembership(membershipRows ?? undefined)
+  const userProfile = selectPrimaryMembership(membershipRows)
 
   const isPlatformAdmin =
-    publicProfile?.is_platform_admin === true ||
+    isPlatformAdminFlag ||
     userProfile?.role === 'superadmin' ||
     userProfile?.role === 'admin'
 
   let userRole = userProfile?.role || 'pharmacy_owner'
 
   if (!isPlatformAdmin && user) {
-    const admin = createServiceClient()
-    const activeCtx = await resolveActivePharmacyContext(admin, user.id)
+    const activeCtx = await resolveActivePharmacyContext(user.id)
     userRole = activeCtx.role ?? userRole
   }
 

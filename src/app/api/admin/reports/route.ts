@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "../../../../../supabase/server";
-import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
+import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
+import { createPlatformAdminReportFromDb } from "@/lib/db/admin";
+import {
+  deleteLocalUpload,
+  localUploadFileUrl,
+  saveLocalUpload,
+  UPLOAD_CATEGORIES,
+} from "@/lib/storage/local-files";
 
 const MAX_BYTES = 25 * 1024 * 1024;
-const BUCKET = "platform-reports";
+const BUCKET = UPLOAD_CATEGORIES.platformReports;
 
 function sanitizeFileName(name: string): string {
   const base = name.replace(/^.*[/\\]/, "").replace(/[^\w.\-()+ ]/g, "_");
@@ -12,21 +18,9 @@ function sanitizeFileName(name: string): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const allowed = await resolveIsAppPlatformAdmin(supabase, user.id, null);
-    if (!allowed) {
-      return NextResponse.json(
-        { error: "Forbidden: platform admin access required" },
-        { status: 403 },
-      );
+    const auth = await requirePlatformAdminApi();
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
     const formData = await request.formData();
@@ -48,24 +42,24 @@ export async function POST(request: NextRequest) {
     const description = formData.get("description");
     const category = formData.get("category");
 
-    const db = createServiceClient();
     const id = crypto.randomUUID();
     const objectPath = `${id}/${sanitizeFileName(file.name)}`;
 
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const { error: upErr } = await db.storage.from(BUCKET).upload(objectPath, bytes, {
-      contentType:
-        file.type && file.type.length < 200 ? file.type : "application/octet-stream",
-      upsert: false,
-    });
-    if (upErr) {
+    const bytes = Buffer.from(await file.arrayBuffer());
+    try {
+      await saveLocalUpload({
+        category: BUCKET,
+        objectPath,
+        buffer: bytes,
+      });
+    } catch (upErr) {
       console.error("platform-reports upload:", upErr);
-      return NextResponse.json({ error: upErr.message }, { status: 500 });
+      const message = upErr instanceof Error ? upErr.message : "Upload failed";
+      return NextResponse.json({ error: message }, { status: 500 });
     }
 
-    const { data: inserted, error: insErr } = await db
-      .from("platform_admin_reports")
-      .insert({
+    try {
+      const inserted = await createPlatformAdminReportFromDb({
         id,
         name,
         description:
@@ -76,22 +70,20 @@ export async function POST(request: NextRequest) {
           category && String(category).trim()
             ? String(category).slice(0, 200)
             : null,
-        storage_bucket: BUCKET,
-        storage_object_path: objectPath,
-      })
-      .select("id")
-      .single();
-
-    if (insErr || !inserted) {
+        storageBucket: BUCKET,
+        storageObjectPath: objectPath,
+      });
+      return NextResponse.json({
+        id: inserted.id,
+        downloadUrl: localUploadFileUrl(BUCKET, objectPath),
+      });
+    } catch (insErr) {
       console.error("platform_admin_reports insert:", insErr);
-      await db.storage.from(BUCKET).remove([objectPath]);
-      return NextResponse.json(
-        { error: insErr?.message ?? "Failed to save report" },
-        { status: 500 },
-      );
+      await deleteLocalUpload(BUCKET, objectPath);
+      const message =
+        insErr instanceof Error ? insErr.message : "Failed to save report";
+      return NextResponse.json({ error: message }, { status: 500 });
     }
-
-    return NextResponse.json({ id: inserted.id });
   } catch (e) {
     console.error("POST /api/admin/reports", e);
     return NextResponse.json({ error: "Unexpected error" }, { status: 500 });

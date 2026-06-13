@@ -4,16 +4,6 @@ const pharmacyRedirects = require('./src/lib/routes/pharmacy-paths.redirects.cjs
 
 const isDev = process.env.NODE_ENV === 'development';
 
-const supabaseHost = (() => {
-    try {
-        return process.env.NEXT_PUBLIC_SUPABASE_URL
-            ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname
-            : null;
-    } catch {
-        return null;
-    }
-})();
-
 const nextConfig = {
     reactStrictMode: false,
     async redirects() {
@@ -51,9 +41,10 @@ const nextConfig = {
                 protocol: 'https',
                 hostname: 'html.tailus.io',
             },
-            ...(supabaseHost
-                ? [{ protocol: 'https', hostname: supabaseHost }]
-                : []),
+            {
+                protocol: 'https',
+                hostname: 'res.cloudinary.com',
+            },
         ],
     }
 };

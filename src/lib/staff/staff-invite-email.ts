@@ -1,4 +1,6 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { prisma } from "@/lib/db/prisma";
+import { adminGetAuthUserById } from "@/lib/auth/admin-users";
+import { storeFindPublicUserIdByEmail } from "@/lib/db/public-users-store";
 
 /** Shown in API + toast — does not reveal whether the email exists in Pryrox. */
 export const STAFF_INVITE_EMAIL_REJECTED_MESSAGE =
@@ -38,7 +40,6 @@ function isAuthDuplicateEmailError(error: unknown): boolean {
  * Pharmacy owner may use the same address for login and `pharmacies.email` at signup only.
  */
 export async function assertStaffInviteEmailAllowed(
-  admin: SupabaseClient,
   pharmacyId: string,
   rawEmail: string,
 ): Promise<void> {
@@ -49,39 +50,25 @@ export async function assertStaffInviteEmailAllowed(
     );
   }
 
-  const { data: pharmacy } = await admin
-    .from("pharmacies")
-    .select("owner_id, email")
-    .eq("id", pharmacyId)
-    .maybeSingle();
+  const pharmacy = await prisma.pharmacies.findUnique({
+    where: { id: pharmacyId },
+    select: { owner_id: true, email: true },
+  });
 
-  const businessEmail = pharmacy?.email
-    ? normalizeEmail(pharmacy.email)
-    : null;
+  const businessEmail = pharmacy?.email ? normalizeEmail(pharmacy.email) : null;
 
   let ownerAuthEmail: string | null = null;
   if (pharmacy?.owner_id) {
-    const { data: ownerAuth } = await admin.auth.admin.getUserById(
-      pharmacy.owner_id,
-    );
-    ownerAuthEmail = ownerAuth?.user?.email
-      ? normalizeEmail(ownerAuth.user.email)
-      : null;
+    const ownerAuth = await adminGetAuthUserById(pharmacy.owner_id);
+    ownerAuthEmail = ownerAuth?.email ? normalizeEmail(ownerAuth.email) : null;
   }
 
   if (email === businessEmail || email === ownerAuthEmail) {
     throw new StaffInviteEmailRejectedError();
   }
 
-  const { data: existingRows, error: lookupError } = await admin
-    .from("users")
-    .select("id")
-    .ilike("email", email)
-    .limit(1);
-
-  if (lookupError) {
-    console.error("Staff invite email lookup failed:", lookupError);
-  } else if (existingRows?.length) {
+  const existingUserId = await storeFindPublicUserIdByEmail(email);
+  if (existingUserId) {
     throw new StaffInviteEmailRejectedError();
   }
 }

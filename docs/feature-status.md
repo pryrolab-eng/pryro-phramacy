@@ -23,11 +23,11 @@ The table below covers all 17 feature areas required by Requirement 3.2. Each en
 
 | Sub-feature | Status | Notes |
 |---|---|---|
-| Sign-in (email + password) | ✅ Working | signInAction calls supabase.auth.signInWithPassword, sets a session cookie, and redirects to /dashboard. Role resolution and 2FA branching work correctly. |
+| Sign-in (email + password) | ✅ Working | `signInAction` uses `nativeSignInWithPassword`, sets native JWT cookies, redirects to `/app`. 2FA branching works when enabled. |
 | Sign-up (self-registration) | ❌ Broken/Incomplete | signUpAction is imported by sign-up/page.tsx but is **not exported** from src/app/actions.ts. The form submits but nothing happens. Users cannot self-register. |
 | Two-Factor Authentication (2FA) | ✅ Working | Full TOTP flow implemented: setup (/api/settings/security/2fa/setup), QR code generation, verification (/api/settings/security/2fa/verify), backup codes, and login verification (/api/auth/verify-2fa + /api/auth/complete-2fa). The magic-link session restoration is functional but fragile (see auth module docs). |
 | Password Reset | ❌ Broken/Incomplete | forgotPasswordAction is imported by forgot-password/page.tsx but is **not exported** from src/app/actions.ts. The form submits but nothing happens. Password reset is non-functional. |
-| Session management / middleware | ✅ Working | supabase/middleware.ts refreshes sessions on every request and enforces protected-path redirects correctly. |
+| Session management / middleware | ✅ Working | src/lib/middleware/update-session.ts refreshes sessions on every request and enforces protected-path redirects correctly. |
 | Rate limiting on auth endpoints | ❌ Broken/Incomplete | No rate limiting on the custom 2FA verification endpoints (/api/auth/verify-2fa, /api/auth/complete-2fa). Supabase's built-in rate limiting covers signInWithPassword only. |
 | @test.com auto-provisioning | ❌ Broken/Incomplete | signInAction contains hardcoded logic that auto-creates users and pharmacy_users records for any @test.com email. This test scaffolding is present in production code and must be removed. |
 
@@ -290,7 +290,7 @@ efid could forge a webhook and activate a subscription without payment. |
 | PUT /api/branches/[id] | ❌ Broken/Incomplete | The PUT handler echoes the request body without calling Supabase. No database write occurs. |
 | Branch inventory preview | ❌ Broken/Incomplete | GET /api/branches/[id] always returns the same 2 hardcoded mock items regardless of branch ID. Not connected to the database. |
 | Stock transfer dialog | ❌ Broken/Incomplete | The stock transfer form collects input but makes **no API call**. No inventory_transfers record is created. The feature is UI-only scaffolding. |
-| Authentication on branch API routes | ❌ Broken/Incomplete | Neither /api/branches nor /api/branches/[id] calls supabase.auth.getUser(). Unauthenticated requests can read or write branch data. GET /api/branches also does not filter by pharmacy_id — it returns all active branches across all tenants. |
+| Authentication on branch API routes | ❌ Broken/Incomplete | Neither /api/branches nor /api/branches/[id] calls `getAuthUser()`. Unauthenticated requests can read or write branch data. GET /api/branches also does not filter by pharmacy_id — it returns all active branches across all tenants. |
 | RLS on ranches table | ❌ Broken/Incomplete | No RLS policies are defined for ranches in the official migrations. Tenant isolation relies entirely on application-layer filtering, which is currently absent. |
 | Schema mismatch | ❌ Broken/Incomplete | The official migration defines ranches without code, manager_name, or is_main columns. The page component's TypeScript interface expects these columns. They will be undefined in production. |
 
@@ -438,7 +438,7 @@ This route contains a hardcoded array of test credentials (including abdousentor
 
 These routes use the Supabase service role key directly and perform **no authentication or authorization checks**. Any request that reaches these endpoints — including unauthenticated requests — can read all pharmacy data or create, modify, and delete pharmacies and categories.
 
-**Required action:** Add supabase.auth.getUser() session verification and a superadmin role check to all four routes.
+**Required action:** Add `getAuthUser()` session verification and a superadmin role check to all four routes.
 
 ---
 
@@ -500,7 +500,7 @@ efid could forge a webhook and activate a subscription without payment.
 
 The delete route uses the service role key and does not verify the caller's session or confirm that the record belongs to the caller's pharmacy. Any request with a known pharmacy_users.id can delete that record without authentication.
 
-**Required action:** Add supabase.auth.getUser() session verification and a pharmacy ownership check.
+**Required action:** Add `getAuthUser()` session verification and a pharmacy ownership check.
 
 ---
 
@@ -510,7 +510,7 @@ The delete route uses the service role key and does not verify the caller's sess
 
 **File:** src/app/api/pharmacist/route.ts
 
-The pharmacist creation endpoint uses SUPABASE_SERVICE_ROLE_KEY directly and does not verify that the caller is authenticated or holds an appropriate role. Any unauthenticated request with a valid JSON body can create a new Supabase Auth user.
+The pharmacist creation endpoint uses server-side Prisma (no browser exposure) directly and does not verify that the caller is authenticated or holds an appropriate role. Any unauthenticated request with a valid JSON body can create a new Supabase Auth user.
 
 **Required action:** Add session verification and a pharmacy_owner or superadmin role check.
 

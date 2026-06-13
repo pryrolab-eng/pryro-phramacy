@@ -1,3 +1,5 @@
+> **Stack:** Prisma (`DATABASE_URL`) for data; native JWT auth (`getAuthUser()`, cookies `pryrox_session` / `pryrox_refresh`). SQL migrations live in `supabase/migrations/` (`npm run db:sql:push`).
+
 # Insurance Module
 
 ## Purpose
@@ -60,7 +62,7 @@ The module has a documented history of Row Level Security (RLS) issues that requ
 
 | File | Description |
 |---|---|
-| `src/types/supabase.ts` | Auto-generated Supabase types. Defines `insurance_providers` and `insurance_claims` table shapes, the `insurance_claim_status` enum (`pending`, `approved`, `rejected`, `processing`), and the `insurance` value in the `payment_method` enum. |
+| `@/lib/db/prisma` + `insurance-store` | Prisma models for `insurance_providers`, `insurance_claims`, and related enums. |
 | `src/lib/database.types.ts` | Manual type definitions for `sales` table including `insurance_provider_id` and `insurance_amount` columns. |
 
 ### Migrations
@@ -149,7 +151,7 @@ Stores custom invoice template definitions per pharmacy. Each template is associ
 
 ### `insurance_claims`
 
-Tracks insurance claim submissions linked to sales. Defined in the Supabase type definitions but **no migration file creates this table** in the official `supabase/migrations/` directory. The table appears to have been created outside the migration history.
+Tracks insurance claim submissions linked to sales. Created in application schema / migrations; written by POS via `storeCreateInsuranceClaim` and `insertInsuranceClaimLines`.
 
 | Column | Type | Nullable | Description |
 |---|---|---|---|
@@ -200,7 +202,7 @@ The `insurance_templates` table has **no RLS policies** defined in the official 
 | Role | `GET /api/insurance` | `POST /api/insurance` | Template Designer | Notes |
 |---|---|---|---|---|
 | Unauthenticated | Global providers only (`pharmacy_id IS NULL`, `is_active = true`) | ❌ 401 | ❌ | Public read of global providers is intentional for POS pre-login scenarios. |
-| `superadmin` | All providers (all pharmacies + global) | ✅ Creates global provider (`pharmacy_id = NULL`) | ✅ | Uses service role client to bypass RLS. Superadmin check is email-based. |
+| `superadmin` | All providers (all pharmacies + global) | ✅ Creates global provider (`pharmacy_id = NULL`) | ✅ | Platform admin check in API; DB RLS may still apply for direct SQL access. |
 | `pharmacy_owner` | Pharmacy-specific + global active providers | ✅ Creates pharmacy-scoped provider | ✅ | Role check: `pharmacy_users.role IN ('pharmacy_owner', 'admin')`. |
 | `pharmacist` | Pharmacy-specific + global active providers | ❌ 403 | ✅ (sidebar link visible) | Can view but not create providers. |
 | `cashier` | Pharmacy-specific + global active providers | ❌ 403 | ✅ (sidebar link visible) | Can view but not create providers. |
@@ -226,7 +228,7 @@ The `POST /api/insurance` endpoint creates insurance providers with the followin
 
 The `GET /api/insurance` endpoint returns providers filtered by the caller's authentication state and role (see [User Role Access](#user-role-access) above).
 
-There is no `PUT`/`PATCH` or `DELETE` endpoint for insurance providers. Updates and deletions must be performed directly in the Supabase dashboard or via SQL.
+There is no `PUT`/`PATCH` or `DELETE` endpoint for insurance providers. Updates and deletions require direct SQL or a future admin API.
 
 ### 2. Coverage Percentage
 
@@ -280,9 +282,9 @@ Superadmin submits "Add Insurance Provider" form
         ▼
 POST /api/insurance  { name, coverage_percentage, ... }
         │
-        ├─ supabase.auth.getUser() → verify session
+        ├─ `getAuthUser()` → verify session
         ├─ isSuperAdmin = user.email === 'abdousentore@gmail.com'
-        ├─ dbClient = createServiceClient()  ← bypasses RLS
+        ├─ dbClient = Prisma (`src/lib/db/prisma`) or `*-store` modules  ← platform-admin authorization
         ├─ pharmacyId = null  ← global provider
         └─ INSERT INTO insurance_providers (pharmacy_id=NULL, ...)
         │
@@ -298,7 +300,7 @@ Pharmacy owner submits "Add Insurance Provider" form
         ▼
 POST /api/insurance  { name, coverage_percentage, ... }
         │
-        ├─ supabase.auth.getUser() → verify session
+        ├─ `getAuthUser()` → verify session
         ├─ SELECT pharmacy_id, role FROM pharmacy_users WHERE user_id = ?
         ├─ role must be 'pharmacy_owner' or 'admin' → else 403
         ├─ pharmacyId = userPharmacy.pharmacy_id
@@ -372,15 +374,15 @@ These routes are not protected by authentication and should either be implemente
 
 ### 7. No Update or Delete Endpoints
 
-The insurance API only supports `GET` (list) and `POST` (create). There are no `PUT`/`PATCH` or `DELETE` endpoints. Editing or deactivating an insurance provider requires direct database access via the Supabase dashboard.
+The insurance API only supports `GET` (list) and `POST` (create). There are no `PUT`/`PATCH` or `DELETE` endpoints. Editing or deactivating a provider requires direct database access or SQL.
 
 ### 8. `invoice_template` and `template_config` Columns Not in Original Migration
 
-The `invoice_template` and `template_config` columns on `insurance_providers` were added via ad-hoc scripts (`add_insurance_templates.sql`, `fix_insurance_rls.sql`) rather than through a proper migration. The original migration `20241201000021_insurance_providers.sql` does not include these columns. The Supabase type definitions in `src/types/supabase.ts` also do not include these columns, meaning TypeScript will not catch type errors when reading or writing them.
+The `invoice_template` and `template_config` columns on `insurance_providers` were added via ad-hoc scripts (`add_insurance_templates.sql`, `fix_insurance_rls.sql`) rather than through a proper migration. Verify Prisma schema includes these fields if the UI reads them.
 
 ### 9. `insurance_claims` Table Has No Official Migration
 
-The `insurance_claims` table is referenced in `src/types/supabase.ts` (auto-generated from the live database) but there is no corresponding file in `supabase/migrations/`. The table was likely created via the Supabase dashboard or an ad-hoc SQL script, making it invisible to the migration history.
+The `insurance_claims` table may predate some migration files. Confirm `supabase/migrations/` and `prisma/schema.prisma` stay aligned for fresh deploys.
 
 ### 10. No Input Validation on Coverage Percentage
 
@@ -406,8 +408,7 @@ However, as noted in the Internationalization module documentation, `i18n.ts` is
 
 | Package | Purpose |
 |---|---|
-| `@supabase/ssr` | Server-side Supabase client for authenticated database access |
-| `@supabase/supabase-js` | Supabase JS client |
+| `getAuthUser()` + Prisma | Authenticated API access |
 | `next` | Next.js App Router (`NextRequest`, `NextResponse`) |
 | `react` | React hooks (`useState`) used in the Template Designer page |
 | `lucide-react` | Icons in the Template Designer UI (`FileText`, `Eye`, `Type`, etc.) |

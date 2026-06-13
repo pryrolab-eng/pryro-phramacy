@@ -1,3 +1,5 @@
+> **Stack:** Prisma (`DATABASE_URL`) for data; native JWT auth (`getAuthUser()`, cookies `pryrox_session` / `pryrox_refresh`). SQL migrations live in `supabase/migrations/` (`npm run db:sql:push`).
+
 # Settings Module
 
 ## Purpose
@@ -7,7 +9,7 @@ The Settings module provides configuration management for two distinct audiences
 - **Pharmacy-level settings** (`/settings`) — accessible to `pharmacy_owner`, `pharmacist`, `cashier`, and `staff` roles. Covers pharmacy profile information, branding/logo upload, API key management, stock location management, security (IP whitelist, 2FA), and subscription/billing.
 - **Platform-level settings** (`/admin/settings`) — accessible to `superadmin` only. Covers global platform configuration: tenant limits, multi-branch toggles, API rate limits, SSO, audit logging, maintenance mode, and platform analytics.
 
-Settings data is persisted across three primary tables (`system_settings`, `ip_whitelist`, `stock_locations`) and two secondary tables (`pharmacy_settings`, `api_keys`). Branding data is stored directly on the `pharmacies` table and in Supabase Storage.
+Settings data is persisted across three primary tables (`system_settings`, `ip_whitelist`, `stock_locations`) and two secondary tables (`pharmacy_settings`, `api_keys`). Branding logos are stored on `pharmacies.logo_url` (Cloudinary when configured, otherwise local disk via `uploadAndPersistPharmacyLogo`).
 
 ---
 
@@ -29,7 +31,7 @@ Settings data is persisted across three primary tables (`system_settings`, `ip_w
 | `/api/pharmacy/settings` | `PUT` | Yes | Updates `name`, `phone`, `email`, `city`, `province` on the `pharmacies` table. Validates required fields. |
 | `/api/pharmacy/branding` | `GET` | Yes | Returns `logoUrl`, `primaryColor`, `customDomain` from `pharmacies.logo_url`, `pharmacies.primary_color`, `pharmacies.custom_domain`. |
 | `/api/pharmacy/branding` | `PUT` | Yes | Updates branding fields on the `pharmacies` table. |
-| `/api/pharmacy/branding/upload` | `POST` | Yes | Accepts a `multipart/form-data` file upload. Stores the file in the `pharmacy-logos` Supabase Storage bucket as `{pharmacy_id}-{timestamp}.{ext}`. Returns the public URL. |
+| `/api/pharmacy/branding/upload` | `POST` | Yes | Multipart upload → Cloudinary or local `UPLOAD_CATEGORIES` path. Persists URL to `pharmacies.logo_url`. |
 
 ### API Routes — Settings Sub-modules
 
@@ -159,7 +161,7 @@ Branding settings are stored directly on the `pharmacies` table rather than in a
 
 | Column | Type | Description |
 |---|---|---|
-| `logo_url` | `text` | Public URL of the pharmacy logo in Supabase Storage |
+| `logo_url` | `text` | Public URL of the pharmacy logo (Cloudinary or local static URL) |
 | `primary_color` | `text` | Hex color code for the pharmacy's brand color (default `#3b82f6`) |
 | `custom_domain` | `text` | Custom domain for white-label deployments (nullable) |
 
@@ -193,7 +195,7 @@ The General tab displays pharmacy information (name, license number, location, p
 ### General — Branding / Logo Upload
 
 The General tab includes a Branding card with:
-- **Logo upload:** A file input that calls `POST /api/pharmacy/branding/upload`. The file is stored in the `pharmacy-logos` Supabase Storage bucket as `{pharmacy_id}-{timestamp}.{ext}`. The returned public URL is saved to `pharmacies.logo_url` via `PUT /api/pharmacy/branding`.
+- **Logo upload:** File input → `POST /api/pharmacy/branding/upload` → `uploadAndPersistPharmacyLogo`. URL saved via branding API.
 - **Primary color:** A color picker that updates `pharmacies.primary_color`.
 - **Custom domain:** A text field for white-label domain configuration stored in `pharmacies.custom_domain`.
 
@@ -293,7 +295,7 @@ User edits pharmacy info in /settings → General tab
         ▼
 PUT /api/pharmacy/settings  { name, phone, email, location }
         │
-        ├─ supabase.auth.getUser() → verify session
+        ├─ `getAuthUser()` → verify session
         ├─ pharmacy_users → resolve pharmacy_id
         ├─ pharmacies.update({ name, phone, email, city, province })
         └─ { success: true }
@@ -307,9 +309,9 @@ User selects file in Branding card
         ▼
 POST /api/pharmacy/branding/upload  (multipart/form-data)
         │
-        ├─ supabase.auth.getUser() → verify session
+        ├─ `getAuthUser()` → verify session
         ├─ pharmacy_users → resolve pharmacy_id
-        ├─ supabase.storage.from('pharmacy-logos').upload(fileName, buffer)
+        ├─ uploadPharmacyLogo() → Cloudinary or uploads/pharmacy-logos/
         └─ Returns { url: publicUrl }
         │
         ▼
@@ -326,7 +328,7 @@ Superadmin edits settings in /admin/settings
         ▼
 PUT /api/admin/system-settings  { platformName, maxPharmacies, ... }
         │
-        ├─ supabase.auth.getUser() → verify session
+        ├─ `getAuthUser()` → verify session
         ├─ pharmacy_users → check role = 'superadmin'
         ├─ For each key-value pair:
         │     ├─ SELECT from system_settings WHERE setting_key = key AND pharmacy_id IS NULL
@@ -344,7 +346,7 @@ PUT /api/admin/system-settings  { platformName, maxPharmacies, ... }
 | `otplib` | TOTP secret generation and code verification for 2FA setup |
 | `qrcode` | QR code data URL generation for 2FA setup |
 | `crypto` | Backup code generation (Node built-in) |
-| `@supabase/supabase-js` | Supabase Storage client for logo uploads |
+| `src/lib/pharmacy/upload-pharmacy-logo.ts` | Logo upload (Cloudinary or local disk) |
 | `recharts` | Sparkline charts in the settings summary cards |
 
 ---

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "../../../../../../supabase/server";
-import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
+import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
 import { syncPlanToPolarAndSave } from "@/lib/polar/sync-plan-db";
 import {
   findPlanNameConflict,
@@ -8,40 +7,24 @@ import {
   isPostgresUniqueViolation,
   normalizePlanType,
 } from "@/lib/subscription/plan-name-validation";
-
-async function requirePlatformAdmin() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (authError || !user) {
-    return { error: NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 }) };
-  }
-
-  const allowed = await resolveIsAppPlatformAdmin(supabase, user.id, null);
-  if (!allowed) {
-    return {
-      error: NextResponse.json(
-        { success: false, error: "Forbidden: platform admin access required" },
-        { status: 403 }
-      ),
-    };
-  }
-
-  return { db: createServiceClient() };
-}
+import {
+  findSubscriptionPlanByIdFromDb,
+  listActiveSubscriptionPlansForConflictFromDb,
+  updateSubscriptionPlanFromDb,
+} from "@/lib/db/admin";
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params
+  const { id } = await params;
   try {
-    const auth = await requirePlatformAdmin();
-    if ("error" in auth && auth.error) {
-      return auth.error;
+    const auth = await requirePlatformAdminApi();
+    if (!auth.ok) {
+      return NextResponse.json(
+        { success: false, error: auth.error },
+        { status: auth.status },
+      );
     }
 
     const body = await request.json();
@@ -53,7 +36,7 @@ export async function PUT(
       if (!Number.isFinite(price) || price < 0) {
         return NextResponse.json(
           { success: false, error: "Invalid price" },
-          { status: 400 }
+          { status: 400 },
         );
       }
       updates.price = price;
@@ -82,11 +65,7 @@ export async function PUT(
       updates.monthly_tx_limit = Number(body.monthly_tx_limit);
     }
     if (updates.price !== undefined || updates.billing_period !== undefined) {
-      const { data: currentRow } = await auth.db
-        .from("subscription_plans")
-        .select("price, billing_period")
-        .eq("id", id)
-        .maybeSingle();
+      const currentRow = await findSubscriptionPlanByIdFromDb(id);
       const { billingPeriodFromInput, periodLabelFromBilling } = await import(
         "@/lib/subscription/plan-period"
       );
@@ -107,29 +86,25 @@ export async function PUT(
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(
         { success: false, error: "No fields to update" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const { validateMainPlanLimitAlignment } = await import(
       "@/lib/subscription/plan-limit-alignment"
-    )
-    const { loadPlanFeatureKeys } = await import("@/lib/subscription/plan-features")
+    );
+    const { loadPlanFeatureKeys } = await import("@/lib/subscription/plan-features");
 
     const featureKeysForCheck = Array.isArray(body.feature_keys)
       ? (body.feature_keys as string[])
       : Array.isArray(body.featureKeys)
         ? (body.featureKeys as string[])
-        : null
+        : null;
 
-    const { data: currentPlan } = await auth.db
-      .from("subscription_plans")
-      .select("name, plan_type, max_branches, max_users, monthly_tx_limit")
-      .eq("id", id)
-      .maybeSingle()
+    const currentPlan = await findSubscriptionPlanByIdFromDb(id);
 
     const resolvedFeatureKeys =
-      featureKeysForCheck ?? (await loadPlanFeatureKeys(auth.db, id))
+      featureKeysForCheck ?? (await loadPlanFeatureKeys(id));
 
     const merged = {
       max_branches: Number(
@@ -148,16 +123,16 @@ export async function PUT(
           0,
       ),
       feature_keys: resolvedFeatureKeys,
-    }
+    };
     const planTypeForCheck = normalizePlanType(
       String(updates.plan_type ?? currentPlan?.plan_type ?? "main"),
-    )
+    );
     const limitError = validateMainPlanLimitAlignment({
       plan_type: planTypeForCheck,
       ...merged,
-    })
+    });
     if (limitError) {
-      return NextResponse.json({ success: false, error: limitError }, { status: 400 })
+      return NextResponse.json({ success: false, error: limitError }, { status: 400 });
     }
 
     if (updates.name !== undefined) {
@@ -165,34 +140,19 @@ export async function PUT(
       if (!planName) {
         return NextResponse.json(
           { success: false, error: "Plan name is required" },
-          { status: 400 }
+          { status: 400 },
         );
       }
       updates.name = planName;
 
-      const { data: existing } = await auth.db
-        .from("subscription_plans")
-        .select("id, name, plan_type, is_active")
-        .eq("is_active", true);
-
-      const { data: current } = await auth.db
-        .from("subscription_plans")
-        .select("plan_type")
-        .eq("id", id)
-        .single();
-
+      const existing = await listActiveSubscriptionPlansForConflictFromDb();
       const planType =
         updates.plan_type !== undefined
           ? normalizePlanType(String(updates.plan_type))
-          : normalizePlanType(current?.plan_type);
+          : normalizePlanType(String(currentPlan?.plan_type ?? "main"));
 
       const conflict = findPlanNameConflict(
-        (existing ?? []) as {
-          id: string;
-          name: string;
-          plan_type?: string | null;
-          is_active?: boolean | null;
-        }[],
+        existing,
         planName,
         planType,
         id,
@@ -208,14 +168,7 @@ export async function PUT(
       }
     }
 
-    const { data: plan, error } = await auth.db
-      .from("subscription_plans")
-      .update(updates)
-      .eq("id", id)
-      .select("*")
-      .single();
-
-    if (error) throw error;
+    const plan = await updateSubscriptionPlanFromDb(id, updates);
 
     const featureKeys = Array.isArray(body.feature_keys)
       ? (body.feature_keys as string[])
@@ -228,8 +181,9 @@ export async function PUT(
         updates.plan_type ?? (plan as { plan_type?: string }).plan_type ?? "main",
       );
       if (planType === "main") {
-        const { validateRequiredMainPlanKeys, syncPlanFeatures, syncPlanMarketingFeatures } =
-          await import("@/lib/subscription/plan-features");
+        const { validateRequiredMainPlanKeys } = await import(
+          "@/lib/subscription/plan-features"
+        );
         const validation = validateRequiredMainPlanKeys(featureKeys);
         if (validation) {
           return NextResponse.json({ success: false, error: validation }, { status: 400 });
@@ -238,15 +192,15 @@ export async function PUT(
       const { syncPlanFeatures, syncPlanMarketingFeatures } = await import(
         "@/lib/subscription/plan-features"
       );
-      await syncPlanFeatures(auth.db, id, featureKeys);
-      const labels = await syncPlanMarketingFeatures(auth.db, id, featureKeys);
+      await syncPlanFeatures(id, featureKeys);
+      const labels = await syncPlanMarketingFeatures(id, featureKeys);
       updates.features = labels;
     }
 
-    const synced = await syncPlanToPolarAndSave(auth.db, {
+    const synced = await syncPlanToPolarAndSave({
       ...plan,
       features: (updates.features as string[] | undefined) ?? plan.features,
-    } as Parameters<typeof syncPlanToPolarAndSave>[1]);
+    } as Parameters<typeof syncPlanToPolarAndSave>[0]);
 
     return NextResponse.json({
       success: true,
@@ -270,7 +224,7 @@ export async function PUT(
     console.error("PUT /api/admin/plans/[id]", error);
     return NextResponse.json(
       { success: false, error: "Failed to update plan" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { BranchSwitcher } from "@/components/shell/branch-switcher";
+import { NotificationBell } from "@/components/shell/notification-bell";
 import { useDashboardScrollHeader } from "@/components/shell/dashboard-scroll-header-context";
 import { dashboardText, dashboardChrome } from "@/components/dashboard/dashboard-tokens";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -44,7 +45,8 @@ export function DashboardShellBar({
         </AnimatePresence>
       </div>
       {showBranchSwitcher ? (
-        <div className="flex w-full min-w-0 justify-end md:w-auto">
+        <div className="flex w-full min-w-0 items-center justify-end gap-1 md:w-auto">
+          <NotificationBell />
           <BranchSwitcher className="max-w-full" />
         </div>
       ) : null}

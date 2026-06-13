@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { createClient } from '../../supabase/client'
+import { signOutClient } from '@/lib/auth/client-sign-out'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,8 +40,7 @@ export default function DashboardNavbar() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={async () => {
-                (await createClient()).auth.signOut()
-                router.refresh()
+                await signOutClient()
               }}>
                 Sign out
               </DropdownMenuItem>

@@ -1,3 +1,5 @@
+> **Stack:** Prisma (`DATABASE_URL`) for data; native JWT auth (`getAuthUser()`, cookies `pryrox_session` / `pryrox_refresh`). SQL migrations live in `supabase/migrations/` (`npm run db:sql:push`).
+
 # Sales Module
 
 ## Purpose
@@ -68,7 +70,7 @@ Stores one record per completed POS transaction.
 
 **Indexes:** `idx_sales_pharmacy_id` on `pharmacy_id`; `idx_sales_created_at` on `created_at`.
 
-**Realtime:** The `sales` table is added to the `supabase_realtime` publication, so new sales are broadcast to subscribed clients immediately.
+**Live UI:** Other dashboard pages detect new rows via `GET /api/realtime/updates` polling (`new_sale`), not Postgres realtime channels.
 
 ### `sale_items`
 
@@ -89,7 +91,7 @@ Stores one record per line item within a sale.
 
 **Index:** `idx_sale_items_sale_id` on `sale_id`.
 
-**Realtime:** The `sale_items` table is added to the `supabase_realtime` publication.
+**Reads:** Listed and aggregated in `/api/sales` and `/api/sales/analytics` via Prisma.
 
 **Trigger:** `handle_sale_stock_update_trigger` fires `AFTER INSERT` on `sale_items`. It decrements `inventory.quantity_in_stock` by `NEW.quantity` and inserts a `stock_movements` record with `movement_type = 'out'` and `reference_type = 'sale'`.
 
@@ -128,7 +130,7 @@ There is no `DELETE` policy on `sales`, meaning sales records cannot be deleted 
 | `pharmacist` | ⚠️ Partial | The route is accessible (middleware does not block it), but the `/sales` link is absent from `PharmacistSidebar`. Pharmacists must navigate directly to `/sales`. |
 | `superadmin` | ❌ No | Superadmin has platform-level analytics but no link to the per-pharmacy Sales page. |
 
-Access is enforced at the data layer by RLS. The middleware protects `/sales` from unauthenticated users but does not differentiate between authenticated roles.
+Access is enforced in API routes via `getAuthUser()` + `requireSessionPharmacyId()` (and optional branch scope). Middleware blocks unauthenticated users; sidebar links differ by role.
 
 ---
 
@@ -201,32 +203,24 @@ Customer distribution is classified as:
 ```
 Browser (SalesPage)
     │
-    ├─ useEffect → fetch('/api/sales')
-    │       │
+    ├─ fetch('/api/sales')
     │       └─ GET /api/sales
-    │               │
-    │               ├─ supabase.auth.getUser() → verify session
-    │               ├─ pharmacy_users → resolve pharmacy_id
-    │               ├─ sales.select('*').eq('pharmacy_id', ...).limit(20)
-    │               ├─ 3× aggregation queries (today / week / month totals)
-    │               └─ { sales: Sale[], stats: Stats }
+    │               ├─ getAuthUser() → empty payload if unauthenticated
+    │               ├─ requireSessionPharmacyId()
+    │               ├─ prisma.sales.findMany (latest 20, pharmacy_id)
+    │               ├─ prisma aggregations (today / week / month totals)
+    │               └─ { sales, stats }
     │
-    ├─ useEffect → fetch('/api/sales/analytics')
-    │       │
+    ├─ fetch('/api/sales/analytics')
     │       └─ GET /api/sales/analytics
-    │               │
-    │               ├─ supabase.auth.getUser() → verify session
-    │               ├─ pharmacy_users → resolve pharmacy_id
-    │               ├─ sales (last 7 days) → weeklySales
-    │               ├─ sales (last 30 days) → paymentBreakdown
-    │               ├─ sales (today) → hourlySales
-    │               ├─ sales (current + previous month) → monthlyComparison
-    │               ├─ sale_items JOIN sales JOIN inventory JOIN medications → topCategories
-    │               ├─ sales (last 30 days) → customerDistribution
-    │               └─ { weeklySales, paymentBreakdown, hourlySales,
-    │                    monthlyComparison, topCategories, customerDistribution }
+    │               ├─ getAuthUser() → EMPTY_RESPONSE if missing
+    │               ├─ requireSessionPharmacyId()
+    │               ├─ prisma.sales / sale_items queries (scoped pharmacy_id)
+    │               ├─ in-memory rollups → weeklySales, paymentBreakdown, hourlySales
+    │               ├─ monthlyComparison, topCategories (medication category join)
+    │               └─ customerDistribution
     │
-    └─ Client-side filter (search + period) → filteredSales → render table
+    └─ Client filter (search + period) on capped 20-row list → table
 ```
 
 ---
@@ -236,7 +230,7 @@ Browser (SalesPage)
 | Package | Purpose |
 |---|---|
 | `recharts` | Line charts, bar charts, pie/donut charts |
-| `@supabase/ssr` | Server-side Supabase client for session verification in API routes |
+| `getAuthUser()` | Session verification in API routes |
 | `lucide-react` | Icons (Receipt, DollarSign, TrendingUp, Calendar, Search, Filter, Download, etc.) |
 | `shadcn/ui` | Card, Badge, Button, Input, Select, Tabs, Table, ScrollArea, Separator, Progress components |
 
@@ -264,9 +258,9 @@ The KPI cards display "+15% from yesterday", "+8% from last week", "+12% from la
 
 `GET /api/sales` maps each sale to `items: 2` (a hardcoded mock value). The actual item count requires a join to `sale_items`, which is not performed. The Transactions table therefore always shows "2" in the Items column regardless of the real line-item count.
 
-### 6. Analytics API uses a fragile join for top categories
+### 6. Top categories depend on sale_items ↔ inventory linkage
 
-`GET /api/sales/analytics` attempts a nested join: `sale_items → sales → inventory → medications`. This join pattern (`inventory!inner(medications!inner(category))`) may not work correctly with Supabase's PostgREST query syntax and is likely to return empty `topCategories` data in production, causing the chart to fall back to hardcoded sample data.
+`GET /api/sales/analytics` builds `topCategories` from Prisma joins on `sale_items` → `inventory` → `medications`. Rows with missing `inventory_id` or deleted inventory batches are omitted from category totals; the UI may fall back to hardcoded chart data when the API returns an empty array.
 
 ### 7. `/api/accounting` is a stub
 
@@ -274,12 +268,12 @@ The KPI cards display "+15% from yesterday", "+8% from last week", "+12% from la
 
 ### 8. Pharmacist role has no Sales link
 
-The `PharmacistSidebar` does not include a link to `/sales`. Pharmacists who need to review sales history must navigate to the URL directly. This is likely an oversight rather than an intentional access restriction, since RLS permits all pharmacy staff to read sales data.
+The `PharmacistSidebar` does not include a link to `/sales`. Pharmacists who need to review sales history must navigate to the URL directly. This is likely an oversight rather than an intentional access restriction — the API permits any authenticated pharmacy member with a valid session pharmacy.
 
 ### 9. No error state in the UI
 
 If `/api/sales` or `/api/sales/analytics` fails, the page silently falls back to hardcoded mock data (defined in the `catch` blocks of both API routes and the page's `fetchSales` function). The user receives no indication that the displayed data is not real.
 
-### 10. `supabase.raw()` call in POST handler is invalid
+### 10. Stock decrement path
 
-`POST /api/sales` attempts to decrement inventory stock using `supabase.raw('quantity_in_stock - ?', [item.quantity])`. The `supabase-js` client does not have a `.raw()` method — this is a Knex.js pattern. This call will throw a runtime error, meaning inventory stock is **not decremented** when a sale is created via the API. Stock deduction only works correctly when triggered by the database-level `handle_sale_stock_update_trigger` (which fires on `sale_items` INSERT).
+`POST /api/sales` and `POST /api/pos/sale` decrement inventory via Prisma in the route/store layer (or DB triggers on `sale_items` insert, depending on code path). Verify the active branch’s `inventory.branch_id` when testing multi-site tenants.

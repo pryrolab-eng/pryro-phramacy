@@ -1,33 +1,43 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AdminReportsSummary, ExportableReport } from "@/lib/http/admin/reports";
+import { prisma } from "@/lib/db/prisma";
+import { storeCountPublicUsers } from "@/lib/db/public-users-store";
+import {
+  localUploadFileUrl,
+  UPLOAD_CATEGORIES,
+} from "@/lib/storage/local-files";
 
 /** Platform admin dashboard metrics (payments, MRR estimate, exportable reports). */
-export async function buildAdminReportsSummary(
-  db: SupabaseClient,
-): Promise<AdminReportsSummary> {
-  const [
-    { data: payments },
-    { data: completedTx },
-    { data: pendingTx },
-  ] = await Promise.all([
-    db
-      .from("payments")
-      .select("amount, created_at, pharmacy_id, payment_reference")
-      .eq("status", "completed"),
-    db
-      .from("payment_transactions")
-      .select("id, amount, created_at, completed_at, pharmacy_id")
-      .eq("status", "completed"),
-    db
-      .from("payment_transactions")
-      .select("id")
-      .in("status", ["pending", "processing"]),
+export async function buildAdminReportsSummary(): Promise<AdminReportsSummary> {
+  const [payments, completedTx, pendingTx] = await Promise.all([
+    prisma.payments.findMany({
+      where: { status: "completed" },
+      select: {
+        amount: true,
+        created_at: true,
+        pharmacy_id: true,
+        payment_reference: true,
+      },
+    }),
+    prisma.payment_transactions.findMany({
+      where: { status: "completed" },
+      select: {
+        id: true,
+        amount: true,
+        created_at: true,
+        completed_at: true,
+        pharmacy_id: true,
+      },
+    }),
+    prisma.payment_transactions.findMany({
+      where: { status: { in: ["pending", "processing"] } },
+      select: { id: true },
+    }),
   ]);
 
   const linkedTxIds = new Set(
-    (payments ?? [])
-      .map((p) => (p as { payment_reference?: string | null }).payment_reference)
-      .filter(Boolean),
+    payments
+      .map((p) => p.payment_reference)
+      .filter((ref): ref is string => Boolean(ref)),
   );
 
   type RevenueRow = {
@@ -38,48 +48,33 @@ export async function buildAdminReportsSummary(
 
   const revenueRows: RevenueRow[] = [];
 
-  (payments ?? []).forEach((p) => {
-    const row = p as {
-      amount?: unknown;
-      created_at?: string | null;
-      pharmacy_id?: string | null;
-    };
+  payments.forEach((row) => {
     if (!row.created_at) return;
     revenueRows.push({
       amount: Number(row.amount ?? 0),
-      created_at: row.created_at,
-      pharmacy_id: row.pharmacy_id ?? null,
+      created_at: row.created_at.toISOString(),
+      pharmacy_id: row.pharmacy_id,
     });
   });
 
-  (completedTx ?? []).forEach((t) => {
-    const row = t as {
-      id: string;
-      amount?: unknown;
-      created_at?: string | null;
-      completed_at?: string | null;
-      pharmacy_id?: string | null;
-    };
+  completedTx.forEach((row) => {
     if (linkedTxIds.has(row.id)) return;
-    const at = row.completed_at || row.created_at;
+    const at = row.completed_at ?? row.created_at;
     if (!at) return;
     revenueRows.push({
       amount: Number(row.amount ?? 0),
-      created_at: at,
-      pharmacy_id: row.pharmacy_id ?? null,
+      created_at: at.toISOString(),
+      pharmacy_id: row.pharmacy_id,
     });
   });
 
   const totalRevenue = revenueRows.reduce((sum, r) => sum + r.amount, 0);
 
-  const { count: activePharmacyCount } = await db
-    .from("pharmacies")
-    .select("*", { count: "exact", head: true })
-    .in("status", ["active", "trial"]);
+  const activePharmacyCount = await prisma.pharmacies.count({
+    where: { status: { in: ["active", "trial"] } },
+  });
 
-  const { count: userCount } = await db
-    .from("users")
-    .select("*", { count: "exact", head: true });
+  const userCount = await storeCountPublicUsers();
 
   const monthlyData = new Map<
     string,
@@ -110,20 +105,32 @@ export async function buildAdminReportsSummary(
       pharmacies: data.pharmacies.size,
     }));
 
-  const { data: subscriptions } = await db
-    .from("subscriptions")
-    .select("plan, pharmacy_id")
-    .eq("is_active", true);
-
-  const { data: planRows } = await db
-    .from("subscription_plans")
-    .select("name, price");
+  const [subscriptions, planRows, reportRows] = await Promise.all([
+    prisma.subscriptions.findMany({
+      where: { is_active: true },
+      select: { plan: true, pharmacy_id: true },
+    }),
+    prisma.subscription_plans.findMany({
+      select: { name: true, price: true },
+    }),
+    prisma.platform_admin_reports.findMany({
+      orderBy: { generated_at: "desc" },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        category: true,
+        generated_at: true,
+        storage_bucket: true,
+        storage_object_path: true,
+      },
+    }),
+  ]);
 
   const planData: Record<string, { count: number; revenue: number }> = {};
 
-  (subscriptions ?? []).forEach((s) => {
-    const row = s as { plan?: string | null };
-    const key = String(row.plan ?? "unknown");
+  subscriptions.forEach((s) => {
+    const key = String(s.plan ?? "unknown");
     if (!planData[key]) {
       planData[key] = { count: 0, revenue: 0 };
     }
@@ -131,11 +138,9 @@ export async function buildAdminReportsSummary(
   });
 
   const planBreakdown = Object.entries(planData).map(([plan_name, data]) => {
-    const plan = planRows?.find(
-      (p) =>
-        String((p as { name?: string }).name).toLowerCase() ===
-        plan_name.toLowerCase(),
-    ) as { name?: string; price?: unknown } | undefined;
+    const plan = planRows.find(
+      (p) => p.name.toLowerCase() === plan_name.toLowerCase(),
+    );
     const price = Number(plan?.price ?? 0);
     return {
       plan_name,
@@ -144,46 +149,24 @@ export async function buildAdminReportsSummary(
     };
   });
 
-  const { data: reportRows, error: reportsListError } = await db
-    .from("platform_admin_reports")
-    .select(
-      "id, name, description, category, storage_bucket, storage_object_path, generated_at",
-    )
-    .order("generated_at", { ascending: false });
-
-  const exportableReports: ExportableReport[] = [];
-  const signTtlSec = 3600;
-
-  if (reportsListError) {
-    const missingTable =
-      reportsListError.code === "PGRST205" ||
-      (typeof reportsListError.message === "string" &&
-        reportsListError.message.includes("platform_admin_reports"));
-    if (missingTable) {
-      console.warn(
-        "[admin/reports-summary] platform_admin_reports not in DB yet — run migration 20250618100000_platform_admin_reports.sql. exportableReports left empty.",
-      );
-    } else {
-      console.error("platform_admin_reports list:", reportsListError);
-    }
-  } else {
-    for (const row of reportRows ?? []) {
-      const { data: signed, error: signError } = await db.storage
-        .from(row.storage_bucket)
-        .createSignedUrl(row.storage_object_path, signTtlSec);
-      if (signError) {
-        console.error("report signed URL", row.id, signError);
-      }
-      exportableReports.push({
-        id: row.id,
-        name: row.name,
-        description: row.description,
-        category: row.category,
-        lastGenerated: new Date(row.generated_at).toLocaleString(),
-        downloadUrl: signed?.signedUrl ?? null,
-      });
-    }
-  }
+  const exportableReports: ExportableReport[] = reportRows.map((row) => {
+    const downloadUrl =
+      row.storage_bucket === UPLOAD_CATEGORIES.platformReports &&
+      row.storage_object_path
+        ? localUploadFileUrl(
+            UPLOAD_CATEGORIES.platformReports,
+            row.storage_object_path,
+          )
+        : null;
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      category: row.category,
+      lastGenerated: new Date(row.generated_at).toLocaleString(),
+      downloadUrl,
+    };
+  });
 
   const estimatedMrr = planBreakdown.reduce((sum, p) => sum + p.revenue, 0);
 
@@ -191,8 +174,8 @@ export async function buildAdminReportsSummary(
     totalRevenue,
     estimatedMrr,
     completedPaymentCount: revenueRows.length,
-    pendingPaymentCount: pendingTx?.length ?? 0,
-    activePharmacies: activePharmacyCount ?? 0,
+    pendingPaymentCount: pendingTx.length,
+    activePharmacies: activePharmacyCount,
     totalUsers: userCount ?? 0,
     revenueData,
     planBreakdown,

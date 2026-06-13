@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient } from "../../../../../supabase/service";
 import { applyScheduledSubscriptionChanges } from "@/lib/subscription/apply-scheduled-changes";
 
 function authorizeCron(request: NextRequest): boolean {
@@ -32,8 +31,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const admin = createServiceClient();
-    const result = await applyScheduledSubscriptionChanges(admin);
+    const result = await applyScheduledSubscriptionChanges();
 
     return NextResponse.json({
       success: true,

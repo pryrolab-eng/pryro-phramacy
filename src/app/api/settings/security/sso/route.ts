@@ -1,32 +1,30 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { createClient } from '../../../../../../supabase/server'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import {
+  getPharmacySecuritySetting,
+  upsertPharmacySecuritySettingFromDb,
+} from "@/lib/db/ip-whitelist";
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { enabled } = await request.json()
+    const { enabled } = await request.json();
+    const pharmacyId = await requireSessionPharmacyId(user.id);
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+    const existing = (await getPharmacySecuritySetting(pharmacyId)) ?? {};
+    await upsertPharmacySecuritySettingFromDb(pharmacyId, {
+      ...existing,
+      sso_enabled: Boolean(enabled),
+    });
 
-    const { error } = await supabase
-      .from('security_settings')
-      .upsert({
-        pharmacy_id: pharmacyId,
-        sso_enabled: enabled
-      })
-
-    if (error) throw error
-
-    return NextResponse.json({ success: true, enabled })
+    return NextResponse.json({ success: true, enabled });
   } catch (error) {
-    console.error('SSO toggle error:', error)
-    return NextResponse.json({ error: 'Failed to toggle SSO' }, { status: 500 })
+    console.error("SSO toggle error:", error);
+    return NextResponse.json({ error: "Failed to toggle SSO" }, { status: 500 });
   }
 }

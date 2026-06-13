@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { createClient } from '../../supabase/client'
+import { signOutClient } from '@/lib/auth/client-sign-out'
 import { Button } from './ui/button'
 import { Card, CardContent } from './ui/card'
 import { 
@@ -123,47 +123,26 @@ export default function Sidebar() {
     }
     
     const getUserRole = async () => {
-      const supabase = createClient()
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-        let role = 'pharmacy_owner'
-        
-        if (user) {
-          // Check if user is super admin by email
-          if (user.email === 'abdousentore@gmail.com') {
-            role = 'superadmin'
-          } else {
-            // Check pharmacy_users table for pharmacy-specific roles
-            const { data: pharmacyUser } = await supabase
-              .from('pharmacy_users')
-              .select('role')
-              .eq('user_id', user.id)
-              .eq('is_active', true)
-              .single()
-            
-            if (pharmacyUser?.role) {
-              role = pharmacyUser.role
-            } else {
-              role = 'pharmacist'
-            }
-          }
+        const res = await fetch('/api/me/context', { credentials: 'include' })
+        if (!res.ok) throw new Error('Failed to load session context')
+        const ctx = await res.json() as {
+          role?: string | null
+          user?: { fullName?: string | null; email?: string | null; isPlatformAdmin?: boolean }
         }
-        
+
+        let role = ctx.role ?? 'pharmacist'
+        if (ctx.user?.isPlatformAdmin) {
+          role = 'superadmin'
+        }
+
+        const displayName =
+          ctx.user?.fullName ||
+          ctx.user?.email?.split('@')[0] ||
+          'User'
+
         setUserRole(role)
-        
-        // Get display name from database
-        let displayName = 'User'
-        if (user) {
-          const { data: userData } = await supabase
-            .from('pharmacy_users')
-            .select('display_name')
-            .eq('user_id', user.id)
-            .single()
-          
-          displayName = userData?.display_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
-        }
-        
-        setUserName(displayName || 'User')
+        setUserName(displayName)
         sessionStorage.setItem('userRole', role)
       } catch (error) {
         console.error('Error getting user role:', error)
@@ -188,8 +167,7 @@ export default function Sidebar() {
 
   const handleSignOut = async () => {
     sessionStorage.removeItem('userRole');
-    (await createClient()).auth.signOut()
-    router.push('/sign-in')
+    await signOutClient();
   }
 
   if (isLoading) {

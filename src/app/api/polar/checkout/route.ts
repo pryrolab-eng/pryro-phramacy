@@ -1,6 +1,5 @@
-import { NextRequest } from "next/server";
-import { createRouteHandlerClient } from "../../../../../supabase/route-handler";
-import { createServiceClient } from "../../../../../supabase/service";
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import {
   getPolarClient,
   isPolarConfigured,
@@ -13,29 +12,28 @@ import {
   isValidEmail,
   normalizeEmail,
 } from "@/lib/validation/email";
+import { storeFindFirstActiveMembership } from "@/lib/db/pharmacy-users-store";
+import { storeCreatePaymentTransaction } from "@/lib/db/payment-transactions-store";
+import { prisma } from "@/lib/db/prisma";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function POST(request: NextRequest) {
-  const { supabase, json } = createRouteHandlerClient(request);
-
   if (!isPolarConfigured()) {
-    return json(
+    return NextResponse.json(
       {
         error:
           "Card checkout is not configured. Use Mobile Money or contact support.",
       },
-      { status: 503 }
+      { status: 503 },
     );
   }
 
   try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getAuthUser();
     if (!user) {
-      return json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
@@ -48,65 +46,56 @@ export async function POST(request: NextRequest) {
     const customerName = (body.customerName as string) || "Pharmacy customer";
 
     if (!customerEmail) {
-      return json({ error: INVALID_EMAIL_MESSAGE }, { status: 400 });
+      return NextResponse.json({ error: INVALID_EMAIL_MESSAGE }, { status: 400 });
     }
 
     if (!isValidEmail(customerEmail)) {
-      return json({ error: INVALID_EMAIL_MESSAGE }, { status: 400 });
+      return NextResponse.json({ error: INVALID_EMAIL_MESSAGE }, { status: 400 });
     }
 
     if (!planId || !subscriptionId) {
-      return json(
+      return NextResponse.json(
         { error: "planId and subscriptionId are required." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const admin = createServiceClient();
-
-    const { data: membership } = await admin
-      .from("pharmacy_users")
-      .select("pharmacy_id")
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
-
+    const membership = await storeFindFirstActiveMembership(user.id);
     if (!membership?.pharmacy_id) {
-      return json({ error: "Pharmacy not found" }, { status: 403 });
+      return NextResponse.json({ error: "Pharmacy not found" }, { status: 403 });
     }
 
-    let planQuery = admin
-      .from("subscription_plans")
-      .select("id, name, price, polar_product_id")
-      .eq("is_active", true);
+    const plan = UUID_RE.test(planId)
+      ? await prisma.subscription_plans.findFirst({
+          where: { is_active: true, id: planId },
+          select: { id: true, name: true, price: true, polar_product_id: true },
+        })
+      : await prisma.subscription_plans.findFirst({
+          where: {
+            is_active: true,
+            name: { equals: planId, mode: "insensitive" },
+          },
+          select: { id: true, name: true, price: true, polar_product_id: true },
+        });
 
-    if (UUID_RE.test(planId)) {
-      planQuery = planQuery.eq("id", planId);
-    } else {
-      planQuery = planQuery.ilike("name", planId);
-    }
-
-    const { data: plan, error: planError } = await planQuery.maybeSingle();
-
-    if (planError || !plan) {
-      return json({ error: "Plan not found" }, { status: 404 });
+    if (!plan) {
+      return NextResponse.json({ error: "Plan not found" }, { status: 404 });
     }
 
     if (Number(plan.price) <= 0) {
-      return json(
+      return NextResponse.json(
         { error: "Free plans do not require Polar checkout." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const polarProductId = plan.polar_product_id as string | null;
+    const polarProductId = plan.polar_product_id;
     if (!polarProductId) {
-      return json(
+      return NextResponse.json(
         {
           error: `Plan "${plan.name}" is not synced to Polar yet. Save the plan in Admin → Subscriptions or click "Sync all to Polar".`,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -130,41 +119,32 @@ export async function POST(request: NextRequest) {
       Number(plan.price),
     );
 
-    const { data: transaction, error: txError } = await admin
-      .from("payment_transactions")
-      .insert({
-        pharmacy_id: membership.pharmacy_id,
-        subscription_id: subscriptionId,
-        kpay_refid: refid,
-        polar_checkout_id: checkout.id,
-        payment_provider: "polar",
-        amount,
-        currency,
-        payment_method: "polar",
-        customer_name: customerName,
-        customer_email: customerEmail,
-        customer_phone: body.customerPhone || null,
-        payment_details: `${plan.name} subscription — ${paymentDetailsSuffix}`,
-        status: "pending",
-        kpay_checkout_url: checkout.url,
-      })
-      .select("id")
-      .single();
+    const transaction = await storeCreatePaymentTransaction({
+      pharmacy_id: membership.pharmacy_id,
+      subscription_id: subscriptionId,
+      kpay_refid: refid,
+      polar_checkout_id: checkout.id,
+      payment_provider: "polar",
+      amount,
+      currency,
+      payment_method: "polar",
+      customer_name: customerName,
+      customer_email: customerEmail,
+      customer_phone: body.customerPhone || null,
+      payment_details: `${plan.name} subscription — ${paymentDetailsSuffix}`,
+      status: "pending",
+      kpay_checkout_url: checkout.url,
+    });
 
-    if (txError) {
-      console.error("Polar checkout: payment_transactions insert", txError);
-      return json({ error: "Could not record payment" }, { status: 500 });
-    }
-
-    return json({
+    return NextResponse.json({
       success: true,
       checkoutUrl: checkout.url,
       checkoutId: checkout.id,
-      transactionId: transaction?.id,
+      transactionId: transaction.id,
     });
   } catch (e: unknown) {
     console.error("POST /api/polar/checkout", e);
-    return json(
+    return NextResponse.json(
       { error: formatPolarCheckoutError(e) },
       { status: 500 },
     );

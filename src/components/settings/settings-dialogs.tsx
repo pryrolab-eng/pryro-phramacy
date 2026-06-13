@@ -2,6 +2,7 @@
 
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
+import { IpWhitelistManageFields } from "@/components/security/ip-whitelist-manage-fields";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -160,6 +161,38 @@ export function SettingsDialogs() {
                 </DashboardButton>
               </div>
             )}
+          </DashboardDialogBody>
+        </DashboardDialogContent>
+      </Dialog>
+
+      <Dialog open={s.isIpWhitelistOpen} onOpenChange={s.setIsIpWhitelistOpen}>
+        <DashboardDialogContent className="sm:max-w-lg">
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Pharmacy IP whitelist</DashboardDialogTitle>
+            <DashboardDialogDescription>
+              Allowed addresses for this pharmacy workspace
+              {s.currentIp ? (
+                <>
+                  {" "}
+                  — your IP:{" "}
+                  <span className="font-mono">{s.currentIp}</span>
+                </>
+              ) : null}
+            </DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogBody>
+            <IpWhitelistManageFields
+              ips={s.ipWhitelist}
+              newIp={s.newIp}
+              onNewIpChange={s.setNewIp}
+              addPending={s.addIpMutation.isPending}
+              onAdd={async (body) => {
+                await s.addIpMutation.mutateAsync(body);
+              }}
+              onRemove={async (id) => {
+                await s.removeIpMutation.mutateAsync(id);
+              }}
+            />
           </DashboardDialogBody>
         </DashboardDialogContent>
       </Dialog>

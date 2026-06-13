@@ -1,7 +1,7 @@
 ﻿# Database Reference — Pryrox
 
-> **Source:** Derived from all 36 migration files under `supabase/migrations/`, read in chronological order.
-> **Last updated:** Reflects schema state through migration `20250101000001_subscription_expiry_functions.sql`.
+> **Source:** Derived from migration files under `supabase/migrations/` (apply with `npm run db:sql:push`).
+> **Runtime access:** Prisma (`DATABASE_URL`, `prisma/schema.prisma`). This document describes the PostgreSQL schema, not the old Supabase JS client layer.
 
 ---
 

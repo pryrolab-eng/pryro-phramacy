@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { logSubscriptionChangeEvent } from "./change-events";
 import { isDowngrade, isSameTier, planPriceNumber } from "./compare-plans";
 import { resolvePharmacyEntitlements } from "./lifecycle/entitlements";
@@ -15,7 +14,7 @@ import type {
   ScheduledChangeInfo,
   SubscriptionLifecycleStatus,
 } from "./lifecycle/types";
-import { computeSubscriptionExpiresAt, planNameToEnum } from "./plan-enum";
+import { computeSubscriptionExpiresAt } from "./plan-enum";
 import {
   branchHasAddonSubscription,
   getBranchCapacity,
@@ -24,10 +23,32 @@ import {
   provisionBranchUsageForBranch,
   provisionBranchUsageForMainSubscription,
 } from "./provision-branch-usage";
-import { SUBSCRIPTION_CURRENT_PLAN_EMBED } from "./embed-plan";
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import {
+  storeGetCatalogPlanDetailsById,
+  storeResolveCatalogPlan,
+} from "@/lib/db/subscriptions-store";
+import {
+  storeActivatePendingSubscription,
+  storeCancelPendingBranchAddonSubscriptions,
+  storeCancelPendingMainSubscriptions,
+  storeClearAppliedScheduleMetadata,
+  storeClearSubscriptionScheduleFields,
+  storeCreateActiveFreeMainSubscription,
+  storeCreateActiveMainSubscription,
+  storeCreatePendingBranchAddonSubscription,
+  storeCreatePendingMainSubscription,
+  storeCreatePharmacyBranch,
+  storeDeactivateOtherMainSubscriptions,
+  storeFindPharmacyBranch,
+  storeGetMainSubscriptionRow,
+  storeGetSubscriptionById,
+  storeCancelMainSubscription,
+  storeListDueScheduledDowngradeRows,
+  storeListExpiredMainSubscriptions,
+  storeMarkSubscriptionCancelledApplied,
+  storeMarkSubscriptionExpired,
+  storeScheduleMainSubscriptionDowngrade,
+} from "@/lib/db/subscription-writes-store";
 
 export class SubscriptionPlanChangeError extends Error {
   constructor(
@@ -92,12 +113,12 @@ export type ApplyScheduledBatchResult = {
  * Single authoritative write path for subscription lifecycle.
  */
 export class SubscriptionOrchestrator {
-  constructor(private readonly admin: SupabaseClient) {}
+  constructor() {}
 
   // ─── Read ─────────────────────────────────────────────
 
   async getEntitlements(pharmacyId: string): Promise<PharmacyEntitlements> {
-    return resolvePharmacyEntitlements(this.admin, pharmacyId);
+    return resolvePharmacyEntitlements(pharmacyId);
   }
 
   async getScheduledChange(
@@ -110,58 +131,11 @@ export class SubscriptionOrchestrator {
   // ─── Plan catalog ───────────────────────────────────────
 
   async resolveCatalogPlan(planIdOrName: string): Promise<CatalogPlanInput> {
-    let q = this.admin
-      .from("subscription_plans")
-      .select("id, name, price, period, billing_period, is_active")
-      .eq("is_active", true);
-
-    if (UUID_RE.test(planIdOrName)) {
-      q = q.eq("id", planIdOrName);
-    } else {
-      q = q.ilike("name", planIdOrName);
-    }
-
-    const { data: plan, error } = await q.maybeSingle();
-    if (error || !plan) {
-      throw new Error("Plan not found or is not available");
-    }
-    return {
-      id: plan.id as string,
-      name: String(plan.name),
-      price: plan.price,
-      period: (plan.period as string) ?? null,
-      billing_period: (plan.billing_period as string) ?? null,
-    };
+    return storeResolveCatalogPlan(planIdOrName);
   }
 
   private async getMainSubscriptionRow(pharmacyId: string) {
-    const { data, error } = await this.admin
-      .from("subscriptions")
-      .select(
-        `
-        id,
-        pharmacy_id,
-        plan_id,
-        plan,
-        status,
-        is_active,
-        expires_at,
-        payment_method,
-        next_plan_id,
-        change_scheduled_at,
-        pending_change_status,
-        ${SUBSCRIPTION_CURRENT_PLAN_EMBED} ( id, name, price, period )
-      `
-      )
-      .eq("pharmacy_id", pharmacyId)
-      .eq("subscription_type", "main")
-      .in("status", ["active", "scheduled_change", "pending_payment", "pending"])
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw new Error(error.message);
-    return data;
+    return storeGetMainSubscriptionRow(pharmacyId);
   }
 
   private async assertUpgrade(
@@ -192,39 +166,19 @@ export class SubscriptionOrchestrator {
   }
 
   private async clearScheduleFields(subscriptionId: string): Promise<void> {
-    await this.admin
-      .from("subscriptions")
-      .update({
-        next_plan_id: null,
-        change_scheduled_at: null,
-        change_type: null,
-        pending_change_status: null,
-        status: "active",
-        is_active: true,
-      })
-      .eq("id", subscriptionId);
+    await storeClearSubscriptionScheduleFields(subscriptionId);
   }
 
   private async deactivateOtherMainSubscriptions(
     pharmacyId: string,
     exceptId: string
   ): Promise<void> {
-    await this.admin
-      .from("subscriptions")
-      .update({
-        status: "cancelled",
-        is_active: false,
-        cancelled_at: new Date().toISOString(),
-      })
-      .eq("pharmacy_id", pharmacyId)
-      .eq("subscription_type", "main")
-      .neq("id", exceptId)
-      .in("status", ["active", "scheduled_change", "pending_payment", "pending"]);
+    await storeDeactivateOtherMainSubscriptions(pharmacyId, exceptId);
   }
 
   private async syncProjection(pharmacyId: string): Promise<void> {
     const ent = await this.getEntitlements(pharmacyId);
-    await syncPharmacySubscriptionProjection(this.admin, pharmacyId, {
+    await syncPharmacySubscriptionProjection(pharmacyId, {
       plan: ent.effectivePlan,
       expiresAt: ent.expiresAt,
       accessAllowed: ent.isAccessAllowed,
@@ -249,42 +203,16 @@ export class SubscriptionOrchestrator {
 
     await this.assertUpgrade(pharmacyId, plan);
 
-    await this.admin
-      .from("subscriptions")
-      .update({
-        status: "cancelled",
-        is_active: false,
-        payment_method: "cancelled",
-      })
-      .eq("pharmacy_id", pharmacyId)
-      .eq("subscription_type", "main")
-      .in("status", ["pending_payment", "pending"]);
+    await storeCancelPendingMainSubscriptions(pharmacyId);
 
-    const planEnum = planNameToEnum(plan.name);
-
-    const { data: subscription, error } = await this.admin
-      .from("subscriptions")
-      .insert({
-        pharmacy_id: pharmacyId,
-        plan_id: plan.id,
-        plan: planEnum,
-        subscription_type: "main",
-        status: "pending_payment",
-        is_active: false,
-        expires_at: null,
-        current_period_start: null,
-        current_period_end: null,
-        payment_method: "pending",
-      })
-      .select("id")
-      .single();
-
-    if (error || !subscription) {
-      throw new Error(error?.message || "Failed to create pending subscription");
-    }
+    const subscriptionId = await storeCreatePendingMainSubscription({
+      pharmacyId,
+      planId: plan.id,
+      planName: plan.name,
+    });
 
     return {
-      subscriptionId: subscription.id as string,
+      subscriptionId,
       planId: plan.id,
       planName: plan.name,
       amount: planPrice,
@@ -313,33 +241,16 @@ export class SubscriptionOrchestrator {
       plan.period ?? plan.billing_period,
       now
     );
-    const planEnum = planNameToEnum(plan.name);
-
-    const { data: subscription, error } = await this.admin
-      .from("subscriptions")
-      .insert({
-        pharmacy_id: pharmacyId,
-        plan_id: plan.id,
-        plan: planEnum,
-        subscription_type: "main",
-        status: "active",
-        is_active: true,
-        expires_at: expiresAt.toISOString(),
-        current_period_start: now.toISOString(),
-        current_period_end: expiresAt.toISOString(),
-        payment_method: "free",
-      })
-      .select("id")
-      .single();
-
-    if (error || !subscription) {
-      throw new Error(error?.message || "Failed to activate free plan");
-    }
-
-    const subId = subscription.id as string;
+    const subId = await storeCreateActiveFreeMainSubscription({
+      pharmacyId,
+      planId: plan.id,
+      planName: plan.name,
+      expiresAt,
+      periodStart: now,
+    });
     await this.deactivateOtherMainSubscriptions(pharmacyId, subId);
     await this.syncProjection(pharmacyId);
-    await provisionBranchUsageForMainSubscription(this.admin, {
+    await provisionBranchUsageForMainSubscription({
       pharmacyId,
       subscriptionId: subId,
       planId: plan.id,
@@ -362,7 +273,7 @@ export class SubscriptionOrchestrator {
     subscriptionType: string | null | undefined
   ): Promise<void> {
     if (subscriptionType === "branch_addon") return;
-    await provisionBranchUsageForMainSubscription(this.admin, {
+    await provisionBranchUsageForMainSubscription({
       pharmacyId,
       subscriptionId,
       planId,
@@ -377,7 +288,7 @@ export class SubscriptionOrchestrator {
     branchId: string | null
   ): Promise<void> {
     if (subscriptionType === "branch_addon" && branchId && planId) {
-      await provisionBranchUsageForBranch(this.admin, {
+      await provisionBranchUsageForBranch({
         branchId,
         pharmacyId,
         subscriptionId,
@@ -395,13 +306,9 @@ export class SubscriptionOrchestrator {
 
   private async resolveBranchAddonPlan(planIdOrName: string) {
     const plan = await this.resolveCatalogPlan(planIdOrName);
-    const { data: row, error } = await this.admin
-      .from("subscription_plans")
-      .select("id, name, price, period, billing_period, plan_type, monthly_tx_limit")
-      .eq("id", plan.id)
-      .maybeSingle();
+    const row = await storeGetCatalogPlanDetailsById(plan.id);
 
-    if (error || !row) {
+    if (!row) {
       throw new Error("Branch add-on plan not found");
     }
     if (row.plan_type !== "branch_addon") {
@@ -409,7 +316,7 @@ export class SubscriptionOrchestrator {
     }
     return {
       ...plan,
-      monthly_tx_limit: row.monthly_tx_limit as number,
+      monthly_tx_limit: row.monthly_tx_limit,
     };
   }
 
@@ -443,7 +350,7 @@ export class SubscriptionOrchestrator {
       );
     }
 
-    const capacity = await getBranchCapacity(this.admin, pharmacyId);
+    const capacity = await getBranchCapacity(pharmacyId);
     let branchId = options.branchId;
     let branchName = "";
 
@@ -462,81 +369,43 @@ export class SubscriptionOrchestrator {
         );
       }
 
-      const { data: branch, error: branchErr } = await this.admin
-        .from("branches")
-        .insert({
-          pharmacy_id: pharmacyId,
-          name: options.newBranch.name.trim(),
-          address: options.newBranch.address?.trim() || null,
-          phone: options.newBranch.phone?.trim() || null,
-          email: options.newBranch.email?.trim() || null,
-          is_active: true,
-        })
-        .select("id, name")
-        .single();
-
-      if (branchErr || !branch) {
-        throw new Error(branchErr?.message || "Failed to create branch");
-      }
-      branchId = branch.id as string;
-      branchName = String(branch.name);
+      const branch = await storeCreatePharmacyBranch({
+        pharmacyId,
+        name: options.newBranch.name.trim(),
+        address: options.newBranch.address?.trim() || null,
+        phone: options.newBranch.phone?.trim() || null,
+        email: options.newBranch.email?.trim() || null,
+      });
+      branchId = branch.id;
+      branchName = branch.name;
     }
 
     if (!branchId) {
       throw new Error("branch_id or newBranch is required");
     }
 
-    const { data: branchRow } = await this.admin
-      .from("branches")
-      .select("id, name, pharmacy_id")
-      .eq("id", branchId)
-      .eq("pharmacy_id", pharmacyId)
-      .maybeSingle();
+    const branchRow = await storeFindPharmacyBranch({ pharmacyId, branchId });
 
     if (!branchRow) {
       throw new Error("Branch not found for this pharmacy");
     }
-    branchName = branchName || String(branchRow.name);
+    branchName = branchName || branchRow.name;
 
-    if (await branchHasAddonSubscription(this.admin, pharmacyId, branchId)) {
+    if (await branchHasAddonSubscription(pharmacyId, branchId)) {
       throw new Error("This branch already has a branch add-on subscription");
     }
 
-    await this.admin
-      .from("subscriptions")
-      .update({
-        status: "cancelled",
-        is_active: false,
-        payment_method: "cancelled",
-      })
-      .eq("pharmacy_id", pharmacyId)
-      .eq("branch_id", branchId)
-      .eq("subscription_type", "branch_addon")
-      .in("status", ["pending_payment", "pending"]);
+    await storeCancelPendingBranchAddonSubscriptions({ pharmacyId, branchId });
 
-    const planEnum = planNameToEnum(plan.name);
-    const { data: subscription, error } = await this.admin
-      .from("subscriptions")
-      .insert({
-        pharmacy_id: pharmacyId,
-        plan_id: plan.id,
-        branch_id: branchId,
-        plan: planEnum,
-        subscription_type: "branch_addon",
-        status: "pending_payment",
-        is_active: false,
-        expires_at: null,
-        payment_method: "pending",
-      })
-      .select("id")
-      .single();
-
-    if (error || !subscription) {
-      throw new Error(error?.message || "Failed to create pending branch add-on");
-    }
+    const subscriptionId = await storeCreatePendingBranchAddonSubscription({
+      pharmacyId,
+      planId: plan.id,
+      planName: plan.name,
+      branchId,
+    });
 
     return {
-      subscriptionId: subscription.id as string,
+      subscriptionId,
       planId: plan.id,
       planName: plan.name,
       amount: planPrice,
@@ -555,22 +424,16 @@ export class SubscriptionOrchestrator {
     subscriptionId: string,
     meta?: PaymentActivationMeta
   ): Promise<{ ok: boolean; error?: string; alreadyActive?: boolean }> {
-    const { data: sub, error: subErr } = await this.admin
-      .from("subscriptions")
-      .select(
-        "id, pharmacy_id, plan_id, plan, status, expires_at, subscription_type, branch_id"
-      )
-      .eq("id", subscriptionId)
-      .maybeSingle();
+    const sub = await storeGetSubscriptionById(subscriptionId);
 
-    if (subErr || !sub) {
-      return { ok: false, error: subErr?.message || "Subscription not found" };
+    if (!sub) {
+      return { ok: false, error: "Subscription not found" };
     }
 
-    const pharmacyId = sub.pharmacy_id as string;
-    const planId = sub.plan_id as string | null;
-    const subscriptionType = sub.subscription_type as string | null | undefined;
-    const branchId = (sub.branch_id as string | null) ?? null;
+    const pharmacyId = sub.pharmacy_id;
+    const planId = sub.plan_id;
+    const subscriptionType = sub.subscription_type;
+    const branchId = sub.branch_id;
 
     const status = normalizeLifecycleStatus(sub.status, {});
     if (status === "active" && sub.expires_at) {
@@ -596,36 +459,22 @@ export class SubscriptionOrchestrator {
 
     let periodSource: string | null = null;
     if (sub.plan_id) {
-      const { data: catalog } = await this.admin
-        .from("subscription_plans")
-        .select("name, period, billing_period")
-        .eq("id", sub.plan_id)
-        .maybeSingle();
-      periodSource =
-        (catalog?.period as string) ??
-        (catalog?.billing_period as string) ??
-        null;
+      const catalog = await storeGetCatalogPlanDetailsById(sub.plan_id);
+      periodSource = catalog?.period ?? catalog?.billing_period ?? null;
     }
 
     const now = new Date();
     const expiresAt = computeSubscriptionExpiresAt(periodSource, now);
-    const planEnum = planNameToEnum(
-      meta?.planName ?? String(sub.plan)
-    );
+    const planName = meta?.planName ?? String(sub.plan ?? "");
 
-    await this.admin
-      .from("subscriptions")
-      .update({
-        status: "active",
-        is_active: true,
-        plan: planEnum,
-        expires_at: expiresAt.toISOString(),
-        current_period_start: now.toISOString(),
-        current_period_end: expiresAt.toISOString(),
-        payment_method: meta?.paymentMethod ?? "paid",
-        payment_reference: meta?.paymentReference ?? null,
-      })
-      .eq("id", subscriptionId);
+    await storeActivatePendingSubscription({
+      subscriptionId,
+      planName,
+      expiresAt,
+      periodStart: now,
+      paymentMethod: meta?.paymentMethod ?? "paid",
+      paymentReference: meta?.paymentReference ?? null,
+    });
 
     if (subscriptionType !== "branch_addon") {
       await this.deactivateOtherMainSubscriptions(pharmacyId, subscriptionId);
@@ -704,19 +553,13 @@ export class SubscriptionOrchestrator {
     const replaced =
       active.pending_change_status === "scheduled" && !!active.next_plan_id;
 
-    await this.admin
-      .from("subscriptions")
-      .update({
-        next_plan_id: targetPlan.id,
-        change_scheduled_at: active.expires_at,
-        change_type: "downgrade",
-        pending_change_status: "scheduled",
-        status: "scheduled_change",
-        is_active: true,
-      })
-      .eq("id", active.id);
+    await storeScheduleMainSubscriptionDowngrade({
+      subscriptionId: active.id,
+      targetPlanId: targetPlan.id,
+      effectiveAt: active.expires_at as string,
+    });
 
-    await logSubscriptionChangeEvent(this.admin, {
+    await logSubscriptionChangeEvent({
       pharmacyId,
       subscriptionId: active.id as string,
       event: "downgrade_scheduled",
@@ -757,21 +600,11 @@ export class SubscriptionOrchestrator {
       return { canceled: false };
     }
 
-    await this.admin
-      .from("subscriptions")
-      .update({
-        next_plan_id: null,
-        change_scheduled_at: null,
-        change_type: null,
-        pending_change_status: null,
-        status: "active",
-        is_active: true,
-      })
-      .eq("id", active.id);
+    await storeClearSubscriptionScheduleFields(active.id);
 
-    await logSubscriptionChangeEvent(this.admin, {
+    await logSubscriptionChangeEvent({
       pharmacyId,
-      subscriptionId: active.id as string,
+      subscriptionId: active.id,
       event: "downgrade_canceled",
       fromPlanId: active.plan_id as string | null,
       toPlanId: active.next_plan_id as string,
@@ -782,28 +615,16 @@ export class SubscriptionOrchestrator {
   }
 
   async applyDueScheduledChanges(): Promise<ApplyScheduledBatchResult> {
-    const now = new Date().toISOString();
-    const { data: rows, error } = await this.admin
-      .from("subscriptions")
-      .select(
-        "id, pharmacy_id, plan_id, plan, expires_at, next_plan_id, change_scheduled_at, pending_change_status, status"
-      )
-      .eq("subscription_type", "main")
-      .eq("pending_change_status", "scheduled")
-      .not("next_plan_id", "is", null)
-      .lte("change_scheduled_at", now)
-      .in("status", ["active", "scheduled_change"]);
-
-    if (error) throw new Error(error.message);
+    const rows = await storeListDueScheduledDowngradeRows();
 
     const result: ApplyScheduledBatchResult = {
-      processed: rows?.length ?? 0,
+      processed: rows.length,
       applied: 0,
       skipped: 0,
       errors: [],
     };
 
-    for (const row of rows ?? []) {
+    for (const row of rows) {
       try {
         const applied = await this.applyScheduledDowngradeForRow(row);
         if (applied) result.applied += 1;
@@ -827,14 +648,7 @@ export class SubscriptionOrchestrator {
     const fromPlanId = row.plan_id;
     const pharmacyId = row.pharmacy_id as string;
 
-    await this.admin
-      .from("subscriptions")
-      .update({
-        status: "cancelled",
-        is_active: false,
-        pending_change_status: "applied",
-      })
-      .eq("id", row.id);
+    await storeMarkSubscriptionCancelledApplied(row.id);
 
     if (Number(targetPlan.price ?? 0) <= 0) {
       await this.activateFreePlanAfterDowngrade(pharmacyId, targetPlan);
@@ -842,51 +656,29 @@ export class SubscriptionOrchestrator {
       const now = new Date();
       const expiresAt = computeSubscriptionExpiresAt(
         targetPlan.period ?? targetPlan.billing_period,
-        now
+        now,
       );
-      const planEnum = planNameToEnum(targetPlan.name);
 
-      const { data: newSub, error: insertErr } = await this.admin
-        .from("subscriptions")
-        .insert({
-          pharmacy_id: pharmacyId,
-          plan_id: targetPlan.id,
-          plan: planEnum,
-          subscription_type: "main",
-          status: "active",
-          is_active: true,
-          expires_at: expiresAt.toISOString(),
-          current_period_start: now.toISOString(),
-          current_period_end: expiresAt.toISOString(),
-          payment_method: "scheduled_change",
-        })
-        .select("id")
-        .single();
+      const newSubId = await storeCreateActiveMainSubscription({
+        pharmacyId,
+        planId: targetPlan.id,
+        planName: targetPlan.name,
+        expiresAt,
+        periodStart: now,
+        paymentMethod: "scheduled_change",
+      });
 
-      if (insertErr || !newSub) {
-        throw new Error(insertErr?.message || "Failed to create downgraded subscription");
-      }
-
-      const newSubId = newSub.id as string;
       await this.deactivateOtherMainSubscriptions(pharmacyId, newSubId);
-      await provisionBranchUsageForMainSubscription(this.admin, {
+      await provisionBranchUsageForMainSubscription({
         pharmacyId,
         subscriptionId: newSubId,
         planId: targetPlan.id,
       });
     }
 
-    await this.admin
-      .from("subscriptions")
-      .update({
-        next_plan_id: null,
-        change_scheduled_at: null,
-        change_type: null,
-        pending_change_status: null,
-      })
-      .eq("id", row.id);
+    await storeClearAppliedScheduleMetadata(row.id);
 
-    await logSubscriptionChangeEvent(this.admin, {
+    await logSubscriptionChangeEvent({
       pharmacyId,
       subscriptionId: row.id,
       event: "downgrade_applied",
@@ -908,32 +700,16 @@ export class SubscriptionOrchestrator {
       plan.period ?? plan.billing_period,
       now
     );
-    const planEnum = planNameToEnum(plan.name);
-
-    const { data: subscription, error } = await this.admin
-      .from("subscriptions")
-      .insert({
-        pharmacy_id: pharmacyId,
-        plan_id: plan.id,
-        plan: planEnum,
-        subscription_type: "main",
-        status: "active",
-        is_active: true,
-        expires_at: expiresAt.toISOString(),
-        current_period_start: now.toISOString(),
-        current_period_end: expiresAt.toISOString(),
-        payment_method: "scheduled_change",
-      })
-      .select("id")
-      .single();
-
-    if (error || !subscription) {
-      throw new Error(error?.message || "Failed to activate free plan");
-    }
-
-    const subId = subscription.id as string;
+    const subId = await storeCreateActiveMainSubscription({
+      pharmacyId,
+      planId: plan.id,
+      planName: plan.name,
+      expiresAt,
+      periodStart: now,
+      paymentMethod: "scheduled_change",
+    });
     await this.deactivateOtherMainSubscriptions(pharmacyId, subId);
-    await provisionBranchUsageForMainSubscription(this.admin, {
+    await provisionBranchUsageForMainSubscription({
       pharmacyId,
       subscriptionId: subId,
       planId: plan.id,
@@ -946,49 +722,24 @@ export class SubscriptionOrchestrator {
     subscriptionId: string,
     pharmacyId: string
   ): Promise<void> {
-    const { error } = await this.admin
-      .from("subscriptions")
-      .update({
-        status: "cancelled",
-        is_active: false,
-        cancelled_at: new Date().toISOString(),
-        next_plan_id: null,
-        change_scheduled_at: null,
-        change_type: null,
-        pending_change_status: null,
-      })
-      .eq("id", subscriptionId)
-      .eq("pharmacy_id", pharmacyId);
-
-    if (error) throw new Error(error.message);
+    await storeCancelMainSubscription({ subscriptionId, pharmacyId });
     await this.syncProjection(pharmacyId);
   }
 
   /** Mark main subscriptions past expires_at as expired and sync pharmacy cache. */
   async processExpiredSubscriptions(): Promise<{ expired: number }> {
-    const now = new Date().toISOString();
-    const { data: rows } = await this.admin
-      .from("subscriptions")
-      .select("id, pharmacy_id, expires_at")
-      .eq("subscription_type", "main")
-      .in("status", ["active", "scheduled_change"])
-      .lt("expires_at", now);
+    const rows = await storeListExpiredMainSubscriptions();
 
     let count = 0;
-    for (const row of rows ?? []) {
-      await this.admin
-        .from("subscriptions")
-        .update({ status: "expired", is_active: false })
-        .eq("id", row.id);
-      await this.syncProjection(row.pharmacy_id as string);
+    for (const row of rows) {
+      await storeMarkSubscriptionExpired(row.id);
+      await this.syncProjection(row.pharmacy_id);
       count += 1;
     }
     return { expired: count };
   }
 }
 
-export function createSubscriptionOrchestrator(
-  admin: SupabaseClient
-): SubscriptionOrchestrator {
-  return new SubscriptionOrchestrator(admin);
+export function createSubscriptionOrchestrator(): SubscriptionOrchestrator {
+  return new SubscriptionOrchestrator();
 }

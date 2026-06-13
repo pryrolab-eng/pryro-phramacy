@@ -7,15 +7,25 @@ import {
   salesKeys,
   type SaleRow,
   type SalesAnalytics,
+  type SalesListParams,
   type SalesListResponse,
 } from "@/lib/http/sales";
 
-export { salesKeys, type SaleRow, type SalesAnalytics, type SalesListResponse } from "@/lib/http/sales";
+export {
+  salesKeys,
+  type SaleRow,
+  type SalesAnalytics,
+  type SalesListParams,
+  type SalesListResponse,
+} from "@/lib/http/sales";
 
-export function useSalesList(options?: { enabled?: boolean }) {
+export function useSalesList(
+  params?: SalesListParams,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
-    queryKey: salesKeys.list(),
-    queryFn: getSalesList,
+    queryKey: salesKeys.list(params),
+    queryFn: () => getSalesList(params),
     enabled: options?.enabled ?? true,
   });
 }

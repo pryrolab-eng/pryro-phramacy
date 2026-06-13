@@ -1,7 +1,7 @@
 "use client";
 
-import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
+import { IpWhitelistManageFields } from "@/components/security/ip-whitelist-manage-fields";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,7 @@ import {
   DashboardDialogTitle,
 } from "@/components/dashboard";
 import { useAdminSettings } from "@/components/admin/settings/admin-settings-provider";
+import { PlatformApiKeyPermissionsFields } from "@/components/admin/settings/platform-api-key-permissions";
 
 export function AdminSettingsDialogs() {
   const s = useAdminSettings();
@@ -77,6 +78,9 @@ export function AdminSettingsDialogs() {
         <DashboardDialogContent className="sm:max-w-md">
           <DashboardDialogHeader>
             <DashboardDialogTitle>Add platform API key</DashboardDialogTitle>
+            <p className="text-sm text-muted-foreground">
+              For external developers integrating with Pryrox — not per-pharmacy keys.
+            </p>
           </DashboardDialogHeader>
           <DashboardDialogBody className="grid gap-4">
             <div className="grid gap-2">
@@ -97,18 +101,24 @@ export function AdminSettingsDialogs() {
                 }
               />
             </div>
+            <PlatformApiKeyPermissionsFields
+              permissions={s.newApiKey.permissions}
+              onChange={(permissions) =>
+                s.setNewApiKey({ ...s.newApiKey, permissions })
+              }
+            />
           </DashboardDialogBody>
           <DashboardDialogActions
             confirmLabel="Add key"
             onCancel={() => {
               s.setIsAddApiKeyOpen(false);
-              s.setNewApiKey({ name: "", key: "" });
+              s.setNewApiKey({ name: "", key: "", permissions: [] });
             }}
             onConfirm={async () => {
               try {
                 await s.createApiKeyMutation.mutateAsync(s.newApiKey);
                 s.setIsAddApiKeyOpen(false);
-                s.setNewApiKey({ name: "", key: "" });
+                s.setNewApiKey({ name: "", key: "", permissions: [] });
                 toast.success("API key added");
               } catch (error) {
                 toast.error(
@@ -169,6 +179,14 @@ export function AdminSettingsDialogs() {
                   </SelectContent>
                 </Select>
               </div>
+              <PlatformApiKeyPermissionsFields
+                permissions={s.selectedApiKey.permissions ?? []}
+                onChange={(permissions) =>
+                  s.setSelectedApiKey((prev) =>
+                    prev ? { ...prev, permissions } : prev,
+                  )
+                }
+              />
             </DashboardDialogBody>
           ) : null}
           <DashboardDialogActions
@@ -182,6 +200,7 @@ export function AdminSettingsDialogs() {
                   name: s.selectedApiKey.name,
                   key: String(s.selectedApiKey.key ?? ""),
                   status: String(s.selectedApiKey.status ?? "Active"),
+                  permissions: s.selectedApiKey.permissions ?? [],
                 });
                 s.setIsEditApiKeyOpen(false);
                 toast.success("API key updated");
@@ -200,76 +219,26 @@ export function AdminSettingsDialogs() {
           <DashboardDialogHeader>
             <DashboardDialogTitle>Platform IP whitelist</DashboardDialogTitle>
             <DashboardDialogDescription>
-              Allowed addresses for platform admin access
+              Allowed addresses for platform admin access. Save platform settings
+              after enabling the whitelist — your current IP is added automatically.
             </DashboardDialogDescription>
           </DashboardDialogHeader>
-          <DashboardDialogBody className="space-y-4">
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                placeholder="192.168.1.100"
-                value={s.newIp.ip}
-                onChange={(e) => s.setNewIp({ ...s.newIp, ip: e.target.value })}
-              />
-              <Input
-                placeholder="Description"
-                value={s.newIp.description}
-                onChange={(e) =>
-                  s.setNewIp({ ...s.newIp, description: e.target.value })
-                }
-              />
-            </div>
-            <DashboardButton
-              onClick={async () => {
-                if (!s.newIp.ip) return;
-                try {
-                  const result = await s.addIpMutation.mutateAsync(s.newIp);
-                  if (result.success) {
-                    s.setNewIp({ ip: "", description: "" });
-                    toast.success("IP added");
-                  } else {
-                    toast.error("Failed to add IP");
-                  }
-                } catch {
-                  toast.error("Failed to add IP");
+          <DashboardDialogBody>
+            <IpWhitelistManageFields
+              ips={s.ipWhitelist}
+              newIp={s.newIp}
+              onNewIpChange={s.setNewIp}
+              addPending={s.addIpMutation.isPending}
+              onAdd={async (body) => {
+                const result = await s.addIpMutation.mutateAsync(body);
+                if (!result.success) {
+                  throw new Error("Failed to add IP");
                 }
               }}
-              disabled={!s.newIp.ip}
-            >
-              <Plus className="mr-1.5 h-4 w-4" />
-              Add IP
-            </DashboardButton>
-            <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-neutral-200/80 p-3 dark:border-neutral-700">
-              {s.ipWhitelist.length === 0 ? (
-                <p className="text-center text-sm text-neutral-500">
-                  No whitelisted IPs yet
-                </p>
-              ) : (
-                s.ipWhitelist.map((ip) => (
-                  <div
-                    key={ip.id}
-                    className="flex items-center justify-between rounded-lg border border-neutral-100 px-3 py-2 dark:border-neutral-800"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{ip.ip_address}</p>
-                      <p className="text-xs text-neutral-500">{ip.description}</p>
-                    </div>
-                    <DashboardButton
-                      size="sm"
-                      onClick={async () => {
-                        try {
-                          await s.removeIpMutation.mutateAsync(ip.id);
-                          toast.success("IP removed");
-                        } catch {
-                          toast.error("Failed to remove IP");
-                        }
-                      }}
-                    >
-                      <X className="h-3 w-3" />
-                    </DashboardButton>
-                  </div>
-                ))
-              )}
-            </div>
+              onRemove={async (id) => {
+                await s.removeIpMutation.mutateAsync(id);
+              }}
+            />
           </DashboardDialogBody>
         </DashboardDialogContent>
       </Dialog>

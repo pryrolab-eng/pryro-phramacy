@@ -1,71 +1,32 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '../../../../../supabase/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
+import { NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import {
+  entitlementRouteResponse,
+  guardReportsAccessForUser,
+} from "@/lib/subscription/route-guards";
+import { storeGetInventoryReport } from "@/lib/db/reports-store";
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { guardReportsAccess, entitlementRouteResponse } = await import(
-      '@/lib/subscription/route-guards'
-    )
     try {
-      await guardReportsAccess(supabase, user.id)
+      await guardReportsAccessForUser(user.id);
     } catch (entErr) {
-      const res = entitlementRouteResponse(entErr)
-      if (res) return res
-      throw entErr
+      const res = entitlementRouteResponse(entErr);
+      if (res) return res;
+      throw entErr;
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
-
-    // Get inventory alerts data for last 14 days
-    const { data: inventoryData } = await supabase
-      .from('inventory')
-      .select(`
-        quantity_in_stock,
-        minimum_stock_level,
-        expiry_date,
-        created_at,
-        medications!inner(name, category, pharmacy_id)
-      `)
-      .eq('medications.pharmacy_id', pharmacyId)
-      .gte('created_at', new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString())
-      .order('created_at', { ascending: true })
-    
-    const dailyAlerts: Array<{ date: string; lowStock: number; expiring: number; totalItems: number }> = []
-    const dailyData: Record<string, { lowStock: number; expiring: number; totalItems: number }> = {}
-    
-    inventoryData?.forEach(item => {
-      const date = item.created_at.split('T')[0]
-      if (!dailyData[date]) {
-        dailyData[date] = { lowStock: 0, expiring: 0, totalItems: 0 }
-      }
-      
-      dailyData[date].totalItems++
-      
-      if (item.quantity_in_stock <= item.minimum_stock_level) {
-        dailyData[date].lowStock++
-      }
-      
-      const daysToExpiry = Math.ceil((new Date(item.expiry_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
-      if (daysToExpiry <= 60 && daysToExpiry > 0) {
-        dailyData[date].expiring++
-      }
-    })
-    
-    Object.entries(dailyData).forEach(([date, data]) => {
-      dailyAlerts.push({ date, ...data })
-    })
-    
-    return NextResponse.json({ inventoryAlerts: dailyAlerts })
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const report = await storeGetInventoryReport(pharmacyId);
+    return NextResponse.json(report);
   } catch (error) {
-    console.error('Inventory reports error:', error)
-    return NextResponse.json({ inventoryAlerts: [] })
+    console.error("GET /api/reports/inventory", error);
+    return NextResponse.json({ inventoryAlerts: [] });
   }
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "../../../../../supabase/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import {
-  guardPharmacyFeature,
+  guardPharmacyFeatureForUser,
   handleEntitlementRouteError,
 } from "@/lib/subscription/api-guard";
 import {
@@ -11,10 +11,16 @@ import {
   type ReturnDisposition,
 } from "@/lib/pos/return-disposition";
 import {
-  fetchOpenCashierShift,
   SHIFT_REQUIRED_CODE,
   SHIFT_REQUIRED_MESSAGE,
 } from "@/lib/pos/cashier-shift";
+import { storeFetchOpenCashierShift } from "@/lib/db/cashier-shifts-store";
+import {
+  mapReturnTypeToDb,
+  storeGetSaleForReturn,
+  storeProcessPosReturn,
+  storeSumReturnedBySaleItemIds,
+} from "@/lib/db/pos-store";
 
 type ReturnLinePayload = {
   saleItemId: string;
@@ -25,11 +31,7 @@ type ReturnLinePayload = {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -58,12 +60,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { pharmacyId } = await guardPharmacyFeature(supabase, user.id, {
+    const { pharmacyId } = await guardPharmacyFeatureForUser(user.id, {
       feature: "pos.returns",
       branchId,
     });
 
-    const openShift = await fetchOpenCashierShift(supabase, user.id, branchId);
+    const openShift = await storeFetchOpenCashierShift(user.id, branchId);
     if (!openShift) {
       return NextResponse.json(
         { error: SHIFT_REQUIRED_MESSAGE, code: SHIFT_REQUIRED_CODE },
@@ -71,29 +73,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data: sale, error: saleError } = await supabase
-      .from("sales")
-      .select(
-        `
-        id,
-        pharmacy_id,
-        branch_id,
-        status,
-        sale_items (
-          id,
-          inventory_id,
-          medication_name,
-          quantity,
-          unit_price,
-          batch_number,
-          expiry_date
-        )
-      `,
-      )
-      .eq("id", saleId)
-      .single();
-
-    if (saleError || !sale) {
+    const sale = await storeGetSaleForReturn(saleId);
+    if (!sale) {
       return NextResponse.json({ error: "Sale not found" }, { status: 404 });
     }
 
@@ -111,29 +92,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const saleItems = (sale.sale_items ?? []) as Array<{
-      id: string;
-      inventory_id: string | null;
-      medication_name: string;
-      quantity: number;
-      unit_price: number;
-      batch_number: string | null;
-      expiry_date: string | null;
-    }>;
-
-    const saleItemMap = new Map(saleItems.map((i) => [i.id, i]));
-
+    const saleItemMap = new Map(sale.sale_items.map((i) => [i.id, i]));
     const saleItemIds = items.map((i) => i.saleItemId);
-    const { data: priorReturns } = await supabase
-      .from("return_items")
-      .select("sale_item_id, quantity")
-      .in("sale_item_id", saleItemIds);
-
-    const returnedQty: Record<string, number> = {};
-    for (const row of priorReturns ?? []) {
-      const sid = row.sale_item_id as string;
-      returnedQty[sid] = (returnedQty[sid] ?? 0) + Number(row.quantity ?? 0);
-    }
+    const returnedQty = await storeSumReturnedBySaleItemIds(saleItemIds);
 
     let computedRefund = 0;
 
@@ -178,105 +139,39 @@ export async function POST(request: NextRequest) {
       computedRefund += line.quantity * Number(sold.unit_price);
     }
 
-    const finalRefund =
-      refundAmount > 0 ? refundAmount : computedRefund;
+    const finalRefund = refundAmount > 0 ? refundAmount : computedRefund;
 
-    const { data: returnRecord, error: returnError } = await supabase
-      .from("returns")
-      .insert({
-        pharmacy_id: pharmacyId,
-        branch_id: branchId,
-        sale_id: saleId,
-        reason,
-        return_type: returnType,
-        notes,
-        refund_amount: finalRefund,
-        refund_method: refundMethod,
-        status: "processed",
-        processed_by: user.id,
-      })
-      .select()
-      .single();
-
-    if (returnError) throw returnError;
-
-    for (const line of items) {
-      const sold = saleItemMap.get(line.saleItemId)!;
-      const disposition =
-        line.disposition ?? defaultDispositionForReason(reason);
-      const unitPrice = Number(sold.unit_price);
-      const lineTotal = line.quantity * unitPrice;
-
-      const { error: itemError } = await supabase.from("return_items").insert({
-        return_id: returnRecord.id,
-        sale_item_id: line.saleItemId,
-        inventory_id: sold.inventory_id,
-        medication_name: sold.medication_name,
-        quantity: line.quantity,
-        unit_price: unitPrice,
-        total_price: lineTotal,
-        disposition,
-        batch_number: sold.batch_number,
-        expiry_date: sold.expiry_date,
-      });
-
-      if (itemError) throw itemError;
-
-      if (!sold.inventory_id) continue;
-
-      const movementType = stockMovementTypeForDisposition(disposition);
-      const movementNotes = `Return ${returnRecord.id} · ${reason} · ${disposition}`;
-
-      if (disposition === "restock") {
-        const { data: inv } = await supabase
-          .from("inventory")
-          .select("quantity_in_stock, branch_id, pharmacy_id")
-          .eq("id", sold.inventory_id)
-          .single();
-
-        if (
-          inv &&
-          inv.pharmacy_id === pharmacyId &&
-          inv.branch_id === branchId
-        ) {
-          await supabase
-            .from("inventory")
-            .update({
-              quantity_in_stock: inv.quantity_in_stock + line.quantity,
-            })
-            .eq("id", sold.inventory_id);
-
-          await supabase.from("stock_movements").insert({
-            pharmacy_id: pharmacyId,
-            inventory_id: sold.inventory_id,
-            movement_type: movementType,
-            quantity: line.quantity,
-            reference_id: returnRecord.id,
-            reference_type: "return",
-            notes: movementNotes,
-            created_by: user.id,
-          });
-        }
-      } else {
-        await supabase.from("stock_movements").insert({
-          pharmacy_id: pharmacyId,
-          inventory_id: sold.inventory_id,
-          movement_type: movementType,
+    const returnRecord = await storeProcessPosReturn({
+      pharmacyId,
+      branchId,
+      saleId,
+      processedBy: user.id,
+      shiftId: openShift.id,
+      shiftTotalRefunds: Number(openShift.total_refunds ?? 0) + finalRefund,
+      reason,
+      returnType: mapReturnTypeToDb(returnType),
+      notes,
+      refundAmount: finalRefund,
+      refundMethod,
+      lines: items.map((line) => {
+        const sold = saleItemMap.get(line.saleItemId)!;
+        const disposition =
+          line.disposition ?? defaultDispositionForReason(reason);
+        return {
+          saleItemId: line.saleItemId,
+          inventoryId: line.inventoryId,
           quantity: line.quantity,
-          reference_id: returnRecord.id,
-          reference_type: "return",
-          notes: `${movementNotes} (not restocked)`,
-          created_by: user.id,
-        });
-      }
-    }
-
-    await supabase
-      .from("cashier_shifts")
-      .update({
-        total_refunds: Number(openShift.total_refunds ?? 0) + finalRefund,
-      })
-      .eq("id", openShift.id);
+          disposition,
+          medicationName: sold.medication_name,
+          unitPrice: Number(sold.unit_price),
+          batchNumber: sold.batch_number,
+          expiryDate: sold.expiry_date,
+          inventoryIdOnSale: sold.inventory_id,
+          movementType: stockMovementTypeForDisposition(disposition),
+          restock: disposition === "restock",
+        };
+      }),
+    });
 
     return NextResponse.json({
       success: true,

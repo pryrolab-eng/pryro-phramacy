@@ -201,10 +201,17 @@ function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number
 }
 
 export default function SalesPage() {
-  const salesQuery = useSalesList()
-  const analyticsQuery = useSalesAnalytics()
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedPeriod, setSelectedPeriod] = useState('today')
+  const [selectedPeriod, setSelectedPeriod] = useState<
+    'today' | 'week' | 'month' | 'all'
+  >('today')
+
+  const salesQuery = useSalesList({
+    period: selectedPeriod,
+    q: searchTerm.trim() || undefined,
+    limit: selectedPeriod === 'all' ? 200 : 100,
+  })
+  const analyticsQuery = useSalesAnalytics()
 
   const sales = useMemo(
     () => salesQuery.data?.sales ?? [],
@@ -230,33 +237,7 @@ export default function SalesPage() {
   )
   const loading = salesQuery.isPending
 
-  const filteredSales = useMemo(() => {
-    let filtered = sales
-
-    if (searchTerm) {
-      const q = searchTerm.toLowerCase()
-      filtered = filtered.filter(
-        (sale) =>
-          sale.customer.toLowerCase().includes(q) ||
-          sale.paymentMethod.toLowerCase().includes(q),
-      )
-    }
-
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
-    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
-
-    if (selectedPeriod === 'today') {
-      filtered = filtered.filter((sale) => new Date(sale.date) >= today)
-    } else if (selectedPeriod === 'week') {
-      filtered = filtered.filter((sale) => new Date(sale.date) >= weekAgo)
-    } else if (selectedPeriod === 'month') {
-      filtered = filtered.filter((sale) => new Date(sale.date) >= monthAgo)
-    }
-
-    return filtered
-  }, [sales, searchTerm, selectedPeriod])
+  const filteredSales = sales
 
   if (loading) return <DashboardPageLoading label="Loading sales…" />
 
@@ -418,7 +399,14 @@ export default function SalesPage() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-64"
                 />
-                <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+                <Select
+                  value={selectedPeriod}
+                  onValueChange={(value) =>
+                    setSelectedPeriod(
+                      value as 'today' | 'week' | 'month' | 'all',
+                    )
+                  }
+                >
                   <SelectTrigger className="h-8 w-32 rounded-lg">
                     <SelectValue />
                   </SelectTrigger>

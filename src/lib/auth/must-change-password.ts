@@ -1,12 +1,15 @@
-import type { User } from "@supabase/supabase-js";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { adminUpdateAuthUserMetadata } from "@/lib/auth/admin-users";
 
 export const MUST_CHANGE_PASSWORD_METADATA_KEY = "must_change_password";
 
 export const MIN_PASSWORD_LENGTH = 8;
 
+type UserWithMetadata = {
+  user_metadata?: Record<string, unknown>;
+};
+
 export function userMustChangePassword(
-  user: Pick<User, "user_metadata"> | null | undefined,
+  user: UserWithMetadata | null | undefined,
 ): boolean {
   return user?.user_metadata?.[MUST_CHANGE_PASSWORD_METADATA_KEY] === true;
 }
@@ -41,24 +44,18 @@ export function validateNewPasswordPair(
 }
 
 export async function setMustChangePasswordFlag(
-  admin: SupabaseClient,
   userId: string,
-  existingMetadata: Record<string, unknown> | undefined,
+  _existingMetadata: Record<string, unknown> | undefined,
   required: boolean,
 ) {
-  const { error } = await admin.auth.admin.updateUserById(userId, {
-    user_metadata: {
-      ...(existingMetadata ?? {}),
-      [MUST_CHANGE_PASSWORD_METADATA_KEY]: required,
-    },
+  await adminUpdateAuthUserMetadata(userId, {
+    [MUST_CHANGE_PASSWORD_METADATA_KEY]: required,
   });
-  if (error) throw error;
 }
 
 export async function clearMustChangePasswordFlag(
-  admin: SupabaseClient,
   userId: string,
   existingMetadata: Record<string, unknown> | undefined,
 ) {
-  await setMustChangePasswordFlag(admin, userId, existingMetadata, false);
+  await setMustChangePasswordFlag(userId, existingMetadata, false);
 }

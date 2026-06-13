@@ -1,98 +1,87 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../supabase/server'
-import { resolveMedicationCategoryEnum } from '@/lib/pharmacy/medication-category'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { requireSessionBranchId } from '@/lib/pharmacy/get-session-branch'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { resolveMedicationCategoryEnum } from "@/lib/pharmacy/medication-category";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { requireUserBranchId } from "@/lib/pharmacy/get-session-branch";
+import type { medication_category } from "@prisma/client";
+import { storeQuickAddPosDrug } from "@/lib/db/pos-store";
 
 function readString(body: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
-    const value = body[key]
-    if (typeof value === 'string' && value.trim()) return value.trim()
+    const value = body[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
   }
-  return ''
+  return "";
 }
 
 function readNumber(body: Record<string, unknown>, ...keys: string[]): number {
   for (const key of keys) {
-    const value = body[key]
-    if (value === undefined || value === null || value === '') continue
-    const n = Number(value)
-    if (!Number.isNaN(n)) return n
+    const value = body[key];
+    if (value === undefined || value === null || value === "") continue;
+    const n = Number(value);
+    if (!Number.isNaN(n)) return n;
   }
-  return 0
+  return 0;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 },
+      );
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
-    const branchId = await requireSessionBranchId(supabase, user.id)
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const branchId = await requireUserBranchId(user.id);
 
-    const body = (await request.json()) as Record<string, unknown>
-    const name = readString(body, 'productName', 'name')
-    const categoryLabel = readString(body, 'category')
-    const category = resolveMedicationCategoryEnum(categoryLabel)
+    const body = (await request.json()) as Record<string, unknown>;
+    const name = readString(body, "productName", "name");
+    const categoryLabel = readString(body, "category");
+    const category = resolveMedicationCategoryEnum(
+      categoryLabel,
+    ) as medication_category;
 
     if (!name) {
       return NextResponse.json(
-        { success: false, error: 'Product name is required' },
+        { success: false, error: "Product name is required" },
         { status: 400 },
-      )
+      );
     }
 
-    const { data: medication, error: medError } = await supabase
-      .from('medications')
-      .insert({
-        pharmacy_id: pharmacyId,
-        name,
-        category,
-        manufacturer: readString(body, 'manufacturer') || null,
-        barcode: readString(body, 'barcode') || null,
-        requires_prescription: category === 'prescription',
-        is_active: true,
-      })
-      .select()
-      .single()
+    const { medication, inventory } = await storeQuickAddPosDrug({
+      pharmacyId,
+      branchId,
+      name,
+      category,
+      manufacturer: readString(body, "manufacturer") || null,
+      barcode: readString(body, "barcode") || null,
+      batchNumber:
+        readString(body, "batchNumber", "batch_number") || "BATCH001",
+      quantityInStock: readNumber(body, "initialStock", "initial_stock"),
+      unitCost: readNumber(body, "purchasePrice", "purchase_price"),
+      sellingPrice: readNumber(body, "unitPrice", "unit_price"),
+      minimumStockLevel: readNumber(
+        body,
+        "minStockAlert",
+        "min_stock",
+        "minimum_stock_level",
+      ),
+      expiryDate: readString(body, "expiryDate", "expiry_date") || null,
+    });
 
-    if (medError) {
-      console.error('Medication insert error:', medError)
-      throw medError
-    }
-
-    const { data: inventory, error: invError } = await supabase
-      .from('inventory')
-      .insert({
-        pharmacy_id: pharmacyId,
-        branch_id: branchId,
-        medication_id: medication.id,
-        batch_number: readString(body, 'batchNumber', 'batch_number') || 'BATCH001',
-        quantity_in_stock: readNumber(body, 'initialStock', 'initial_stock'),
-        unit_cost: readNumber(body, 'purchasePrice', 'purchase_price'),
-        selling_price: readNumber(body, 'unitPrice', 'unit_price'),
-        minimum_stock_level: readNumber(body, 'minStockAlert', 'min_stock', 'minimum_stock_level'),
-        expiry_date: readString(body, 'expiryDate', 'expiry_date') || null,
-      })
-      .select()
-      .single()
-
-    if (invError) {
-      console.error('Inventory insert error:', invError)
-      throw invError
-    }
-
-    return NextResponse.json({ success: true, medication, inventory })
+    return NextResponse.json({ success: true, medication, inventory });
   } catch (error) {
-    console.error('Quick add product error:', error)
-    return NextResponse.json({
-      success: false,
-      error: 'Failed to add product',
-      details: error instanceof Error ? error.message : 'Unknown error',
-    }, { status: 500 })
+    console.error("Quick add product error:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to add product",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    );
   }
 }

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient } from "../../../../../supabase/service";
 import {
   expireStalePendingPayments,
   getPendingPaymentMaxAgeDays,
@@ -30,9 +29,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const admin = createServiceClient();
     const maxAgeDays = getPendingPaymentMaxAgeDays();
-    const result = await expireStalePendingPayments(admin, maxAgeDays);
+    const result = await expireStalePendingPayments(maxAgeDays);
 
     return NextResponse.json({
       success: true,

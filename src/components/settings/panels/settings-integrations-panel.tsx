@@ -37,7 +37,9 @@ export function SettingsIntegrationsPanel() {
       </SettingsSection>
 
       <p className="text-sm text-neutral-500">
-        Platform API keys are managed in Admin → Settings → Integrations.
+        Platform integration API keys are issued by Pryrox administrators (Admin →
+        Settings → Integrations) for external systems calling Pryrox APIs — not
+        per-pharmacy credentials.
       </p>
     </div>
   );

@@ -1,0 +1,171 @@
+import { getEnableNotifications } from "@/lib/platform-settings";
+import { findPublicUserByIdFromDb } from "@/lib/db/public-users";
+import {
+  storeInsertDeliveryLog,
+  storeInsertNotification,
+  storeListPendingOutboxRows,
+  storeUpdateOutboxRow,
+  type OutboxRow,
+} from "@/lib/db/notifications-store";
+import { isSmtpConfigured, sendMail } from "@/lib/email/mailer";
+import { getNotificationChannelPrefs } from "./preferences";
+
+const BATCH_SIZE = 25;
+const MAX_ATTEMPTS = 5;
+
+function titleForEvent(eventType: string, payload: Record<string, unknown>): string {
+  if (typeof payload.title === "string" && payload.title.trim()) {
+    return payload.title.trim();
+  }
+  switch (eventType) {
+    case "sale.completed":
+      return "Sale completed";
+    case "platform.maintenance":
+      return "Maintenance notice";
+    default:
+      return "Notification";
+  }
+}
+
+function messageForEvent(eventType: string, payload: Record<string, unknown>): string {
+  if (typeof payload.message === "string" && payload.message.trim()) {
+    return payload.message.trim();
+  }
+  switch (eventType) {
+    case "sale.completed": {
+      const total = payload.total;
+      const receipt = payload.receiptNumber;
+      const parts = ["A POS sale was recorded."];
+      if (receipt) parts.push(`Receipt: ${receipt}.`);
+      if (total != null) parts.push(`Total: ${total}.`);
+      return parts.join(" ");
+    }
+    default:
+      return "You have a new notification.";
+  }
+}
+
+async function logDelivery(input: {
+  notificationId?: string | null;
+  outboxId: string;
+  channel: string;
+  status: string;
+  error?: string;
+}): Promise<void> {
+  try {
+    await storeInsertDeliveryLog({
+      notificationId: input.notificationId,
+      outboxId: input.outboxId,
+      channel: input.channel,
+      status: input.status,
+      error: input.error ?? null,
+    });
+  } catch (error) {
+    console.error("logDelivery:", error);
+  }
+}
+
+async function resolveUserEmail(userId: string): Promise<string | null> {
+  const user = await findPublicUserByIdFromDb(userId);
+  return user?.email ?? null;
+}
+
+async function processOutboxRow(row: OutboxRow): Promise<void> {
+  const title = titleForEvent(row.event_type, row.payload);
+  const message = messageForEvent(row.event_type, row.payload);
+  const type =
+    typeof row.payload.type === "string" ? row.payload.type : "info";
+
+  let notificationId: string | null = null;
+
+  if (row.pharmacy_id) {
+    notificationId = await storeInsertNotification({
+      pharmacyId: row.pharmacy_id,
+      userId: row.user_id,
+      title,
+      message,
+      type,
+      metadata: row.payload,
+    });
+    await logDelivery({
+      notificationId,
+      outboxId: row.id,
+      channel: "in_app",
+      status: "sent",
+    });
+  }
+
+  if (
+    (await getEnableNotifications()) &&
+    row.user_id &&
+    isSmtpConfigured()
+  ) {
+    const prefs = await getNotificationChannelPrefs(
+      row.user_id,
+      row.pharmacy_id,
+    );
+    if (prefs.channelEmail) {
+      const email = await resolveUserEmail(row.user_id);
+      if (email) {
+        try {
+          await sendMail({
+            to: email,
+            subject: title,
+            html: `<p>${message}</p>`,
+            text: message,
+          });
+          await logDelivery({
+            notificationId,
+            outboxId: row.id,
+            channel: "email",
+            status: "sent",
+          });
+        } catch (emailError) {
+          await logDelivery({
+            notificationId,
+            outboxId: row.id,
+            channel: "email",
+            status: "failed",
+            error:
+              emailError instanceof Error
+                ? emailError.message
+                : "email_failed",
+          });
+        }
+      }
+    }
+  }
+
+  await storeUpdateOutboxRow(row.id, { status: "processed" });
+}
+
+export async function dispatchPendingNotifications(): Promise<{
+  processed: number;
+  failed: number;
+}> {
+  const rows = await storeListPendingOutboxRows(BATCH_SIZE, MAX_ATTEMPTS);
+  if (!rows.length) return { processed: 0, failed: 0 };
+
+  let processed = 0;
+  let failed = 0;
+
+  for (const row of rows) {
+    try {
+      await processOutboxRow(row);
+      processed += 1;
+    } catch (error) {
+      failed += 1;
+      const message =
+        error instanceof Error ? error.message : "dispatch_failed";
+      console.error(`notification dispatch ${row.id}:`, error);
+      const nextAttempts = row.attempts + 1;
+      await storeUpdateOutboxRow(row.id, {
+        status: nextAttempts >= MAX_ATTEMPTS ? "failed" : "pending",
+        errorMessage: message,
+        incrementAttempts: true,
+      });
+    }
+  }
+
+  return { processed, failed };
+}

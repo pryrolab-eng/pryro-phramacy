@@ -2,7 +2,7 @@
 import { UserCircle } from 'lucide-react'
 import { Button } from './ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
-import { createClient } from '../../supabase/client'
+import { signOutClient } from '@/lib/auth/client-sign-out'
 import { useRouter } from 'next/navigation'
 
 export default function UserProfile() {
@@ -17,8 +17,7 @@ export default function UserProfile() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={async () => {
-                    (await createClient()).auth.signOut()
-                    router.refresh()
+                    await signOutClient()
                 }}>
                     Sign out
                 </DropdownMenuItem>

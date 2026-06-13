@@ -1,4 +1,5 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { prisma } from "@/lib/db/prisma";
+import { storeFindMembershipIdByUserAndPharmacy } from "@/lib/db/pharmacy-users-store";
 
 const UNRESTRICTED_ROLES = new Set(["pharmacy_owner", "admin"]);
 
@@ -8,7 +9,6 @@ const UNRESTRICTED_ROLES = new Set(["pharmacy_owner", "admin"]);
  * `[]` = no branch access.
  */
 export async function getStaffAllowedBranchIds(
-  admin: SupabaseClient,
   userId: string,
   pharmacyId: string,
   role: string | null,
@@ -17,36 +17,29 @@ export async function getStaffAllowedBranchIds(
     return null;
   }
 
-  const { data: membership, error: memErr } = await admin
-    .from("pharmacy_users")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("pharmacy_id", pharmacyId)
-    .eq("is_active", true)
-    .maybeSingle();
+  const membershipId = await storeFindMembershipIdByUserAndPharmacy(
+    userId,
+    pharmacyId,
+  );
+  if (!membershipId) return [];
 
-  if (memErr) throw new Error(memErr.message);
-  if (!membership?.id) return [];
+  const assignments = await prisma.staff_branch_assignments.findMany({
+    where: { pharmacy_user_id: membershipId },
+    select: { branch_id: true },
+  });
 
-  const { data: assignments, error: assignErr } = await admin
-    .from("staff_branch_assignments")
-    .select("branch_id")
-    .eq("pharmacy_user_id", membership.id);
+  if (!assignments.length) return null;
 
-  if (assignErr) throw new Error(assignErr.message);
-  if (!assignments?.length) return null;
-
-  return assignments.map((r) => r.branch_id as string);
+  return assignments.map((row) => row.branch_id);
 }
 
 export async function assertBranchAllowedForUser(
-  admin: SupabaseClient,
   userId: string,
   pharmacyId: string,
   role: string | null,
   branchId: string,
 ): Promise<void> {
-  const allowed = await getStaffAllowedBranchIds(admin, userId, pharmacyId, role);
+  const allowed = await getStaffAllowedBranchIds(userId, pharmacyId, role);
   if (allowed === null) return;
   if (!allowed.includes(branchId)) {
     throw new Error("You do not have access to this branch");

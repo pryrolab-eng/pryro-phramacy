@@ -1,91 +1,76 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { createClient } from '../../../../../../../supabase/server'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import {
+  storeCreateWhitelistEntry,
+  storeDeleteWhitelistEntry,
+  storeListWhitelistEntries,
+} from "@/lib/db/ip-whitelist-store";
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+    const pharmacyId = await requireSessionPharmacyId(user.id);
+    const ips = await storeListWhitelistEntries(pharmacyId);
 
-    const { data: whitelist } = await supabase
-      .from('ip_whitelist')
-      .select('*')
-      .eq('pharmacy_id', pharmacyId)
-
-    return NextResponse.json({ ips: whitelist || [] })
+    return NextResponse.json({ ips });
   } catch (error) {
-    console.error('IP whitelist fetch error:', error)
-    return NextResponse.json({ error: 'Failed to fetch IP whitelist' }, { status: 500 })
+    console.error("IP whitelist fetch error:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch IP whitelist" },
+      { status: 500 },
+    );
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { ip, description } = await request.json()
-
+    const { ip, description } = await request.json();
     if (!ip) {
-      return NextResponse.json({ error: 'IP address required' }, { status: 400 })
+      return NextResponse.json({ error: "IP address required" }, { status: 400 });
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+    const pharmacyId = await requireSessionPharmacyId(user.id);
+    const entry = await storeCreateWhitelistEntry({
+      pharmacyId,
+      ipAddress: ip,
+      description: description || "",
+    });
 
-    const { data, error } = await supabase
-      .from('ip_whitelist')
-      .insert({
-        pharmacy_id: pharmacyId,
-        ip_address: ip,
-        description: description || ''
-      })
-      .select()
-      .single()
-
-    if (error) throw error
-
-    return NextResponse.json({ success: true, ip: data })
+    return NextResponse.json({ success: true, ip: entry });
   } catch (error) {
-    console.error('IP whitelist add error:', error)
-    return NextResponse.json({ error: 'Failed to add IP' }, { status: 500 })
+    console.error("IP whitelist add error:", error);
+    return NextResponse.json({ error: "Failed to add IP" }, { status: 500 });
   }
 }
 
 export async function DELETE(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await request.json()
-
+    const { id } = await request.json();
     if (!id) {
-      return NextResponse.json({ error: 'IP ID required' }, { status: 400 })
+      return NextResponse.json({ error: "IP ID required" }, { status: 400 });
     }
 
-    const { error } = await supabase
-      .from('ip_whitelist')
-      .delete()
-      .eq('id', id)
+    const pharmacyId = await requireSessionPharmacyId(user.id);
+    await storeDeleteWhitelistEntry(id, pharmacyId);
 
-    if (error) throw error
-
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('IP whitelist delete error:', error)
-    return NextResponse.json({ error: 'Failed to delete IP' }, { status: 500 })
+    console.error("IP whitelist delete error:", error);
+    return NextResponse.json({ error: "Failed to delete IP" }, { status: 500 });
   }
 }

@@ -11,6 +11,7 @@ import {
   SettingsRow,
 } from "@/components/settings/settings-primitives";
 import { useAdminSettings } from "@/components/admin/settings/admin-settings-provider";
+import { formatIntegrationKeyPermissions } from "@/components/admin/settings/platform-api-key-permissions";
 
 export function AdminSettingsIntegrationsPanel() {
   const {
@@ -26,7 +27,7 @@ export function AdminSettingsIntegrationsPanel() {
     <div className="space-y-8">
       <SettingsPanelTitle
         title="Integrations"
-        description="Platform API keys, rate limits, and integration health"
+        description="Platform integration API keys for external developers, plus rate limits"
         action={
           <DashboardButton tone="primary" onClick={() => setIsAddApiKeyOpen(true)}>
             <Plus className="mr-1.5 h-4 w-4" />
@@ -38,15 +39,15 @@ export function AdminSettingsIntegrationsPanel() {
       <SettingsSection title="API keys">
         {apiKeys.length === 0 ? (
           <p className="px-5 py-6 text-sm text-neutral-500">
-            No platform API keys yet. Add one for webhooks, billing callbacks, or
-            internal automation.
+            No platform API keys yet. Issue keys here for external developers and
+            partners integrating with Pryrox (not per-pharmacy tenant keys).
           </p>
         ) : (
           apiKeys.map((api) => (
             <SettingsRow
               key={api.id}
               title={api.name}
-              description={`${api.key_prefix}…`}
+              description={`${api.key_prefix}… · ${formatIntegrationKeyPermissions(api.permissions)}`}
             >
               <div className="flex items-center gap-2">
                 <Badge variant={api.is_active ? "default" : "secondary"}>
@@ -59,6 +60,7 @@ export function AdminSettingsIntegrationsPanel() {
                       ...api,
                       status: api.is_active ? "Active" : "Inactive",
                       key: api.key_hash ?? "",
+                      permissions: api.permissions ?? [],
                     });
                     setIsEditApiKeyOpen(true);
                   }}
@@ -74,7 +76,7 @@ export function AdminSettingsIntegrationsPanel() {
       <SettingsSection title="API">
         <SettingsRow
           title="Rate limit"
-          description="Maximum API requests per hour (platform-wide)"
+          description="Max requests per hour per platform API key (and per IP without a key)"
         >
           <Input
             type="number"

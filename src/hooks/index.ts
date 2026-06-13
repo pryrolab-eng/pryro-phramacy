@@ -30,6 +30,10 @@ export { useCreatePharmacistMutation } from "./useCreatePharmacist";
 export { PharmacyProvider, usePharmacyStore } from "./usePharmacyStore";
 export { useRealtimeUpdates } from "./useRealtimeUpdates";
 export {
+  useNotificationStream,
+  type LiveNotification,
+} from "./useNotificationStream";
+export {
   insuranceProvidersQueryKey,
   useInsuranceProviders,
   useUploadInsurancePricingMutation,

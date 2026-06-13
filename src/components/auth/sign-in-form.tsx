@@ -75,7 +75,11 @@ export function SignInForm({ initialEmail = "" }: SignInFormProps) {
         </div>
       ) : null}
 
-      <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+      <form
+        className="mt-8 space-y-5"
+        method="post"
+        onSubmit={handleSubmit}
+      >
         <div className="relative">
           <span className="absolute left-3 top-1/2 z-10 -translate-y-1/2 text-gray-400">
             <svg

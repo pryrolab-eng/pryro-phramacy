@@ -1,8 +1,10 @@
+> **Stack:** Prisma (`DATABASE_URL`) for data; native JWT auth (`getAuthUser()`, cookies `pryrox_session` / `pryrox_refresh`). SQL migrations live in `supabase/migrations/` (`npm run db:sql:push`).
+
 # Reports Module
 
 ## Purpose
 
-The Reports module provides pharmacy staff with analytics and operational reporting across two primary domains: **sales performance** and **inventory health**. It is the primary observability surface for pharmacy owners and managers, surfacing KPI cards, time-series charts, top-product rankings, and payment-method breakdowns drawn from live Supabase data.
+The Reports module provides pharmacy staff with analytics and operational reporting across two primary domains: **sales performance** and **inventory health**. It is the primary observability surface for pharmacy owners and managers, surfacing KPI cards, time-series charts, top-product rankings, and payment-method breakdowns from Prisma-backed API routes.
 
 The module also exposes five additional API-only report types — financial summaries, tax/VAT reports, audit logs, and insurance-claims reports — that are not yet wired into the dashboard UI.
 
@@ -191,7 +193,7 @@ ReportsPage mounts
         │         │
         │         ├─ GET /api/reports/sales
         │         │         │
-        │         │         ├─ supabase.auth.getUser()
+        │         │         ├─ `getAuthUser()`
         │         │         ├─ SELECT pharmacy_id FROM pharmacy_users WHERE user_id = ?
         │         │         ├─ SELECT total_amount, created_at FROM sales WHERE pharmacy_id = ? AND created_at >= 30d ago
         │         │         ├─ SELECT medication_name, total_price, quantity FROM sale_items JOIN sales WHERE pharmacy_id = ?
@@ -200,7 +202,7 @@ ReportsPage mounts
         │         │
         │         └─ GET /api/reports/inventory
         │                   │
-        │                   ├─ supabase.auth.getUser()
+        │                   ├─ `getAuthUser()`
         │                   ├─ SELECT pharmacy_id FROM pharmacy_users WHERE user_id = ?
         │                   └─ SELECT quantity_in_stock, minimum_stock_level, expiry_date, created_at
         │                        FROM inventory JOIN medications WHERE pharmacy_id = ? AND created_at >= 14d ago
@@ -216,7 +218,7 @@ ReportsPage mounts
 
 ### `GET /api/reports/sales`
 
-**Authentication:** Required (Supabase session cookie)
+**Authentication:** Required (`getAuthUser()` session cookie)
 
 **Response shape:**
 
@@ -247,7 +249,7 @@ On unexpected errors the route returns `200` with empty arrays and zero values (
 
 ### `GET /api/reports/inventory`
 
-**Authentication:** Required (Supabase session cookie)
+**Authentication:** Required (`getAuthUser()` session cookie)
 
 **Response shape:**
 
@@ -305,7 +307,7 @@ Returns a hardcoded array of two insurance claims with a summary by insurer. Not
 | `jspdf` | `^4.0.0` | **Installed but not used in this module.** PDF export is via `window.print()`. |
 | `jspdf-autotable` | `^5.0.7` | **Installed but not used in this module.** |
 | `xlsx` | `^0.18.5` | **Installed but not used in this module.** Excel export is not implemented in reports. |
-| `@supabase/ssr` | — | Server-side Supabase client for session verification and database queries |
+| `getAuthUser()` + Prisma | Session verification and database queries |
 | `lucide-react` | — | Icons: `TrendingUp`, `TrendingDown`, `DollarSign`, `Package`, `Users`, `ShoppingCart`, `RefreshCw`, `Download` |
 | shadcn/ui | — | `Card`, `Select`, `Badge`, `Button`, `Input`, `SidebarTrigger`, `Spinner` |
 

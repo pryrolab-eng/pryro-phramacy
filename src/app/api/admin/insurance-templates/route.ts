@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
+import {
+  createGlobalInsuranceTemplateFromDb,
+  listGlobalInsuranceTemplatesFromDb,
+} from "@/lib/db/admin";
 
 export async function GET() {
   const auth = await requirePlatformAdminApi();
@@ -7,21 +11,16 @@ export async function GET() {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const { data, error } = await auth.supabase
-    .from("insurance_templates")
-    .select("*")
-    .is("pharmacy_id", null)
-    .order("updated_at", { ascending: false });
-
-  if (error) {
+  try {
+    const data = await listGlobalInsuranceTemplatesFromDb();
+    return NextResponse.json(data);
+  } catch (error) {
     console.error("admin insurance-templates GET:", error);
     return NextResponse.json(
       { error: "Failed to fetch templates" },
       { status: 500 },
     );
   }
-
-  return NextResponse.json(data ?? []);
 }
 
 export async function POST(request: NextRequest) {
@@ -38,23 +37,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { data, error } = await auth.supabase
-    .from("insurance_templates")
-    .insert({
-      pharmacy_id: null,
+  try {
+    const data = await createGlobalInsuranceTemplateFromDb({
       name: String(body.name).trim(),
-      insurance_provider: String(body.insurance_provider).trim(),
-      template_html: body.template_html ?? "",
-      template_css: body.template_css ?? "",
-      is_active: true,
-    })
-    .select()
-    .single();
-
-  if (error) {
+      insuranceProvider: String(body.insurance_provider).trim(),
+      templateHtml: body.template_html ?? "",
+      templateCss: body.template_css ?? "",
+    });
+    return NextResponse.json({ success: true, template: data });
+  } catch (error) {
     console.error("admin insurance-templates POST:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Failed to create template";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  return NextResponse.json({ success: true, template: data });
 }

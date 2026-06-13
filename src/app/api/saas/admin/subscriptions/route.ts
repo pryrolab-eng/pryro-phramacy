@@ -2,23 +2,17 @@
 // Super admin: view all subscriptions across all pharmacies.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../../supabase/server'
-import { createServiceClient } from '../../../../../../supabase/service'
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { resolveIsAppPlatformAdmin } from '@/lib/platform-admin'
 import { getAllSubscriptions } from '@/lib/saas/subscription-engine'
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getAuthUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { data: profile } = await supabase
-      .from('users')
-      .select('is_platform_admin')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    if (!profile?.is_platform_admin) {
+    const isAdmin = await resolveIsAppPlatformAdmin(user.id)
+    if (!isAdmin) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -26,8 +20,7 @@ export async function GET(request: NextRequest) {
     const limit = Number(request.nextUrl.searchParams.get('limit') ?? 50)
     const offset = Number(request.nextUrl.searchParams.get('offset') ?? 0)
 
-    const admin = createServiceClient()
-    const subscriptions = await getAllSubscriptions(admin, { status, limit, offset })
+    const subscriptions = await getAllSubscriptions({ status, limit, offset })
     return NextResponse.json({ subscriptions })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Failed to load subscriptions'

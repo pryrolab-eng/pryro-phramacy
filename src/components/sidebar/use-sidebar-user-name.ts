@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "../../../supabase/client";
 
 export function useSidebarUserName(fallback: string) {
   const [userName, setUserName] = useState(fallback);
@@ -9,18 +8,18 @@ export function useSidebarUserName(fallback: string) {
   useEffect(() => {
     const load = async () => {
       try {
-        const supabase = createClient();
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) return;
-        const fullName =
-          user.user_metadata?.full_name || user.user_metadata?.name;
+        const res = await fetch("/api/me/context", { credentials: "include" });
+        if (!res.ok) return;
+        const ctx = (await res.json()) as {
+          user?: { fullName?: string | null; email?: string | null };
+        };
+        const fullName = ctx.user?.fullName?.trim();
         if (fullName) {
           setUserName(fullName);
           return;
         }
-        setUserName(user.email?.split("@")[0] || fallback);
+        const email = ctx.user?.email?.split("@")[0];
+        if (email) setUserName(email);
       } catch {
         /* keep fallback */
       }

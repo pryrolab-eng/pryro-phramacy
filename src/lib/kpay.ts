@@ -1,5 +1,4 @@
 // KPay Payment Gateway Integration
-import { createClient } from '../../supabase/server'
 import { paymentSuccessUrl } from '@/lib/routes/payment-paths'
 
 export interface KPayPaymentRequest {

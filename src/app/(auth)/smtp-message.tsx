@@ -7,17 +7,17 @@ export function SmtpMessage() {
       <InfoIcon size={16} className="mt-0.5" />
       <div className="flex flex-col gap-1">
         <small className="text-sm text-secondary-foreground">
-          <strong>Note:</strong> Supabase auth emails are rate limited on the
-          free tier. When the limit is hit, Pryrox automatically sends via your
-          SMTP backup if SMTP_HOST is configured in .env.
+          <strong>Note:</strong> Sign-up confirmation and password reset emails are
+          sent via SMTP. Configure SMTP_HOST, SMTP_USER, and SMTP_PASS in .env
+          before inviting users or enabling self-service registration.
         </small>
         <div>
           <Link
-            href="https://supabase.com/docs/guides/auth/auth-smtp"
+            href="https://nodemailer.com/usage/"
             target="_blank"
             className="text-primary/50 hover:text-primary flex items-center text-sm gap-1"
           >
-            Supabase SMTP docs <ArrowUpRight size={14} />
+            Nodemailer setup docs <ArrowUpRight size={14} />
           </Link>
         </div>
       </div>

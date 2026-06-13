@@ -2,8 +2,7 @@
 // POST /api/saas/branches  — create a new branch (checks limit)
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../supabase/server'
-import { createServiceClient } from '../../../../../supabase/service'
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import {
   getPharmacyBranches,
   getBranchCurrentUsage,
@@ -14,28 +13,28 @@ import { getStaffAllowedBranchIds } from '@/lib/pharmacy/staff-branch-access'
 import { getBranchCapacity } from '@/lib/subscription/branch-addon-capacity'
 import { resolvePharmacyEntitlements } from '@/lib/subscription/lifecycle/entitlements'
 import { resolveSwitcherBranches } from '@/lib/branches/entitled-branches'
+import { assertPlatformMultiBranchEnabled } from '@/lib/platform-policy/enforce'
+import { platformPolicyErrorResponse } from '@/lib/platform-policy/errors'
+import { storeFindMembershipAtPharmacy } from '@/lib/db/pharmacy-users-store'
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getAuthUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const admin = createServiceClient()
-    const ctx = await resolveActivePharmacyContext(admin, user.id)
+    const ctx = await resolveActivePharmacyContext(user.id)
     const pharmacyId = ctx.activePharmacyId
     if (!pharmacyId) {
       return NextResponse.json({ error: 'Pharmacy not found' }, { status: 404 })
     }
 
     const [rawBranches, entitlements, capacity] = await Promise.all([
-      getPharmacyBranches(admin, pharmacyId),
-      resolvePharmacyEntitlements(admin, pharmacyId),
-      getBranchCapacity(admin, pharmacyId),
+      getPharmacyBranches(pharmacyId),
+      resolvePharmacyEntitlements(pharmacyId),
+      getBranchCapacity(pharmacyId),
     ])
 
     const allowedBranchIds = await getStaffAllowedBranchIds(
-      admin,
       user.id,
       pharmacyId,
       ctx.role,
@@ -50,11 +49,10 @@ export async function GET() {
     })
     const entitledIds = new Set(entitled.map((b) => b.id))
 
-    // Management UI lists every active branch; switcher applies slot limit client-side.
     const branchesWithUsage = await Promise.all(
       rawBranches.map(async (b) => ({
         ...b,
-        usage: await getBranchCurrentUsage(admin, b.id),
+        usage: await getBranchCurrentUsage(b.id),
         over_plan_limit: !entitledIds.has(b.id),
       }))
     )
@@ -77,25 +75,16 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getAuthUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const admin = createServiceClient()
-    const pharmacyId = (await resolveActivePharmacyContext(admin, user.id))
+    const pharmacyId = (await resolveActivePharmacyContext(user.id))
       .activePharmacyId
     if (!pharmacyId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { data: membership } = await admin
-      .from('pharmacy_users')
-      .select('role')
-      .eq('user_id', user.id)
-      .eq('pharmacy_id', pharmacyId)
-      .eq('is_active', true)
-      .maybeSingle()
-
+    const membership = await storeFindMembershipAtPharmacy(user.id, pharmacyId)
     if (!membership || !['pharmacy_owner', 'admin'].includes(membership.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
@@ -107,12 +96,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Branch name is required' }, { status: 400 })
     }
 
+    await assertPlatformMultiBranchEnabled()
+
     const { requirePharmacyEntitlement, entitlementErrorResponse } = await import(
       '@/lib/subscription/assert-entitlement'
     )
     try {
       await requirePharmacyEntitlement({
-        admin,
         pharmacyId,
         feature: 'branches.create',
         limit: 'branches',
@@ -125,7 +115,7 @@ export async function POST(request: NextRequest) {
       throw entErr
     }
 
-    const branch = await createBranch(admin, pharmacyId, {
+    const branch = await createBranch(pharmacyId, {
       name: name.trim(),
       address,
       phone,
@@ -134,6 +124,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ branch }, { status: 201 })
   } catch (err) {
+    const policy = platformPolicyErrorResponse(err)
+    if (policy) {
+      return NextResponse.json(policy.body, { status: policy.status })
+    }
     const msg = err instanceof Error ? err.message : 'Failed to create branch'
     return NextResponse.json({ error: msg }, { status: 500 })
   }

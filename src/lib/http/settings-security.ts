@@ -56,14 +56,21 @@ export async function setTwoFaEnabled(enabled: boolean): Promise<void> {
   });
 }
 
-export async function getIpWhitelist(): Promise<{ ips: IpWhitelistEntry[] }> {
+export async function getIpWhitelist(): Promise<{
+  ips: IpWhitelistEntry[];
+  currentIp: string | null;
+}> {
   try {
-    const data = await fetchJson<{ ips?: IpWhitelistEntry[] }>(
-      "/api/settings/security/ip-whitelist/manage",
-    );
-    return { ips: data.ips ?? [] };
+    const data = await fetchJson<{
+      ips?: IpWhitelistEntry[];
+      currentIp?: string | null;
+    }>("/api/settings/security/ip-whitelist/manage");
+    return {
+      ips: data.ips ?? [],
+      currentIp: data.currentIp ?? null,
+    };
   } catch {
-    return { ips: [] };
+    return { ips: [], currentIp: null };
   }
 }
 

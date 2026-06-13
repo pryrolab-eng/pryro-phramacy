@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "../../../../../supabase/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
-import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { resolveActivePharmacyContext } from "@/lib/pharmacy/active-pharmacy";
+import {
+  storeFindInsuranceProviderById,
+  storeUpdateInsuranceProvider,
+} from "@/lib/db/insurance-store";
 
 function clampCoveragePercent(value: unknown): number | null {
   const n = parseFloat(String(value));
@@ -21,36 +25,24 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const isPlatformAdmin = await resolveIsAppPlatformAdmin(supabase, user.id, null);
-    const db = createServiceClient();
+    const isPlatformAdmin = await resolveIsAppPlatformAdmin(user.id);
 
-    const { data: existing, error: fetchError } = await db
-      .from("insurance_providers")
-      .select("id, pharmacy_id, name")
-      .eq("id", id)
-      .maybeSingle();
-
-    if (fetchError) throw new Error(fetchError.message);
+    const existing = await storeFindInsuranceProviderById(id);
     if (!existing) {
       return NextResponse.json({ success: false, error: "Provider not found" }, { status: 404 });
     }
 
     if (!isPlatformAdmin) {
-      const admin = createServiceClient();
-      const ctx = await resolveActivePharmacyContext(admin, user.id);
+      const ctx = await resolveActivePharmacyContext(user.id);
       if (!["pharmacy_owner", "admin"].includes(ctx.role ?? "")) {
         return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
       }
-      const pharmacyId = await requireSessionPharmacyId(supabase, user.id);
+      const pharmacyId = await requireUserPharmacyId(user.id);
       if (existing.pharmacy_id !== pharmacyId) {
         return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
       }
@@ -112,16 +104,7 @@ export async function PATCH(
       );
     }
 
-    const { data: updated, error } = await db
-      .from("insurance_providers")
-      .update(updates)
-      .eq("id", id)
-      .select()
-      .single();
-
-    if (error) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-    }
+    const updated = await storeUpdateInsuranceProvider(id, updates);
 
     return NextResponse.json({
       success: true,

@@ -1,52 +1,47 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '../../../../../supabase/server'
+import { prisma } from '@/lib/db/prisma'
+import { requirePlatformAdminApi } from '@/lib/admin/require-platform-admin'
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    
-    // Get pharmacy stats
-    const { data: pharmacies, error: pharmacyError } = await supabase
-      .from('pharmacies')
-      .select('id, status, created_at')
-    
-    if (pharmacyError) throw pharmacyError
-    
-    // Get user stats
-    const { data: users, error: userError } = await supabase
-      .from('pharmacy_users')
-      .select('id, created_at')
-    
-    if (userError) throw userError
-    
-    // Get sales for revenue
-    const { data: sales, error: salesError } = await supabase
-      .from('sales')
-      .select('total_amount')
-    
-    if (salesError) throw salesError
-    
-    const totalPharmacies = pharmacies?.length || 0
-    const activePharmacies = pharmacies?.filter(p => p.status === 'active').length || 0
-    const totalRevenue = sales?.reduce((sum, sale) => sum + (sale.total_amount || 0), 0) || 0
-    const totalUsers = users?.length || 0
-    
-    // New registrations this month
+    const auth = await requirePlatformAdminApi()
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    const [pharmacies, users, sales] = await Promise.all([
+      prisma.pharmacies.findMany({
+        select: { id: true, status: true, created_at: true },
+      }),
+      prisma.pharmacy_users.findMany({
+        select: { id: true, created_at: true },
+      }),
+      prisma.sales.findMany({
+        select: { total_amount: true },
+      }),
+    ])
+
+    const totalPharmacies = pharmacies.length
+    const activePharmacies = pharmacies.filter((p) => p.status === 'active').length
+    const totalRevenue = sales.reduce(
+      (sum, sale) => sum + Number(sale.total_amount ?? 0),
+      0,
+    )
+    const totalUsers = users.length
+
     const thisMonth = new Date().getMonth()
-    const newRegistrations = pharmacies?.filter(p => 
-      new Date(p.created_at).getMonth() === thisMonth
-    ).length || 0
-    
-    const stats = {
+    const newRegistrations = pharmacies.filter(
+      (p) => p.created_at && new Date(p.created_at).getMonth() === thisMonth,
+    ).length
+
+    return NextResponse.json({
       totalPharmacies,
       activePharmacies,
       totalRevenue,
       monthlyGrowth: 15.2,
       totalUsers,
-      newRegistrations
-    }
-
-    return NextResponse.json(stats)
+      newRegistrations,
+    })
   } catch (error) {
     return NextResponse.json({ error: 'Failed to fetch dashboard data' }, { status: 500 })
   }

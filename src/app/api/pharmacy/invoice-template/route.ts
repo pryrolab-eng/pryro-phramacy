@@ -1,55 +1,56 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { createClient } from '../../../../../supabase/server'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { storeFindMembershipAtPharmacy } from "@/lib/db/pharmacy-users-store";
+import { isPharmacyOwnerRole } from "@/lib/rbac/pharmacy-roles";
+import {
+  DEFAULT_INVOICE_TEMPLATE,
+  getPharmacyInvoiceTemplateFromDb,
+  upsertPharmacyInvoiceTemplateFromDb,
+  type InvoiceTemplateConfig,
+} from "@/lib/db/pharmacy-invoice-template";
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    
-    const { data: pharmacy } = await supabase
-      .from('pharmacies')
-      .select('invoice_template')
-      .eq('id', 'pharmacyId')
-      .single()
-
-    const defaultTemplate = {
-      showLogo: true,
-      headerFields: ['pharmacyName', 'pharmacyAddress', 'pharmacyPhone', 'date'],
-      patientFields: ['beneficialNumber', 'beneficialName', 'telephone', 'insuranceTIN'],
-      productFields: ['name', 'batch', 'expiryDate', 'quantity', 'price', 'total'],
-      showTax: true,
-      showInsuranceSplit: true,
-      footerText: 'Thank you for your business'
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    return NextResponse.json(pharmacy?.invoice_template || defaultTemplate)
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const template = await getPharmacyInvoiceTemplateFromDb(pharmacyId);
+    return NextResponse.json(template);
   } catch (error) {
-    return NextResponse.json({
-      showLogo: true,
-      headerFields: ['pharmacyName', 'pharmacyAddress', 'pharmacyPhone', 'date'],
-      patientFields: ['beneficialNumber', 'beneficialName', 'telephone', 'insuranceTIN'],
-      productFields: ['name', 'batch', 'expiryDate', 'quantity', 'price', 'total'],
-      showTax: true,
-      showInsuranceSplit: true,
-      footerText: 'Thank you for your business'
-    })
+    console.error("GET /api/pharmacy/invoice-template", error);
+    return NextResponse.json(DEFAULT_INVOICE_TEMPLATE);
   }
 }
 
 export async function PUT(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const template = await request.json()
-    
-    const { error } = await supabase
-      .from('pharmacies')
-      .update({ invoice_template: template })
-      .eq('id', 'pharmacyId')
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    if (error) throw error
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const membership = await storeFindMembershipAtPharmacy(user.id, pharmacyId);
+    if (!membership || !isPharmacyOwnerRole(membership.role)) {
+      return NextResponse.json(
+        { error: "Only the pharmacy owner can update invoice templates" },
+        { status: 403 },
+      );
+    }
 
-    return NextResponse.json({ success: true })
+    const template = (await request.json()) as InvoiceTemplateConfig;
+    const saved = await upsertPharmacyInvoiceTemplateFromDb(pharmacyId, template);
+
+    return NextResponse.json({ success: true, template: saved });
   } catch (error) {
-    return NextResponse.json({ success: false, error: 'Failed to update template' })
+    console.error("PUT /api/pharmacy/invoice-template", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to update template" },
+      { status: 500 },
+    );
   }
 }

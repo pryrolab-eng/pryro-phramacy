@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createServiceClient } from '../../../../../supabase/server'
-import { resolveIsAppPlatformAdmin } from '@/lib/platform-admin'
+import { requirePlatformAdminApi } from '@/lib/admin/require-platform-admin'
 import { syncPlanToPolarAndSave } from '@/lib/polar/sync-plan-db'
 import { dedupeSubscriptionPlansByName, findDuplicatePlanGroups } from '@/lib/subscription/dedupe-plans'
 import {
@@ -13,67 +12,63 @@ import {
   isPostgresUniqueViolation,
   normalizePlanType,
 } from '@/lib/subscription/plan-name-validation'
+import {
+  createSubscriptionPlanFromDb,
+  listActiveSubscriptionPlansForConflictFromDb,
+  listAllSubscriptionPlansFromDb,
+  listEnabledPlanFeaturesByPlanIdsFromDb,
+} from '@/lib/db/admin'
+import { storeListPlatformFeatures } from '@/lib/db/plan-features-store'
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const auth = await requirePlatformAdminApi()
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    const allowed = await resolveIsAppPlatformAdmin(supabase, user.id, null)
-    if (!allowed) {
-      return NextResponse.json(
-        { error: 'Forbidden: platform admin access required' },
-        { status: 403 },
-      )
-    }
-
-    const db = createServiceClient()
-    const { data: plans, error: plansError } = await db
-      .from('subscription_plans')
-      .select('*')
-      .order('is_active', { ascending: false })
-      .order('price', { ascending: true })
-
-    if (plansError) throw plansError
+    const plans = await listAllSubscriptionPlansFromDb()
 
     let subscriberCounts = {
       byPlanId: new Map<string, number>(),
       byPlanName: new Map<string, number>(),
     }
     try {
-      subscriberCounts = await countActiveSubscribersByPlanId(db)
+      subscriberCounts = await countActiveSubscribersByPlanId()
     } catch (subsError) {
       console.error('GET /api/admin/plans: subscriptions aggregate', subsError)
     }
 
-    const catalog = dedupeSubscriptionPlansByName(plans ?? [])
-    const duplicateGroups = findDuplicatePlanGroups(plans ?? [], { activeOnly: true })
+    const planRows = (plans ?? []) as Array<{
+      id: string
+      name: string
+      plan_type?: string | null
+      price?: number | string | null
+      polar_product_id?: string | null
+      is_active?: boolean | null
+      updated_at?: string | null
+      created_at?: string | null
+    }>
+    const catalog = dedupeSubscriptionPlansByName(planRows)
+    const duplicateGroups = findDuplicatePlanGroups(planRows, { activeOnly: true })
 
     const planIds = catalog.map((p) => (p as { id: string }).id)
-    const [{ data: planFeatureRows }, { data: booleanFeatureRows }] = await Promise.all([
-      db
-        .from('plan_features')
-        .select('plan_id, feature_key')
-        .in('plan_id', planIds.length ? planIds : ['00000000-0000-0000-0000-000000000000'])
-        .eq('enabled', true),
-      db.from('platform_features').select('key').eq('feature_type', 'boolean'),
+    const [planFeatureRows, booleanFeatureRows] = await Promise.all([
+      listEnabledPlanFeaturesByPlanIdsFromDb(planIds),
+      storeListPlatformFeatures({ includeInactive: true }),
     ])
 
     const booleanKeySet = new Set(
-      (booleanFeatureRows ?? []).map((row) => row.key as string),
+      booleanFeatureRows
+        .filter((row) => row.feature_type === 'boolean')
+        .map((row) => row.key),
     )
 
     const keysByPlan = new Map<string, string[]>()
-    for (const row of planFeatureRows ?? []) {
-      const featureKey = row.feature_key as string
+    for (const row of planFeatureRows) {
+      const featureKey = row.feature_key
       if (!booleanKeySet.has(featureKey)) continue
-      const pid = row.plan_id as string
+      const pid = row.plan_id
       const list = keysByPlan.get(pid) ?? []
       list.push(featureKey)
       keysByPlan.set(pid, list)
@@ -108,19 +103,11 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-    }
-    const allowed = await resolveIsAppPlatformAdmin(supabase, user.id, null)
-    if (!allowed) {
+    const auth = await requirePlatformAdminApi()
+    if (!auth.ok) {
       return NextResponse.json(
-        { success: false, error: 'Forbidden: platform admin access required' },
-        { status: 403 },
+        { success: false, error: auth.error },
+        { status: auth.status },
       )
     }
 
@@ -133,17 +120,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const db = createServiceClient()
-
-    const { data: existing } = await db
-      .from('subscription_plans')
-      .select('id, name, plan_type')
-      .eq('is_active', true)
-
+    const existing = await listActiveSubscriptionPlansForConflictFromDb()
     const requestedType = normalizePlanType(body.plan_type)
 
     const conflict = findPlanNameConflict(
-      (existing ?? []) as { id: string; name: string; plan_type?: string | null; is_active?: boolean | null }[],
+      existing,
       planName,
       requestedType,
     )
@@ -186,25 +167,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: limitValidation }, { status: 400 })
     }
 
-    const { data: plan, error } = await db
-      .from('subscription_plans')
-      .insert({
-        name: body.name,
-        price: body.price,
-        period,
-        features: body.features,
-        is_popular: body.is_popular || false,
-        is_active: true,
-        plan_type: requestedType,
-        billing_period,
-        max_branches: requestedType === 'branch_addon' ? 1 : Number(body.max_branches ?? 1),
-        max_users: Number(body.max_users ?? 5),
-        monthly_tx_limit: Number(body.monthly_tx_limit ?? 500),
-      })
-      .select()
-      .single()
-
-    if (error) throw error
+    const plan = await createSubscriptionPlanFromDb({
+      name: body.name,
+      price: body.price,
+      period,
+      features: body.features ?? [],
+      is_popular: body.is_popular || false,
+      is_active: true,
+      plan_type: requestedType,
+      billing_period,
+      max_branches: requestedType === 'branch_addon' ? 1 : Number(body.max_branches ?? 1),
+      max_users: Number(body.max_users ?? 5),
+      monthly_tx_limit: Number(body.monthly_tx_limit ?? 500),
+    })
 
     if (featureKeys.length > 0 && requestedType === 'main') {
       const { validateRequiredMainPlanKeys, syncPlanFeatures, syncPlanMarketingFeatures } =
@@ -213,11 +188,11 @@ export async function POST(request: NextRequest) {
       if (validation) {
         return NextResponse.json({ success: false, error: validation }, { status: 400 })
       }
-      await syncPlanFeatures(db, plan.id as string, featureKeys)
-      await syncPlanMarketingFeatures(db, plan.id as string, featureKeys)
+      await syncPlanFeatures(plan.id as string, featureKeys)
+      await syncPlanMarketingFeatures(plan.id as string, featureKeys)
     }
 
-    const synced = await syncPlanToPolarAndSave(db, plan as Parameters<typeof syncPlanToPolarAndSave>[1])
+    const synced = await syncPlanToPolarAndSave(plan as Parameters<typeof syncPlanToPolarAndSave>[0])
 
     return NextResponse.json({
       success: true,

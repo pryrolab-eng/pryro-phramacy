@@ -1,3 +1,5 @@
+> **Stack:** Prisma (`DATABASE_URL`) for data; native JWT auth (`getAuthUser()`, cookies `pryrox_session` / `pryrox_refresh`). SQL migrations live in `supabase/migrations/` (`npm run db:sql:push`).
+
 # Module: Superadmin Dashboard
 
 ## Purpose
@@ -22,7 +24,7 @@ This module is intentionally separate from the per-tenant Admin Dashboard (`/adm
 
 Access is enforced at two layers:
 
-1. **`supabase/middleware.ts`** — The `/superadmin` path prefix is listed in `protectedPaths`. Any unauthenticated request is redirected to `/sign-in`.
+1. **`src/lib/middleware/update-session.ts`** — The `/superadmin` path prefix is listed in `protectedPaths`. Any unauthenticated request is redirected to `/sign-in`.
 
 2. **`src/app/(dashboard)/layout.tsx`** — This server component reads `pharmacy_users.role` for the authenticated user. If the role is `superadmin`, it renders `<SuperadminSidebar />`. Other roles receive the pharmacy-scoped sidebars. There is **no hard redirect** for non-superadmin users who navigate directly to `/superadmin` — the layout renders the wrong sidebar but does not block the page. This is a known gap.
 
@@ -44,7 +46,7 @@ Access is enforced at two layers:
 |---|---|---|
 | `src/app/api/superadmin/dashboard/route.ts` | `GET` | Returns aggregate platform stats: total pharmacies, active pharmacies, total revenue (sum of all `sales.total_amount`), total users, and new registrations this month. |
 | `src/app/api/superadmin/pharmacies/route.ts` | `GET` | Returns all rows from the `pharmacies` table ordered by `created_at` descending. |
-| `src/app/api/superadmin/pharmacies/route.ts` | `POST` | Creates a new pharmacy record in the `pharmacies` table. Does **not** create a Supabase Auth user for the owner — the `owner_password` field accepted by the page is not forwarded to the API. |
+| `src/app/api/superadmin/pharmacies/route.ts` | `POST` | Creates a pharmacy via Prisma. Verify whether owner `adminCreateAuthUser` runs — form may collect `owner_password` without forwarding it. |
 
 ### Components
 
@@ -84,7 +86,7 @@ Access is enforced at two layers:
 | `address` | `text` | Physical address |
 | `phone` | `text` | Contact phone |
 | `email` | `text` | Contact email |
-| `owner_id` | `uuid` | FK to Supabase Auth user (not always populated) |
+| `owner_id` | `uuid` | FK to `auth.users` (not always populated) |
 | `owner_name` | `text` | Denormalised owner name |
 | `status` | `text` | `active` \| `suspended` |
 | `subscription_plan` | `text` | `free` \| `standard` \| `premium` |
@@ -139,7 +141,7 @@ Displays the five most recently registered pharmacies. Each card shows pharmacy 
 
 A modal form that collects: pharmacy name, location, owner name, owner email, owner phone, owner password, subscription plan (free / standard / premium), and insurance provider assignments with adjustable coverage percentages.
 
-**Known limitation:** The `owner_password` field is accepted by the form but is **not sent to the API**. The `POST /api/superadmin/pharmacies` handler does not create a Supabase Auth user for the new owner. The pharmacy record is created but the owner cannot log in. This is an incomplete implementation.
+**Known limitation:** The `owner_password` field may be accepted by the form but not sent to the API. If `POST /api/superadmin/pharmacies` does not call `adminCreateAuthUser`, the pharmacy exists but the owner cannot log in.
 
 After creation, the page broadcasts a `pharmacy_created` event via `POST /api/notifications/broadcast`.
 
@@ -186,7 +188,7 @@ This card is visible to any authenticated superadmin user in production. It expo
 |---|---|---|
 | Hardcoded test credentials card | 🔴 Critical | Exposes superadmin and test account passwords in the UI. Must be removed before production. |
 | `monthlyGrowth` is hardcoded | 🟡 Medium | The growth rate stat is always `15.2%` regardless of actual data. |
-| Owner user not created on pharmacy creation | 🟡 Medium | The "Add Pharmacy" form collects an owner password but the API does not create a Supabase Auth user. The pharmacy record is created but the owner cannot log in. |
+| Owner user not created on pharmacy creation | 🟡 Medium | Add Pharmacy form may collect owner password without API creating `auth.users`. Pharmacy row exists but owner cannot sign in. |
 | Owner name not resolved | 🟡 Medium | The pharmacy list shows the `owner_id` UUID instead of a human-readable name. |
 | No role-based page guard | 🟡 Medium | The `/superadmin` page is only protected by the middleware session check. A non-superadmin authenticated user who navigates directly to `/superadmin` will see the page with the wrong sidebar. |
 | Hardcoded email in sidebar | 🟠 Low | `src/components/superadmin-sidebar.tsx` hardcodes `abdousentore@gmail.com` in the `superadminData.user` object. The sidebar does not read the actual logged-in user's email. |

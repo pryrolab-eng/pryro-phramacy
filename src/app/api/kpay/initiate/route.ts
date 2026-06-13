@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { createClient } from '../../../../../supabase/server'
 import { kpayService } from '@/lib/kpay'
 import { PhoneNumberValidator } from '@/lib/phone-validator'
 import { CardValidator } from '@/lib/card-validator'
+import {
+  storeCreatePaymentTransaction,
+  storeInsertPaymentLog,
+  storeUpdatePaymentTransaction,
+} from '@/lib/db/payment-transactions-store'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -35,13 +38,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Validate phone number
     const phoneValidation = PhoneNumberValidator.validate(customerPhone)
     if (!phoneValidation.isValid && paymentMethod === 'momo') {
       return NextResponse.json({ error: 'Invalid phone number format' }, { status: 400 })
     }
 
-    // Validate card if card payment
     let cardValidation = null
     if (paymentMethod === 'cc' && cardNumber) {
       cardValidation = CardValidator.validateWithDetails(
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+    const pharmacyId = await requireSessionPharmacyId(user.id)
 
     const refid = `PYX-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
@@ -71,49 +72,39 @@ export async function POST(request: NextRequest) {
       logourl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/logo.png`
     }
 
-    const { data: transaction, error: transactionError } = await supabase
-      .from('payment_transactions')
-      .insert({
-        pharmacy_id: pharmacyId,
-        sale_id: saleId || null,
-        subscription_id: subscriptionId || null,
-        kpay_refid: refid,
-        amount,
-        currency: 'RWF',
-        payment_method: paymentMethod,
-        bank_id: kpayRequest.bankid,
-        bank_name: kpayService.getBankName(kpayRequest.bankid),
-        customer_name: customerName,
-        customer_phone: phoneValidation.formatted,
-        customer_email: customerEmail,
-        customer_number: phoneValidation.formatted,
-        payment_details: details,
-        card_last_four: cardValidation?.maskedNumber?.slice(-4) || null,
-        card_brand: cardValidation?.brand || null,
-        status: 'pending'
-      })
-      .select()
-      .single()
+    const transaction = await storeCreatePaymentTransaction({
+      pharmacy_id: pharmacyId,
+      sale_id: saleId || null,
+      subscription_id: subscriptionId || null,
+      kpay_refid: refid,
+      amount,
+      currency: 'RWF',
+      payment_method: paymentMethod,
+      bank_id: kpayRequest.bankid,
+      bank_name: kpayService.getBankName(kpayRequest.bankid),
+      customer_name: customerName,
+      customer_phone: phoneValidation.formatted,
+      customer_email: customerEmail,
+      customer_number: phoneValidation.formatted,
+      payment_details: details,
+      status: 'pending',
+    })
 
-    if (transactionError) {
-      return NextResponse.json({ error: 'Failed to create transaction' }, { status: 500 })
-    }
-
-    await supabase.from('payment_logs').insert({
-      transaction_id: transaction.id,
-      event_type: 'request',
-      payload: kpayRequest
+    await storeInsertPaymentLog({
+      transactionId: transaction.id,
+      eventType: 'request',
+      payload: kpayRequest,
     })
 
     const kpayResponse = await kpayService.initiatePayment(kpayRequest)
 
-    await supabase.from('payment_logs').insert({
-      transaction_id: transaction.id,
-      event_type: 'response',
-      response: kpayResponse
+    await storeInsertPaymentLog({
+      transactionId: transaction.id,
+      eventType: 'response',
+      response: kpayResponse,
     })
 
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       kpay_tid: kpayResponse.tid,
       kpay_authkey: kpayResponse.authkey,
       kpay_checkout_url: kpayResponse.url,
@@ -131,7 +122,7 @@ export async function POST(request: NextRequest) {
       updateData.error_message = kpayService.getErrorMessage(kpayResponse.retcode)
     }
 
-    await supabase.from('payment_transactions').update(updateData).eq('id', transaction.id)
+    await storeUpdatePaymentTransaction(transaction.id, updateData)
 
     return NextResponse.json({
       success: kpayResponse.retcode === 0 || kpayResponse.statusid === '01',
@@ -145,7 +136,8 @@ export async function POST(request: NextRequest) {
       kpayResponse
     })
 
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Payment initiation failed' }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Payment initiation failed'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

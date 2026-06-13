@@ -20,6 +20,9 @@
 # production
 /build
 
+# local uploads (logos, platform reports)
+/uploads
+
 # misc
 .DS_Store
 *.pem

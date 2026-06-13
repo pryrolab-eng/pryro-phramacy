@@ -1,12 +1,15 @@
-import { NextResponse } from 'next/server'
-import { createServiceClient } from '../../../../supabase/service'
-import { DEFAULT_PLATFORM_SUPPORT_EMAIL, normalizeSupportEmail } from '@/lib/platform/support-email'
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db/prisma";
+import {
+  DEFAULT_PLATFORM_SUPPORT_EMAIL,
+  normalizeSupportEmail,
+} from "@/lib/platform/support-email";
 
 const PUBLIC_SETTING_KEYS = [
-  'platformName',
-  'platformLogoUrl',
-  'supportEmail',
-] as const
+  "platformName",
+  "platformLogoUrl",
+  "supportEmail",
+] as const;
 
 /**
  * Public endpoint — no auth required.
@@ -14,29 +17,29 @@ const PUBLIC_SETTING_KEYS = [
  */
 export async function GET() {
   try {
-    const supabase = createServiceClient()
+    const settings = await prisma.system_settings.findMany({
+      where: {
+        pharmacy_id: null,
+        setting_key: { in: [...PUBLIC_SETTING_KEYS] },
+      },
+      select: { setting_key: true, setting_value: true },
+    });
 
-    const { data: settings } = await supabase
-      .from('system_settings')
-      .select('setting_key, setting_value')
-      .in('setting_key', [...PUBLIC_SETTING_KEYS])
-      .is('pharmacy_id', null)
-
-    const map: Record<string, string> = {}
-    settings?.forEach((s) => {
-      map[s.setting_key] = String(s.setting_value ?? '')
-    })
+    const map: Record<string, string> = {};
+    settings.forEach((s) => {
+      map[s.setting_key] = String(s.setting_value ?? "");
+    });
 
     return NextResponse.json({
-      platformName: map.platformName || 'Pryrox',
+      platformName: map.platformName || "Pryrox",
       platformLogoUrl: map.platformLogoUrl || null,
       supportEmail: normalizeSupportEmail(map.supportEmail),
-    })
+    });
   } catch {
     return NextResponse.json({
-      platformName: 'Pryrox',
+      platformName: "Pryrox",
       platformLogoUrl: null,
       supportEmail: DEFAULT_PLATFORM_SUPPORT_EMAIL,
-    })
+    });
   }
 }

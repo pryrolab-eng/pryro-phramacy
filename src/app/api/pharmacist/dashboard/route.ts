@@ -1,92 +1,32 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '../../../../../supabase/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
+import { NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { fetchPharmacistDashboardStatsFromDb } from "@/lib/db/pharmacist-dashboard";
 
-export async function GET(request: Request) {
+const EMPTY_STATS = {
+  prescriptionsToday: 0,
+  customersServed: 0,
+  averageWaitTime: 8,
+  completedSales: 0,
+  pendingPrescriptions: 0,
+  consultationsGiven: 0,
+  inventoryChecks: 0,
+  alertsHandled: 0,
+};
+
+export async function GET() {
   try {
-    const supabase = await createClient()
-    const today = new Date().toISOString().split('T')[0]
-    
-    // Get current user
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
-
-    // Get prescriptions stats for this pharmacy
-    const { data: prescriptions } = await supabase
-      .from('prescriptions')
-      .select('id, status, created_at')
-      .eq('pharmacy_id', pharmacyId)
-    
-    // Get sales stats for this pharmacy
-    const { data: sales } = await supabase
-      .from('sales')
-      .select('id, created_at')
-      .eq('pharmacy_id', pharmacyId)
-    
-    // Get average wait time from prescription processing
-    const { data: processingTimes } = await supabase
-      .from('prescription_processing')
-      .select('processing_time_minutes')
-      .gte('created_at', `${today}T00:00:00`)
-      .not('processing_time_minutes', 'is', null)
-    
-    // Get today's inventory checks
-    const { data: inventoryChecks } = await supabase
-      .from('inventory_checks')
-      .select('id')
-      .gte('created_at', `${today}T00:00:00`)
-    
-    // Get today's alert actions
-    const { data: alertActions } = await supabase
-      .from('alert_actions')
-      .select('id')
-      .gte('created_at', `${today}T00:00:00`)
-    
-    // Calculate stats
-    const prescriptionsToday = prescriptions?.filter(p => 
-      p.created_at.startsWith(today)
-    ).length || 0
-    
-    const pendingPrescriptions = prescriptions?.filter(p => 
-      p.status === 'pending'
-    ).length || 0
-    
-    const completedSales = sales?.filter(s => 
-      s.created_at.startsWith(today)
-    ).length || 0
-    
-    // Calculate actual average wait time
-    const avgWaitTime = processingTimes && processingTimes.length > 0 
-      ? Math.round(processingTimes.reduce((sum, p) => sum + p.processing_time_minutes, 0) / processingTimes.length)
-      : 8 // fallback
-    
-    const stats = {
-      prescriptionsToday,
-      customersServed: completedSales,
-      averageWaitTime: avgWaitTime,
-      completedSales,
-      pendingPrescriptions,
-      consultationsGiven: Math.floor(completedSales * 0.4),
-      inventoryChecks: inventoryChecks?.length || 0,
-      alertsHandled: alertActions?.length || 0
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    return NextResponse.json(stats)
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const stats = await fetchPharmacistDashboardStatsFromDb(pharmacyId);
+
+    return NextResponse.json(stats);
   } catch (error) {
-    // Fallback data
-    return NextResponse.json({
-      prescriptionsToday: 12,
-      customersServed: 45,
-      averageWaitTime: 8,
-      completedSales: 23,
-      pendingPrescriptions: 5,
-      consultationsGiven: 18,
-      inventoryChecks: 0,
-      alertsHandled: 0
-    })
+    console.error("GET /api/pharmacist/dashboard", error);
+    return NextResponse.json(EMPTY_STATS);
   }
 }

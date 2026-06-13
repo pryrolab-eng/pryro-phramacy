@@ -1,22 +1,38 @@
 "use server";
 
 import { encodedRedirect } from "@/utils/utils";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { createClient } from "../../supabase/server";
 import {
-  sendPasswordRecoveryEmail,
-  sendSignupConfirmationEmail,
-} from "@/lib/email/auth-emails";
+  sendNativePasswordRecoveryEmail,
+  sendNativeSignupConfirmationEmail,
+} from "@/lib/email/native-auth-emails";
 import crypto from "crypto";
-import { isEmailNotConfirmedError } from "@/lib/auth/email-not-confirmed";
-import {
-  INVALID_CREDENTIALS_MESSAGE,
-  isInvalidLoginCredentials,
-} from "@/lib/auth/invalid-credentials";
 import { POST_AUTH_ENTRY_PATH } from "@/lib/auth/resolve-home-redirect";
 import { getAllowUserTwoFactor } from "@/lib/platform-security-policy";
 import { RESET_PASSWORD_PATH } from "@/lib/middleware/auth-routes";
+import { storeGetTwoFactorEnabled } from "@/lib/db/public-users-store";
+import { storeCreateTwoFactorSession } from "@/lib/db/two-factor-sessions-store";
+import { SESSION_COOKIE_NAME } from "@/lib/auth/auth-mode";
+import { assertRegistrationsEnabled } from "@/lib/platform-policy/enforce";
+import { PlatformPolicyError } from "@/lib/platform-policy/errors";
+import { nativeSignInWithPassword } from "@/lib/auth/native/sign-in";
+import {
+  clearNativeSessionCookie,
+  establishNativeSession,
+} from "@/lib/auth/native/session";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import {
+  adminCreateAuthUser,
+  adminUpdateAuthUserPassword,
+} from "@/lib/auth/admin-users";
+import { verifyPasswordResetToken } from "@/lib/auth/native/auth-tokens";
+import { clearMustChangePasswordFlag } from "@/lib/auth/must-change-password";
+import {
+  enforceAuthRateLimit,
+  getIpFromRequestHeaders,
+} from "@/lib/rate-limit/enforce";
+import { RATE_LIMIT_MESSAGES } from "@/lib/rate-limit/presets";
 
 export type SignInFormState = {
   error?: string;
@@ -24,13 +40,7 @@ export type SignInFormState = {
   email?: string;
 } | null;
 
-export const signInAction = async (
-  _prevState: SignInFormState,
-  formData: FormData,
-): Promise<SignInFormState> => {
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-
+async function clearLegacySupabaseAuthCookies() {
   const cookieStore = await cookies();
   for (const { name } of cookieStore.getAll()) {
     if (name.startsWith("sb-") && name.includes("auth-token")) {
@@ -39,50 +49,54 @@ export const signInAction = async (
       } catch {}
     }
   }
+}
 
-  const supabase = await createClient();
+export const signInAction = async (
+  _prevState: SignInFormState,
+  formData: FormData,
+): Promise<SignInFormState> => {
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+  const trimmedEmail = email.trim();
+  const cookieStore = await cookies();
 
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
-  if (error) {
-    const trimmedEmail = email.trim();
-    if (isEmailNotConfirmedError(error)) {
-      return {
-        unconfirmed: true,
-        email: trimmedEmail,
-        error:
-          "Please confirm your email before signing in. Use Resend email in this notification.",
-      };
-    }
-    if (isInvalidLoginCredentials(error)) {
-      return { error: INVALID_CREDENTIALS_MESSAGE, email: trimmedEmail };
-    }
-    return { error: error.message, email: trimmedEmail };
+  const signInLimit = await enforceAuthRateLimit({
+    scope: "signIn",
+    bucketKey: `${trimmedEmail.toLowerCase()}|${getIpFromRequestHeaders(await headers())}`,
+    message: RATE_LIMIT_MESSAGES.signIn,
+  });
+  if (!signInLimit.ok) {
+    return { error: signInLimit.message, email: trimmedEmail };
   }
 
-  const platformAllows2FA = await getAllowUserTwoFactor(supabase);
+  await clearNativeSessionCookie();
+  await clearLegacySupabaseAuthCookies();
 
-  const { data: userData } = await supabase
-    .from('users')
-    .select('two_factor_enabled')
-    .eq('id', data.user.id)
-    .single();
+  const result = await nativeSignInWithPassword({ email, password });
+  if (!result.ok) {
+    return {
+      error: result.error,
+      email: trimmedEmail,
+      unconfirmed: result.unconfirmed,
+    };
+  }
 
-  if (platformAllows2FA && userData?.two_factor_enabled) {
+  const platformAllows2FA = await getAllowUserTwoFactor();
+  const twoFactorEnabled = await storeGetTwoFactorEnabled(result.userId);
+
+  if (platformAllows2FA && twoFactorEnabled) {
     const sessionToken = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-    await supabase.from('two_factor_sessions').insert({
-      user_id: data.user.id,
-      session_token: sessionToken,
-      verified: false,
-      expires_at: expiresAt.toISOString()
+    await storeCreateTwoFactorSession({
+      userId: result.userId,
+      sessionToken,
+      expiresAt,
     });
-
-    await supabase.auth.signOut();
+    cookieStore.set(SESSION_COOKIE_NAME, "", { path: "/", maxAge: 0 });
     return redirect(`/verify-2fa?session=${sessionToken}`);
   }
 
+  await establishNativeSession(result.userId);
   redirect(POST_AUTH_ENTRY_PATH);
 };
 
@@ -91,6 +105,15 @@ export const signUpAction = async (formData: FormData) => {
   const password = formData.get("password") as string;
   const full_name = ((formData.get("full_name") as string) || "").trim();
 
+  try {
+    await assertRegistrationsEnabled();
+  } catch (error) {
+    if (error instanceof PlatformPolicyError) {
+      return encodedRedirect("error", "/sign-up", error.message);
+    }
+    throw error;
+  }
+
   if (!email || !password) {
     return encodedRedirect("error", "/sign-up", "Email and password are required.");
   }
@@ -98,19 +121,25 @@ export const signUpAction = async (formData: FormData) => {
     return encodedRedirect("error", "/sign-up", "Password must be at least 6 characters.");
   }
 
-  const result = await sendSignupConfirmationEmail({
-    email,
-    password,
-    fullName: full_name,
-    redirectTo: "/onboarding",
-  });
-
-  if (!result.ok) {
-    return encodedRedirect("error", "/sign-up", result.error);
-  }
-
-  if (result.sessionCreated) {
-    redirect("/onboarding");
+  try {
+    const { user } = await adminCreateAuthUser({
+      email,
+      password,
+      fullName: full_name,
+      emailConfirmed: false,
+    });
+    const result = await sendNativeSignupConfirmationEmail({
+      userId: user.id,
+      email,
+      redirectTo: "/onboarding",
+    });
+    if (!result.ok) {
+      return encodedRedirect("error", "/sign-up", result.error);
+    }
+  } catch (e) {
+    const message =
+      e instanceof Error ? e.message : "Could not create account";
+    return encodedRedirect("error", "/sign-up", message);
   }
 
   const params = new URLSearchParams({ email });
@@ -118,27 +147,22 @@ export const signUpAction = async (formData: FormData) => {
 };
 
 export const signInWithGoogleAction = async () => {
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
-    },
-  });
-
-  if (error) {
-    return encodedRedirect("error", "/sign-in", error.message);
+  const { isGoogleOAuthConfigured } = await import(
+    "@/lib/auth/native/google-oauth"
+  );
+  if (!isGoogleOAuthConfigured()) {
+    return encodedRedirect(
+      "error",
+      "/sign-in",
+      "Google sign-in is not configured on this server.",
+    );
   }
-
-  if (data.url) {
-    redirect(data.url);
-  }
+  redirect("/api/auth/google");
 };
 
 export const signOutAction = async () => {
-  const supabase = await createClient();
-  console.log('🚪 SIGNING OUT');
-  await supabase.auth.signOut();
+  await clearNativeSessionCookie();
+  await clearLegacySupabaseAuthCookies();
   return redirect("/sign-in");
 };
 
@@ -148,18 +172,15 @@ export const forgotPasswordAction = async (formData: FormData) => {
     return encodedRedirect("error", "/forgot-password", "Email is required.");
   }
 
-  const result = await sendPasswordRecoveryEmail(email, RESET_PASSWORD_PATH);
-
+  const result = await sendNativePasswordRecoveryEmail(email);
   if (!result.ok) {
     return encodedRedirect("error", "/forgot-password", result.error);
   }
 
-  const viaFallback = result.provider === "nodemailer" ? " (sent via backup email service)" : "";
-
   return encodedRedirect(
     "success",
     "/forgot-password",
-    `Check your email for a password reset link.${viaFallback}`
+    "Check your email for a password reset link.",
   );
 };
 
@@ -177,13 +198,28 @@ export const resetPasswordAction = async (formData: FormData) => {
     return encodedRedirect("error", RESET_PASSWORD_PATH, "Password must be at least 6 characters.");
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
+  const nativeToken = (formData.get("native_token") as string | null)?.trim();
 
-  if (userError || !user) {
+  if (nativeToken) {
+    const payload = await verifyPasswordResetToken(nativeToken);
+    if (!payload) {
+      return encodedRedirect(
+        "error",
+        RESET_PASSWORD_PATH,
+        "Your reset link expired or is invalid. Request a new one from Forgot password.",
+      );
+    }
+    await adminUpdateAuthUserPassword(payload.userId, password);
+    await clearNativeSessionCookie();
+    return encodedRedirect(
+      "success",
+      "/sign-in",
+      "Your password was updated. Sign in with your new password.",
+    );
+  }
+
+  const user = await getAuthUser();
+  if (!user) {
     return encodedRedirect(
       "error",
       RESET_PASSWORD_PATH,
@@ -191,11 +227,12 @@ export const resetPasswordAction = async (formData: FormData) => {
     );
   }
 
-  const { error } = await supabase.auth.updateUser({ password });
-  if (error) {
-    return encodedRedirect("error", RESET_PASSWORD_PATH, error.message);
-  }
-
-  await supabase.auth.signOut();
-  return encodedRedirect("success", "/sign-in", "Your password was updated. Sign in with your new password.");
+  await adminUpdateAuthUserPassword(user.id, password);
+  await clearMustChangePasswordFlag(user.id, user.user_metadata);
+  await clearNativeSessionCookie();
+  return encodedRedirect(
+    "success",
+    "/sign-in",
+    "Your password was updated. Sign in with your new password.",
+  );
 };

@@ -15,17 +15,16 @@
    - [Layer 1 — `middleware.ts`](#layer-1--middlewarets)
    - [Layer 2 — `src/app/(dashboard)/layout.tsx`](#layer-2--srcappdashboardlayouttsx)
 6. [Data Flow](#data-flow)
-7. [Supabase Integration](#supabase-integration)
+7. [Data & Auth Layer](#data--auth-layer)
 8. [KPay Payment Integration](#kpay-payment-integration)
-9. [Client Factories](#client-factories)
 
 ---
 
 ## System Overview
 
-Pryrox is a multi-tenant SaaS platform for pharmacy management. Each tenant (pharmacy) is isolated at the database level via Supabase Row-Level Security (RLS). The application is built on **Next.js 14 App Router**, which means pages can be React Server Components (RSC) or Client Components, and API endpoints are Next.js Route Handlers rather than a separate backend service.
+Pryrox is a multi-tenant SaaS platform for pharmacy management. Each tenant (pharmacy) is isolated in application code: API routes resolve the **active pharmacy** from session context and scope Prisma queries by `pharmacy_id`. The application is built on the **Next.js App Router** — pages can be React Server Components (RSC) or Client Components, and API endpoints are Next.js Route Handlers rather than a separate backend service.
 
-Authentication is handled entirely by Supabase Auth (JWT-based sessions stored in HTTP-only cookies). Role resolution happens server-side on every dashboard request, ensuring that role-specific UI is never rendered on the client before authorization is confirmed.
+Authentication uses **native JWT cookies** (`pryrox_session`, `pryrox_refresh`) signed with `AUTH_SECRET`. Role resolution happens server-side on every dashboard request via `getAuthUser()` and `resolveActivePharmacyContext()`.
 
 ---
 
@@ -41,19 +40,19 @@ Authentication is handled entirely by Supabase Auth (JWT-based sessions stored i
 ┌────────────────────────────▼────────────────────────────────────┐
 │                    Next.js Server (Vercel / Node)                │
 │                                                                  │
-│  middleware.ts ──► Session refresh (Supabase SSR)               │
+│  middleware.ts ──► Native JWT session + route guards              │
 │  src/app/api/**  ──► Route Handlers (REST-style API)            │
 │  src/app/(dashboard)/** ──► Server + Client page components     │
 │  src/app/(auth)/**  ──► Sign-in, Sign-up, 2FA, Forgot password  │
 └──────────┬──────────────────────────────────────┬───────────────┘
-           │ supabase-js (server)                  │ fetch (server)
+           │ Prisma (DATABASE_URL)               │ fetch (server)
 ┌──────────▼──────────────┐           ┌────────────▼──────────────┐
-│   Supabase Platform      │           │   KPay Payment Gateway    │
-│  ─ PostgreSQL (RLS)      │           │   pay.esicia.com          │
-│  ─ Auth (JWT + 2FA)      │           │   Mobile Money / Cards    │
-│  ─ Realtime (WebSocket)  │           └───────────────────────────┘
-│  ─ Storage (logos)       │
+│   PostgreSQL             │           │   KPay Payment Gateway    │
+│  ─ Application schema    │           │   pay.esicia.com          │
+│  ─ auth.users + sessions │           │   Mobile Money / Cards    │
+│  ─ Legacy RLS policies*  │           └───────────────────────────┘
 └─────────────────────────┘
+* RLS exists from migrations; the app uses Prisma with service credentials and enforces tenancy in route handlers.
 ```
 
 ---
@@ -67,7 +66,7 @@ Authentication is handled entirely by Supabase Auth (JWT-based sessions stored i
 | Charts | Recharts |
 | State management | Zustand (`usePharmacyStore`) |
 | Forms | React Hook Form + Zod resolvers |
-| Backend / DB | Supabase (PostgreSQL, Auth, Realtime, Storage) |
+| Backend / DB | PostgreSQL + Prisma; native JWT auth; local disk / Cloudinary uploads |
 | Payments | KPay gateway (`src/lib/kpay.ts`) |
 | Export | jsPDF, jspdf-autotable, xlsx, jsbarcode |
 | i18n | i18next (EN, RW, FR, SW — defined, not yet wired into UI) |
@@ -88,7 +87,7 @@ Roles are stored in the `pharmacy_users.role` column. Every authenticated user h
 | `cashier` | Operational access. Primarily POS and sales. Sees the `PharmacySidebar` (subset of actions available). |
 | `staff` | General staff access. Limited to assigned modules within their pharmacy. Sees the `PharmacySidebar` (subset of actions available). |
 
-> **Tenant isolation** is enforced at the database layer via Supabase RLS policies. Even if a user somehow bypasses the UI, their Supabase JWT only grants access to rows where `pharmacy_id` matches their own.
+> **Tenant isolation** is enforced in API route handlers and Prisma store modules using `requireSessionPharmacyId()` / active pharmacy context. Legacy RLS policies remain in the schema from migrations but are not relied on by the application layer.
 
 ---
 
@@ -98,13 +97,13 @@ Authentication and role resolution are split across two layers that run in seque
 
 ### Layer 1 — `middleware.ts`
 
-**File:** `middleware.ts` → delegates to `supabase/middleware.ts` (`updateSession`)
+**File:** `middleware.ts` → delegates to `src/lib/middleware/update-session.ts`
 
 The middleware runs on every request that is not a static asset (matched by the `config.matcher` pattern). Its responsibilities are:
 
-1. **Session refresh** — Creates a Supabase SSR client using the request cookies and calls `supabase.auth.getUser()`. If the session JWT is expired but a valid refresh token exists, Supabase automatically issues a new JWT and the middleware writes the updated cookies to the response.
+1. **Session refresh** — Reads `pryrox_session` / `pryrox_refresh` cookies, verifies JWTs with `AUTH_SECRET`, and silently refreshes the access token when a valid refresh token is present (`trySilentNativeAccessRefresh`).
 
-2. **Invalid token cleanup** — If the error message contains `refresh_token_not_found` or `Invalid Refresh Token`, the middleware calls `supabase.auth.signOut()` and deletes the stale auth cookie, preventing redirect loops.
+2. **Legacy cookie cleanup** — Clears stale `sb-*-auth-token` cookies from the Supabase era if present.
 
 3. **Protected path enforcement** — If the request path starts with any of the following prefixes **and** there is no authenticated user, the middleware redirects to `/sign-in`:
 
@@ -124,7 +123,7 @@ The middleware runs on every request that is not a static asset (matched by the 
    | `/prescriptions` | Prescription management |
    | `/admin` | Admin panel |
 
-4. **Auth page redirect** — If an already-authenticated user navigates to `/sign-in`, `/sign-up`, or `/forgot-password`, the middleware redirects them to `/dashboard`.
+4. **Auth page redirect** — If an already-authenticated user navigates to `/sign-in`, `/sign-up`, or `/forgot-password`, the middleware redirects them to `/app`.
 
 5. **Auth processing passthrough** — Paths like `/auth/callback`, `/auth/success`, `/verify-2fa`, and `/auth-success` are always allowed through without redirection, so the OAuth/2FA callback flow completes correctly.
 
@@ -136,7 +135,7 @@ The middleware runs on every request that is not a static asset (matched by the 
 
 This is a **React Server Component** that wraps every page inside the `(dashboard)` route group. It runs after the middleware has already confirmed a session exists. Its responsibilities are:
 
-1. **Re-verify the session** — Calls `supabase.auth.getUser()` again (server-side, using the cookie store). If no user is found at this point, it calls `redirect('/sign-in')` as a second line of defence.
+1. **Re-verify the session** — Calls `getAuthUser()` again (server-side). If no user is found, it calls `redirect('/sign-in')` as a second line of defence.
 
 2. **Resolve the user role** — Queries `pharmacy_users` for the row matching `user_id = user.id` and `is_active = true`, selecting `role` and `pharmacy_id`.
 
@@ -168,15 +167,12 @@ Client Component (page.tsx or component.tsx)
     │  fetch('/api/...', { method: 'POST', body: JSON.stringify(payload) })
     ▼
 API Route Handler (src/app/api/.../route.ts)
-    │  createClient()          ← supabase/server.ts (cookie-based session)
-    │  supabase.auth.getUser() ← verify session is still valid
-    │  supabase.from('table')
-    │    .select() / .insert() / .update() / .delete()
-    │  RLS policies run inside PostgreSQL:
-    │    - tenant isolation: pharmacy_id must match JWT claim
-    │    - role checks: some tables restrict writes to owner/superadmin
+    │  getAuthUser()           ← src/lib/auth/get-auth-user.ts
+    │  requireSessionPharmacyId() / getRequestPharmacyId()
+    │  prisma.* or lib/db/*-store.ts
+    │    scoped by pharmacy_id from active context
     ▼
-PostgreSQL (Supabase)
+PostgreSQL (via Prisma)
     │
     ▼
 Response JSON  ←  route handler returns NextResponse.json(data)
@@ -185,47 +181,43 @@ Response JSON  ←  route handler returns NextResponse.json(data)
 Client re-renders  ←  React state update / router.refresh()
 ```
 
-**Realtime updates** follow a different path: the client subscribes to a Supabase Realtime channel via WebSocket. When a row changes in PostgreSQL (e.g., a new sale is inserted), Supabase broadcasts the change event to all subscribed clients, which update their local state without a full page reload.
+**Live updates** use HTTP polling: `useRealtimeUpdates` calls `/api/realtime/updates` on an interval (not WebSocket subscriptions).
 
 ---
 
-## Supabase Integration
+## Data & Auth Layer
 
-Supabase provides four services used by Pryrox:
+### Auth (native JWT + 2FA)
 
-### Auth (JWT + 2FA)
+| Piece | Location |
+|---|---|
+| Session cookies | `pryrox_session`, `pryrox_refresh` (`src/lib/auth/auth-mode.ts`) |
+| Sign-in / sign-up | `src/app/actions.ts` → `nativeSignInWithPassword`, `adminCreateAuthUser` |
+| Session verify | `getAuthUser()` in `src/lib/auth/get-auth-user.ts` |
+| Middleware | `src/lib/middleware/update-session.ts` |
+| 2FA | `otplib` + `/api/auth/verify-2fa`, `/api/auth/complete-2fa` |
+| Password reset | SMTP + `/api/auth/recovery-email`; token verify in `resetPasswordAction` |
+| Google OAuth | `/api/auth/google`, `/api/auth/google/callback` |
 
-- Sessions are stored as HTTP-only cookies managed by `@supabase/ssr`.
-- The middleware refreshes the JWT on every request, so sessions stay alive without client-side polling.
-- Two-factor authentication is implemented with `otplib` (TOTP) and `qrcode` for QR code generation. The 2FA verification page is at `/verify-2fa`.
-- Password reset uses Supabase's built-in email flow, with the callback handled at `/auth/callback`.
+### PostgreSQL + Prisma
 
-### PostgreSQL (RLS)
+- Schema history: `supabase/migrations/` (apply with `npm run db:sql:push` or `npx supabase db reset --local`).
+- Runtime access: `@prisma/client` via `src/lib/db/prisma.ts` and domain `*-store.ts` modules.
+- Platform admin checks: `resolveIsAppPlatformAdmin()` + `public.users.is_platform_admin`.
 
-- All application data lives in a single Supabase PostgreSQL project.
-- Row-Level Security policies are defined in `supabase/migrations/` and enforce that users can only read and write rows belonging to their own `pharmacy_id`.
-- The server-side Supabase client (`supabase/server.ts → createClient()`) uses the user's JWT (anon key + session), so RLS applies automatically.
-- Admin operations that must bypass RLS (e.g., superadmin managing all pharmacies) use `createServiceClient()`, which authenticates with `SUPABASE_SERVICE_ROLE_KEY`. This client is **never** exposed to the browser.
+### File storage
 
-### Realtime (WebSocket)
+- Pharmacy logos: Cloudinary when configured, else `uploads/` served by `/api/files/...`.
+- Platform reports: `uploads/platform-reports/` (admin download via API).
 
-- Supabase Realtime is used to push live updates to dashboard pages (e.g., new sales, inventory changes).
-- Clients subscribe to table-level change events using `supabase.channel()`.
-- RLS applies to Realtime subscriptions as well — users only receive events for rows they are authorized to read.
+### Key server entry points
 
-### Storage (Logos)
-
-- Pharmacy logos and branding assets are stored in Supabase Storage buckets.
-- Upload and retrieval are handled through the Supabase client; public URLs are stored in the `pharmacies` table.
-
-### Client Factories
-
-| File | Export | Used In | Auth Method |
-|---|---|---|---|
-| `supabase/client.ts` | `createClient()` | Browser (Client Components) | Anon key + session cookie |
-| `supabase/server.ts` | `createClient()` | Server Components, Route Handlers | Anon key + session cookie (via `next/headers`) |
-| `supabase/server.ts` | `createServiceClient()` | Privileged Route Handlers only | Service role key (bypasses RLS) |
-| `supabase/middleware.ts` | `updateSession()` | `middleware.ts` | Anon key + request cookies |
+| Concern | Module |
+|---|---|
+| Who is logged in? | `getAuthUser()` |
+| Which pharmacy? | `requireSessionPharmacyId()`, `resolveActivePharmacyContext()` |
+| Plan features | `resolvePharmacyEntitlements()` |
+| Sign out (client) | `signOutClient()` → `POST /api/auth/signout` |
 
 ---
 

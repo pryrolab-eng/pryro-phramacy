@@ -21,8 +21,13 @@ export function ActivePharmacyProvider({
   );
 }
 
+/** Returns null on platform admin routes (no ActivePharmacyProvider). */
+export function useOptionalActivePharmacy() {
+  return useContext(ActivePharmacyCtx);
+}
+
 export function useActivePharmacy() {
-  const ctx = useContext(ActivePharmacyCtx);
+  const ctx = useOptionalActivePharmacy();
   if (!ctx) {
     throw new Error("useActivePharmacy must be used within ActivePharmacyProvider");
   }

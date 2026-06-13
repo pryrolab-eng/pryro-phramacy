@@ -2,19 +2,15 @@
 // DELETE /api/saas/plans/[planId]  — admin: deactivate a plan
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../../supabase/server'
-import { createServiceClient } from '../../../../../../supabase/service'
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { resolveIsAppPlatformAdmin } from '@/lib/platform-admin'
 import { updatePlan } from '@/lib/saas/subscription-engine'
 
-async function requireAdmin(supabase: Awaited<ReturnType<typeof createClient>>) {
-  const { data: { user } } = await supabase.auth.getUser()
+async function requirePlatformAdmin(userId: string) {
+  const user = await getAuthUser();
   if (!user) return null
-  const { data: profile } = await supabase
-    .from('users')
-    .select('is_platform_admin')
-    .eq('id', user.id)
-    .maybeSingle()
-  return profile?.is_platform_admin ? user : null
+  const isAdmin = await resolveIsAppPlatformAdmin(userId)
+  return isAdmin ? user : null
 }
 
 export async function PUT(
@@ -22,14 +18,14 @@ export async function PUT(
   { params }: { params: Promise<{ planId: string }> }
 ) {
   try {
-    const supabase = await createClient()
-    const user = await requireAdmin(supabase)
-    if (!user) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const user = await getAuthUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const adminUser = await requirePlatformAdmin(user.id)
+    if (!adminUser) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const { planId } = await params
     const body = await request.json()
-    const admin = createServiceClient()
-    const plan = await updatePlan(admin, planId, body)
+    const plan = await updatePlan(planId, body)
     return NextResponse.json({ plan })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Failed to update plan'
@@ -42,13 +38,13 @@ export async function DELETE(
   { params }: { params: Promise<{ planId: string }> }
 ) {
   try {
-    const supabase = await createClient()
-    const user = await requireAdmin(supabase)
-    if (!user) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const user = await getAuthUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const adminUser = await requirePlatformAdmin(user.id)
+    if (!adminUser) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const { planId } = await params
-    const admin = createServiceClient()
-    await updatePlan(admin, planId, { is_active: false })
+    await updatePlan(planId, { is_active: false })
     return NextResponse.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Failed to deactivate plan'

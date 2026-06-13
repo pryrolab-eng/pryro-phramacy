@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { usePharmacyEntitlements } from "@/hooks/usePharmacyEntitlements";
 import {
   isRouteAllowedWhenAccessBlocked,
+  normalizeRoutePath,
   resolveSubscriptionHomePath,
 } from "@/lib/subscription/subscription-grace-routes";
 
@@ -23,6 +24,16 @@ export default function SubscriptionBlocker({
   const { entitlements, isEntitlementsReady } = usePharmacyEntitlements();
 
   useEffect(() => {
+    const normalized = normalizeRoutePath(pathname);
+    if (
+      normalized === "/admin" ||
+      normalized.startsWith("/admin/") ||
+      normalized === "/superadmin" ||
+      normalized.startsWith("/superadmin/")
+    ) {
+      return;
+    }
+
     if (!isEntitlementsReady) return;
     if (entitlements.isAccessAllowed) return;
 

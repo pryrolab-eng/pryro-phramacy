@@ -1,8 +1,8 @@
 # Pryrox
 
-> Multi-tenant pharmacy management SaaS built with Next.js 14 and Supabase.
+> Multi-tenant pharmacy management SaaS built with Next.js and PostgreSQL.
 
-Pryrox is a SaaS platform that lets independent pharmacies and pharmacy chains manage inventory, point-of-sale transactions, customer records, prescriptions, insurance claims, staff, and subscription billing from a single tenant-isolated workspace. Each pharmacy is fully isolated at the database level via Supabase Row-Level Security (RLS), and access inside a pharmacy is gated by a five-tier role system.
+Pryrox is a SaaS platform that lets independent pharmacies and pharmacy chains manage inventory, point-of-sale transactions, customer records, prescriptions, insurance claims, staff, and subscription billing from a single tenant-isolated workspace. Each pharmacy is isolated in application logic (active pharmacy context, Prisma queries scoped by `pharmacy_id`), and access inside a pharmacy is gated by a five-tier role system.
 
 ---
 
@@ -29,7 +29,7 @@ Pryrox is a SaaS platform that lets independent pharmacies and pharmacy chains m
 | Charts | Recharts |
 | State management | Zustand |
 | Forms | React Hook Form + Zod |
-| Backend / Database | Supabase (PostgreSQL, Auth, Realtime, Storage) |
+| Backend / Database | PostgreSQL via Prisma; native JWT auth; local/Cloudinary file storage |
 | Payments | KPay (Mobile Money + Card) via `src/lib/kpay.ts` |
 | Export | jsPDF, jspdf-autotable, xlsx, jsbarcode |
 | 2FA | otplib + qrcode |
@@ -42,7 +42,8 @@ See [`docs/architecture.md`](docs/architecture.md) for the full architectural br
 
 - **Node.js** ≥ 18.17
 - **npm** ≥ 9 (or pnpm / yarn — examples below use npm)
-- A **Supabase project** (free tier works for development) — [create one here](https://supabase.com)
+- **PostgreSQL** 14+ (local Docker, VPS, or any hosted Postgres)
+- **SMTP** for sign-up confirmation and password-reset emails (see `.env.example`)
 - A **KPay merchant account** if you need to test live payment flows (optional for development; only required for subscription/POS payment testing)
 
 ---
@@ -63,11 +64,14 @@ cp .env.example .env
 
 # 4. Apply the schema (pick ONE path)
 
-# 4a — Local Supabase (Docker): wipes DB, runs all migrations, then `supabase/seed.sql`
-npx supabase db reset --local
+# 4a — Local Postgres + migrations (Supabase CLI reads supabase/migrations/)
+npx supabase db reset --local   # Docker; runs seed.sql
 
-# 4b — Hosted Supabase: push migrations from this repo (no automatic seed; create users in the dashboard)
-# npx supabase db push
+# 4b — Existing database: push migrations only
+# npm run db:sql:push
+
+# 4c — Sync Prisma client after schema changes
+# npm run db:generate
 
 # 5. Start the development server
 npm run dev
@@ -101,19 +105,16 @@ A working `.env` file requires the following variables. See [`docs/environment-v
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes* | New publishable key (`sb_publishable_…`) from Settings → API |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes* | Legacy anon JWT (only if publishable is not set) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Service role secret (**server-only, never expose**) — same project as URL |
-| `NEXT_PUBLIC_APP_URL` | Yes | Public application URL (used in KPay callbacks) |
+| `DATABASE_URL` | Yes | PostgreSQL connection string (Prisma) |
+| `NATIVE_AUTH_ENABLED` | Yes | Set to `true` (native JWT cookies + SMTP auth) |
+| `AUTH_SECRET` | Yes | Secret for signing session JWTs (min 32 characters) |
+| `NEXT_PUBLIC_APP_URL` | Yes | Public application URL (used in KPay callbacks and auth emails) |
 | `KPAY_BASE_URL` | Yes | KPay API endpoint (default `https://pay.esicia.com`) |
 | `KPAY_USERNAME` | Yes | KPay merchant username |
 | `KPAY_PASSWORD` | Yes | KPay merchant password |
 | `KPAY_RETAILER_ID` | Yes | KPay retailer identifier |
 | `KPAY_RETURN_URL` | No | Webhook URL (defaults to `${APP_URL}/api/kpay/webhook`) |
 | `KPAY_REDIRECT_URL` | No | Post-payment redirect (defaults to `${APP_URL}/payment/success`) |
-
-\* Use **`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`** *or* **`NEXT_PUBLIC_SUPABASE_ANON_KEY`** (at least one).
 
 > **Security:** never commit `.env`. It is already listed in `.gitignore`. Use `.env.example` as the template you commit.
 
@@ -128,7 +129,7 @@ There is **no** `roles` table. Application access is modeled as follows:
 | Allowed role *labels* | Enum type **`public.user_role`** | Values: `admin`, `pharmacy_owner`, `pharmacist`, `cashier`, `staff`. Inspect in SQL: `SELECT enum_range(NULL::public.user_role);` |
 | Tenant membership | **`public.pharmacy_users`** column **`role`** | One active row per user per pharmacy (which pharmacy + which `user_role`). |
 | Platform operator | **`public.users`** column **`is_platform_admin`** | Superadmin UI; **not** stored in `pharmacy_users` for the seeded platform user. |
-| Auth identity only | **`auth.users`** | JWT / sign-in. Column **`role`** here is Supabase’s auth role (e.g. `authenticated`), **not** the pharmacy app role. |
+| Auth identity only | **`auth.users`** | Email/password hashes and OAuth linkage. App roles live in **`pharmacy_users`** / **`users.is_platform_admin`**. |
 | Reporting (read-only) | **`public.user_roles_view`** | **View**, not a table: denormalized join of `users` + `pharmacy_users` + `pharmacies` for browsing in SQL or Studio. It does not store data; do not treat it as RBAC source of truth. |
 
 If `user_role` or `pharmacy_users` is missing, migrations have not been applied to that database. From the repo root run **`npx supabase db push`** (linked project) or **`npx supabase db reset --local`** (Docker, includes `seed.sql`).
@@ -161,22 +162,21 @@ Pryrox resolves the dashboard from **`pharmacy_users`** (when present) plus **`p
 ┌────────────────────────────▼────────────────────────────────────┐
 │                    Next.js Server (Vercel / Node)               │
 │                                                                 │
-│  middleware.ts            ──► Session refresh (Supabase SSR)    │
+│  middleware.ts            ──► Native JWT session + route guards │
 │  src/app/api/**           ──► Route Handlers (REST-style API)   │
 │  src/app/(dashboard)/**   ──► Server + Client page components   │
 │  src/app/(auth)/**        ──► Sign-in, Sign-up, 2FA, Reset      │
 └──────────┬──────────────────────────────────────┬───────────────┘
-           │ supabase-js (server)                 │ fetch (server)
+           │ Prisma (DATABASE_URL)                │ fetch (server)
 ┌──────────▼──────────────┐           ┌───────────▼───────────────┐
-│   Supabase Platform     │           │   KPay Payment Gateway    │
-│  · PostgreSQL (RLS)     │           │   pay.esicia.com          │
-│  · Auth (JWT + 2FA)     │           │   Mobile Money / Cards    │
-│  · Realtime (polling)   │           └───────────────────────────┘
-│  · Storage (logos)      │
+│   PostgreSQL            │           │   KPay Payment Gateway    │
+│  · Application tables   │           │   pay.esicia.com          │
+│  · Native auth tables   │           │   Mobile Money / Cards    │
+│  · app_sessions         │           └───────────────────────────┘
 └─────────────────────────┘
 ```
 
-**Request flow:** A client component calls `fetch('/api/...')` → a Next.js Route Handler in `src/app/api/` verifies the session with `supabase.auth.getUser()` → it queries Supabase, which enforces tenant isolation through RLS policies → JSON is returned and the client re-renders.
+**Request flow:** A client component calls `fetch('/api/...')` → a Route Handler verifies the session with `getAuthUser()` → it reads/writes via Prisma scoped to the active pharmacy → JSON is returned and the client re-renders.
 
 Full details (role resolution layers, RLS strategy, KPay flow, client factories) live in [`docs/architecture.md`](docs/architecture.md).
 
@@ -207,7 +207,7 @@ pryrox/
 │   │   └── page.tsx         # Public landing page
 │   ├── components/          # Reusable React components + shadcn/ui
 │   ├── hooks/               # Custom React hooks
-│   ├── lib/                 # Supabase clients, KPay client, validators, utilities
+│   ├── lib/                 # Auth, Prisma stores, KPay, validators, utilities
 │   ├── store/               # Zustand stores
 │   └── types/               # Shared TypeScript types
 ├── supabase/

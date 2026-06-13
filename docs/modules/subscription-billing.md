@@ -1,3 +1,5 @@
+> **Stack:** Prisma (`DATABASE_URL`) for data; native JWT auth (`getAuthUser()`, cookies `pryrox_session` / `pryrox_refresh`). SQL migrations live in `supabase/migrations/` (`npm run db:sql:push`).
+
 # Subscription & Billing Module
 
 ## Purpose
@@ -32,7 +34,7 @@ When a pharmacy's subscription expires, the `SubscriptionBlocker` component inte
 | `src/app/api/subscriptions/status/route.ts` | `/api/subscriptions/status` | `GET`, `POST` | `GET`: Returns the authenticated user's current subscription status, plan details, days remaining, and a time counter object. `POST`: Creates a new subscription record for a given plan name; free plans are activated immediately. |
 | `src/app/api/subscriptions/upgrade/route.ts` | `/api/subscriptions/upgrade` | `POST` | Deactivates all existing subscriptions for the pharmacy, creates a new subscription record (inactive for paid plans), and optionally links a `payment_transactions` record. |
 | `src/app/api/kpay/initiate/route.ts` | `/api/kpay/initiate` | `POST` | Validates phone/card input, creates a `payment_transactions` record, calls `kpayService.initiatePayment()`, logs the request/response, and returns the KPay transaction ID and checkout URL. |
-| `src/app/api/kpay/webhook/route.ts` | `/api/kpay/webhook` | `POST` | Receives asynchronous payment status callbacks from KPay. Updates `payment_transactions.status` and activates the linked subscription when `statusid === '01'`. Uses the **service role key** (bypasses RLS) because the request originates from KPay, not an authenticated user. |
+| `src/app/api/kpay/webhook/route.ts` | `/api/kpay/webhook` | `POST` | KPay async callbacks. Updates `payment_transactions` and activates subscription when `statusid === '01'`. Uses Prisma + webhook signature/secret validation (no user session). |
 | `src/app/api/kpay/status/route.ts` | `/api/kpay/status` | `GET` | Polls KPay for the current status of a transaction (by `transactionId`, `refid`, or `tid`). Updates the local `payment_transactions` record and activates the subscription on completion. |
 | `src/app/api/payments/route.ts` | `/api/payments` | `GET`, `POST` | `GET`: Returns a list of completed sales formatted as payment records (not subscription payments). `POST`: Legacy endpoint for direct plan assignment without KPay; handles free-plan upgrades and creates invoice records. |
 

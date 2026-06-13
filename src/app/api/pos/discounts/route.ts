@@ -1,60 +1,56 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../supabase/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import {
+  storeCreateDiscount,
+  storeListActiveDiscounts,
+} from "@/lib/db/discounts-store";
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const { data: discounts, error } = await supabase
-      .from('discounts')
-      .select('*')
-      .eq('is_active', true)
-      .order('name', { ascending: true })
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    if (error) throw error
-    
-    // Format for frontend compatibility
-    const formattedDiscounts = discounts?.map(d => ({
-      id: d.id,
-      name: d.name,
-      type: d.type,
-      value: d.value,
-      active: d.is_active
-    })) || []
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const discounts = await storeListActiveDiscounts(pharmacyId);
 
-    return NextResponse.json(formattedDiscounts)
+    return NextResponse.json(
+      discounts.map((d) => ({
+        id: d.id,
+        name: d.name,
+        type: d.type,
+        value: d.value,
+        active: d.is_active,
+      })),
+    );
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch discounts' }, { status: 500 })
+    console.error("GET /api/pos/discounts", error);
+    return NextResponse.json({ error: "Failed to fetch discounts" }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
-    const body = await request.json()
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const body = await request.json();
 
-    const { data: discount, error } = await supabase
-      .from('discounts')
-      .insert({
-        pharmacy_id: body.pharmacy_id || pharmacyId,
-        name: body.name,
-        type: body.type,
-        value: body.value,
-        is_active: true
-      })
-      .select()
-      .single()
+    const discount = await storeCreateDiscount({
+      pharmacyId: (body.pharmacy_id as string) || pharmacyId,
+      name: body.name,
+      type: body.type,
+      value: Number(body.value) || 0,
+    });
 
-    if (error) throw error
-    return NextResponse.json({ success: true, discount })
+    return NextResponse.json({ success: true, discount });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to create discount' }, { status: 500 })
+    console.error("POST /api/pos/discounts", error);
+    return NextResponse.json({ error: "Failed to create discount" }, { status: 500 });
   }
 }

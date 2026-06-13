@@ -1,47 +1,83 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../supabase/server'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import {
+  storeDeletePrescription,
+  storePrescriptionInPharmacy,
+  storeUpdatePrescription,
+} from "@/lib/db/prescriptions-store";
 
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
   try {
-    const supabase = await createClient()
-    const body = await request.json()
-    
-    const { data: prescription, error } = await supabase
-      .from('prescriptions')
-      .update({
-        patient_name: body.patient,
-        doctor_name: body.doctor,
-        medications: body.medications,
-        priority: body.priority,
-        status: body.status,
-        insurance_provider: body.insurance,
-        notes: body.notes
-      })
-      .eq('id', id)
-      .select()
-      .single()
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    if (error) throw error
-    return NextResponse.json({ success: true, prescription })
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const allowed = await storePrescriptionInPharmacy(id, pharmacyId);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "Prescription not found" },
+        { status: 404 },
+      );
+    }
+
+    const body = await request.json();
+
+    const prescription = await storeUpdatePrescription(id, pharmacyId, {
+      patientName: body.patient,
+      doctorName: body.doctor,
+      medications: body.medications,
+      priority: body.priority,
+      status: body.status,
+      insuranceProvider: body.insurance,
+      notes: body.notes,
+    });
+
+    if (!prescription) {
+      return NextResponse.json(
+        { error: "Prescription not found" },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json({ success: true, prescription });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to update prescription' }, { status: 500 })
+    const message =
+      error instanceof Error ? error.message : "Failed to update prescription";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
   try {
-    const supabase = await createClient()
-    
-    const { error } = await supabase
-      .from('prescriptions')
-      .delete()
-      .eq('id', id)
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    if (error) throw error
-    return NextResponse.json({ success: true })
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const deleted = await storeDeletePrescription(id, pharmacyId);
+    if (!deleted) {
+      return NextResponse.json(
+        { error: "Prescription not found" },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json({ success: true });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to delete prescription' }, { status: 500 })
+    const message =
+      error instanceof Error ? error.message : "Failed to delete prescription";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

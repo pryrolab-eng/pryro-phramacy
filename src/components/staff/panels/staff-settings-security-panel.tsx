@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Shield } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { DashboardSectionCard } from "@/components/dashboard";
+import { SettingsRow } from "@/components/settings/settings-primitives";
 import { useStaffSettingsPage } from "@/components/staff/staff-settings-page-provider";
 import { ChangePasswordSettingsRow } from "@/components/auth/change-password-settings-row";
 
@@ -25,40 +26,39 @@ export function StaffSettingsSecurityPanel() {
         </p>
       </div>
 
-      <DashboardSectionCard title="Your account">
-        <div className="mb-4 border-b border-neutral-100 pb-4 dark:border-neutral-800">
+      <DashboardSectionCard title="Your account" contentClassName="p-0">
+        <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
           <ChangePasswordSettingsRow />
-        </div>
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium">Two-factor authentication</p>
-            <p className="text-xs text-muted-foreground">
-              {platformAllowsTwoFactor
+          <SettingsRow
+            title="Two-factor authentication"
+            description={
+              platformAllowsTwoFactor
                 ? "Optional — recommended for shared devices"
-                : "Disabled by your platform administrator"}
-            </p>
-          </div>
-          <Switch
-            checked={is2FAEnabled}
-            disabled={!platformAllowsTwoFactor}
-            onCheckedChange={async (checked) => {
-              if (!platformAllowsTwoFactor) return;
-              if (checked) {
-                setIs2FASetupOpen(true);
-              } else if (
-                confirm(
-                  "Disable 2FA? This will make your account less secure.",
-                )
-              ) {
-                try {
-                  await setTwoFaMutation.mutateAsync(false);
-                  toast.success("2FA disabled");
-                } catch {
-                  toast.error("Failed to disable 2FA");
+                : "Disabled by your platform administrator"
+            }
+          >
+            <Switch
+              checked={is2FAEnabled}
+              disabled={!platformAllowsTwoFactor}
+              onCheckedChange={async (checked) => {
+                if (!platformAllowsTwoFactor) return;
+                if (checked) {
+                  setIs2FASetupOpen(true);
+                } else if (
+                  confirm(
+                    "Disable 2FA? This will make your account less secure.",
+                  )
+                ) {
+                  try {
+                    await setTwoFaMutation.mutateAsync(false);
+                    toast.success("2FA disabled");
+                  } catch {
+                    toast.error("Failed to disable 2FA");
+                  }
                 }
-              }
-            }}
-          />
+              }}
+            />
+          </SettingsRow>
         </div>
       </DashboardSectionCard>
 

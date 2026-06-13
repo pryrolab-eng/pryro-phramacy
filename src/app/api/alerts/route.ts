@@ -1,50 +1,24 @@
-import { NextResponse } from 'next/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { createClient } from '../../../../supabase/server'
-import { firstRelation } from '@/lib/supabase/relation'
+import { NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { storeListDashboardAlerts } from "@/lib/db/alerts-store";
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    
-    const { data: lowStockItems, error } = await supabase
-      .from('inventory')
-      .select(`
-        id,
-        quantity_in_stock,
-        minimum_stock_level,
-        expiry_date,
-        medications(name, category)
-      `)
-      .eq('pharmacy_id', 'pharmacyId')
-      .limit(10)
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    if (error) throw error
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const alerts = await storeListDashboardAlerts(pharmacyId);
 
-    const alerts = lowStockItems
-      ?.filter(item => item.quantity_in_stock < item.minimum_stock_level * 1.5)
-      .map(item => {
-      const medications = firstRelation(item.medications)
-      const expiryDate = new Date(item.expiry_date)
-      const today = new Date()
-      const daysToExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-      
-      return {
-        id: item.id,
-        product: medications?.name || 'Unknown Product',
-        current_stock: item.quantity_in_stock,
-        min_stock: item.minimum_stock_level,
-        category: medications?.category || 'General',
-        expires_in: daysToExpiry > 0 ? daysToExpiry : 0
-      }
-    }) || []
-
-    return NextResponse.json(alerts)
+    return NextResponse.json(alerts);
   } catch (error) {
-    return NextResponse.json([
-      { id: '1', product: 'Paracetamol 500mg', current_stock: 5, min_stock: 20, category: 'Pain Relief', expires_in: 30 },
-      { id: '2', product: 'Amoxicillin 250mg', current_stock: 8, min_stock: 25, category: 'Antibiotics', expires_in: 15 },
-      { id: '3', product: 'Vitamin C Tablets', current_stock: 12, min_stock: 30, category: 'Vitamins', expires_in: 45 }
-    ])
+    console.error("GET /api/alerts", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to fetch alerts";
+    const status = message === "Pharmacy not found" ? 404 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

@@ -1,140 +1,45 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { requireSessionBranchId } from '@/lib/pharmacy/get-session-branch'
-import { createClient } from '../../../../../supabase/server'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { requireUserBranchId } from "@/lib/pharmacy/get-session-branch";
+import {
+  entitlementRouteResponse,
+  guardInventoryAccessForUser,
+} from "@/lib/subscription/route-guards";
+import { storeAddMedicationInventory } from "@/lib/db/inventory-store";
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' })
+      return NextResponse.json({ success: false, error: "Unauthorized" });
     }
 
-    const { guardInventoryAccess, entitlementRouteResponse } = await import(
-      '@/lib/subscription/route-guards'
-    )
     try {
-      await guardInventoryAccess(supabase, user.id)
+      await guardInventoryAccessForUser(user.id);
     } catch (entErr) {
-      const res = entitlementRouteResponse(entErr)
-      if (res) return res
-      throw entErr
+      const res = entitlementRouteResponse(entErr);
+      if (res) return res;
+      throw entErr;
     }
 
-    // Get user's pharmacy_id
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
-    const branchId = await requireSessionBranchId(supabase, user.id)
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const branchId = await requireUserBranchId(user.id);
+    const body = await request.json();
 
-    const body = await request.json()
-    console.log('Received data:', body)
-    
-    // Map category to enum value
-    const categoryMap: Record<string, string> = {
-      'Pain Relief': 'otc',
-      'Antibiotics': 'prescription', 
-      'Vitamins': 'supplement',
-      'Prescription': 'prescription',
-      'OTC': 'otc',
-      'Controlled': 'controlled',
-      'Medical Device': 'medical_device',
-      'general': 'otc'
-    }
-    
-    const categoryEnum = categoryMap[body.category] || 'otc'
-    
-    // Check if medication already exists
-    const { data: existingMed } = await supabase
-      .from('medications')
-      .select('id')
-      .eq('name', body.name)
-      .eq('pharmacy_id', pharmacyId)
-      .single()
+    const result = await storeAddMedicationInventory({
+      ...body,
+      pharmacyId,
+      branchId,
+    });
 
-    let medicationId
-    
-    if (existingMed) {
-      // Medication exists, check if inventory exists
-      medicationId = existingMed.id
-      
-      const { data: existingInventory } = await supabase
-        .from('inventory')
-        .select('id, quantity_in_stock')
-        .eq('medication_id', medicationId)
-        .eq('pharmacy_id', pharmacyId)
-        .eq('branch_id', branchId)
-        .maybeSingle()
-      
-      if (existingInventory) {
-        // Update existing inventory - add to quantity
-        const newQuantity = existingInventory.quantity_in_stock + parseInt(body.quantity || 0)
-        
-        const { error: updateError } = await supabase
-          .from('inventory')
-          .update({ quantity_in_stock: newQuantity })
-          .eq('id', existingInventory.id)
-        
-        if (updateError) throw updateError
-        
-        return NextResponse.json({
-          success: true,
-          message: 'Quantity updated',
-          medicationId,
-          inventory: { id: existingInventory.id, quantity_in_stock: newQuantity },
-        })
-      }
-    } else {
-      // Create new medication
-      const { data: newMed, error: medError } = await supabase
-        .from('medications')
-        .insert({
-          name: body.name,
-          category: categoryEnum,
-          requires_prescription: categoryEnum === 'prescription',
-          is_active: true,
-          pharmacy_id: pharmacyId
-        })
-        .select('id')
-        .single()
-
-      if (medError) {
-        console.error('Medication insert error:', medError)
-        throw medError
-      }
-      medicationId = newMed.id
-    }
-
-    // Create new inventory item
-    const { data: inventory, error } = await supabase
-      .from('inventory')
-      .insert({
-        pharmacy_id: pharmacyId,
-        branch_id: branchId,
-        medication_id: medicationId,
-        batch_number: body.batch_number || 'BATCH001',
-        quantity_in_stock: parseInt(body.quantity) || 0,
-        unit_cost: parseFloat(body.unit_cost) || 0,
-        selling_price: parseFloat(body.selling_price) || 0,
-        minimum_stock_level: parseInt(body.minimum_stock_level) || 0,
-        expiry_date: body.expiry_date || '2025-12-31'
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error('Inventory insert error:', error)
-      throw error
-    }
-
-    console.log('Successfully added inventory:', inventory)
-    return NextResponse.json({ success: true, medicationId, inventory })
+    return NextResponse.json(result);
   } catch (error) {
-    console.error('Error adding inventory:', error)
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to add medication',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    })
+    console.error("POST /api/inventory/add", error);
+    return NextResponse.json({
+      success: false,
+      error: "Failed to add medication",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
   }
 }

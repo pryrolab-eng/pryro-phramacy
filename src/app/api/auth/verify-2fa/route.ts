@@ -1,83 +1,85 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '../../../../../supabase/server'
-import { authenticator } from 'otplib'
+import { NextRequest, NextResponse } from "next/server";
+import { authenticator } from "otplib";
+import { prisma } from "@/lib/db/prisma";
+import {
+  enforceAuthRateLimit,
+  getIpFromRequestHeaders,
+  rateLimitJsonResponse,
+} from "@/lib/rate-limit/enforce";
+import { RATE_LIMIT_MESSAGES } from "@/lib/rate-limit/presets";
 
 export async function POST(request: NextRequest) {
   try {
-    const { sessionToken, token } = await request.json()
+    const { sessionToken, token } = await request.json();
 
     if (!sessionToken || !token) {
-      return NextResponse.json({ error: 'Missing parameters' }, { status: 400 })
+      return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
     }
 
-    const supabase = createServiceClient()
-
-    // Get pending session
-    const { data: session, error: sessionError } = await supabase
-      .from('two_factor_sessions')
-      .select('user_id, expires_at')
-      .eq('session_token', sessionToken)
-      .eq('verified', false)
-      .single()
-
-    if (sessionError || !session) {
-      return NextResponse.json({ error: 'Invalid or expired session' }, { status: 400 })
+    const limit = await enforceAuthRateLimit({
+      scope: "verify2fa",
+      bucketKey: `${sessionToken}|${getIpFromRequestHeaders(request.headers)}`,
+      message: RATE_LIMIT_MESSAGES.verify2fa,
+    });
+    if (!limit.ok) {
+      return rateLimitJsonResponse(limit.message, limit.retryAfterSec);
     }
 
-    // Check expiration
-    const expiresAt = new Date(session.expires_at)
-    const now = new Date()
-    console.log('Session expires:', expiresAt, 'Now:', now, 'Expired:', expiresAt < now)
-    if (expiresAt < now) {
-      return NextResponse.json({ error: 'Session expired' }, { status: 400 })
+    const session = await prisma.two_factor_sessions.findUnique({
+      where: { session_token: sessionToken },
+      select: { user_id: true, expires_at: true, verified: true },
+    });
+
+    if (!session || session.verified) {
+      return NextResponse.json({ error: "Invalid or expired session" }, { status: 400 });
     }
 
-    // Get user's 2FA secret
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('two_factor_secret, two_factor_backup_codes')
-      .eq('id', session.user_id)
-      .single()
-
-    if (userError || !userData) {
-      return NextResponse.json({ error: 'User not found' }, { status: 400 })
+    if (session.expires_at < new Date()) {
+      return NextResponse.json({ error: "Session expired" }, { status: 400 });
     }
 
-    let isValid = false
+    const userData = await prisma.public_users.findUnique({
+      where: { id: session.user_id },
+      select: { two_factor_secret: true, two_factor_backup_codes: true },
+    });
 
-    // Check if it's a backup code
+    if (!userData) {
+      return NextResponse.json({ error: "User not found" }, { status: 400 });
+    }
+
+    let isValid = false;
+
     if (userData.two_factor_backup_codes?.includes(token)) {
-      isValid = true
-      // Remove used backup code
-      const updatedCodes = userData.two_factor_backup_codes.filter((code: string) => code !== token)
-      await supabase
-        .from('users')
-        .update({ two_factor_backup_codes: updatedCodes })
-        .eq('id', session.user_id)
+      isValid = true;
+      const updatedCodes = userData.two_factor_backup_codes.filter(
+        (code) => code !== token,
+      );
+      await prisma.public_users.update({
+        where: { id: session.user_id },
+        data: { two_factor_backup_codes: updatedCodes },
+      });
     } else if (userData.two_factor_secret) {
-      // Verify TOTP token
       isValid = authenticator.verify({
         token,
-        secret: userData.two_factor_secret
-      })
+        secret: userData.two_factor_secret,
+      });
     }
 
     if (!isValid) {
-      return NextResponse.json({ error: 'Invalid code' }, { status: 400 })
+      return NextResponse.json({ error: "Invalid code" }, { status: 400 });
     }
 
-    // Mark session as verified
-    await supabase
-      .from('two_factor_sessions')
-      .update({ verified: true })
-      .eq('session_token', sessionToken)
+    await prisma.two_factor_sessions.update({
+      where: { session_token: sessionToken },
+      data: { verified: true },
+    });
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
-      userId: session.user_id
-    })
+      userId: session.user_id,
+    });
   } catch (error) {
-    console.error('2FA verification error:', error)
-    return NextResponse.json({ error: 'Verification failed' }, { status: 500 })
+    console.error("2FA verification error:", error);
+    return NextResponse.json({ error: "Verification failed" }, { status: 500 });
   }
 }

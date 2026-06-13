@@ -1,54 +1,58 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { createClient } from '../../../../supabase/server'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { storeCreatePharmacyNotification, storeListNotificationsForPharmacy } from "@/lib/db/notifications-store";
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const { data: notifications, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(50)
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    if (error) throw error
-    
-    // Format for frontend compatibility
-    const formattedNotifications = notifications?.map(n => ({
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const notifications = await storeListNotificationsForPharmacy(pharmacyId);
+
+    const formattedNotifications = notifications.map((n) => ({
       id: n.id,
       title: n.title,
       message: n.message,
       type: n.type,
       read: n.is_read,
-      date: n.created_at
-    })) || []
+      date: n.created_at,
+    }));
 
-    return NextResponse.json(formattedNotifications)
+    return NextResponse.json(formattedNotifications);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch notifications' }, { status: 500 })
+    const message =
+      error instanceof Error ? error.message : "Failed to fetch notifications";
+    const status = message === "Pharmacy not found" ? 404 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const body = await request.json()
-    
-    const { data: notification, error } = await supabase
-      .from('notifications')
-      .insert({
-        pharmacy_id: body.pharmacy_id || 'pharmacyId',
-        title: body.title,
-        message: body.message,
-        type: body.type || 'info',
-        is_read: false
-      })
-      .select()
-      .single()
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    if (error) throw error
-    return NextResponse.json({ success: true, notification })
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const body = await request.json();
+
+    const notification = await storeCreatePharmacyNotification({
+      pharmacyId,
+      title: body.title,
+      message: body.message,
+      type: body.type,
+    });
+
+    return NextResponse.json({ success: true, notification });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to create notification' }, { status: 500 })
+    const message =
+      error instanceof Error ? error.message : "Failed to create notification";
+    const status = message === "Pharmacy not found" ? 404 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

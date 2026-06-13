@@ -1,9 +1,8 @@
-import { createClient } from "../../../supabase/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
 import { getAllowUserTwoFactor } from "@/lib/platform-security-policy";
 
 export type TwoFactorEnrollmentContext = {
-  supabase: Awaited<ReturnType<typeof createClient>>;
   user: { id: string; email?: string | null };
   /** Authenticator app label in the QR code */
   issuer: string;
@@ -14,46 +13,36 @@ export type TwoFactorEnrollmentContext = {
  * - Platform admins (always, for Admin → Settings)
  * - Pharmacy users when allowUserTwoFactor is on (Pharmacy → Settings)
  */
-export async function requireTwoFactorEnrollment():
-  Promise<
-    | { ok: true; context: TwoFactorEnrollmentContext }
-    | { ok: false; status: number; error: string }
-  > {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+export async function requireTwoFactorEnrollment(): Promise<
+  | { ok: true; context: TwoFactorEnrollmentContext }
+  | { ok: false; status: number; error: string }
+> {
+  const user = await getAuthUser();
 
-  if (authError || !user) {
+  if (!user) {
     return { ok: false, status: 401, error: "Unauthorized" };
   }
 
-  const isPlatformAdmin = await resolveIsAppPlatformAdmin(
-    supabase,
-    user.id,
-    null,
-  );
+  const isPlatformAdmin = await resolveIsAppPlatformAdmin(user.id);
 
   if (isPlatformAdmin) {
     return {
       ok: true,
-      context: { supabase, user, issuer: "Pryrox Admin" },
+      context: { user, issuer: "Pryrox Admin" },
     };
   }
 
-  const platformAllows = await getAllowUserTwoFactor(supabase);
+  const platformAllows = await getAllowUserTwoFactor();
   if (!platformAllows) {
     return {
       ok: false,
       status: 403,
-      error:
-        "Two-factor authentication is disabled by the platform administrator.",
+      error: "Two-factor authentication is disabled by the platform administrator.",
     };
   }
 
   return {
     ok: true,
-    context: { supabase, user, issuer: "Pryrox Pharmacy" },
+    context: { user, issuer: "Pryrox Pharmacy" },
   };
 }

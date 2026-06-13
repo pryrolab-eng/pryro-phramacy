@@ -1,95 +1,173 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "../../../../../supabase/server";
-import { createServiceClient } from "../../../../../supabase/service";
+
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+
+
 import {
+
   clearMustChangePasswordFlag,
+
   userMustChangePassword,
+
   validateNewPasswordPair,
+
 } from "@/lib/auth/must-change-password";
+
 import { assertActivePharmacyDashboardAccess } from "@/lib/subscription/assert-pharmacy-access";
 
+import { adminUpdateAuthUserPassword } from "@/lib/auth/admin-users";
+
+import { findAuthUserByIdFromDb } from "@/lib/db/auth-credentials";
+
+import { verifyPassword } from "@/lib/auth/native/password";
+
+
+
 export async function POST(request: NextRequest) {
+
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+
+    const user = await getAuthUser(request, {
+      strictNativeSession: true,
+    });
+
+
 
     if (!user?.email) {
+
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     }
+
+
 
     const body = await request.json();
+
     const newPassword = String(body.newPassword ?? "");
+
     const confirmPassword = String(body.confirmPassword ?? "");
+
     const currentPassword =
+
       typeof body.currentPassword === "string"
+
         ? body.currentPassword
+
         : undefined;
 
+
+
     const validationError = validateNewPasswordPair(newPassword, confirmPassword);
+
     if (validationError) {
+
       return NextResponse.json({ error: validationError }, { status: 400 });
+
     }
 
-    const forced = userMustChangePassword(user);
-    const admin = createServiceClient();
+
+
+    const forced = userMustChangePassword({
+
+      user_metadata: user.user_metadata ?? {},
+
+    });
 
     if (!forced) {
+
       try {
-        await assertActivePharmacyDashboardAccess(supabase, admin, user.id);
+
+        await assertActivePharmacyDashboardAccess(user.id);
+
       } catch {
+
         return NextResponse.json(
+
           {
+
             error:
+
               "Your pharmacy access is paused. You cannot change your password until access is restored.",
+
             code: "access_blocked",
+
           },
+
           { status: 403 },
+
         );
+
       }
+
+
 
       if (!currentPassword?.trim()) {
+
         return NextResponse.json(
+
           { error: "Current password is required." },
+
           { status: 400 },
+
         );
+
       }
-      const { error: verifyError } = await supabase.auth.signInWithPassword({
-        email: user.email,
-        password: currentPassword,
-      });
-      if (verifyError) {
+
+
+
+      const cred = await findAuthUserByIdFromDb(user.id);
+
+      const ok = await verifyPassword(
+
+        currentPassword,
+
+        cred?.encrypted_password,
+
+      );
+
+      if (!ok) {
+
         return NextResponse.json(
+
           { error: "Current password is incorrect." },
+
           { status: 401 },
+
         );
+
       }
+
     }
 
-    const { error: updateError } = await supabase.auth.updateUser({
-      password: newPassword.trim(),
-    });
 
-    if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 400 });
-    }
 
-    await clearMustChangePasswordFlag(
-      admin,
-      user.id,
-      user.user_metadata as Record<string, unknown> | undefined,
-    );
+    await adminUpdateAuthUserPassword(user.id, newPassword.trim());
+
+    await clearMustChangePasswordFlag(user.id, user.user_metadata);
+
+
 
     return NextResponse.json({
+
       success: true,
+
       mustChangePassword: false,
+
     });
+
   } catch (error) {
+
     console.error("POST /api/auth/change-password", error);
+
     return NextResponse.json(
+
       { error: "Failed to update password" },
+
       { status: 500 },
+
     );
+
   }
+
 }
+

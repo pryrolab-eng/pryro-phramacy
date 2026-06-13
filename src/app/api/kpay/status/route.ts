@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { recordSubscriptionPayment } from '@/lib/billing/record-subscription-payment'
 import { activatePaidSubscription } from '@/lib/subscription/activate-subscription'
-import { createClient } from '../../../../../supabase/server'
-import { createServiceClient } from '../../../../../supabase/service'
 import { kpayService } from '@/lib/kpay'
+import {
+  storeFindPaymentTransactionById,
+  storeFindPaymentTransactionByKpayRefid,
+  storeFindPaymentTransactionByKpayTid,
+  storeInsertPaymentLog,
+  storeUpdatePaymentTransaction,
+} from '@/lib/db/payment-transactions-store'
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -25,26 +29,11 @@ export async function GET(request: NextRequest) {
 
     let transaction
     if (transactionId) {
-      const { data } = await supabase
-        .from('payment_transactions')
-        .select('*')
-        .eq('id', transactionId)
-        .single()
-      transaction = data
+      transaction = await storeFindPaymentTransactionById(transactionId)
     } else if (refid) {
-      const { data } = await supabase
-        .from('payment_transactions')
-        .select('*')
-        .eq('kpay_refid', refid)
-        .single()
-      transaction = data
+      transaction = await storeFindPaymentTransactionByKpayRefid(refid)
     } else if (tid) {
-      const { data } = await supabase
-        .from('payment_transactions')
-        .select('*')
-        .eq('kpay_tid', tid)
-        .single()
-      transaction = data
+      transaction = await storeFindPaymentTransactionByKpayTid(tid)
     }
 
     if (!transaction) {
@@ -52,17 +41,17 @@ export async function GET(request: NextRequest) {
     }
 
     const kpayStatus = await kpayService.checkTransactionStatus(
-      transaction.kpay_tid,
-      transaction.kpay_refid
+      transaction.kpay_tid ?? '',
+      transaction.kpay_refid,
     )
 
-    await supabase.from('payment_logs').insert({
-      transaction_id: transaction.id,
-      event_type: 'status_check',
-      response: kpayStatus
+    await storeInsertPaymentLog({
+      transactionId: transaction.id,
+      eventType: 'status_check',
+      response: kpayStatus,
     })
 
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       kpay_status_desc: kpayStatus.statusdesc
     }
 
@@ -79,18 +68,14 @@ export async function GET(request: NextRequest) {
       updateData.kpay_status_id = kpayStatus.statusid
     }
 
-    await supabase
-      .from('payment_transactions')
-      .update(updateData)
-      .eq('id', transaction.id)
+    await storeUpdatePaymentTransaction(transaction.id, updateData)
 
     if (kpayStatus.statusid === '01' && transaction.subscription_id) {
-      const admin = createServiceClient()
-      await activatePaidSubscription(admin, transaction.subscription_id as string, {
+      await activatePaidSubscription(transaction.subscription_id, {
         paymentMethod: 'kpay',
-        paymentReference: transaction.kpay_refid as string,
+        paymentReference: transaction.kpay_refid,
       })
-      await recordSubscriptionPayment(admin, transaction.id as string)
+      await recordSubscriptionPayment(transaction.id)
     }
 
     return NextResponse.json({
@@ -101,7 +86,8 @@ export async function GET(request: NextRequest) {
       kpayStatus
     })
 
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Status check failed'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

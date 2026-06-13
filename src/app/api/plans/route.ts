@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServiceClient } from "../../../../supabase/service";
+import { prisma } from "@/lib/db/prisma";
 import { fallbackPlansForDisplay } from "@/lib/subscription/default-plans";
 import { ensureDefaultSubscriptionPlans } from "@/lib/subscription/ensure-default-plans";
 import { normalizeSubscriptionPlanRow } from "@/lib/subscription/normalize-plan";
@@ -9,60 +9,66 @@ import { enrichPlansWithCatalogFeatures } from "@/lib/subscription/enrich-plans-
 
 export const dynamic = "force-dynamic";
 
+const NO_STORE = { "Cache-Control": "no-store, max-age=0" };
+
 export async function GET(request: Request) {
   try {
-    const admin = createServiceClient();
     const { searchParams } = new URL(request.url);
     const planTypeFilter = searchParams.get("plan_type");
 
-    let query = admin
-      .from("subscription_plans")
-      .select("*")
-      .eq("is_active", true)
-      .order("price", { ascending: true });
+    let plans = await prisma.subscription_plans.findMany({
+      where: {
+        is_active: true,
+        ...(planTypeFilter === "main" || planTypeFilter === "branch_addon"
+          ? { plan_type: planTypeFilter }
+          : {}),
+      },
+      orderBy: { price: "asc" },
+    });
 
-    if (planTypeFilter === "main" || planTypeFilter === "branch_addon") {
-      query = query.eq("plan_type", planTypeFilter);
+    if (!plans.length) {
+      await ensureDefaultSubscriptionPlans();
+      plans = await prisma.subscription_plans.findMany({
+        where: {
+          is_active: true,
+          ...(planTypeFilter === "main" || planTypeFilter === "branch_addon"
+            ? { plan_type: planTypeFilter }
+            : {}),
+        },
+        orderBy: { price: "asc" },
+      });
     }
 
-    let { data: plans, error } = await query;
-
-    if (error) {
-      throw error;
-    }
-
-    if (!plans?.length) {
-      await ensureDefaultSubscriptionPlans(admin);
-      const refetch = await admin
-        .from("subscription_plans")
-        .select("*")
-        .eq("is_active", true)
-        .order("price", { ascending: true });
-      if (refetch.error) {
-        throw refetch.error;
-      }
-      plans = refetch.data;
-    }
-
-    if (!plans?.length) {
+    if (!plans.length) {
       console.warn(
-        "GET /api/plans: catalog still empty after seed attempt; using display fallback"
+        "GET /api/plans: catalog still empty after seed attempt; using display fallback",
       );
-      return NextResponse.json(fallbackPlansForDisplay());
+      return NextResponse.json(fallbackPlansForDisplay(), { headers: NO_STORE });
     }
 
-    let catalog = plans ?? [];
+    const catalogRows = plans.map((row) => ({
+      ...row,
+      price: Number(row.price),
+      updated_at: row.updated_at?.toISOString() ?? null,
+      created_at: row.created_at?.toISOString() ?? null,
+    }));
+
+    let catalog = catalogRows;
     const dedupedPreview = dedupeSubscriptionPlansByName(catalog);
     if (catalog.length > dedupedPreview.length) {
       try {
-        await dedupeSubscriptionPlansInDb(admin);
-        const refetchAfterDedupe = await admin
-          .from("subscription_plans")
-          .select("*")
-          .eq("is_active", true)
-          .order("price", { ascending: true });
-        if (!refetchAfterDedupe.error && refetchAfterDedupe.data?.length) {
-          catalog = refetchAfterDedupe.data;
+        await dedupeSubscriptionPlansInDb();
+        const refetch = await prisma.subscription_plans.findMany({
+          where: { is_active: true },
+          orderBy: { price: "asc" },
+        });
+        if (refetch.length) {
+          catalog = refetch.map((row) => ({
+            ...row,
+            price: Number(row.price),
+            updated_at: row.updated_at?.toISOString() ?? null,
+            created_at: row.created_at?.toISOString() ?? null,
+          }));
         }
       } catch (dedupeErr) {
         console.warn("GET /api/plans: auto-dedupe failed", dedupeErr);
@@ -71,35 +77,24 @@ export async function GET(request: Request) {
 
     const deduped = dedupeSubscriptionPlansByName(catalog);
     let normalized = deduped.map((row) =>
-      normalizeSubscriptionPlanRow(row as Record<string, unknown>)
+      normalizeSubscriptionPlanRow(row as Record<string, unknown>),
     );
     if (planTypeFilter === "main" || planTypeFilter === "branch_addon") {
       normalized = normalized.filter((p) => p.plan_type === planTypeFilter);
     }
 
     const withCatalog = await enrichPlansWithCatalogFeatures(
-      admin,
       normalized.map((p) => ({ ...p, id: p.id })),
     );
 
-    return NextResponse.json(withCatalog, {
-      headers: {
-        "Cache-Control": "no-store, max-age=0",
-      },
-    });
+    return NextResponse.json(withCatalog, { headers: NO_STORE });
   } catch (error) {
     console.error("Error fetching plans:", error);
     const { searchParams } = new URL(request.url);
     const planTypeFilter = searchParams.get("plan_type");
     if (planTypeFilter === "branch_addon") {
-      return NextResponse.json([], {
-        headers: { "Cache-Control": "no-store, max-age=0" },
-      });
+      return NextResponse.json([], { headers: NO_STORE });
     }
-    return NextResponse.json(fallbackPlansForDisplay(), {
-      headers: {
-        "Cache-Control": "no-store, max-age=0",
-      },
-    });
+    return NextResponse.json(fallbackPlansForDisplay(), { headers: NO_STORE });
   }
 }

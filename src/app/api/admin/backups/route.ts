@@ -1,52 +1,84 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../supabase/server'
+import { NextRequest, NextResponse } from "next/server";
+import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
+import { getBackupEnabled } from "@/lib/platform-settings";
+import { runPgDumpBackup } from "@/lib/backups/pg-dump";
+import {
+  storeCreateBackup,
+  storeListBackups,
+} from "@/lib/db/admin-store";
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const { data: backups, error } = await supabase
-      .from('backups')
-      .select('*')
-      .order('created_at', { ascending: false })
+    const auth = await requirePlatformAdminApi();
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
 
-    if (error) throw error
-    
-    // Format for frontend compatibility
-    const formattedBackups = backups?.map(b => ({
+    const backups = await storeListBackups();
+    const formattedBackups = backups.map((b) => ({
       id: b.id,
       name: b.name,
       size: b.file_size,
+      path: b.file_path,
       date: b.created_at,
-      status: b.status
-    })) || []
+      status: b.status,
+    }));
 
-    return NextResponse.json(formattedBackups)
+    return NextResponse.json(formattedBackups);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch backups' }, { status: 500 })
+    return NextResponse.json({ error: "Failed to fetch backups" }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const body = await request.json()
-    const type = body.type
+    const auth = await requirePlatformAdminApi();
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
 
-    const { data: backup, error } = await supabase
-      .from('backups')
-      .insert({
-        pharmacy_id: body.pharmacy_id ?? null,
-        name: `${type} Backup - ${new Date().toLocaleDateString()}`,
-        type: type,
-        file_size: '2.5 MB',
-        status: 'completed'
-      })
-      .select()
-      .single()
+    if (!(await getBackupEnabled())) {
+      return NextResponse.json(
+        {
+          error: "backups_disabled",
+          message: "Backups are disabled in Admin → Settings → Operations.",
+        },
+        { status: 403 },
+      );
+    }
 
-    if (error) throw error
-    return NextResponse.json({ success: true, backup })
+    const body = await request.json().catch(() => ({}));
+    const type = typeof body.type === "string" ? body.type : "manual";
+
+    try {
+      const dump = await runPgDumpBackup({
+        type,
+        pharmacyId: body.pharmacy_id ?? null,
+      });
+
+      const backup = await storeCreateBackup({
+        pharmacyId: body.pharmacy_id ?? null,
+        type,
+        name: dump.fileName,
+        fileSize: dump.fileSize,
+        filePath: dump.filePath,
+        status: "completed",
+      });
+
+      return NextResponse.json({ success: true, backup });
+    } catch (dumpError) {
+      await storeCreateBackup({
+        pharmacyId: body.pharmacy_id ?? null,
+        type,
+        name: `${type} backup failed - ${new Date().toLocaleString()}`,
+        status: "failed",
+      });
+
+      const message =
+        dumpError instanceof Error ? dumpError.message : "Backup failed";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
   } catch (error) {
-    return NextResponse.json({ error: 'Backup failed' }, { status: 500 })
+    return NextResponse.json({ error: "Backup failed" }, { status: 500 });
   }
 }

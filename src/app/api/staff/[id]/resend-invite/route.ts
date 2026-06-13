@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { sendStaffInviteEmail } from "@/lib/email/staff-invite";
-import { createClient } from "../../../../../../supabase/server";
-import { createServiceClient } from "../../../../../../supabase/service";
+import { prisma } from "@/lib/db/prisma";
 import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import {
   entitlementErrorResponse,
@@ -15,6 +15,12 @@ import {
 } from "@/lib/rbac/require-pharmacy-permission";
 import { PHARMACY_PERMISSIONS } from "@/lib/rbac/permissions";
 import { MUST_CHANGE_PASSWORD_METADATA_KEY } from "@/lib/auth/must-change-password";
+import {
+  adminGetAuthUserById,
+  adminUpdateAuthUserMetadata,
+  adminUpdateAuthUserPassword,
+} from "@/lib/auth/admin-users";
+import { findPharmacyUserByIdFromDb } from "@/lib/db/staff";
 
 export async function POST(
   _request: NextRequest,
@@ -22,10 +28,7 @@ export async function POST(
 ) {
   const { id: pharmacyUserId } = await params;
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getAuthUser();
     if (!user) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
@@ -34,71 +37,51 @@ export async function POST(
     }
 
     await requirePharmacyPermission(user.id, PHARMACY_PERMISSIONS.staffManage);
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id);
-    const admin = createServiceClient();
+    const pharmacyId = await requireSessionPharmacyId(user.id);
 
     await requirePharmacyEntitlement({
-      admin,
       pharmacyId,
       feature: "staff.invite",
     });
 
-    const { data: member, error: memberErr } = await admin
-      .from("pharmacy_users")
-      .select("id, user_id, pharmacy_id, role")
-      .eq("id", pharmacyUserId)
-      .maybeSingle();
-
-    if (memberErr || !member) {
+    const member = await findPharmacyUserByIdFromDb(pharmacyUserId);
+    if (!member || member.pharmacy_id !== pharmacyId || !member.user_id) {
       return NextResponse.json(
         { success: false, error: "Staff member not found" },
         { status: 404 },
       );
     }
 
-    if (member.pharmacy_id !== pharmacyId) {
-      return NextResponse.json(
-        { success: false, error: "Staff member not found" },
-        { status: 404 },
-      );
-    }
-
-    const { data: authData, error: authErr } =
-      await admin.auth.admin.getUserById(member.user_id);
-    if (authErr || !authData.user?.email) {
+    const memberUserId = member.user_id;
+    const authAccount = await adminGetAuthUserById(memberUserId);
+    if (!authAccount?.email) {
       return NextResponse.json(
         { success: false, error: "Could not load staff account" },
         { status: 500 },
       );
     }
 
-    const email = authData.user.email.trim().toLowerCase();
+    const email = authAccount.email.trim().toLowerCase();
     const fullName =
-      String(authData.user.user_metadata?.full_name ?? "").trim() ||
+      String(authAccount.user_metadata?.full_name ?? "").trim() ||
       email.split("@")[0]?.replace(/[._]/g, " ") ||
       "Team member";
     const role = String(member.role ?? "pharmacist").trim() || "pharmacist";
 
-    const { data: pharmacy } = await admin
-      .from("pharmacies")
-      .select("name")
-      .eq("id", pharmacyId)
-      .maybeSingle();
+    const pharmacy = await prisma.pharmacies.findUnique({
+      where: { id: pharmacyId },
+      select: { name: true },
+    });
 
     const pharmacyName = String(pharmacy?.name ?? "").trim() || "your pharmacy";
     const password = generateTemporaryPassword();
 
-    const { error: passwordError } = await admin.auth.admin.updateUserById(
-      member.user_id,
-      {
-        password,
-        user_metadata: {
-          ...(authData.user.user_metadata ?? {}),
-          [MUST_CHANGE_PASSWORD_METADATA_KEY]: true,
-        },
-      },
-    );
-    if (passwordError) {
+    try {
+      await adminUpdateAuthUserPassword(memberUserId, password);
+      await adminUpdateAuthUserMetadata(memberUserId, {
+        [MUST_CHANGE_PASSWORD_METADATA_KEY]: true,
+      });
+    } catch (passwordError) {
       return NextResponse.json(
         { success: false, error: "Failed to reset password" },
         { status: 500 },
@@ -118,7 +101,7 @@ export async function POST(
         email,
         temporaryPassword: password,
         emailResult,
-        userId: member.user_id,
+        userId: memberUserId,
         messageWhenEmailOk: "Login instructions were sent by email",
         messageWhenEmailFailed:
           "Password was reset; invitation email could not be sent",

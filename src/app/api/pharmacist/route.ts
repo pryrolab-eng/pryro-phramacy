@@ -1,109 +1,100 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { sendStaffInviteEmail } from '@/lib/email/staff-invite'
-import { createServiceClient } from '../../../../supabase/service'
+import { NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { sendStaffInviteEmail } from "@/lib/email/staff-invite";
 import {
   entitlementErrorResponse,
   requirePharmacyEntitlement,
-} from '@/lib/subscription/assert-entitlement'
-import { generateTemporaryPassword } from '@/lib/staff/temporary-password'
-import { buildStaffInviteApiPayload } from '@/lib/staff/staff-invite-response'
+} from "@/lib/subscription/assert-entitlement";
+import { generateTemporaryPassword } from "@/lib/staff/temporary-password";
+import { buildStaffInviteApiPayload } from "@/lib/staff/staff-invite-response";
 import {
   assertStaffInviteEmailAllowed,
   mapCreateUserErrorForStaffInvite,
   StaffInviteEmailRejectedError,
   STAFF_INVITE_EMAIL_REJECTED_CODE,
   STAFF_INVITE_EMAIL_REJECTED_MESSAGE,
-} from '@/lib/staff/staff-invite-email'
-import { createClient as createServerClient } from '../../../../supabase/server'
+} from "@/lib/staff/staff-invite-email";
 import {
   permissionErrorResponse,
   requirePharmacyPermission,
-} from '@/lib/rbac/require-pharmacy-permission'
-import { PHARMACY_PERMISSIONS } from '@/lib/rbac/permissions'
-import { staffInviteUserMetadata } from '@/lib/auth/must-change-password'
+} from "@/lib/rbac/require-pharmacy-permission";
+import { PHARMACY_PERMISSIONS } from "@/lib/rbac/permissions";
+import { staffInviteUserMetadata } from "@/lib/auth/must-change-password";
+import { adminCreateAuthUser } from "@/lib/auth/admin-users";
+import { storeCreatePharmacyMembership } from "@/lib/db/pharmacy-users-store";
 
 export async function POST(request: Request) {
   try {
-    const session = await createServerClient()
-    const {
-      data: { user: sessionUser },
-    } = await session.auth.getUser()
+    const sessionUser = await getAuthUser();
     if (!sessionUser) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     await requirePharmacyPermission(
       sessionUser.id,
       PHARMACY_PERMISSIONS.staffManage,
-    )
+    );
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-
-    const body = await request.json()
+    const body = await request.json();
 
     if (!body.pharmacy_id) {
-      return NextResponse.json({ error: 'pharmacy_id is required' }, { status: 400 })
+      return NextResponse.json({ error: "pharmacy_id is required" }, { status: 400 });
     }
 
-    const admin = createServiceClient()
     await requirePharmacyEntitlement({
-      admin,
       pharmacyId: body.pharmacy_id,
-      feature: 'staff.invite',
-      limit: 'users',
-    })
+      feature: "staff.invite",
+      limit: "users",
+    });
 
-    const email = String(body.email ?? '').trim().toLowerCase()
+    const email = String(body.email ?? "").trim().toLowerCase();
     if (!email) {
-      return NextResponse.json({ error: 'email is required' }, { status: 400 })
+      return NextResponse.json({ error: "email is required" }, { status: 400 });
     }
 
     const password =
-      typeof body.password === 'string' && body.password.trim().length >= 6
+      typeof body.password === "string" && body.password.trim().length >= 6
         ? body.password.trim()
-        : generateTemporaryPassword()
+        : generateTemporaryPassword();
 
     const fullName =
-      String(body.full_name ?? '').trim() ||
-      email.split('@')[0]?.replace(/[._]/g, ' ') ||
-      'Team member'
+      String(body.full_name ?? "").trim() ||
+      email.split("@")[0]?.replace(/[._]/g, " ") ||
+      "Team member";
 
     const pharmacyName =
-      String(body.pharmacy_name ?? '').trim() || 'your pharmacy'
+      String(body.pharmacy_name ?? "").trim() || "your pharmacy";
 
-    const role = String(body.role ?? 'pharmacist').trim() || 'pharmacist'
+    const role = String(body.role ?? "pharmacist").trim() || "pharmacist";
 
-    await assertStaffInviteEmailAllowed(admin, body.pharmacy_id, email)
+    await assertStaffInviteEmailAllowed(body.pharmacy_id, email);
 
-    const { data: authUser, error: createUserError } =
-      await supabase.auth.admin.createUser({
+    let authUser: { user: { id: string } };
+    try {
+      authUser = await adminCreateAuthUser({
         email,
         password,
-        email_confirm: true,
-        user_metadata: staffInviteUserMetadata({
+        fullName,
+        userMetadata: staffInviteUserMetadata({
           full_name: fullName,
           phone: body.phone,
         }),
-      })
-
-    if (createUserError) mapCreateUserErrorForStaffInvite(createUserError)
-    if (!authUser?.user) {
-      return NextResponse.json(
-        { success: false, error: 'Failed to create team member' },
-        { status: 500 },
-      )
+      });
+    } catch (createUserError) {
+      mapCreateUserErrorForStaffInvite(createUserError as never);
     }
 
-    const { error: dbError } = await supabase.from('pharmacy_users').insert({
-      pharmacy_id: body.pharmacy_id,
-      user_id: authUser.user.id,
-      role,
-    })
+    if (!authUser?.user) {
+      return NextResponse.json(
+        { success: false, error: "Failed to create team member" },
+        { status: 500 },
+      );
+    }
 
-    if (dbError) throw dbError
+    await storeCreatePharmacyMembership({
+      pharmacyId: body.pharmacy_id,
+      userId: authUser.user.id,
+      role,
+    });
 
     const emailResult = await sendStaffInviteEmail({
       to: email,
@@ -111,7 +102,7 @@ export async function POST(request: Request) {
       pharmacyName,
       role,
       temporaryPassword: password,
-    })
+    });
 
     return NextResponse.json(
       buildStaffInviteApiPayload({
@@ -119,15 +110,15 @@ export async function POST(request: Request) {
         temporaryPassword: password,
         emailResult,
         userId: authUser.user.id,
-        messageWhenEmailOk: 'Team member created and invitation email sent',
+        messageWhenEmailOk: "Team member created and invitation email sent",
         messageWhenEmailFailed:
-          'Team member created; invitation email could not be sent',
+          "Team member created; invitation email could not be sent",
       }),
-    )
+    );
   } catch (error) {
-    const forbidden = permissionErrorResponse(error)
+    const forbidden = permissionErrorResponse(error);
     if (forbidden) {
-      return NextResponse.json(forbidden.body, { status: forbidden.status })
+      return NextResponse.json(forbidden.body, { status: forbidden.status });
     }
     if (error instanceof StaffInviteEmailRejectedError) {
       return NextResponse.json(
@@ -137,19 +128,19 @@ export async function POST(request: Request) {
           error: STAFF_INVITE_EMAIL_REJECTED_MESSAGE,
         },
         { status: 409 },
-      )
+      );
     }
-    const mapped = entitlementErrorResponse(error)
+    const mapped = entitlementErrorResponse(error);
     if (mapped) {
-      return NextResponse.json(mapped.body, { status: mapped.status })
+      return NextResponse.json(mapped.body, { status: mapped.status });
     }
     return NextResponse.json(
       {
         success: false,
         error:
-          error instanceof Error ? error.message : 'Failed to create pharmacist',
+          error instanceof Error ? error.message : "Failed to create pharmacist",
       },
       { status: 500 },
-    )
+    );
   }
 }

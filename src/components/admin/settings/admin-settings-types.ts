@@ -20,6 +20,8 @@ export type AdminPlatformSettings = {
   encryptionEnabled: boolean;
   /** When true, users can opt in to 2FA under pharmacy Settings → Security. */
   allowUserTwoFactor: boolean;
+  /** When true, platform admin console/API requires an allowlisted IP. */
+  ipWhitelistEnabled: boolean;
 };
 
 export const defaultAdminPlatformSettings = (): AdminPlatformSettings => ({
@@ -42,4 +44,5 @@ export const defaultAdminPlatformSettings = (): AdminPlatformSettings => ({
   ssoEnabled: false,
   encryptionEnabled: true,
   allowUserTwoFactor: true,
+  ipWhitelistEnabled: false,
 });

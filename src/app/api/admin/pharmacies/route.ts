@@ -1,162 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import {
-  resolveAdminPharmacyListFields,
-  type AdminMainSubRow,
-} from "@/lib/admin/pharmacy-list-enrichment";
-import { isFreePlanPrice } from "@/lib/admin/plan-stats";
-import { planNameToEnum } from "@/lib/subscription/plan-enum";
-import {
-  isBranchAddonCatalogName,
-  isMainTierCatalogRow,
-} from "@/lib/subscription/normalize-plan";
+import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
+import { buildAdminPharmaciesList } from "@/lib/admin/pharmacies-admin-list";
 import { resolveSubscriptionPlanEnum } from "@/lib/admin/resolve-subscription-plan-enum";
-
-function getServiceClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
-}
+import {
+  adminCreateAuthUser,
+  adminDeleteAuthUser,
+} from "@/lib/auth/admin-users";
+import { assertCanCreatePharmacy } from "@/lib/platform-policy/pharmacy-capacity";
+import { platformPolicyErrorResponse } from "@/lib/platform-policy/errors";
+import {
+  storeCreatePharmacy,
+  storeCreatePharmacyOwnerMembership,
+  storeUpsertOwnerPublicUser,
+} from "@/lib/db/admin-store";
 
 export async function GET() {
   try {
-    const supabase = getServiceClient();
-
-    const [{ data: pharmacies, error }, subsResult, branchSubsResult] =
-      await Promise.all([
-      supabase
-        .from("pharmacies")
-        .select("*")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("subscriptions")
-        .select(
-          "pharmacy_id, plan, status, is_active, payment_method, pending_change_status, expires_at, created_at, subscription_type, subscription_plans!plan_id(name, price, plan_type)",
-        )
-        .eq("subscription_type", "main")
-        .in("status", [
-          "active",
-          "pending_payment",
-          "pending",
-          "scheduled_change",
-        ])
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("subscriptions")
-        .select("pharmacy_id")
-        .eq("status", "active")
-        .eq("subscription_type", "branch_addon"),
-    ]);
-
-    if (error) {
-      console.error("Database error:", error);
-      return NextResponse.json([]);
+    const auth = await requirePlatformAdminApi();
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
-    if (subsResult.error) {
-      console.warn("Active main subscriptions lookup:", subsResult.error);
-    }
-
-    const branchAddonCountByPharmacy = new Map<string, number>();
-    for (const row of branchSubsResult.data ?? []) {
-      const pharmacyId = (row as { pharmacy_id?: string | null }).pharmacy_id;
-      if (!pharmacyId) continue;
-      branchAddonCountByPharmacy.set(
-        pharmacyId,
-        (branchAddonCountByPharmacy.get(pharmacyId) ?? 0) + 1,
-      );
-    }
-
-    const mainSubsByPharmacy = new Map<string, AdminMainSubRow[]>();
-    for (const row of subsResult.data ?? []) {
-      const pharmacyId = (row as { pharmacy_id?: string | null }).pharmacy_id;
-      if (!pharmacyId) continue;
-      const list = mainSubsByPharmacy.get(pharmacyId) ?? [];
-      list.push(row as AdminMainSubRow);
-      mainSubsByPharmacy.set(pharmacyId, list);
-    }
-
-    const { data: catalogPlans } = await supabase
-      .from("subscription_plans")
-      .select("name, price, plan_type")
-      .eq("is_active", true);
-
-    const mainCatalogPlans = (catalogPlans ?? []).filter((row) =>
-      isMainTierCatalogRow(row as { name?: string; plan_type?: string }),
-    );
-
-    const priceByCatalogName = new Map<string, number>();
-    for (const row of mainCatalogPlans) {
-      const n = String((row as { name?: string }).name ?? "").trim().toLowerCase();
-      if (n) {
-        priceByCatalogName.set(n, Number((row as { price?: unknown }).price ?? 0));
-      }
-    }
-
-    const enriched = (pharmacies ?? []).map((p) => {
-      const id = String((p as { id?: string }).id ?? "");
-      const mainSubs = mainSubsByPharmacy.get(id) ?? [];
-      const listFields = resolveAdminPharmacyListFields(
-        {
-          status: (p as { status?: string }).status,
-          subscription_plan: (p as { subscription_plan?: string })
-            .subscription_plan,
-        },
-        mainSubs,
-        mainCatalogPlans,
-      );
-
-      const enumKey = planNameToEnum(
-        String((p as { subscription_plan?: string }).subscription_plan ?? ""),
-      );
-      const fallbackPlan = mainCatalogPlans.find(
-        (c) =>
-          planNameToEnum(String((c as { name?: string }).name)) === enumKey,
-      ) as { name?: string } | undefined;
-
-      let catalog_plan_name = listFields.catalog_plan_name;
-      let catalog_plan_price = listFields.catalog_plan_price;
-      if (!catalog_plan_name) {
-        catalog_plan_name = fallbackPlan?.name
-          ? String(fallbackPlan.name)
-          : null;
-        if (catalog_plan_name && isBranchAddonCatalogName(catalog_plan_name)) {
-          catalog_plan_name = null;
-        }
-      }
-      if (catalog_plan_price == null && catalog_plan_name) {
-        catalog_plan_price =
-          priceByCatalogName.get(catalog_plan_name.toLowerCase()) ?? null;
-      }
-
-      const is_free_plan =
-        catalog_plan_price != null
-          ? isFreePlanPrice(catalog_plan_price)
-          : enumKey === "trial";
-
-      const branch_addons_active =
-        branchAddonCountByPharmacy.get(id) ?? 0;
-
-      return {
-        ...p,
-        status: listFields.status,
-        access_status: listFields.access_status,
-        access_label: listFields.access_label,
-        branch_addons_active,
-        subscription_expires_at: listFields.subscription_expires_at,
-        pending_plan_name: listFields.pending_plan_name,
-        ...(catalog_plan_name
-          ? {
-              catalog_plan_name,
-              catalog_plan_price,
-              is_free_plan,
-            }
-          : { is_free_plan: enumKey === "trial" }),
-      };
-    });
-
+    const enriched = await buildAdminPharmaciesList();
     return NextResponse.json(enriched);
   } catch (error) {
     console.error("Error fetching pharmacies:", error);
@@ -166,7 +31,14 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = getServiceClient();
+    const auth = await requirePlatformAdminApi();
+    if (!auth.ok) {
+      return NextResponse.json(
+        { success: false, error: auth.error },
+        { status: auth.status },
+      );
+    }
+
     const body = await request.json();
 
     const ownerEmail = (body.owner_email as string)?.trim();
@@ -176,98 +48,96 @@ export async function POST(request: NextRequest) {
     if (!ownerEmail || !ownerPassword) {
       return NextResponse.json(
         { success: false, error: "Owner email and password are required." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (ownerPassword.length < 6) {
       return NextResponse.json(
         { success: false, error: "Owner password must be at least 6 characters." },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const { data: authUser, error: authError } =
-      await supabase.auth.admin.createUser({
+    await assertCanCreatePharmacy();
+
+    let authUser: { user: { id: string; email: string } };
+    try {
+      authUser = await adminCreateAuthUser({
         email: ownerEmail,
         password: ownerPassword,
-        email_confirm: true,
-        user_metadata: { full_name: ownerName },
+        fullName: ownerName,
+        userMetadata: { full_name: ownerName },
       });
-
-    if (authError || !authUser.user) {
+    } catch (authError) {
       console.error("Auth error:", authError);
       return NextResponse.json(
         {
           success: false,
-          error: `User creation failed: ${authError?.message ?? "Unknown error"}`,
+          error: `User creation failed: ${
+            authError instanceof Error ? authError.message : "Unknown error"
+          }`,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const pharmacyEmail =
-      (body.email as string)?.trim() || ownerEmail;
+    const pharmacyEmail = (body.email as string)?.trim() || ownerEmail;
     const subscriptionPlan = await resolveSubscriptionPlanEnum(
-      supabase,
       body.subscription_plan as string,
     );
 
-    const { data: pharmacy, error: pharmacyError } = await supabase
-      .from("pharmacies")
-      .insert({
+    let pharmacy;
+    try {
+      pharmacy = await storeCreatePharmacy({
         name: body.name,
-        address: body.address,
-        phone: body.phone,
+        address: body.address ?? null,
+        phone: body.phone ?? null,
         email: pharmacyEmail,
-        license_number: body.license_number || `LIC-${Date.now()}`,
-        subscription_plan: subscriptionPlan,
+        licenseNumber: body.license_number || `LIC-${Date.now()}`,
+        subscriptionPlan,
+        ownerId: authUser.user.id,
         status: "active",
-        owner_id: authUser.user.id,
-      })
-      .select()
-      .single();
-
-    if (pharmacyError || !pharmacy) {
+      });
+    } catch (pharmacyError) {
       console.error("Pharmacy creation error:", pharmacyError);
-      await supabase.auth.admin.deleteUser(authUser.user.id);
+      await adminDeleteAuthUser(authUser.user.id);
       return NextResponse.json(
         {
           success: false,
-          error: `Pharmacy creation failed: ${pharmacyError?.message ?? "Unknown error"}`,
+          error: `Pharmacy creation failed: ${
+            pharmacyError instanceof Error
+              ? pharmacyError.message
+              : "Unknown error"
+          }`,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    await supabase.from("users").upsert({
-      id: authUser.user.id,
-      email: ownerEmail,
-      name: ownerName,
-      full_name: ownerName,
-      user_id: authUser.user.id,
-      token_identifier: ownerEmail,
-    });
-
-    const { error: memberError } = await supabase
-      .from("pharmacy_users")
-      .insert({
-        user_id: authUser.user.id,
-        pharmacy_id: pharmacy.id,
-        role: "pharmacy_owner",
-        is_active: true,
+    try {
+      await storeUpsertOwnerPublicUser({
+        userId: authUser.user.id,
+        email: ownerEmail,
+        name: ownerName,
       });
-
-    if (memberError) {
+      await storeCreatePharmacyOwnerMembership({
+        userId: authUser.user.id,
+        pharmacyId: pharmacy.id as string,
+      });
+    } catch (memberError) {
       console.error("pharmacy_users insert error:", memberError);
-      await supabase.from("pharmacies").delete().eq("id", pharmacy.id);
-      await supabase.auth.admin.deleteUser(authUser.user.id);
+      const { storeDeletePharmacy } = await import("@/lib/db/admin-store");
+      await storeDeletePharmacy(pharmacy.id as string);
+      await adminDeleteAuthUser(authUser.user.id);
       return NextResponse.json(
         {
           success: false,
-          error: `Could not link owner to pharmacy: ${memberError.message}`,
+          error: `Could not link owner to pharmacy: ${
+            memberError instanceof Error ? memberError.message : "Unknown error"
+          }`,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -281,6 +151,13 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
+    const policy = platformPolicyErrorResponse(error);
+    if (policy) {
+      return NextResponse.json(
+        { success: false, ...policy.body },
+        { status: policy.status },
+      );
+    }
     console.error("Error creating pharmacy:", error);
     const message =
       error instanceof Error ? error.message : "Failed to create pharmacy";

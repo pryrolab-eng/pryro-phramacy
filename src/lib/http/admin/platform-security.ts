@@ -8,6 +8,7 @@ export type AdminApiKeyRow = {
   name: string;
   key_prefix: string;
   key_hash?: string;
+  permissions?: string[];
   is_active: boolean;
   created_at?: string;
 };
@@ -26,6 +27,7 @@ export async function getAdminApiKeys(): Promise<AdminApiKeyRow[]> {
 export async function createAdminApiKey(body: {
   name: string;
   key: string;
+  permissions?: string[];
 }): Promise<{ success: boolean; apiKey?: AdminApiKeyRow }> {
   return fetchJson("/api/admin/api-keys", {
     method: "POST",
@@ -39,6 +41,7 @@ export async function updateAdminApiKey(body: {
   name: string;
   key: string;
   status: string;
+  permissions?: string[];
 }): Promise<{ success: boolean }> {
   return fetchJson("/api/admin/api-keys", {
     method: "PUT",

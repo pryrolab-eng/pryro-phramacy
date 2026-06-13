@@ -1,60 +1,35 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../supabase/server'
-import { createServiceClient } from '../../../../../supabase/service'
-import { createSubscriptionUpgrade } from '@/lib/subscription/create-pending-upgrade'
-import { getScheduledSubscriptionChange } from '@/lib/subscription/get-scheduled-change'
-import { SubscriptionPlanChangeError } from '@/lib/subscription/validate-upgrade'
-import { SUBSCRIPTION_CURRENT_PLAN_EMBED } from '@/lib/subscription/embed-plan'
-import { resolveActivePharmacyId } from '@/lib/pharmacy/active-pharmacy'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { createSubscriptionUpgrade } from "@/lib/subscription/create-pending-upgrade";
+import { getScheduledSubscriptionChange } from "@/lib/subscription/get-scheduled-change";
+import { SubscriptionPlanChangeError } from "@/lib/subscription/orchestrator";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import {
+  storeGetActiveSubscriptionForStatus,
+  storeListRecentCompletedSubscriptionPayments,
+  storeResolveCatalogPlan,
+} from "@/lib/db/subscriptions-store";
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const admin = createServiceClient()
-    const pharmacyId = await resolveActivePharmacyId(admin, user.id)
-    if (!pharmacyId) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
-    }
+    const pharmacyId = await requireUserPharmacyId(user.id);
 
-    // Get current subscription
-    const { data: subscription } = await supabase
-      .from('subscriptions')
-      .select(`
-        *,
-        ${SUBSCRIPTION_CURRENT_PLAN_EMBED} (
-          id,
-          name,
-          price,
-          period,
-          features
-        )
-      `)
-      .eq('pharmacy_id', pharmacyId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-
-    const scheduled = await getScheduledSubscriptionChange(
-      admin,
-      pharmacyId
-    )
+    const subscription = await storeGetActiveSubscriptionForStatus(pharmacyId);
+    const scheduled = await getScheduledSubscriptionChange(pharmacyId);
 
     if (!subscription) {
-      // Default to free plan
       return NextResponse.json({
-        status: 'free',
+        status: "free",
         plan: {
-          name: 'Free',
+          name: "Free",
           price: 0,
-          period: 'forever',
-          features: ['Basic POS', 'Up to 3 users', 'Email support']
+          period: "forever",
+          features: ["Basic POS", "Up to 3 users", "Email support"],
         },
         daysRemaining: null,
         isActive: true,
@@ -68,44 +43,55 @@ export async function GET(request: NextRequest) {
               currentPlan: scheduled.currentPlan,
             }
           : null,
-      })
+      });
     }
 
-    // Calculate time remaining
-    const now = new Date()
-    const expiresAt = new Date(subscription.expires_at)
-    const daysRemaining = Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-    const isExpired = daysRemaining <= 0
+    const now = new Date();
+    const expiresAt = subscription.expires_at
+      ? new Date(subscription.expires_at)
+      : null;
+    const daysRemaining = expiresAt
+      ? Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+      : null;
+    const isExpired = expiresAt ? daysRemaining! <= 0 : false;
 
-    // Check for recent payments
-    const { data: recentPayments } = await supabase
-      .from('payment_transactions')
-      .select('*')
-      .eq('pharmacy_id', pharmacyId)
-      .eq('subscription_id', subscription.id)
-      .eq('status', 'completed')
-      .order('created_at', { ascending: false })
-      .limit(5)
+    const recentPayments = await storeListRecentCompletedSubscriptionPayments({
+      pharmacyId,
+      subscriptionId: subscription.id,
+      limit: 5,
+    });
 
     return NextResponse.json({
-      status: isExpired ? 'expired' : 'active',
+      status: isExpired ? "expired" : "active",
       plan: subscription.subscription_plans,
-      daysRemaining: Math.max(0, daysRemaining),
-      isActive: subscription.is_active && !isExpired,
+      daysRemaining: daysRemaining != null ? Math.max(0, daysRemaining) : null,
+      isActive: Boolean(subscription.is_active) && !isExpired,
       expiresAt: subscription.expires_at,
       subscription: {
         id: subscription.id,
         startedAt: subscription.created_at,
-        lastPayment: recentPayments?.[0]?.created_at || null,
-        paymentHistory: recentPayments?.length || 0
+        lastPayment: recentPayments[0]?.created_at ?? null,
+        paymentHistory: recentPayments.length,
       },
-      timeCounter: {
-        days: Math.max(0, daysRemaining),
-        hours: Math.max(0, Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60)) % 24),
-        minutes: Math.max(0, Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60)) % 60),
-        isExpiring: daysRemaining <= 7 && daysRemaining > 0,
-        isExpired: isExpired
-      },
+      timeCounter: expiresAt
+        ? {
+            days: Math.max(0, daysRemaining ?? 0),
+            hours: Math.max(
+              0,
+              Math.ceil(
+                (expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60),
+              ) % 24,
+            ),
+            minutes: Math.max(
+              0,
+              Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60)) %
+                60,
+            ),
+            isExpiring:
+              daysRemaining != null && daysRemaining <= 7 && daysRemaining > 0,
+            isExpired,
+          }
+        : null,
       scheduledChange: scheduled
         ? {
             status: scheduled.status,
@@ -115,49 +101,37 @@ export async function GET(request: NextRequest) {
             currentPlan: scheduled.currentPlan,
           }
         : null,
-    })
-
-  } catch (error: any) {
-    console.error('Subscription status error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    });
+  } catch (error: unknown) {
+    console.error("Subscription status error:", error);
+    const message = error instanceof Error ? error.message : "Request failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json()
-    const { planId } = body
+    const body = await request.json();
+    const { planId } = body;
 
-    const admin = createServiceClient()
-    const pharmacyId = await resolveActivePharmacyId(admin, user.id)
-    if (!pharmacyId) {
-      return NextResponse.json({ error: 'Pharmacy not found' }, { status: 403 })
-    }
+    const pharmacyId = await requireUserPharmacyId(user.id);
 
-    const { data: plan } = await admin
-      .from('subscription_plans')
-      .select('*')
-      .eq('name', planId)
-      .eq('is_active', true)
-      .maybeSingle()
-
+    const plan = await storeResolveCatalogPlan(String(planId));
     if (!plan) {
-      return NextResponse.json({ error: 'Plan not found' }, { status: 404 })
+      return NextResponse.json({ error: "Plan not found" }, { status: 404 });
     }
 
-    const result = await createSubscriptionUpgrade(admin, pharmacyId, {
-      id: plan.id as string,
-      name: String(plan.name),
+    const result = await createSubscriptionUpgrade(pharmacyId, {
+      id: plan.id,
+      name: plan.name,
       price: plan.price,
-      period: plan.period as string | null,
-    })
+      period: plan.period,
+    });
 
     return NextResponse.json({
       success: true,
@@ -168,16 +142,15 @@ export async function POST(request: NextRequest) {
         amount: result.amount,
         requiresPayment: result.requiresPayment,
       },
-    })
-
+    });
   } catch (error: unknown) {
     if (error instanceof SubscriptionPlanChangeError) {
       return NextResponse.json(
         { error: error.message, code: error.code },
-        { status: 400 }
-      )
+        { status: 400 },
+      );
     }
-    const message = error instanceof Error ? error.message : 'Request failed'
-    return NextResponse.json({ error: message }, { status: 500 })
+    const message = error instanceof Error ? error.message : "Request failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

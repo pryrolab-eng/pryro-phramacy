@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '../../../../../supabase/service'
 import { recordSubscriptionPayment } from '@/lib/billing/record-subscription-payment'
 import { activatePaidSubscription } from '@/lib/subscription/activate-subscription'
 import {
@@ -7,6 +6,11 @@ import {
   pickString,
 } from '@/lib/webhooks/parse-incoming-body'
 import { paymentSuccessUrl } from '@/lib/routes/payment-paths'
+import {
+  storeFindPaymentTransactionByKpayRefid,
+  storeInsertPaymentLog,
+  storeUpdatePaymentTransaction,
+} from '@/lib/db/payment-transactions-store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -24,7 +28,7 @@ export async function GET() {
     configured: Boolean(
       process.env.KPAY_USERNAME &&
         process.env.KPAY_PASSWORD &&
-        process.env.SUPABASE_SERVICE_ROLE_KEY,
+        process.env.DATABASE_URL,
     ),
     returnUrl:
       process.env.KPAY_RETURN_URL ??
@@ -36,7 +40,6 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createServiceClient()
     const body = await parseIncomingWebhookBody(request)
 
     const tid = pickString(body, 'tid', 'TID')
@@ -56,20 +59,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    const { data: transaction } = await supabase
-      .from('payment_transactions')
-      .select('*')
-      .eq('kpay_refid', refid)
-      .single()
+    const transaction = await storeFindPaymentTransactionByKpayRefid(refid)
 
     if (!transaction) {
       console.warn('[kpay/webhook] transaction not found', { refid })
       return NextResponse.json({ error: 'Transaction not found' }, { status: 404 })
     }
 
-    await supabase.from('payment_logs').insert({
-      transaction_id: transaction.id,
-      event_type: 'webhook',
+    await storeInsertPaymentLog({
+      transactionId: transaction.id,
+      eventType: 'webhook',
       payload: body,
     })
 
@@ -90,17 +89,14 @@ export async function POST(request: NextRequest) {
       updateData.status = 'processing'
     }
 
-    await supabase
-      .from('payment_transactions')
-      .update(updateData)
-      .eq('id', transaction.id)
+    await storeUpdatePaymentTransaction(transaction.id, updateData)
 
     if (statusid === '01' && transaction.subscription_id) {
-      await activatePaidSubscription(supabase, transaction.subscription_id as string, {
+      await activatePaidSubscription(transaction.subscription_id, {
         paymentMethod: 'kpay',
         paymentReference: refid,
       })
-      await recordSubscriptionPayment(supabase, transaction.id as string)
+      await recordSubscriptionPayment(transaction.id)
     }
 
     console.info('[kpay/webhook] processed', {

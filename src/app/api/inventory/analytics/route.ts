@@ -1,81 +1,49 @@
-import { NextResponse } from 'next/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { createClient } from '../../../../../supabase/server'
-import { firstRelation } from '@/lib/supabase/relation'
+import { NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { storeListInventory } from "@/lib/db/inventory-store";
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({
-        stockByCategory: [],
-        inventoryTrend: []
-      })
+      return NextResponse.json({ stockByCategory: [], inventoryTrend: [] });
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const items = await storeListInventory(pharmacyId);
 
-    // Get stock by category
-    const { data: categoryData } = await supabase
-      .from('inventory')
-      .select(`
-        quantity_in_stock,
-        selling_price,
-        medications!inner(category, pharmacy_id)
-      `)
-      .eq('pharmacy_id', pharmacyId)
-      .eq('medications.pharmacy_id', pharmacyId)
-    
-    const categoryStats: Record<string, { stock: number; value: number }> = {}
-    categoryData?.forEach(item => {
-      const medications = firstRelation(item.medications)
-      const category = medications?.category || 'other'
+    const categoryStats: Record<string, { stock: number; value: number }> = {};
+    let currentValue = 0;
+
+    for (const item of items) {
+      const category = item.category || "other";
+      const stock = item.stock ?? 0;
+      const price = item.price ?? 0;
       if (!categoryStats[category]) {
-        categoryStats[category] = { stock: 0, value: 0 }
+        categoryStats[category] = { stock: 0, value: 0 };
       }
-      categoryStats[category].stock += item.quantity_in_stock
-      categoryStats[category].value += item.quantity_in_stock * parseFloat(item.selling_price)
-    })
-    
+      categoryStats[category].stock += stock;
+      categoryStats[category].value += stock * price;
+      currentValue += stock * price;
+    }
+
     const stockByCategory = Object.entries(categoryStats).map(([category, stats]) => ({
       category,
       stock: stats.stock,
-      value: Math.round(stats.value)
-    }))
-    
-    // Calculate current total inventory value
-    const currentValue = categoryData?.reduce((sum, item) => 
-      sum + (item.quantity_in_stock * parseFloat(item.selling_price)), 0) || 0
-    
-    // Generate trend with current value as latest month
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
-    const currentMonth = new Date().getMonth()
+      value: Math.round(stats.value),
+    }));
+
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const currentMonth = new Date().getMonth();
     const inventoryTrend = months.slice(0, currentMonth + 1).map((month, index) => {
-      const ratio = 0.7 + (index / currentMonth) * 0.3
-      return {
-        month,
-        value: Math.round(currentValue * ratio)
-      }
-    })
-    
-    return NextResponse.json({
-      stockByCategory,
-      inventoryTrend
-    })
+      const ratio = currentMonth === 0 ? 1 : 0.7 + (index / currentMonth) * 0.3;
+      return { month, value: Math.round(currentValue * ratio) };
+    });
+
+    return NextResponse.json({ stockByCategory, inventoryTrend });
   } catch (error) {
-    return NextResponse.json({
-      stockByCategory: [
-        { category: 'prescription', stock: 320, value: 1200000 },
-        { category: 'otc', stock: 180, value: 850000 },
-        { category: 'supplement', stock: 240, value: 650000 }
-      ],
-      inventoryTrend: [
-        { month: 'Jan', value: 2800000 },
-        { month: 'Feb', value: 3100000 },
-        { month: 'Mar', value: 3350000 }
-      ]
-    })
+    console.error("GET /api/inventory/analytics", error);
+    return NextResponse.json({ stockByCategory: [], inventoryTrend: [] });
   }
 }

@@ -84,15 +84,13 @@ Pryrox is a multi-tenant pharmacy management SaaS platform built with Next.js 14
 | View inventory (search, filter, sort) | ✅ Complete | Client-side search and category filter. |
 | Add drug / product | ✅ Complete | Medication lookup/creation + inventory record. |
 | Delete drug | ✅ Complete | Hard-delete with medication preservation. |
+| Edit drug | ✅ Complete | Supports quantity, price, min stock, unit cost, and stock location. |
 | Barcode generation and printing | ✅ Complete | JsBarcode CODE128, single and bulk print. |
 | Excel import/export | ✅ Complete | Row-level error reporting on import. |
 | Stock location assignment | ✅ Complete | Inventory rows reference stock_locations. |
-| Edit drug | ⚠️ Partial | Only price, quantity, and min stock editable. Name/batch/expiry locked. |
-| Stock adjustment | ⚠️ Partial | Quantity updates but adjustment reason not stored. |
-| Stock transfer | ❌ Broken | Free-text locations vs UUID FK references cause PostgreSQL type errors. |
-| Expiry alerts API | ❌ Stub | Returns hardcoded static data. |
-
-**Why incomplete:** Stock transfers were designed for a branch-based model but the UI sends free-text location names instead of UUID references. The expiry alerts endpoint was scaffolded but never connected to the database.
+| Stock transfer | ✅ Complete | Branch-to-branch transfers with UUID-based validation, stock checks, and audit trail. |
+| Expiry alerts API | ✅ Complete | Queries real database with configurable `withinDays` parameter. |
+| Stock adjustment | ⚠️ Partial | Quantity updates correctly, but adjustment reason is not stored in the database. |
 
 ### 6. Point of Sale (POS)
 
@@ -102,15 +100,13 @@ Pryrox is a multi-tenant pharmacy management SaaS platform built with Next.js 14
 | Sale processing (core) | ✅ Complete | Creates sales + items, decrements inventory. |
 | Insurance coverage calculation | ✅ Complete | Per-item coverage, claim creation. |
 | Quick-add (drug, patient, insurance, category) | ✅ Complete | All four dialogs persist to database. |
-| Payment methods (cash, card, mobile, insurance, mixed) | ⚠️ Partial | Recorded in DB but no external terminal integration. |
-| Hold sale | ❌ In-memory only | Lost on server restart. |
-| Void sale | ❌ No DB update | Returns object without updating sales.status or restoring inventory. |
-| Returns | ❌ No inventory restore | Creates record but doesn't restore quantity. |
-| Daily close | ❌ No DB write | Returns summary without persisting. |
-| Barcode scanner | ❌ Not implemented | Button rendered, no handler. |
-| Loyalty points | ❌ Not implemented | No column in customers table, no accumulation logic. |
-
-**Why incomplete:** The POS was built as a functional prototype. Core sale processing works, but operational features (hold, void, returns, daily close) were stubbed out and never connected to the database.
+| Payment methods (cash, card, mobile, insurance, mixed) | ✅ Complete | All five methods recorded in database. Card/mobile have no external terminal integration. |
+| Hold sale | ✅ Complete | Persists to `held_sales` database table. Survives server restarts. |
+| Void sale | ✅ Complete | Updates `sales.status` to "cancelled", restores inventory quantities, creates stock movement records and audit log. |
+| Returns | ✅ Complete | Restores `inventory.quantity_in_stock` when restock=true, creates stock movement records. |
+| Barcode scanner | ✅ Complete | Scan button has working `onClick` handler that matches barcodes and adds products to cart. |
+| Daily close | ⚠️ Partial | Computes and returns summary from real database queries, but does not persist the close record to a database table. |
+| Loyalty points | ⚠️ Partial | `customer_loyalty` table exists with API, but not wired to POS sale flow or customer UI. |
 
 ### 7. Customer Management
 
@@ -118,25 +114,22 @@ Pryrox is a multi-tenant pharmacy management SaaS platform built with Next.js 14
 |---|---|---|
 | Customer list | ✅ Complete | Tenant-isolated via RLS. |
 | Add customer | ✅ Complete | Persists to database. |
+| Edit customer | ✅ Complete | PATCH handler updates name, phone, email, DOB, allergies, insurance, status. |
+| Delete customer | ✅ Complete | DELETE handler removes customer record. |
 | POS customer autocomplete | ✅ Complete | Name/phone search, auto-fill. |
-| Edit / delete customer | ❌ Not implemented | No PUT/PATCH/DELETE handlers. |
-| Purchase history | ❌ Stub | Returns hardcoded data for 2 fictional customers. |
-| Loyalty points | ⚠️ Partial | DB table and API exist but not wired to UI or POS. |
-
-**Why incomplete:** Customer CRUD was built for the minimum viable POS flow (add + autocomplete). Edit/delete and purchase history were deprioritized.
+| Purchase history | ✅ Complete | Queries real sales data from database, not hardcoded stubs. |
+| Loyalty points | ⚠️ Partial | `customer_loyalty` table and API exist but not wired to UI or POS. |
 
 ### 8. Staff Management
 
 | Deliverable | Status | Notes |
 |---|---|---|
 | View staff roster | ✅ Complete | Fetches from auth.users + pharmacy_users. |
-| Add staff member | ⚠️ Partial | Creates auth user but role is hardcoded to pharmacist. |
-| Edit staff member | ⚠️ Partial | Updates role but users table update silently fails (ID mismatch). |
-| Delete staff member | ⚠️ Partial | Removes pharmacy_users record but auth user persists. |
-| Activate / deactivate | ❌ UI only | Toggle updates React state, not database. |
-| Role guard on /staff route | ❌ Not enforced | Any authenticated user can access. |
-
-**Why incomplete:** Staff management was built for the pharmacist creation flow only. Full CRUD with role enforcement was planned but not completed.
+| Add staff member | ✅ Complete | Creates auth user and pharmacy_users record. Role is configurable from the form (defaults to pharmacist if not provided). |
+| Edit staff member | ✅ Complete | Updates both `pharmacy_users` and `public_users` tables with correct ID resolution. |
+| Delete staff member | ⚠️ Partial | Removes `pharmacy_users` record but Supabase Auth user and `public_users` record persist. UI acknowledges this. |
+| Activate / deactivate | ✅ Complete | Toggle calls `PUT /api/staff/[id]` and persists status to database. |
+| Role guard on /staff route | ✅ Complete | Client-side route guard in dashboard layout + server-side permission checks on API endpoints (`staffManage` permission required). |
 
 ### 9. Reports
 
@@ -146,12 +139,12 @@ Pryrox is a multi-tenant pharmacy management SaaS platform built with Next.js 14
 | Inventory alerts chart | ✅ Complete | 14-day low-stock and expiry counts. |
 | Top selling products | ✅ Complete | Revenue-ranked from sale_items. |
 | Payment methods breakdown | ✅ Complete | Computed from live sales data. |
-| PDF export | ⚠️ Partial | Browser print only. jsPDF installed but unused. |
-| Excel export | ❌ Not implemented | xlsx library installed but unused in reports. |
-| Financial / Tax / Audit reports | ❌ Stubs | All return hardcoded data. |
-| Date range filter | ❌ Not wired | Inputs exist but not passed to API. |
-
-**Why incomplete:** Reports were designed with the correct data model but most endpoints return hardcoded stubs. The sales and inventory charts work because they query real data; the financial/tax/audit reports were never connected.
+| Financial report | ✅ Complete | Queries real sales, expenses, accounting data from database. |
+| Tax / VAT report | ✅ Complete | Computes VAT from real sales data. RRA submission requires EBM integration (acknowledged gap). |
+| Audit report | ✅ Complete | Queries real audit logs from database with user profile enrichment. |
+| Date range filter | ✅ Complete | Start/end dates fully wired from UI → HTTP layer → API routes → database queries. |
+| PDF export | ⚠️ Partial | Uses `window.print()` (browser print dialog). jsPDF is installed but not used for true PDF generation. |
+| Excel export | ❌ Not implemented | xlsx library installed but no export button on the reports page. |
 
 ### 10. Infrastructure
 
@@ -184,11 +177,10 @@ Pryrox is a multi-tenant pharmacy management SaaS platform built with Next.js 14
 
 | Area | What's Missing | Why |
 |---|---|---|
-| **POS operational features** | Hold sale, void sale, returns, daily close, barcode scanner, loyalty points | Built as functional prototype. Core sale works; operational edge cases were stubbed. |
-| **Reports** | Financial, tax, audit reports; Excel export; date range filtering | Data model is correct but endpoints return hardcoded stubs. |
+| **POS** | Daily close persistence, loyalty points integration | Daily close computes real data but doesn't persist. Loyalty table exists but isn't wired to POS. |
+| **Reports** | Excel export, true PDF generation | xlsx and jsPDF libraries installed but not used on reports page. |
 | **Insurance** | Claim processing, pricing, lookup, claims reporting | All endpoints are hardcoded stubs. No database integration. |
-| **Customer management** | Edit/delete, purchase history, loyalty integration | Minimum viable flow (add + autocomplete) was prioritized. |
-| **Staff management** | Role enforcement, activate/deactivate, full CRUD | Built for pharmacist creation only. |
+| **Staff** | Auth user cleanup on delete | Deleting a staff member removes pharmacy_users but leaves the auth account active. |
 | **Subscription** | Refund handling, proration logic | Cancellation works; refund/proration requires business decisions. |
 | **Real-time updates** | WebSocket implementation | Currently HTTP polling (5s interval). Supabase Realtime was planned but not implemented. |
 
@@ -197,8 +189,6 @@ Pryrox is a multi-tenant pharmacy management SaaS platform built with Next.js 14
 | Issue | Impact | Notes |
 |---|---|---|
 | Duplicate admin settings pages | `page-improved.tsx` exists but is inactive | The provider-based approach superseded it. |
-| Hardcoded pharmacy_id strings | Several API routes use `'userPharmacy.pharmacy_id'` literal | Placeholder never replaced with actual resolution logic. |
-| `POST /api/sales` stock deduction | Uses `supabase.raw()` which doesn't exist | Stock is only correctly decremented by database triggers. |
 | Staff table (HR fields) | Defined in schema but unused | Dead schema — no API or UI references it. |
 | Multi-tenancy fix not in migrations | `fix-inventory-isolation-complete.sql` is a loose file | Fresh deployments may have RLS gaps. |
 
@@ -270,15 +260,16 @@ npm run dev
 
 ## Recommendation
 
-The platform has a solid foundation in **authentication, subscription billing, and core inventory/POS operations**. Before production deployment, the following must be addressed:
+The platform has a solid foundation in **authentication, subscription billing, inventory management, POS operations, customer management, staff management, and reporting**. Most core features are fully functional. Before production deployment, the following should be addressed:
 
 1. **Delete debug routes** — Remove all 9 test/debug page routes, test API routes, and public HTML files
 2. **Add auth to admin APIs** — Protect `/api/admin/pharmacies` and `/api/admin/categories` with session verification
-3. **Fix placeholder pharmacy_id** — Replace `'userPharmacy.pharmacy_id'` string literals with actual resolution
-4. **Complete POS operations** — Connect hold, void, returns, and daily close to the database
+3. **Staff delete cleanup** — Optionally delete auth user when removing staff member
+4. **Daily close persistence** — Store daily close records in database for audit trail
+5. **Reports Excel export** — Wire the xlsx library to the reports page export button
 
-Estimated effort for the above: **1–2 weeks** for a single developer.
+Estimated effort for the above: **1 week** for a single developer.
 
 ---
 
-*Document prepared from source code analysis as of commit `e6af964` on the `ft-payment` branch.*
+*Document prepared from source code analysis as of commit `c988d17` on the `ft-payment` branch.*

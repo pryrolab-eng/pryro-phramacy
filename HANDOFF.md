@@ -29,10 +29,8 @@ Pryrox is a multi-tenant pharmacy management SaaS platform built with Next.js 14
 | Google OAuth sign-in | ✅ Complete | Optional — configured via env vars. |
 | Session management + middleware | ✅ Complete | JWT refresh on every request, protected-path enforcement. |
 | API key management (SHA-256 hashed) | ✅ Complete | Create, edit, rotate, deactivate. Display-prefix only. |
-| Password reset | ❌ Not implemented | `forgotPasswordAction` exists but is not exported from `actions.ts`. Form submits but nothing happens. |
-| Sign-up (self-registration) | ❌ Not implemented | `signUpAction` exists but is not exported. Form submits but nothing happens. |
-
-**Why incomplete:** Auth actions were scaffolded during development but never wired to the UI forms. The database layer and email templates exist — the missing piece is the server action exports.
+| Password reset | ✅ Complete | `ForgotPasswordForm` → React Query mutation → `POST /api/auth/recovery-email` → sends reset email. |
+| Sign-up (self-registration) | ✅ Complete | `signUpAction` exported from `actions.ts`, wired to form via `formAction`. |
 
 ### 2. Subscription & Billing (Polar)
 
@@ -175,14 +173,12 @@ Pryrox is a multi-tenant pharmacy management SaaS platform built with Next.js 14
 
 | # | Issue | Severity | Reason Not Done |
 |---|---|---|---|
-| 1 | Sign-up action not exported from `actions.ts` | 🔴 Critical | Server action was scaffolded but never wired to the form. |
-| 2 | Password reset action not exported | 🔴 Critical | Same as above — action exists but is not exported. |
-| 3 | Debug/test routes exposed (9 routes) | 🔴 Critical | Development routes left in codebase. Must be deleted before production. |
-| 4 | Unauthenticated admin API routes | 🔴 Critical | `/api/admin/pharmacies`, `/api/admin/categories` have no auth checks. |
-| 5 | Hardcoded test credentials in `/api/auth/login` | 🔴 Critical | Returns mock JWT. Must be deleted. |
-| 6 | Public HTML test files in `public/` | 🟡 Medium | `check-user.html`, `test-insurance.html` accessible without auth. |
+| 1 | Debug/test routes exposed (9 routes) | 🔴 Critical | Development routes left in codebase. Must be deleted before production. |
+| 2 | Unauthenticated admin API routes | 🔴 Critical | `/api/admin/pharmacies`, `/api/admin/categories` have no auth checks. |
+| 3 | Hardcoded test credentials in `/api/auth/login` | 🔴 Critical | Returns mock JWT. Must be deleted. |
+| 4 | Public HTML test files in `public/` | 🟡 Medium | `check-user.html`, `test-insurance.html` accessible without auth. |
 
-**Why these exist:** The application was developed incrementally with a focus on core flows (auth, POS, inventory, subscriptions). Debug routes were used during development and were never cleaned up. Auth actions were implemented in the database layer but the server action exports were missed.
+**Why these exist:** The application was developed incrementally with a focus on core flows (auth, POS, inventory, subscriptions). Debug routes were used during development and were never cleaned up.
 
 ### Feature Gaps
 
@@ -276,14 +272,13 @@ npm run dev
 
 The platform has a solid foundation in **authentication, subscription billing, and core inventory/POS operations**. Before production deployment, the following must be addressed:
 
-1. **Wire auth actions** — Export `signUpAction` and `forgotPasswordAction` from `actions.ts`
-2. **Delete debug routes** — Remove all 9 test/debug page routes, test API routes, and public HTML files
-3. **Add auth to admin APIs** — Protect `/api/admin/pharmacies` and `/api/admin/categories` with session verification
-4. **Fix placeholder pharmacy_id** — Replace `'userPharmacy.pharmacy_id'` string literals with actual resolution
-5. **Complete POS operations** — Connect hold, void, returns, and daily close to the database
+1. **Delete debug routes** — Remove all 9 test/debug page routes, test API routes, and public HTML files
+2. **Add auth to admin APIs** — Protect `/api/admin/pharmacies` and `/api/admin/categories` with session verification
+3. **Fix placeholder pharmacy_id** — Replace `'userPharmacy.pharmacy_id'` string literals with actual resolution
+4. **Complete POS operations** — Connect hold, void, returns, and daily close to the database
 
-Estimated effort for the above: **2–3 weeks** for a single developer.
+Estimated effort for the above: **1–2 weeks** for a single developer.
 
 ---
 
-*Document prepared from source code analysis as of commit `0770a7c` on the `ft-payment` branch.*
+*Document prepared from source code analysis as of commit `e6af964` on the `ft-payment` branch.*

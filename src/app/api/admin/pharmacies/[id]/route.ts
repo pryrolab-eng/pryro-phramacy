@@ -14,6 +14,7 @@ import {
   updatePharmacyFromDb,
   upsertOwnerPublicUserFromDb,
 } from "@/lib/db/admin";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export const dynamic = "force-dynamic";
 
@@ -117,6 +118,29 @@ export async function PUT(
       }
     }
 
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "UPDATE",
+      tableName: "pharmacies",
+      recordId: id,
+      oldValues: {
+        name: currentPharmacy.name,
+        email: currentPharmacy.email,
+        status: currentPharmacy.status,
+        subscription_plan: currentPharmacy.subscription_plan,
+      },
+      newValues: {
+        name: body.name,
+        email: body.email,
+        status: nextStatus,
+        subscriptionPlan,
+        ownerEmail,
+        ownerPasswordChanged: Boolean(body.new_password),
+      },
+      ...auditRequestMetadata(request),
+    });
+
     return NextResponse.json({ success: true, pharmacy });
   } catch (error) {
     console.error("Error updating pharmacy:", error);
@@ -128,7 +152,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
@@ -182,6 +206,19 @@ export async function DELETE(
         { status: 500 },
       );
     }
+
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "DELETE",
+      tableName: "pharmacies",
+      recordId: id,
+      oldValues: {
+        id,
+        cancelledSubscriptionIds: prep.cancelledSubscriptionIds,
+      },
+      ...auditRequestMetadata(request),
+    });
 
     return NextResponse.json({
       success: true,

@@ -4,6 +4,7 @@ import path from "path";
 export const UPLOAD_CATEGORIES = {
   pharmacyLogos: "pharmacy-logos",
   platformReports: "platform-reports",
+  pharmacyFiles: "pharmacy-files",
 } as const;
 
 export type UploadCategory =

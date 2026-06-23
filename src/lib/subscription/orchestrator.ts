@@ -201,9 +201,23 @@ export class SubscriptionOrchestrator {
       );
     }
 
-    await this.assertUpgrade(pharmacyId, plan);
-
-    await storeCancelPendingMainSubscriptions(pharmacyId);
+    const existing = await this.getMainSubscriptionRow(pharmacyId);
+    if (existing && existing.status === "pending_payment") {
+      if (existing.plan_id === plan.id) {
+        return {
+          subscriptionId: existing.id,
+          planId: plan.id,
+          planName: plan.name,
+          amount: planPrice,
+          requiresPayment: true,
+          status: "pending_payment",
+        };
+      }
+      await storeCancelPendingMainSubscriptions(pharmacyId);
+    } else {
+      await this.assertUpgrade(pharmacyId, plan);
+      await storeCancelPendingMainSubscriptions(pharmacyId);
+    }
 
     const subscriptionId = await storeCreatePendingMainSubscription({
       pharmacyId,

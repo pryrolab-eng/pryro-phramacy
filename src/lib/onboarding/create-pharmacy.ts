@@ -7,6 +7,8 @@ import {
   storeFindFirstActiveMembership,
 } from "@/lib/db/pharmacy-users-store";
 import { storeUpsertPublicUser } from "@/lib/db/public-users-store";
+import { prisma } from "@/lib/db/prisma";
+import { getStockLocationTemplates } from "@/lib/stock-location-templates";
 
 export type CreateOnboardingPharmacyInput = {
   userId: string;
@@ -54,11 +56,31 @@ export async function createOnboardingPharmacy(
   });
 
   try {
+    const templates = await getStockLocationTemplates();
+    if (templates.length) {
+      await prisma.stock_locations.createMany({
+        data: templates
+          .filter((template) => template.is_active)
+          .map((template) => ({
+            pharmacy_id: pharmacy.id,
+            name: template.name,
+            description: template.description,
+            is_active: true,
+          })),
+      });
+    }
+
     await storeCreatePharmacyMembership({
       pharmacyId: pharmacy.id,
       userId: input.userId,
       role: "pharmacy_owner",
       isActive: true,
+    });
+
+    // Set active pharmacy for the user
+    await prisma.public_users.update({
+      where: { id: input.userId },
+      data: { active_pharmacy_id: pharmacy.id },
     });
   } catch (error) {
     await deleteOnboardingPharmacyFromDb(pharmacy.id);

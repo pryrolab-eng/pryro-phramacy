@@ -7,6 +7,7 @@ import {
   rateLimitJsonResponse,
 } from "@/lib/rate-limit/enforce";
 import { RATE_LIMIT_MESSAGES } from "@/lib/rate-limit/presets";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,6 +33,14 @@ export async function POST(request: NextRequest) {
     }
 
     await establishNativeSession(session.user_id);
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: session.user_id,
+      action: "LOGIN",
+      tableName: "auth.sessions",
+      newValues: { method: "2fa" },
+      ...auditRequestMetadata(request),
+    });
     return NextResponse.json({
       success: true,
       nativeSession: true,

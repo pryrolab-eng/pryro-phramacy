@@ -1,6 +1,7 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { DashboardButton } from "@/components/dashboard";
@@ -12,6 +13,19 @@ import {
 } from "@/components/settings/settings-primitives";
 import { useAdminSettings } from "@/components/admin/settings/admin-settings-provider";
 import { formatIntegrationKeyPermissions } from "@/components/admin/settings/platform-api-key-permissions";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+
+function integrationTone(status: string): "neutral" | "active" | "inactive" {
+  if (status === "healthy") return "active";
+  if (status === "not_configured") return "inactive";
+  return "neutral";
+}
+
+function insuranceLabel(status: string): string {
+  if (status === "healthy") return "Healthy";
+  if (status === "not_configured") return "Not configured";
+  return "Review";
+}
 
 export function AdminSettingsIntegrationsPanel() {
   const {
@@ -21,7 +35,10 @@ export function AdminSettingsIntegrationsPanel() {
     setIsAddApiKeyOpen,
     setSelectedApiKey,
     setIsEditApiKeyOpen,
+    integrationStatus,
+    deleteApiKeyMutation,
   } = useAdminSettings();
+  const [deleteTarget, setDeleteTarget] = useState<typeof apiKeys[0] | null>(null);
 
   return (
     <div className="space-y-8">
@@ -59,13 +76,23 @@ export function AdminSettingsIntegrationsPanel() {
                     setSelectedApiKey({
                       ...api,
                       status: api.is_active ? "Active" : "Inactive",
-                      key: api.key_hash ?? "",
+                      key: "",
                       permissions: api.permissions ?? [],
                     });
                     setIsEditApiKeyOpen(true);
                   }}
                 >
                   Edit
+                </DashboardButton>
+                <DashboardButton
+                  size="sm"
+                  variant="ghost"
+                  tone="destructive"
+                  onClick={() => setDeleteTarget(api)}
+                  disabled={deleteApiKeyMutation.isPending}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  Delete
                 </DashboardButton>
               </div>
             </SettingsRow>
@@ -100,15 +127,62 @@ export function AdminSettingsIntegrationsPanel() {
           title="Payment gateway"
           description="KPay, Polar, and related checkout integrations"
         >
-          <AdminStatusChip tone="active">Healthy</AdminStatusChip>
+          <AdminStatusChip
+            tone={integrationTone(integrationStatus.paymentGateway.status)}
+          >
+            {integrationStatus.paymentGateway.configured ? "Healthy" : "Not configured"}
+          </AdminStatusChip>
         </SettingsRow>
         <SettingsRow
           title="Insurance APIs"
           description="Provider pricing and claim lookups"
         >
-          <AdminStatusChip tone="neutral">Review</AdminStatusChip>
+          <AdminStatusChip
+            tone={integrationTone(integrationStatus.insurance.status)}
+            title={`${integrationStatus.insurance.activeProviders} active providers, ${integrationStatus.insurance.activeTemplates} active templates`}
+          >
+            {insuranceLabel(integrationStatus.insurance.status)}
+          </AdminStatusChip>
         </SettingsRow>
       </SettingsSection>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete API key</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. The key will be permanently revoked.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to delete <strong className="font-mono">{deleteTarget?.key_prefix}••••••••••••••••••••••••••••••••</strong>?
+            </p>
+          </div>
+          <DialogFooter>
+            <DashboardButton
+              variant="ghost"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleteApiKeyMutation.isPending}
+            >
+              Cancel
+            </DashboardButton>
+            <DashboardButton
+              tone="destructive"
+              onClick={async () => {
+                if (!deleteTarget) return;
+                try {
+                  await deleteApiKeyMutation.mutateAsync(deleteTarget.id);
+                  setDeleteTarget(null);
+                } catch {}
+              }}
+              disabled={deleteApiKeyMutation.isPending}
+            >
+              Delete permanently
+            </DashboardButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

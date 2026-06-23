@@ -5,6 +5,7 @@ import {
   storeGetTwoFactorAuthData,
 } from '@/lib/db/public-users-store'
 import { authenticator } from 'otplib'
+import { auditRequestMetadata, writeAuditLog } from '@/lib/db/audit-logs'
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,6 +34,15 @@ export async function POST(request: NextRequest) {
     }
 
     await storeEnableTwoFactor(user.id)
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: user.id,
+      action: 'UPDATE',
+      tableName: 'auth.users',
+      recordId: user.id,
+      newValues: { twoFactorEnabled: true },
+      ...auditRequestMetadata(request),
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -5,6 +5,7 @@ import {
   handleEntitlementRouteError,
 } from "@/lib/subscription/api-guard";
 import { storeVoidPosSale } from "@/lib/db/pos-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function POST(request: NextRequest) {
   try {
@@ -35,6 +36,19 @@ export async function POST(request: NextRequest) {
         { status: 404 },
       );
     }
+
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "sales",
+      recordId: saleId,
+      newValues: {
+        status: "cancelled",
+        reason: typeof reason === "string" ? reason : "User requested",
+      },
+      ...auditRequestMetadata(request),
+    });
 
     return NextResponse.json({
       success: true,

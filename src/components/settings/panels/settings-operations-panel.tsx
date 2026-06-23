@@ -2,7 +2,6 @@
 
 import { Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { DashboardButton } from "@/components/dashboard";
 import {
   SettingsPanelTitle,
@@ -51,15 +50,15 @@ export function SettingsOperationsPanel() {
       <SettingsSection title="System">
         <SettingsRow
           title="Maintenance mode"
-          description="Temporarily disable non-admin access"
+          description="Controlled by platform administrators"
         >
-          <Switch />
+          <Badge variant="secondary">Platform only</Badge>
         </SettingsRow>
         <SettingsRow
           title="Automatic updates"
-          description="Apply security patches automatically"
+          description="Deployment updates are managed outside pharmacy settings"
         >
-          <Switch defaultChecked />
+          <Badge variant="secondary">Managed</Badge>
         </SettingsRow>
       </SettingsSection>
     </div>

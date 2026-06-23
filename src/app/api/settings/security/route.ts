@@ -6,6 +6,7 @@ import {
   storeUpsertPharmacySecuritySetting,
 } from "@/lib/db/ip-whitelist-store";
 import { getPharmacySecuritySetting } from "@/lib/db/ip-whitelist";
+import { writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function GET() {
   try {
@@ -37,6 +38,15 @@ export async function PUT(request: NextRequest) {
     const pharmacyId = await requireSessionPharmacyId(user.id);
 
     await storeUpsertPharmacySecuritySetting(pharmacyId, body);
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "system_settings",
+      newValues: body,
+      ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
+      userAgent: request.headers.get("user-agent") ?? undefined,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

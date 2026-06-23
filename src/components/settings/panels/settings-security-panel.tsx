@@ -126,15 +126,9 @@ export function SettingsSecurityPanel() {
         </SettingsRow>
         <SettingsRow
           title="Session timeout"
-          description="Auto sign-out after a period of inactivity"
+          description="Session lifetime is managed by the platform session policy"
         >
-          <Switch defaultChecked />
-        </SettingsRow>
-        <SettingsRow
-          title="SSO integration"
-          description="Single sign-on with SAML or OAuth (coming soon)"
-        >
-          <Switch disabled />
+          <Badge variant="secondary">Platform managed</Badge>
         </SettingsRow>
       </SettingsSection>
 

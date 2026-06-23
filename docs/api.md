@@ -403,11 +403,6 @@ Routes that require authentication are marked with 🔒 below.
 **Description:** Toggles IP whitelist on/off  
 **Methods:** POST
 
-### POST `/api/settings/security/sso` 🔒
-**Authentication:** Yes (`getAuthUser()`)  
-**Description:** Toggles SSO on/off  
-**Methods:** POST
-
 ### GET `/api/pharmacy/settings` 🔒
 **Authentication:** Yes (`getAuthUser()`)  
 **Description:** Fetches pharmacy settings (name, license, location, etc.)  

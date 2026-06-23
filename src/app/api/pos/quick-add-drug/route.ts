@@ -70,6 +70,9 @@ export async function POST(request: NextRequest) {
         "minimum_stock_level",
       ),
       expiryDate: readString(body, "expiryDate", "expiry_date") || null,
+      stockLocation:
+        readString(body, "stockLocation", "stock_location", "stock_location_id") ||
+        null,
     });
 
     return NextResponse.json({ success: true, medication, inventory });

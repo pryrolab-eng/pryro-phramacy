@@ -7,6 +7,7 @@ import {
   adminApiKeysQueryKey,
   adminIpWhitelistQueryKey,
   createAdminApiKey,
+  deleteAdminApiKey,
   deleteAdminIpWhitelist,
   getAdminApiKeys,
   getAdminIpWhitelist,
@@ -68,5 +69,14 @@ export function useRemoveAdminIpWhitelistMutation() {
     mutationFn: deleteAdminIpWhitelist,
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: adminIpWhitelistQueryKey }),
+  });
+}
+
+export function useDeleteAdminApiKeyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteAdminApiKey,
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: adminApiKeysQueryKey }),
   });
 }

@@ -12,6 +12,7 @@ import {
   getStaffBranchIdsFromDb,
   setStaffBranchAssignmentsFromDb,
 } from "@/lib/db/staff";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 /** GET/PUT branch access for a pharmacy_users row (staff member). */
 export async function GET(
@@ -79,7 +80,18 @@ export async function PUT(
       }
     }
 
+    const previousBranchIds = await getStaffBranchIdsFromDb(pharmacyUserId);
     await setStaffBranchAssignmentsFromDb({ pharmacyUserId, branchIds });
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "staff_branch_assignments",
+      recordId: pharmacyUserId,
+      oldValues: { branchIds: previousBranchIds },
+      newValues: { branchIds, unrestricted: branchIds.length === 0 },
+      ...auditRequestMetadata(request),
+    });
 
     return NextResponse.json({
       success: true,

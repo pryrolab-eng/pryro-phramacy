@@ -17,6 +17,7 @@ import { isPrismaConfigured } from "@/lib/db/is-prisma-configured";
 export const PLATFORM_SETTING_KEYS = {
 
   apiRateLimit: "apiRateLimit",
+  adminEmail: "adminEmail",
 
   allowUserTwoFactor: "allowUserTwoFactor",
 
@@ -26,7 +27,7 @@ export const PLATFORM_SETTING_KEYS = {
 
   enableRegistrations: "enableRegistrations",
 
-  maintenanceMode: "maintenanceMode",
+  scheduledMaintenance: "scheduledMaintenance",
 
   maxUsersPerPharmacy: "maxUsersPerPharmacy",
 
@@ -35,8 +36,6 @@ export const PLATFORM_SETTING_KEYS = {
   enableWhiteLabel: "enableWhiteLabel",
 
   enableNotifications: "enableNotifications",
-
-  backupEnabled: "backupEnabled",
 
   enableAuditLogs: "enableAuditLogs",
 
@@ -170,6 +169,19 @@ export async function getPlatformApiRateLimit(): Promise<number> {
 
 }
 
+export async function getPlatformAdminEmail(): Promise<string> {
+  return getCachedPlatformSetting(
+    PLATFORM_SETTING_KEYS.adminEmail,
+    (raw) => {
+      const value = parseSystemSettingValue(raw);
+      return typeof value === "string" && value.trim()
+        ? value.trim()
+        : defaults.adminEmail;
+    },
+    defaults.adminEmail,
+  );
+}
+
 
 
 export async function getAllowUserTwoFactorFromDb(): Promise<boolean> {
@@ -220,18 +232,39 @@ export async function getEnableRegistrations(): Promise<boolean> {
 
 
 
-export async function getMaintenanceMode(): Promise<boolean> {
+import type { ScheduledMaintenance } from "@/components/admin/settings/admin-settings-types";
+
+export async function getScheduledMaintenance(): Promise<ScheduledMaintenance> {
 
   return getCachedPlatformSetting(
 
-    PLATFORM_SETTING_KEYS.maintenanceMode,
+    PLATFORM_SETTING_KEYS.scheduledMaintenance,
 
-    (raw) => parseBooleanSetting(raw, defaults.maintenanceMode),
+    (raw) => {
+      if (!raw) return defaults.scheduledMaintenance;
+      try {
+        const parsed = JSON.parse(String(raw));
+        return {
+          enabled: Boolean(parsed.enabled),
+          scheduledAt: parsed.scheduledAt ?? null,
+          message: String(parsed.message ?? defaults.scheduledMaintenance.message),
+          notified: Boolean(parsed.notified),
+        };
+      } catch {
+        return defaults.scheduledMaintenance;
+      }
+    },
 
-    defaults.maintenanceMode,
+    defaults.scheduledMaintenance,
 
   );
 
+}
+
+export async function isMaintenanceModeActive(): Promise<boolean> {
+  const maintenance = await getScheduledMaintenance();
+  if (!maintenance.enabled || !maintenance.scheduledAt) return false;
+  return new Date(maintenance.scheduledAt) <= new Date();
 }
 
 
@@ -300,19 +333,7 @@ export async function getEnableNotifications(): Promise<boolean> {
 
 
 
-export async function getBackupEnabled(): Promise<boolean> {
 
-  return getCachedPlatformSetting(
-
-    PLATFORM_SETTING_KEYS.backupEnabled,
-
-    (raw) => parseBooleanSetting(raw, defaults.backupEnabled),
-
-    defaults.backupEnabled,
-
-  );
-
-}
 
 
 

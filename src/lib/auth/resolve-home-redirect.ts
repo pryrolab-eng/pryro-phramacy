@@ -9,7 +9,7 @@ import {
 } from "@/lib/db/pharmacy-users-store";
 import { storeGetIsPlatformAdmin } from "@/lib/db/public-users-store";
 
-/** Post-login entry URL — role router only; not a workspace UI. */
+/** Post-login entry URL - role router only; not a workspace UI. */
 export const POST_AUTH_ENTRY_PATH = "/app";
 
 export type HomeRedirectResult =
@@ -18,7 +18,7 @@ export type HomeRedirectResult =
 
 /**
  * Resolves where an authenticated user should land after sign-in, OAuth, or 2FA.
- * Platform admins → /admin; tenant roles → /pharmacy/*; no tenant → /onboarding.
+ * Platform admins go to /admin; tenant roles go to /pharmacy/*; no tenant goes to /onboarding.
  */
 export async function resolveAuthenticatedHomePath(
   user: Pick<AuthUser, "id" | "email">,
@@ -54,35 +54,7 @@ export async function resolveAuthenticatedHomePath(
         });
         return { kind: "redirect", path: PHARMACY_ROUTES.dashboard };
       } catch {
-        // membership repair failed — fall through to onboarding
-      }
-    }
-
-    if (
-      process.env.NODE_ENV !== "production" &&
-      user.email?.includes("@test.com")
-    ) {
-      const role = user.email.includes("pharmacy")
-        ? "pharmacy_owner"
-        : user.email.includes("pharmacist")
-          ? "pharmacist"
-          : "cashier";
-
-      try {
-        await storeUpsertPharmacyMembership({
-          pharmacyId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-          userId: user.id,
-          role,
-        });
-        return {
-          kind: "redirect",
-          path:
-            isStaffWorkspaceRole(role)
-              ? PHARMACY_ROUTES.staffDashboard
-              : PHARMACY_ROUTES.dashboard,
-        };
-      } catch {
-        // test seed failed — fall through to onboarding
+        // Membership repair failed; continue to onboarding.
       }
     }
 

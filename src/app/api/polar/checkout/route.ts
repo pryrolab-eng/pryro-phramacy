@@ -100,6 +100,29 @@ export async function POST(request: NextRequest) {
     }
 
     const polar = getPolarClient();
+
+    try {
+      const activeSubs = await polar.subscriptions.list({
+        productId: polarProductId,
+        active: true,
+        limit: 20,
+      });
+      for await (const page of activeSubs) {
+        for (const sub of page.result?.items ?? []) {
+          if (sub.metadata?.pharmacy_id === membership.pharmacy_id) {
+            try {
+              await polar.subscriptions.revoke({ id: sub.id });
+              console.info("[polar/checkout] Revoked stale subscription", sub.id);
+            } catch {
+              console.warn("[polar/checkout] Failed to revoke stale subscription", sub.id);
+            }
+          }
+        }
+      }
+    } catch (listErr) {
+      console.warn("[polar/checkout] Could not list Polar subscriptions for cleanup", listErr);
+    }
+
     const checkout = await polar.checkouts.create({
       products: [polarProductId],
       successUrl: polarSuccessUrl(returnContext),

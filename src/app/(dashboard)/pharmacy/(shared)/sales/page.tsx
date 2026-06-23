@@ -31,6 +31,7 @@ import {
   DashboardListRow,
   DashboardProgressTrack,
   DashboardPageLoading,
+  DashboardPanelEmpty,
 } from '@/components/dashboard'
 import { Spinner } from '@/components/ui/spinner'
 import {
@@ -68,21 +69,13 @@ interface AnalyticsData {
   weeklySales: Array<{ day?: string; sales: number }>
   paymentBreakdown: Array<{ method: string; percentage: number }>
   hourlySales: Array<{ hour?: string; sales: number }>
-  monthlyComparison: Array<{ month?: string; sales: number }>
-  customerDistribution: Array<{ name: string; value: number }>
+  monthlyComparison: Array<{ week?: string; current: number; previous: number }>
+  customerDistribution: Array<{ name: string; value: number; fill?: string }>
   topCategories: Array<{ name: string; value: number; color: string }>
 }
 
 function WeeklySalesChart({ data }: { data: Array<{ day?: string; sales: number }> }) {
-  const weeklyData = data.length > 0 ? data : [
-    { day: "Mon", sales: 120000 },
-    { day: "Tue", sales: 135000 },
-    { day: "Wed", sales: 142000 },
-    { day: "Thu", sales: 138000 },
-    { day: "Fri", sales: 150000 },
-    { day: "Sat", sales: 148000 },
-    { day: "Sun", sales: 156000 },
-  ]
+  const hasSales = data.some((point) => point.sales > 0)
 
   return (
     <DashboardChartCard
@@ -91,9 +84,17 @@ function WeeklySalesChart({ data }: { data: Array<{ day?: string; sales: number 
       config={weeklyChartConfig}
       chartClassName="h-64"
     >
+      {!hasSales ? (
+        <DashboardPanelEmpty
+          icon={TrendingUp}
+          title="No weekly sales yet"
+          description="Complete POS sales to populate this trend."
+          className="h-full border-0 bg-transparent shadow-none"
+        />
+      ) : (
           <LineChart
             accessibilityLayer
-            data={weeklyData}
+            data={data}
             margin={{
               top: 20,
               left: 12,
@@ -132,21 +133,13 @@ function WeeklySalesChart({ data }: { data: Array<{ day?: string; sales: number 
               />
             </Line>
           </LineChart>
+      )}
     </DashboardChartCard>
   )
 }
 
 function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number }> }) {
-  const hourlyData = data?.length > 0 ? data : [
-    { hour: '8AM', sales: 5000 },
-    { hour: '9AM', sales: 8000 },
-    { hour: '10AM', sales: 12000 },
-    { hour: '11AM', sales: 15000 },
-    { hour: '12PM', sales: 18000 },
-    { hour: '1PM', sales: 14000 },
-    { hour: '2PM', sales: 16000 },
-    { hour: '3PM', sales: 13000 }
-  ]
+  const hasSales = data.some((point) => point.sales > 0)
 
   return (
     <DashboardChartCard
@@ -155,9 +148,17 @@ function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number
       config={hourlyChartConfig}
       chartClassName="h-64"
     >
+      {!hasSales ? (
+        <DashboardPanelEmpty
+          icon={TrendingUp}
+          title="No hourly sales yet"
+          description="Today's POS sales will appear here as they are completed."
+          className="h-full border-0 bg-transparent shadow-none"
+        />
+      ) : (
           <LineChart
             accessibilityLayer
-            data={hourlyData}
+            data={data}
             margin={{
               top: 20,
               left: 12,
@@ -196,6 +197,7 @@ function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number
               />
             </Line>
           </LineChart>
+      )}
     </DashboardChartCard>
   )
 }
@@ -343,12 +345,14 @@ export default function SalesPage() {
               description="Best selling product categories"
             >
                 <div className="space-y-3">
-                  {(analyticsData.topCategories?.length > 0 ? analyticsData.topCategories : [
-                    { name: 'Prescription', value: 40, color: 'bg-red-500' },
-                    { name: 'OTC Medicines', value: 25, color: 'bg-green-500' },
-                    { name: 'Supplements', value: 20, color: 'bg-blue-500' },
-                    { name: 'Personal Care', value: 15, color: 'bg-yellow-500' }
-                  ]).map((category, index) => (
+                  {analyticsData.topCategories.length === 0 ? (
+                    <DashboardPanelEmpty
+                      icon={ShoppingCart}
+                      title="No category sales"
+                      description="Category percentages are calculated from sold items."
+                      className="min-h-[160px] border-0 bg-transparent shadow-none"
+                    />
+                  ) : analyticsData.topCategories.map((category, index) => (
                     <div key={index} className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className={`w-3 h-3 rounded-full ${category.color}`} />
@@ -463,12 +467,17 @@ export default function SalesPage() {
                 previous: { label: "Previous Month", color: "#60a5fa" },
               }}
             >
-                  <BarChart data={analyticsData.monthlyComparison?.length > 0 ? analyticsData.monthlyComparison : [
-                    { week: "Week 1", current: 450000, previous: 380000 },
-                    { week: "Week 2", current: 520000, previous: 420000 },
-                    { week: "Week 3", current: 480000, previous: 460000 },
-                    { week: "Week 4", current: 580000, previous: 510000 }
-                  ]}>
+              {analyticsData.monthlyComparison.every(
+                (point) => point.current === 0 && point.previous === 0,
+              ) ? (
+                <DashboardPanelEmpty
+                  icon={TrendingUp}
+                  title="No monthly comparison"
+                  description="Current and previous month sales will appear here."
+                  className="h-full border-0 bg-transparent shadow-none"
+                />
+              ) : (
+                  <BarChart data={analyticsData.monthlyComparison}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="week" />
                     <YAxis />
@@ -476,21 +485,27 @@ export default function SalesPage() {
                     <Bar dataKey="current" fill="#3b82f6" radius={4} />
                     <Bar dataKey="previous" fill="#60a5fa" radius={4} />
                   </BarChart>
+              )}
             </DashboardChartCard>
             
             <DashboardSectionCard
               title="Customer distribution"
               description="Sales by customer type"
             >
+                {analyticsData.customerDistribution.length === 0 ? (
+                  <DashboardPanelEmpty
+                    icon={Users}
+                    title="No customer mix yet"
+                    description="Distribution is calculated from real sales."
+                    className="min-h-[240px] border-0 bg-transparent shadow-none"
+                  />
+                ) : (
+                <>
                 <div className="h-48">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={analyticsData.customerDistribution?.length > 0 ? analyticsData.customerDistribution : [
-                          {name: 'Walk-in', value: 55, fill: '#8b5cf6'},
-                          {name: 'Regular', value: 30, fill: '#10b981'},
-                          {name: 'Insurance', value: 15, fill: '#3b82f6'}
-                        ]}
+                        data={analyticsData.customerDistribution}
                         cx="50%"
                         cy="50%"
                         innerRadius={40}
@@ -501,19 +516,18 @@ export default function SalesPage() {
                   </ResponsiveContainer>
                 </div>
                 <div className="grid grid-cols-1 gap-2 text-xs mt-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-purple-500 rounded" />
-                    <span>Walk-in Customers (55%)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-green-500 rounded" />
-                    <span>Regular Customers (30%)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-blue-500 rounded" />
-                    <span>Insurance Customers (15%)</span>
-                  </div>
+                  {analyticsData.customerDistribution.map((row) => (
+                    <div key={row.name} className="flex items-center gap-2">
+                      <div
+                        className="h-3 w-3 rounded"
+                        style={{ backgroundColor: row.fill ?? '#737373' }}
+                      />
+                      <span>{row.name} Customers ({row.value}%)</span>
+                    </div>
+                  ))}
                 </div>
+                </>
+                )}
             </DashboardSectionCard>
           </div>
         </TabsContent>

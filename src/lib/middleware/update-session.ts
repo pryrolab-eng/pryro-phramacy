@@ -22,7 +22,7 @@ import {
 import { enforcePlatformApiRateLimit, enforcePlatformIntegrationKeyRateLimit } from "@/lib/rate-limit/enforce";
 import {
   getEnableRegistrations,
-  getMaintenanceMode,
+  isMaintenanceModeActive,
 } from "@/lib/platform-settings";
 import { isMaintenanceExemptPath } from "@/lib/platform-policy/maintenance";
 import { storeGetIsPlatformAdmin } from "@/lib/db/public-users-store";
@@ -118,8 +118,8 @@ export const updateSession = async (request: NextRequest) => {
   }
 
   if (!isMaintenanceExemptPath(pathname)) {
-    const maintenance = await getMaintenanceMode();
-    if (maintenance) {
+    const maintenanceActive = await isMaintenanceModeActive();
+    if (maintenanceActive) {
       const maintenanceUserId = await getNativeUserIdFromRequest(request);
       const isPlatformAdmin = maintenanceUserId
         ? await storeGetIsPlatformAdmin(maintenanceUserId)

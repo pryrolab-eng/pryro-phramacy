@@ -6,6 +6,7 @@ import {
   storeDeleteWhitelistEntry,
   storeListWhitelistEntries,
 } from "@/lib/db/ip-whitelist-store";
+import { writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function GET() {
   try {
@@ -45,6 +46,16 @@ export async function POST(request: NextRequest) {
       ipAddress: ip,
       description: description || "",
     });
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "INSERT",
+      tableName: "ip_whitelist",
+      recordId: entry.id,
+      newValues: entry,
+      ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
+      userAgent: request.headers.get("user-agent") ?? undefined,
+    });
 
     return NextResponse.json({ success: true, ip: entry });
   } catch (error) {
@@ -67,6 +78,16 @@ export async function DELETE(request: NextRequest) {
 
     const pharmacyId = await requireSessionPharmacyId(user.id);
     await storeDeleteWhitelistEntry(id, pharmacyId);
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "DELETE",
+      tableName: "ip_whitelist",
+      recordId: id,
+      oldValues: { id },
+      ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
+      userAgent: request.headers.get("user-agent") ?? undefined,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

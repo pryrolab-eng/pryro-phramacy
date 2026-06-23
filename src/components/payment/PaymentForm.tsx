@@ -13,18 +13,36 @@ interface PaymentFormProps {
   amount: number
   saleId?: string
   subscriptionId?: string
-  onSuccess?: (transaction: unknown) => void
+  customerName?: string
+  customerPhone?: string
+  customerEmail?: string
+  defaultPaymentMethod?: string
+  onSuccess?: (transaction: any) => void
   onError?: (error: string) => void
 }
 
-export function PaymentForm({ amount, saleId, subscriptionId, onSuccess, onError }: PaymentFormProps) {
+export function PaymentForm({
+  amount,
+  saleId,
+  subscriptionId,
+  customerName = '',
+  customerPhone = '',
+  customerEmail = '',
+  defaultPaymentMethod = 'momo',
+  onSuccess,
+  onError
+}: PaymentFormProps) {
   const initiateMutation = useInitiateKpayPaymentMutation()
+  
+  // Keep only digits for phone number
+  const cleanPhone = (phone: string) => phone.replace(/[^\d]/g, '')
+
   const [formData, setFormData] = useState({
-    customerName: '',
-    customerPhone: '',
-    customerEmail: '',
-    paymentMethod: 'momo',
-    bankId: '63510'
+    customerName,
+    customerPhone: cleanPhone(customerPhone),
+    customerEmail,
+    paymentMethod: defaultPaymentMethod,
+    bankId: defaultPaymentMethod === 'cc' ? '000' : '63510'
   })
 
   const paymentMethods = [
@@ -120,7 +138,11 @@ export function PaymentForm({ amount, saleId, subscriptionId, onSuccess, onError
             <Label htmlFor="paymentMethod">Payment Method</Label>
             <Select
               value={formData.paymentMethod}
-              onValueChange={(value) => setFormData({ ...formData, paymentMethod: value })}
+              onValueChange={(value) => setFormData({
+                ...formData,
+                paymentMethod: value,
+                bankId: value === 'cc' ? '000' : value === 'momo' ? '63510' : formData.bankId
+              })}
             >
               <SelectTrigger>
                 <SelectValue />

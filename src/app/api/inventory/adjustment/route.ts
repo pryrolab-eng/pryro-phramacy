@@ -4,7 +4,9 @@ import {
   entitlementRouteResponse,
   guardInventoryAccessForUser,
 } from "@/lib/subscription/route-guards";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { storeAdjustInventoryQuantity } from "@/lib/db/inventory-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,12 +23,27 @@ export async function POST(request: NextRequest) {
       throw entErr;
     }
 
+    const pharmacyId = await requireUserPharmacyId(user.id);
     const { productId, quantity, adjustmentType } = await request.json();
     const newStock = await storeAdjustInventoryQuantity(
       productId,
       adjustmentType === "increase" ? "increase" : "decrease",
       quantity,
     );
+
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "inventory",
+      recordId: productId,
+      newValues: {
+        adjustmentType: adjustmentType === "increase" ? "increase" : "decrease",
+        quantity,
+        newStock,
+      },
+      ...auditRequestMetadata(request),
+    });
 
     return NextResponse.json({ success: true, newStock });
   } catch (error) {

@@ -202,12 +202,15 @@ export async function GET() {
       }
     }
 
-    const total = walkIn + regular + insurance || 1;
-    const customerDistribution = [
-      { name: "Walk-in", value: Math.round((walkIn / total) * 100), fill: "#8b5cf6" },
-      { name: "Regular", value: Math.round((regular / total) * 100), fill: "#10b981" },
-      { name: "Insurance", value: Math.round((insurance / total) * 100), fill: "#3b82f6" },
-    ];
+    const total = walkIn + regular + insurance;
+    const customerDistribution =
+      total > 0
+        ? [
+            { name: "Walk-in", value: Math.round((walkIn / total) * 100), fill: "#8b5cf6" },
+            { name: "Regular", value: Math.round((regular / total) * 100), fill: "#10b981" },
+            { name: "Insurance", value: Math.round((insurance / total) * 100), fill: "#3b82f6" },
+          ]
+        : [];
 
     return NextResponse.json({
       weeklySales,
@@ -219,18 +222,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error("GET /api/sales/analytics", error);
-    return NextResponse.json({
-      weeklySales: [
-        { day: "Mon", sales: 120000 },
-        { day: "Tue", sales: 135000 },
-        { day: "Wed", sales: 142000 },
-      ],
-      paymentBreakdown: [
-        { method: "cash", percentage: 45 },
-        { method: "mobile_money", percentage: 30 },
-        { method: "insurance", percentage: 20 },
-        { method: "card", percentage: 5 },
-      ],
-    });
+    return NextResponse.json(EMPTY_RESPONSE);
   }
 }

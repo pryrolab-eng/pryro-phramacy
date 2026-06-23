@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { prisma } from "@/lib/db/prisma";
 import { storeListInventory } from "@/lib/db/inventory-store";
-import { getRequestPharmacyId } from "@/lib/subscription/api-guard";
+import { resolveActivePharmacyContext } from "@/lib/pharmacy/active-pharmacy";
+import { getStaffAllowedBranchIds } from "@/lib/pharmacy/staff-branch-access";
+import { PHARMACY_PERMISSIONS } from "@/lib/rbac/permissions";
+import {
+  permissionErrorResponse,
+  requirePharmacyPermission,
+} from "@/lib/rbac/require-pharmacy-permission";
 
 export async function PUT(
   request: NextRequest,
@@ -15,10 +21,11 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const pharmacyId = await getRequestPharmacyId(user.id);
-    if (!pharmacyId) {
-      return NextResponse.json({ error: "Pharmacy not found" }, { status: 404 });
-    }
+    const { ctx } = await requirePharmacyPermission(
+      user.id,
+      PHARMACY_PERMISSIONS.branchesManage,
+    );
+    const pharmacyId = ctx.activePharmacyId;
 
     const existing = await prisma.branches.findFirst({
       where: { id, pharmacy_id: pharmacyId },
@@ -58,6 +65,10 @@ export async function PUT(
 
     return NextResponse.json({ success: true, branch });
   } catch (error) {
+    const permission = permissionErrorResponse(error);
+    if (permission) {
+      return NextResponse.json(permission.body, { status: permission.status });
+    }
     console.error("PUT /api/branches/[id]", error);
     return NextResponse.json({ error: "Failed to update branch" }, { status: 500 });
   }
@@ -74,9 +85,19 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const pharmacyId = await getRequestPharmacyId(user.id);
+    const ctx = await resolveActivePharmacyContext(user.id);
+    const pharmacyId = ctx.activePharmacyId;
     if (!pharmacyId) {
       return NextResponse.json({ error: "Pharmacy not found" }, { status: 404 });
+    }
+
+    const allowedBranchIds = await getStaffAllowedBranchIds(
+      user.id,
+      pharmacyId,
+      ctx.role,
+    );
+    if (allowedBranchIds !== null && !allowedBranchIds.includes(branchId)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const branch = await prisma.branches.findFirst({

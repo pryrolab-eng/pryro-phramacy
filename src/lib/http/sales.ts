@@ -43,8 +43,8 @@ export type SalesAnalytics = {
   weeklySales: Array<{ day?: string; sales: number }>;
   paymentBreakdown: Array<{ method: string; percentage: number }>;
   hourlySales: Array<{ hour?: string; sales: number }>;
-  monthlyComparison: Array<{ month?: string; sales: number }>;
-  customerDistribution: Array<{ name: string; value: number }>;
+  monthlyComparison: Array<{ week?: string; current: number; previous: number }>;
+  customerDistribution: Array<{ name: string; value: number; fill?: string }>;
   topCategories: Array<{ name: string; value: number; color: string }>;
 };
 

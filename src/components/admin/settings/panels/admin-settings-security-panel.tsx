@@ -2,6 +2,7 @@
 
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { DashboardButton } from "@/components/dashboard";
 import {
   SettingsPanelTitle,
@@ -99,30 +100,14 @@ export function AdminSettingsSecurityPanel() {
             }
           />
         </SettingsRow>
-        <SettingsRow
-          title="SSO integration"
-          description="Single sign-on for enterprise tenants"
-        >
-          <Switch
-            checked={settings.ssoEnabled}
-            onCheckedChange={(checked) =>
-              setSettings({ ...settings, ssoEnabled: checked })
-            }
-          />
-        </SettingsRow>
       </SettingsSection>
 
       <SettingsSection title="Data protection">
         <SettingsRow
           title="Data encryption"
-          description="AES-256 encryption for sensitive platform data"
+          description="Managed by database, hosting, and storage configuration"
         >
-          <Switch
-            checked={settings.encryptionEnabled}
-            onCheckedChange={(checked) =>
-              setSettings({ ...settings, encryptionEnabled: checked })
-            }
-          />
+          <Badge variant="secondary">Platform managed</Badge>
         </SettingsRow>
       </SettingsSection>
     </div>

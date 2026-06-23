@@ -7,6 +7,7 @@ import {
 import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { storeResolveCatalogPlan } from "@/lib/db/subscriptions-store";
 import { storeLinkPaymentTransactionToSubscription } from "@/lib/db/payment-transactions-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function POST(request: Request) {
   try {
@@ -47,6 +48,24 @@ export async function POST(request: Request) {
         subscriptionId,
       });
     }
+
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "subscriptions",
+      recordId: subscriptionId,
+      newValues: {
+        changeType: requiresPayment ? "paid_plan_change_requested" : "plan_changed",
+        planId: plan.id,
+        planName: plan.name,
+        requiresPayment,
+        paymentTransactionId: paymentTransactionId
+          ? String(paymentTransactionId)
+          : null,
+      },
+      ...auditRequestMetadata(request),
+    });
 
     if (requiresPayment) {
       const pending = change as {

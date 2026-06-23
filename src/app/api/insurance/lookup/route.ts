@@ -54,22 +54,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const demoMap: Record<string, { type: string; coverage: number }> = {
-      INS001: { type: "RSSB", coverage: 80 },
-      INS002: { type: "Radiant Insurance", coverage: 70 },
-      INS003: { type: "MMI", coverage: 90 },
-    };
-    const demo = demoMap[membership];
-    if (demo) {
-      return NextResponse.json({
-        success: true,
-        insuranceType: demo.type,
-        coveragePercent: demo.coverage,
-        status: "active",
-        source: "demo",
-      });
-    }
-
     return NextResponse.json(
       { success: false, error: "Membership not found for this pharmacy" },
       { status: 404 },

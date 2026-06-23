@@ -7,6 +7,7 @@ import {
 } from "@/lib/subscription/route-guards";
 import { storeListInventoryTransfers } from "@/lib/db/inventory-store";
 import { transferBranchStock } from "@/lib/pharmacy/transfer-branch-stock";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function GET() {
   try {
@@ -74,6 +75,23 @@ export async function POST(request: NextRequest) {
       fromBranchId,
       toBranchId,
       quantity,
+    });
+
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "INSERT",
+      tableName: "inventory_transfers",
+      recordId: result.transferId,
+      newValues: {
+        inventoryId: productId,
+        fromBranchId,
+        toBranchId,
+        quantity,
+        sourceStock: result.sourceStock,
+        destinationStock: result.destinationStock,
+      },
+      ...auditRequestMetadata(request),
     });
 
     return NextResponse.json({

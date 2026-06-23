@@ -19,6 +19,7 @@ import {
   listEnabledPlanFeaturesByPlanIdsFromDb,
 } from '@/lib/db/admin'
 import { storeListPlatformFeatures } from '@/lib/db/plan-features-store'
+import { auditRequestMetadata, writeAuditLog } from '@/lib/db/audit-logs'
 
 export async function GET() {
   try {
@@ -193,6 +194,23 @@ export async function POST(request: NextRequest) {
     }
 
     const synced = await syncPlanToPolarAndSave(plan as Parameters<typeof syncPlanToPolarAndSave>[0])
+
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: 'INSERT',
+      tableName: 'subscription_plans',
+      recordId: plan.id as string,
+      newValues: {
+        name: body.name,
+        price,
+        planType: requestedType,
+        billingPeriod: billing_period,
+        featureKeys,
+        polarSync: synced.polarSync,
+      },
+      ...auditRequestMetadata(request),
+    })
 
     return NextResponse.json({
       success: true,

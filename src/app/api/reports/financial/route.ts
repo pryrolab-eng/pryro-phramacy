@@ -14,6 +14,13 @@ import {
   aggregateRevenueByPaymentMethod,
   formatReportPeriod,
 } from "@/lib/reports/extended-reports";
+import { buildAccountingSummary } from "@/lib/db/accounting";
+
+function exclusiveEndDate(date: string): Date {
+  const end = new Date(date);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return end;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -42,6 +49,10 @@ export async function GET(request: NextRequest) {
       range,
     );
     const revenue = aggregateRevenueByPaymentMethod(sales);
+    const accounting = await buildAccountingSummary({
+      pharmacyId,
+      range: { from: new Date(range.from), to: exclusiveEndDate(range.to) },
+    });
 
     return NextResponse.json({
       period: formatReportPeriod(range),
@@ -54,27 +65,30 @@ export async function GET(request: NextRequest) {
         mixedSales: revenue.mixedSales,
       },
       expenses: {
-        inventory: 0,
-        salaries: 0,
-        utilities: 0,
-        rent: 0,
-        other: 0,
-        note: "Expense tracking is not implemented; revenue figures are live from sales.",
+        inventory: accounting.categories.inventory,
+        supplierPurchases: accounting.categories.supplierPurchases,
+        salaries: accounting.categories.salaries,
+        utilities: accounting.categories.utilities,
+        rent: accounting.categories.rent,
+        other: accounting.categories.other,
+        total: accounting.expenses,
+        categories: accounting.categoryBreakdown,
+        sources: accounting.sources,
+        note:
+          "Expenses use purchase orders and estimated staff salaries. Rent, utilities, and fiscal submission data are reserved extension points.",
       },
       profitLoss: {
-        grossProfit: revenue.totalSales,
-        netProfit: revenue.totalSales,
-        profitMargin:
-          revenue.totalSales > 0
-            ? Math.round((revenue.totalSales / revenue.totalSales) * 1000) / 10
-            : 0,
+        grossProfit: revenue.totalSales - accounting.categories.inventory,
+        netProfit: accounting.profit,
+        profitMargin: accounting.profitMargin,
       },
       cashFlow: {
         opening: 0,
-        inflow: revenue.totalSales,
-        outflow: 0,
-        closing: revenue.totalSales,
-        note: "Cash flow uses sales inflow only until expense ledger ships.",
+        inflow: accounting.cashFlow.inflow,
+        outflow: accounting.cashFlow.outflow,
+        closing: accounting.cashFlow.net,
+        note:
+          "Cash flow is derived from sales, completed payments, payment transactions, purchase orders, and salary estimates.",
       },
     });
   } catch (error) {

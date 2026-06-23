@@ -20,6 +20,7 @@ import { adminUpdateAuthUserPassword } from "@/lib/auth/admin-users";
 import { findAuthUserByIdFromDb } from "@/lib/db/auth-credentials";
 
 import { verifyPassword } from "@/lib/auth/native/password";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 
 
@@ -144,6 +145,17 @@ export async function POST(request: NextRequest) {
     await adminUpdateAuthUserPassword(user.id, newPassword.trim());
 
     await clearMustChangePasswordFlag(user.id, user.user_metadata);
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "auth.users",
+      recordId: user.id,
+      newValues: {
+        securityEvent: forced ? "forced_password_changed" : "password_changed",
+      },
+      ...auditRequestMetadata(request),
+    });
 
 
 

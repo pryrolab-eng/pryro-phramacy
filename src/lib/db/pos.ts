@@ -5,6 +5,10 @@ import type {
   return_type,
 } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
+import {
+  isMissingStockLocationColumn,
+  resolveStockLocationId,
+} from "@/lib/db/inventory";
 
 export type PosProductRow = {
   id: string;
@@ -279,7 +283,13 @@ export async function quickAddPosDrug(input: {
   sellingPrice: number;
   minimumStockLevel: number;
   expiryDate: string | null;
+  stockLocation?: string | null;
 }): Promise<{ medication: Record<string, unknown>; inventory: Record<string, unknown> }> {
+  const stockLocationId = await resolveStockLocationId({
+    pharmacyId: input.pharmacyId,
+    value: input.stockLocation,
+  });
+
   const medication = await prisma.medications.create({
     data: {
       pharmacy_id: input.pharmacyId,
@@ -292,19 +302,40 @@ export async function quickAddPosDrug(input: {
     },
   });
 
-  const inventory = await prisma.inventory.create({
-    data: {
-      pharmacy_id: input.pharmacyId,
-      branch_id: input.branchId,
-      medication_id: medication.id,
-      batch_number: input.batchNumber,
-      quantity_in_stock: input.quantityInStock,
-      unit_cost: input.unitCost,
-      selling_price: input.sellingPrice,
-      minimum_stock_level: input.minimumStockLevel,
-      expiry_date: input.expiryDate ? new Date(input.expiryDate) : null,
-    },
-  });
+  const inventoryData = {
+    pharmacy_id: input.pharmacyId,
+    branch_id: input.branchId,
+    medication_id: medication.id,
+    batch_number: input.batchNumber,
+    quantity_in_stock: input.quantityInStock,
+    unit_cost: input.unitCost,
+    selling_price: input.sellingPrice,
+    minimum_stock_level: input.minimumStockLevel,
+    expiry_date: input.expiryDate ? new Date(input.expiryDate) : null,
+    ...(stockLocationId ? { stock_location_id: stockLocationId } : {}),
+  };
+
+  let inventory;
+  try {
+    inventory = await prisma.inventory.create({ data: inventoryData });
+  } catch (error) {
+    if (!stockLocationId || !isMissingStockLocationColumn(error)) {
+      throw error;
+    }
+    inventory = await prisma.inventory.create({
+      data: {
+        pharmacy_id: input.pharmacyId,
+        branch_id: input.branchId,
+        medication_id: medication.id,
+        batch_number: input.batchNumber,
+        quantity_in_stock: input.quantityInStock,
+        unit_cost: input.unitCost,
+        selling_price: input.sellingPrice,
+        minimum_stock_level: input.minimumStockLevel,
+        expiry_date: input.expiryDate ? new Date(input.expiryDate) : null,
+      },
+    });
+  }
 
   return {
     medication: medication as unknown as Record<string, unknown>,

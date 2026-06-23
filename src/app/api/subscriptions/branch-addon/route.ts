@@ -6,6 +6,7 @@ import {
 } from "@/lib/subscription/orchestrator";
 import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { storeFindBranchAddonPlan } from "@/lib/db/subscriptions-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function POST(request: Request) {
   try {
@@ -61,6 +62,21 @@ export async function POST(request: Request) {
           : undefined,
       },
     );
+
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "INSERT",
+      tableName: "subscriptions",
+      recordId: result.subscriptionId,
+      newValues: {
+        changeType: "branch_addon_requested",
+        planId: plan.id,
+        branchId: typeof branchId === "string" ? branchId : null,
+        newBranchName: branch?.name ?? null,
+      },
+      ...auditRequestMetadata(request),
+    });
 
     return NextResponse.json({
       success: true,

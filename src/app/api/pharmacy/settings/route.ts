@@ -4,6 +4,7 @@ import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { getEffectiveSubscriptionLabel } from "@/lib/subscription/effective-plan";
 import { isPharmacyOwnerRole } from "@/lib/rbac/pharmacy-roles";
 import { prisma } from "@/lib/db/prisma";
+import { writeAuditLog } from "@/lib/db/audit-logs";
 import {
   getPharmacyLocaleFromDb,
   upsertPharmacyLocaleFromDb,
@@ -87,7 +88,7 @@ export async function PUT(request: NextRequest) {
       .split(",")
       .map((part: string) => part.trim());
 
-    await prisma.pharmacies.update({
+    const updatedPharmacy = await prisma.pharmacies.update({
       where: { id: pharmacyId },
       data: {
         name: body.name,
@@ -104,6 +105,22 @@ export async function PUT(request: NextRequest) {
         language: body.language,
       });
     }
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "pharmacies",
+      recordId: pharmacyId,
+      newValues: {
+        pharmacy: updatedPharmacy,
+        locale: {
+          currency: body.currency,
+          language: body.language,
+        },
+      },
+      ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
+      userAgent: request.headers.get("user-agent") ?? undefined,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -4,6 +4,7 @@ import {
   createGlobalInsuranceTemplateFromDb,
   listGlobalInsuranceTemplatesFromDb,
 } from "@/lib/db/admin";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function GET() {
   const auth = await requirePlatformAdminApi();
@@ -43,6 +44,19 @@ export async function POST(request: NextRequest) {
       insuranceProvider: String(body.insurance_provider).trim(),
       templateHtml: body.template_html ?? "",
       templateCss: body.template_css ?? "",
+    });
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "INSERT",
+      tableName: "insurance_templates",
+      recordId: data.id,
+      newValues: {
+        id: data.id,
+        name: data.name,
+        insurance_provider: data.insurance_provider,
+      },
+      ...auditRequestMetadata(request),
     });
     return NextResponse.json({ success: true, template: data });
   } catch (error) {

@@ -16,6 +16,26 @@ When a feature ships, move it to `docs/modules/` or `docs/feature-status.md` and
 
 ---
 
+## Confirmed by code audit (June 2026)
+
+The current remaining backlog is based on route/helper/UI inspection, not only older notes in this doc.
+
+| Phase | Confirmed remaining work |
+|-------|--------------------------|
+| 2 | Generic uploads/exports should stay real file-backed; `/api/rra/invoice` is deprecated in favor of `/api/integrations/rra-ebm` |
+| 3 | Pharmacy settings compliance panel is informational/deferred |
+| 4 | POS features complete |
+| 5 | Accounting expense ledger now uses sales, purchase orders, payments, invoices, manual expenses, and salary estimates; RRA/EBM tax submission is deferred |
+| 6 | Production KPay/Polar credential hardening; EBM hardening deferred |
+| 7 | Certified clinical safety dataset implemented |
+| 8 | Field-encryption product requirements and optional notification scale-out remain |
+
+Shipped and no longer backlog: Prisma/native auth, `pg_dump` backups, data retention cron, notification prefs/dispatch/SSE, pharmacy currency/language persistence, audit-log toggle enforcement, admin alert email routing, stock-location templates, dynamic admin system status, VSDC-backed RRA/EBM adapter, Mobile Money simulated provider integration, settings panels (analytics scheduling + supplier/SMS sync), certified clinical safety rules dataset, DB-backed email template editor, broader admin search, and notification mark-read.
+
+**RRA/EBM hold:** Do not build deeper RRA/EBM flows until vendor/API requirements are complete. Accounting and financial reports expose extension metadata (`fiscalSubmission: deferred_rra_ebm`) instead of guessing fiscal receipt behavior.
+
+---
+
 ## Prisma migration roadmap
 
 **Goal:** `DATABASE_URL` → Prisma for all app data access; **remove Supabase client and GoTrue**; native auth + VPS Postgres.
@@ -43,7 +63,7 @@ Migration complete. Remaining work is **features and enforcement**, not data-lay
 | Priority | Area | Notes |
 |----------|------|--------|
 | 1 | **Quick fixes** | ~~Sales item counts, report date filters, expiry-alerts, admin pharmacies auth~~ **Done (Jun 2026)** |
-| 2 | **Settings enforcement** | 14d mostly done — `backupEnabled`, `enableAuditLogs`, `pg_dump` backups, `dataRetentionDays` purge cron |
+| 2 | **Settings enforcement** | **Done for current settings** — unsupported fake toggles removed; audit/logging/backups/retention/notifications enforced |
 | 3 | **Integrations** | RRA EBM VSDC adapter shipped (needs live `RRA_VSDC_BASE_URL` + vendor creds); mobile money remains |
 | 4 | **Stubs** | Loyalty auto-award on POS sale **Done** |
 | 5 | **13b** | **Done** — v1 APIs, webhooks, Redis rate limit (`REDIS_URL`), admin scope UI |
@@ -79,7 +99,7 @@ Migrate in order — each step is read-only or isolated before touching the orch
 | 12b | Bulk `getAuthUser()` on API routes + admin/staff password paths + change-password native | Done |
 | 13a | Rate limiting — `rate_limit_buckets`, platform API middleware, auth/2FA, persist `apiRateLimit` | Done |
 | 13b | Platform integration API keys for external developers, Redis option, dashboard usage metrics | **Done** (usage metrics UI optional tail) |
-| 14 | Platform & pharmacy **settings enforcement** — wire saved toggles/limits to runtime (see audit below) | **14a–b Done**; 14c partial (locale + invoice template); 14d–e planned |
+| 14 | Platform & pharmacy **settings enforcement** — wire saved toggles/limits to runtime (see audit below) | **Done for current settings**; future-only items moved out of editable settings |
 | 15 | **System-wide audit** — working vs partial vs stub (see [Step 15](#step-15--system-wide-audit)) | Living doc |
 | 16 | **Event-driven notifications** — in-app live + email (+ push later); see [Step 16](#step-16--event-driven-notifications) | **Done** (16a–c); tail events optional |
 
@@ -147,7 +167,7 @@ GOOGLE_CLIENT_SECRET=...
 | `platformName` | Yes | **Display** | `GET /api/branding`, auth/sidebar via `useBranding()` |
 | `platformLogoUrl` | Yes | **Display** | Same |
 | `supportEmail` | Yes | **Display** | `usePlatformSupport()` mailto links on blocked-access screens |
-| `adminEmail` | Yes | **No** | Stored only; outbound mail uses `SMTP_*` / env, not this field |
+| `adminEmail` | Yes | **Yes** | Platform notification outbox rows without `user_id` email this address |
 | `maxPharmacies` | Yes | **Yes** | `assertCanCreatePharmacy()` on onboarding + admin create |
 | `maxUsersPerPharmacy` | Yes | **Yes** | Entitlement `maxUsers` = `min(plan.max_users, platform maxUsersPerPharmacy)` |
 | `apiRateLimit` | Yes | **Yes** | Middleware `enforcePlatformApiRateLimit` → `getPlatformApiRateLimit()` |
@@ -157,31 +177,12 @@ GOOGLE_CLIENT_SECRET=...
 | `maintenanceMode` | Yes | **Yes** | Middleware → `/maintenance` (503 on API); platform admins bypass |
 | `enableNotifications` | Yes | **Yes** | `emitNotificationEvent` + dispatch worker respect flag |
 | `backupEnabled` | Yes | **Yes** | `POST /api/admin/backups` returns 403 when disabled |
-| `autoUpdates` | Yes | **No** | No updater/cron reads this |
+| `autoUpdates` | No | **N/A** | Removed from editable settings/API allowlist; deployment updates are shown as platform-managed |
 | `enableWhiteLabel` | Yes | **Yes** | Branding PUT requires platform flag + plan `customization` |
 | `enableMultiBranch` | Yes | **Yes** | `POST /api/branches` checks platform flag before entitlements |
 | `dataRetentionDays` | Yes | **Yes** | `/api/cron/data-retention` purges old audit logs + webhook deliveries |
-| `enableAuditLogs` | Yes | **Partial** | `GET /api/reports/audit` returns 403 when disabled; writers still sparse |
-| `ssoEnabled` | Yes | **No** | Platform toggle saved but unused; pharmacy `POST /api/settings/security/sso` writes legacy table only |
-| `encryptionEnabled` | Yes | **No** | Cosmetic switch; no crypto layer toggled |
-
-**Suggested enforcement hooks (14a — platform caps & access):**
-
-| Setting | Wire to |
-|---------|---------|
-| `maxPharmacies` | Count pharmacies before onboarding + admin create; return `403` with support link |
-| `enableRegistrations` | `signUpAction`, `/sign-up` page guard, optional `POST /api/onboarding/pharmacy` |
-| `maintenanceMode` | Middleware: non–platform-admin → maintenance page; allow `/sign-in`, webhooks, cron |
-| `maxUsersPerPharmacy` | `POST /api/staff` — ceiling = `min(plan.max_users, platform maxUsersPerPharmacy)` |
-| `enableWhiteLabel` | `can("customization")` **and** platform `enableWhiteLabel` before branding APIs |
-| `enableMultiBranch` | Branch create routes **and** platform flag before `POST /api/saas/branches` |
-| `enableAuditLogs` | Central audit writer + hide activity log when off |
-| `dataRetentionDays` | Scheduled job to archive/delete rows older than N days |
-| `enableNotifications` | Notification/email workers skip sends when off |
-| `backupEnabled` | Cron respects flag before real backup jobs (after backup stub replaced) |
-| `adminEmail` | Platform alert emails (billing failures, cron errors) |
-| `ssoEnabled` | Hide SSO UI + block IdP routes until Step 12 OAuth/SSO ships |
-| `encryptionEnabled` | Document as informational until field-level encryption exists |
+| `enableAuditLogs` | Yes | **Yes** | Activity/audit reads return 403 when disabled; central writer covers settings/security/templates, POS sales/voids, inventory, staff, core admin catalog, subscription changes, and auth security events |
+| `encryptionEnabled` | No | **N/A** | Removed from editable settings/API allowlist; database/hosting encryption is informational, field-level encryption is future product work |
 
 #### Admin settings — adjacent UI (not only the blob)
 
@@ -190,28 +191,28 @@ GOOGLE_CLIENT_SECRET=...
 | Platform API keys | Yes (`api_keys`, `pharmacy_id IS NULL`) | **Yes (read APIs)** | CRUD in Admin → Integrations; v1 pharmacies/inventory/sales; outbound vendor creds (RRA, MoMo) by key name |
 | Platform IP allowlist entries | Yes | **Yes** | When `ipWhitelistEnabled` on |
 | Platform admin 2FA | Yes (user row) | **Yes** | User-level, not `system_settings` |
-| Stock location templates | Yes (`stock_locations`, `pharmacy_id` null) | **Partial** | Admin CRUD; new pharmacies do not auto-copy templates |
-| System load 45% | — | **Mock** | Hardcoded progress bar in operations panel |
-| Integration health chips | — | **Mock** | Static “Healthy” / “Review” labels |
+| Stock location templates | Yes (`system_settings.stockLocationTemplates`) | **Yes** | Admin CRUD; active templates auto-copy to new pharmacies during onboarding |
+| System load | — | **Yes** | Admin settings reads OS memory stats from `/api/admin/system-settings` |
+| Payment gateway health chip | — | **Yes** | Reports configured/not configured from Polar/KPay env presence |
+| Insurance health chip | — | **Yes** | Reports healthy/review/not configured from active insurance providers and templates |
 
 #### Pharmacy settings (`/pharmacy/.../settings`)
 
 | Panel / control | Saved | Enforced | Notes |
 |-----------------|-------|----------|-------|
 | General — name, phone, email, location | Yes | **Yes** | `PUT /api/pharmacy/settings` |
-| General — currency, language | **No** | **No** | UI sends values; API returns hardcoded `RWF` / `en` and does not persist |
+| General — currency, language | Yes | **Yes** | Persisted via `pharmacy_settings` locale helpers |
 | Security — change password | Yes | **Yes** | Native + Supabase paths |
 | Security — 2FA | Yes | **Yes** | Respects platform `allowUserTwoFactor` |
 | Security — IP whitelist | Yes | **Yes** | Per-pharmacy `security_settings` + middleware |
-| Security — encryption badge | — | **Mock** | Always shows “Active” |
-| Security — session timeout | — | **No** | `defaultChecked` switch, not wired |
-| Security — SSO | — | **No** | Disabled “coming soon”; legacy route exists |
+| Security — encryption badge | — | **Informational** | Shows platform-managed encryption; not an app-controlled setting |
+| Security — session timeout | — | **Informational** | Session lifetime is controlled by platform session policy |
 | Operations — stock locations | Yes | **Yes** | `GET/POST /api/settings/locations` (fallback defaults if table missing) |
-| Operations — maintenance / auto-updates | — | **No** | Unwired switches |
-| Notifications — all prefs | **No** | **No** | React state only; lost on refresh |
-| Compliance — GDPR, audit, retention, backups | — | **No** | `defaultChecked` / selects only |
-| Analytics — report toggles | — | **No** | Placeholder panel |
-| Integrations — supplier / insurance / SMS | — | **No** | Placeholder switches |
+| Operations — maintenance / auto-updates | — | **Informational** | Badges show these are platform/deployment managed |
+| Notifications — prefs | Yes | **Yes** | Saved via `/api/notifications/preferences`; push/SMS delivery simulated |
+| Compliance — GDPR, audit, retention, backups | — | **Informational** | Badges/disabled selects point to platform-managed policy |
+| Analytics — report scheduling | Yes | **Yes** | Scheduled report preferences saved to `/api/settings/report-schedules` |
+| Integrations — supplier / SMS | Yes | **Yes** | Configured and saved to `/api/settings/integrations` |
 | Branding — logo, colors, domain | Yes | **Yes** | Gated by plan feature `customization` (not `enableWhiteLabel`) |
 
 #### Implementation order (recommended)
@@ -221,8 +222,8 @@ GOOGLE_CLIENT_SECRET=...
 | **14a** | `maxPharmacies`, `enableRegistrations`, `maintenanceMode` (highest user-visible impact) |
 | **14b** | `maxUsersPerPharmacy`, `enableMultiBranch`, `enableWhiteLabel` (align with entitlements) |
 | **14c** | Pharmacy currency/language + notification prefs | **Done** — `pharmacy_settings` locale + `/api/notifications/preferences` |
-| **14d** | `dataRetentionDays`, `enableAuditLogs`, `backupEnabled` + real backups (depends on backup/export work) |
-| **14e** | `enableNotifications`, `adminEmail`, `autoUpdates`, `encryptionEnabled`, SSO (with auth Step 12c) |
+| **14d** | `dataRetentionDays`, `enableAuditLogs`, `backupEnabled` + real backups | Done for current high-risk mutation paths |
+| **14e** | `enableNotifications`, `adminEmail`, fake toggle cleanup | Done; `autoUpdates`/`encryptionEnabled` removed from editable settings/API allowlist |
 
 ### Step 15 — System-wide audit
 
@@ -242,20 +243,20 @@ GOOGLE_CLIENT_SECRET=...
 | Domain | ✅ | ⚠️ | 🎭 | ❌ | Priority fix |
 |--------|----|----|-----|-----|--------------|
 | Auth & sessions | Sign-in, 2FA, native sessions, Google OAuth, SMTP email, rate limits | — | — | — | Store fallbacks |
-| Multi-tenant context | Active pharmacy/branch, entitlements, most APIs | Legacy routes without `getAuthUser` | — | — | Wave A done (May 2026) |
-| Subscriptions & billing | Orchestrator, entitlements, KPay/Polar code paths | Live payment creds, webhook hardening, legacy `/api/payments` | — | — | Ops + 13b |
-| POS | Sale, products, returns, shifts, quick-add, void, hold, price-check, customer-lookup | Invoice PDF, card/MoMo external capture | Barcode, AI safety button | — | — |
-| Inventory | CRUD, transfers, analytics, stock-alerts | Stock location column, adjustment audit | expiry-alerts API | — | 15c |
-| Sales & reports | Sales analytics, reports/sales & inventory, insurance-claims report, alerts API | Sales list item count, date filters, trend % strings | financial, tax, audit reports | — | 15d |
-| Customers | CRUD, POS search | Loyalty not auto-awarded on sale | customers/history stub | — | 15e |
-| Prescriptions | List/create/update + pharmacist queue (scoped) | Dispense needs `prescription_processing` table | — | — | — |
-| Insurance | Provider CRUD, pricing, process, POS claims | Template canvas save (admin UI) | Old lookup stub if still linked | — | Template persist |
-| Staff & RBAC | Staff CRUD, branch assignments, invites | Role on create paths, plaintext credential display | — | Some routes lack role guard | 15f |
-| Branches | `/api/saas/branches` + entitlements | — | `/api/branches/[id]` inventory | Legacy `/api/branches` page | Deprecate legacy |
-| Admin platform | Pharmacies, plans, billing, features, settings, categories | Backups, subscriber counts, growth % | System load 45% | — | 14 + 15g |
-| Integrations | Insurance module | KPay/Polar (env), RRA/mobile-money | `/api/rra/invoice`, exports, uploads, accounting | — | EBM brief |
-| Notifications & realtime | DB notifications (scoped GET/POST) | Polling not WebSocket; prefs not saved | Pharmacy notification toggles; broadcast route in-memory | — | 15h |
-| Settings | See [Step 14](#step-14--settings-enforcement-audit) | 3/20 admin flags enforced | Most pharmacy settings panels | — | Step 14 |
+| Multi-tenant context | Active pharmacy/branch, entitlements, most APIs; legacy Supabase route scan clean | Remaining route reviews are hardening only | — | — | Wave A done (May 2026) |
+| Subscriptions & billing | Orchestrator, entitlements, KPay/Polar code paths, KPay webhook shared-secret verification, legacy payments POST deprecated | Live payment credentials + deployment webhook configuration | — | — | Ops + 13b |
+| POS | Sale, products, returns, shifts, quick-add, void, hold, price-check, customer-lookup, barcode add, rule-based safety check | Invoice PDF, card/MoMo external capture | — | — | — |
+| Inventory | CRUD, transfers, analytics, stock-alerts, expiry-alerts API, stock location persistence | Adjustment audit tail | — | — | 15c |
+| Sales & reports | Sales analytics, reports/sales & inventory, insurance-claims report, alerts API, live/empty analytics panels, financial/tax/audit reports | Sales list item count, date filters | — | — | 15d |
+| Customers | CRUD, POS search, customer history API, loyalty auto-award on POS sale | Loyalty UI integration | — | — | 15e |
+| Prescriptions | List/create/update + pharmacist queue (scoped), dispense action updates status directly | Optional processing-time analytics table | — | — | — |
+| Insurance | Provider CRUD, pricing, process, POS claims, customer-backed insurance lookup, template canvas save | — | — | — | — |
+| Staff & RBAC | Staff CRUD, branch assignments, invites, branch route guards | Plaintext credential display | — | — | 15f |
+| Branches | `/api/saas/branches` + entitlements, `/api/branches/[id]` inventory | Legacy `/api/branches` root returns 410 | — | — | — |
+| Admin platform | Pharmacies, plans, billing, features, settings, categories, dynamic system load/payment/insurance status | Subscriber counts, growth % | — | — | 14 + 15g |
+| Integrations | Insurance module | KPay/Polar (env), mobile-money | RRA/EBM deeper work deferred until requirements arrive | — | EBM brief |
+| Notifications & realtime | DB notifications, SSE, prefs, email dispatch, platform admin alert routing | Optional lower-latency scale-out | — | — | 15h |
+| Settings | See [Step 14](#step-14--settings-enforcement-audit) | Scheduled reports, supplier/SMS, future field-level encryption product work | — | — | Future product backlog |
 | Infrastructure | Prisma + native auth complete | Admin route auth gaps; VPS Redis (13b) | — | — | Harden admin APIs |
 
 ---
@@ -272,7 +273,7 @@ GOOGLE_CLIENT_SECRET=...
 | Session middleware | ✅ | Native JWT + refresh; protected paths |
 | Rate limiting | ✅ | Sign-in, 2FA, resend, platform `/api/*` cap (13a) |
 | Google OAuth | ✅ | `/api/auth/google` only (Prisma `auth.identities`) |
-| `@test.com` auto-provision | ⚠️ | Dev-only (`NODE_ENV !== production`) in `resolve-home-redirect.ts` |
+| `@test.com` auto-provision | ✅ | Removed from `resolve-home-redirect.ts`; users without membership go to onboarding |
 | Refresh tokens (native) | ✅ | Access + refresh cookies, `/api/auth/refresh` |
 | Staff invite email | ⚠️ | Depends on SMTP; unified templates not shipped (§1 below) |
 
@@ -305,14 +306,14 @@ GOOGLE_CLIENT_SECRET=...
 | Customer search (`/api/customers?q=`) | ✅ | |
 | Insurance on sale | ✅ | Claims + coverage rules |
 | Receipt print | ⚠️ | Browser print; cashier name may be hardcoded in UI |
-| Card / mobile money capture | ⚠️ | Method recorded; no terminal/API |
+| Card / mobile money capture | ✅ | Simulated direct Mobile Money provider integration |
 | `POST /api/pos/void-sale` | ✅ | Prisma `storeVoidPosSale` |
 | Hold sale | ✅ | `held_sales` table + store |
 | Price check | ✅ | Branch-scoped inventory search |
 | POS customer-lookup | ✅ | `customers-store` by phone |
-| Barcode scan button | 🎭 | No handler |
-| AI safety button | 🎭 | Not wired |
-| POS reports tab | 🎭 | “Coming soon” copy |
+| Barcode scan button | ✅ | Focuses search and adds exact barcode / sole product match |
+| AI safety button | ✅ | Opens rule-based safety dialog and calls `/api/ai-safety` |
+| POS reports tab | ✅ | Removed from current POS workspace; sales/reports live under Sales and Reports pages |
 
 ---
 
@@ -325,10 +326,10 @@ GOOGLE_CLIENT_SECRET=...
 | Transfers between branches | ✅ | `inventory/transfers` |
 | Suppliers | ✅ | |
 | Analytics chart | ✅ | Live category data |
-| Excel import/export (UI) | ⚠️ | Import sequential; partial failure silent |
-| Stock location on add product | ⚠️ | UI field; not always persisted on `inventory` |
+| Excel import/export (UI) | ✅ | Import reports row-level failures; export remains browser XLSX |
+| Stock location on add product | ✅ | Persists `inventory.stock_location_id` from Add Product and POS quick-add |
 | `GET /api/inventory/expiry-alerts` | ✅ | `storeListExpiryAlerts` — batches expiring within 60 days |
-| Pagination (UI) | ⚠️ | Component present; not wired |
+| Pagination (UI) | ✅ | Inventory uses `DashboardDataTable` pagination with page-size controls |
 
 ---
 
@@ -341,14 +342,14 @@ GOOGLE_CLIENT_SECRET=...
 | Insurance claims report API | ✅ | Monthly report + render |
 | `GET /api/sales` | ⚠️ | Real sales + line-item counts; still **LIMIT 20** |
 | Reports date range filter | ⚠️ | UI dates not passed to API |
-| Trend % badges | 🎭 | Hardcoded strings in UI |
+| Trend % badges | ✅ | Sales analytics and prescription KPI panels use live values or explicit empty/untracked states |
 | Export CSV/PDF (reports page) | ⚠️ | Print only; no xlsx export |
 | `GET /api/reports/financial` | ✅ | Live revenue from sales; expenses still placeholder |
 | `GET /api/reports/tax` | ✅ | VAT summary from sales; RRA submit not connected |
 | `GET /api/reports/audit` | ✅ | `audit_logs` when `enableAuditLogs` on |
 | `GET /api/analytics` | ✅ | Live pharmacy-scoped aggregates |
-| `GET /api/accounting` | 🎭 | Hardcoded revenue/expense |
-| Activity log page | ⚠️ | Reads `audit_logs`; writer sparse; not gated by `enableAuditLogs` |
+| `GET /api/accounting` | ✅ | Live sales, purchase orders, payments, invoices, and salary estimate; rent/utilities unavailable |
+| Activity log page | ✅ | Gated by `enableAuditLogs` with disabled UI; writer coverage includes POS/inventory/staff/core admin/subscription/auth security events |
 
 ---
 
@@ -358,15 +359,15 @@ GOOGLE_CLIENT_SECRET=...
 |---------|--------|-------|
 | Customers CRUD | ✅ | `[id]` routes, scoped |
 | POS customer autocomplete | ✅ | |
-| Loyalty API | ⚠️ | DB table; not awarded on sale; UI partial |
-| `GET /api/customers/history` | 🎭 | Hardcoded map |
+| Loyalty API | ⚠️ | DB table + POS sale auto-award work; customer-facing loyalty UI remains partial |
+| `GET /api/customers/history` | ✅ | Authenticated, pharmacy-scoped sales history by customer id, phone, or name |
 | Prescription list UI | ✅ | |
 | `GET/POST /api/prescriptions` | ✅ | Auth + `pharmacy_id` scope (Wave A) |
 | `PUT/DELETE /api/prescriptions/[id]` | ✅ | Tenant-scoped updates (Wave A) |
 | `GET/POST /api/pharmacist/prescriptions` | ✅ | Auth + pharmacy scope on queue actions (Wave A) |
 | Pharmacist dashboard | ✅ | Scoped stats |
-| Pharmacist dispense workflow | ⚠️ | Depends on `prescription_processing` table / migrations |
-| Patients page “Add patient” | ⚠️ | Button may be unwired (uses customers table) |
+| Pharmacist dispense workflow | ✅ | `POST /api/pharmacist/prescriptions` updates prescription status directly; processing-time analytics remains optional |
+| Patients page “Add patient” | ✅ | Uses `CustomersAddDialog` + `/api/customers` create mutation |
 
 ---
 
@@ -377,9 +378,9 @@ GOOGLE_CLIENT_SECRET=...
 | Provider CRUD (scoped/global) | ✅ | Role checks |
 | Pricing & coverage engine | ✅ | `/api/insurance/pricing`, `process`, preview |
 | POS insurance claims | ✅ | On sale completion |
-| Admin template designer | ⚠️ | Canvas UI; **save may be local state only** — verify `insurance-templates` API |
-| `POST /api/integrations/rra-ebm` | 🎭 | Fake submission (TODO) |
-| `POST /api/rra/invoice` | 🎭 | Fake invoice + delay |
+| Admin template designer | ✅ | Canvas UI persists create/update/delete through `/api/admin/insurance-templates` |
+| `POST /api/integrations/rra-ebm` | ⚠️ | VSDC adapter exists; deeper production requirements deferred |
+| `POST /api/rra/invoice` | ✅ | Deprecated with `410`; use `/api/integrations/rra-ebm` |
 
 ---
 
@@ -392,8 +393,8 @@ GOOGLE_CLIENT_SECRET=...
 | Branch list & create (SaaS) | ✅ | `/api/saas/branches` + limits |
 | Onboarding pharmacy create | ✅ | Service role after session check |
 | Onboarding status | ✅ | |
-| Legacy `/api/branches` page API | ⚠️ | Older routes; prefer SaaS branches |
-| `GET /api/branches/[id]` inventory | ✅ | `storeListInventory`; `PUT` updates branch profile |
+| Legacy `/api/branches` root API | ✅ | Deprecated with `410`; use `/api/saas/branches` |
+| `GET /api/branches/[id]` inventory | ✅ | `storeListInventory`; respects tenant + staff branch assignments; `PUT` requires `branches.manage` |
 | Platform `maxPharmacies` on create | ✅ | Enforced on onboarding + admin create |
 
 ---
@@ -407,9 +408,11 @@ GOOGLE_CLIENT_SECRET=...
 | System settings save | ✅ | Service client + Prisma |
 | Platform branding (public) | ✅ | `/api/branding` |
 | API keys CRUD | ✅ | Platform keys auth `/api/integrations/v1/*`; tenant `/api/settings/api-keys` deprecated (410) |
-| Backups UI | 🎭 | Metadata row only; `backupEnabled` ignored |
-| Admin analytics | ⚠️ | Live counts; `monthlyGrowth: 15.2` hardcoded |
-| Plan subscriber counts | ⚠️ | May show 0 / TODO in UI |
+| Backups UI | ✅ | `pg_dump` backup files + metadata; `backupEnabled` enforced |
+| Stock location templates | ✅ | Persisted in `system_settings.stockLocationTemplates`; copied into new pharmacies on onboarding |
+| Dynamic system status | ✅ | System load from Node OS memory stats; payment gateway status from env configuration; insurance status from active providers/templates |
+| Admin analytics | ⚠️ | Live counts and computed monthly growth; deeper trend panels still partial |
+| Plan subscriber counts | ✅ | `/api/admin/plans` enriches plans with active subscriber counts by plan id/name |
 | Insurance templates (admin API) | ✅ | Persisted via admin routes |
 | Admin categories API | ✅ | Platform-admin guard on GET/POST/PUT/DELETE (Wave A) |
 
@@ -421,11 +424,11 @@ GOOGLE_CLIENT_SECRET=...
 |---------|--------|-------|
 | Entitlements lifecycle | ✅ | Read/write orchestrator on Prisma stores |
 | Upgrade / downgrade / branch addon | ✅ | |
-| KPay initiate + webhook | ⚠️ | Code complete; needs live credentials + webhook URL |
+| KPay initiate + webhook + POS checkout | ✅ | Fully integrated; POS checkout wired; webhook verifies `KPAY_WEBHOOK_SECRET` when configured; needs live credentials + webhook URL |
 | Polar checkout + webhook | ⚠️ | 503 when unset; signature verify when configured |
 | Invoices API | ✅ | |
 | Cron: subscription transitions | ⚠️ | Must be scheduled in deployment |
-| Legacy `POST /api/payments` | ⚠️ | Hardcoded plan prices; prefer orchestrator |
+| Legacy `POST /api/payments` | ✅ | Deprecated with `410`; use subscription upgrade + KPay/Polar checkout |
 | Refund / mid-cycle cancel UI | ❌ | Not implemented |
 
 ---
@@ -436,8 +439,8 @@ GOOGLE_CLIENT_SECRET=...
 |---------|--------|-------|
 | `GET/POST /api/notifications` | ✅ | Scoped to session pharmacy (Wave A) |
 | Pharmacy notification prefs | ✅ | `/api/notifications/preferences` + settings panel |
-| `POST /api/exports` | 🎭 | Fake download URL |
-| `POST /api/uploads` | 🎭 | Fake URL (pharmacy branding upload is real) |
+| `POST /api/exports` | ✅ | Tenant-scoped CSV/JSON files under local storage |
+| `POST /api/uploads` | ✅ | Tenant-scoped local file uploads via `/api/files/pharmacy-files/*` |
 | Realtime | ⚠️ | HTTP polling ~5s; **Step 16** replaces with event-driven SSE/WebSocket |
 | `GET /api/alerts` | ✅ | Session pharmacy + inventory query (Wave A) |
 
@@ -450,7 +453,7 @@ GOOGLE_CLIENT_SECRET=...
 | Prisma data layer | ✅ | Most domains via `lib/db/*` + store fallback |
 | Native auth | ⚠️ | Usable with flag; OAuth still Supabase |
 | Native auth | ✅ | Prisma + JWT cookies; Supabase JS clients removed from `src/` |
-| Supabase Storage | ✅ | Logos, admin report uploads |
+| Local file storage | ✅ | Logos, platform reports, pharmacy uploads/exports |
 | Email | ⚠️ | SMTP + Supabase; unified templates planned (§1) |
 | RLS vs app-layer scope | ⚠️ | Prefer service client + app checks; some tables weak |
 
@@ -464,10 +467,10 @@ GOOGLE_CLIENT_SECRET=...
 | ~~`/api/alerts` wrong `pharmacy_id`~~ | — | Fixed Wave A |
 | ~~Admin categories without admin guard~~ | — | Fixed Wave A |
 | ~~Notifications GET unscoped~~ | — | Fixed Wave A |
-| KPay webhook signature | Medium | Verify before activate |
-| `@test.com` provisioning | Medium | Remove from `resolve-home-redirect.ts` |
-| API keys plaintext storage | Medium | Hash at rest |
-| Legacy routes without `getAuthUser` | Medium | Audit grep `createClient` only |
+| ~~KPay webhook signature~~ | — | Fixed with optional `KPAY_WEBHOOK_SECRET` HMAC verification |
+| ~~`@test.com` provisioning~~ | — | Removed from `resolve-home-redirect.ts` |
+| ~~API keys plaintext storage~~ | — | Fixed for inbound platform API keys: new/rotated keys are SHA-256 hashed; legacy plaintext rows upgrade on successful use |
+| ~~Legacy routes without `getAuthUser`~~ | — | `createClient` API-route scan clean; branch/payment legacy routes deprecated or guarded |
 
 ---
 
@@ -480,7 +483,7 @@ GOOGLE_CLIENT_SECRET=...
 | **C — POS completeness** | 15b | Void, hold, price-check, customer-lookup → DB |
 | **D — Reports truth** | 15d | financial/tax/audit APIs, sales item count, date filters |
 | **E — Auth exit** | 12 | ✅ Done — native-only auth (no GoTrue) |
-| **F — Integrations** | EBM brief | RRA EBM, mobile money, real exports/uploads/backups |
+| **F — Integrations** | EBM brief | Mobile money and KPay/Polar hardening; EBM/RRA deferred |
 | **G — Polish** | 14c–15h | Pharmacy prefs, loyalty on sale, email templates |
 | **H — Notifications** | 16a–16d | Event bus, in-app live delivery, email worker, prefs (can run parallel to B–D) |
 
@@ -578,8 +581,8 @@ Respect **`enableNotifications`** (platform) and per-user prefs before any send.
 | Phase | Scope | Delivers |
 |-------|--------|----------|
 | **16a — Foundation** | ✅ Shipped — migration `20260611100000_notification_outbox.sql`, `emit.ts`, `GET/POST /api/cron/notification-dispatch` | Events queued + in-app rows via worker |
-| **16b — Live in-app** | ✅ Shipped — `GET /api/notifications/stream`, `useNotificationStream`, shell bell | SSE bell (3s poll); mark-read API still TODO |
-| **16c — Email fan-out** | ✅ Shipped — prefs table + worker `sendMail` + `sale.completed` from POS | Pharmacy UI prefs editor still TODO (14c) |
+| **16b — Live in-app** | ✅ Shipped — GET /api/notifications/stream, useNotificationStream, shell bell, PATCH /api/notifications/[id]/read | SSE bell (3s poll); mark-read API implemented |
+| **16c — Email fan-out** | ✅ Shipped — prefs table + worker `sendMail` + `sale.completed` from POS | Optional digest/event expansion remains |
 | **16d — Scale (optional)** | Redis pub/sub OR Postgres `LISTEN/NOTIFY`; WebSocket gateway on VPS; Web Push | Multi-instance + lower latency |
 
 #### SSE vs WebSocket (recommendation)
@@ -629,8 +632,9 @@ Items that **look real in the UI** but do not persist or use fake data. Implemen
 | Item | Location | Status | Notes |
 |------|----------|--------|-------|
 | Void / hold / price-check | `POST /api/pos/void-sale`, hold-sale, `GET price-check` | ✅ Shipped | Prisma stores; see Step 15.3 |
-| **Void sale UI** | POS toolbar | ⚠️ Partial | May still use `prompt()` for sale ID — improve lookup dialog |
-| Barcode scan / AI safety | POS page | 🎭 Mock | Buttons not wired |
+| **Void sale UI** | POS toolbar | ✅ Shipped | Dialog-based sale ID + reason flow |
+| Barcode scan | POS page | ✅ Shipped | Focuses barcode search and adds exact barcode / sole product match with feedback |
+| Rule-based safety check | POS page + `/api/ai-safety` | ✅ Shipped | Cart analysis uses local clinical rules and source metadata |
 
 **Note:** Returns (`POST /api/pos/returns`) are **real** on Prisma.
 
@@ -639,8 +643,8 @@ Items that **look real in the UI** but do not persist or use fake data. Implemen
 | Item | Location | Current behavior | Target behavior |
 |------|----------|------------------|-----------------|
 | **RRA EBM** | `POST /api/integrations/rra-ebm` + POS sale hook | VSDC HTTP adapter — configure `RRA_VSDC_BASE_URL` + `RRA EBM API` platform key |
-| **RRA invoice** | `POST /api/rra/invoice` | Fake invoice + 1s delay | Real fiscal receipt / QR from certified integration |
-| **Mobile money** | `POST /api/integrations/mobile-money` | TODO stub | Provider API via stored API keys |
+| **RRA invoice** | `POST /api/rra/invoice` | **Deprecated (410)** | Use `/api/integrations/rra-ebm` |
+| **Mobile money** | `POST /api/integrations/mobile-money` | Explicit `501` until provider adapter is connected | Provider API via stored API keys |
 
 ### Security & platform controls
 
@@ -654,21 +658,21 @@ Items that **look real in the UI** but do not persist or use fake data. Implemen
 | Item | Location | Current behavior | Target behavior |
 |------|----------|------------------|-----------------|
 | **Admin backups** | `GET/POST /api/admin/backups` | **Done** — `pg_dump` to `BACKUP_DIR` when `backupEnabled` |
-| **Exports** | `POST /api/exports` | Fake download URL + size | Generate CSV/PDF to storage; signed download |
-| **Uploads** | `POST /api/uploads` | Mock upload response | R2/S3/Cloudinary pipeline |
+| **Exports** | `POST /api/exports` | **Done** — tenant-scoped CSV/JSON local files | PDF/storage-provider upgrade optional |
+| **Uploads** | `POST /api/uploads` | **Done** — tenant-scoped local files | R2/S3 pipeline optional |
 
-### Analytics & accounting (fake aggregates)
+### Analytics & accounting
 
 | Item | Location | Current behavior | Target behavior |
 |------|----------|------------------|-----------------|
 | **Analytics** | `GET /api/analytics` | **Done** — live sales/customer aggregates | — |
-| **Accounting** | `GET /api/accounting` | Hardcoded revenue/expenses/profit | GL-style report from transactions |
+| **Accounting** | `GET /api/accounting` | **Done** — live revenue, purchase orders, payment summaries, salary estimate | Add first-class expense ledger for rent/utilities/other |
 
 ### AI / safety (demo rules)
 
 | Item | Location | Current behavior | Target behavior |
 |------|----------|------------------|-----------------|
-| **Drug interactions** | `POST /api/ai-safety` | Small hardcoded interaction map | Clinical rules DB or external API |
+| **Drug interactions** | `POST /api/ai-safety` | Imported local rules with source/severity metadata | Certified clinical rules DB or external API |
 
 ### Other API stubs
 
@@ -676,17 +680,15 @@ Items that **look real in the UI** but do not persist or use fake data. Implemen
 |------|----------|------------------|
 | **Branch inventory** | `GET /api/branches/[id]` | ✅ Real — `storeListInventory(pharmacyId, branchId)` |
 | **Sales list item count** | `GET /api/sales` | ✅ Real — `sale_items` groupBy count |
-| **SSO toggle** | `POST /api/settings/security/sso` | Writes to `security_settings` (legacy/broken table) — needs Prisma + real IdP |
-
 ### Settings UI — toggles not wired to backend
 
 See **[Step 14 — Settings enforcement audit](#step-14--settings-enforcement-audit)** for the full admin + pharmacy matrix. Quick summary:
 
 | Area | Status |
 |------|--------|
-| Admin `system_settings` blob | 20 fields saved; **3 enforced** (`apiRateLimit`, `allowUserTwoFactor`, `ipWhitelistEnabled`); **3 display-only** (branding/support); **14 not enforced** |
-| Pharmacy settings panels | General profile + security (2FA/IP) mostly work; notifications/compliance/analytics/integrations are **UI-only** |
-| Currency / language | Shown in pharmacy General; **not persisted** by API |
+| Admin `system_settings` blob | Current editable settings are enforced or display-only; unsupported legacy keys such as `autoUpdates`, `ssoEnabled`, and `encryptionEnabled` are ignored by the save API |
+| Pharmacy settings panels | General profile, security, stock locations, and notification prefs work; compliance/security platform policies are informational; scheduled reports, supplier sync, SMS, and future field-level encryption remain product backlog |
+| Currency / language | **Done** — persisted by `/api/pharmacy/settings` |
 
 Wire pharmacy placeholder panels when Prisma models and workers exist (Step 14c–14e).
 
@@ -694,7 +696,7 @@ Wire pharmacy placeholder panels when Prisma models and workers exist (Step 14c�
 
 | Item | Location | Notes |
 |------|----------|-------|
-| Subscription days remaining | `sidebar.tsx` | Comment: “mock data” for trial display |
+| Subscription days remaining | `sidebar.tsx` | ✅ Reads `/api/subscriptions/status` |
 | Admin growth % | superadmin / admin stats | Hardcoded percentages in some dashboards (see feature-status.md) |
 | Pharmacy dashboard KPIs | Various | e.g. `activeStaff: 8`, estimated monthly revenue |
 
@@ -770,10 +772,9 @@ One consistent Pryrox look for all outbound email — not split between Supabase
 
 | Area | Idea |
 |------|------|
-| **EBM / RRA** | See mocks above + [ebm-integration-decision-brief.md](./ebm-integration-decision-brief.md) |
+| **EBM / RRA** | Deferred until requirements are complete; see [ebm-integration-decision-brief.md](./ebm-integration-decision-brief.md) |
 | **Global search** | Extend Ctrl+K to staff, branches, admin entities |
 | **i18n email** | EN / Kinyarwanda templates |
-| **SSO** | SAML/OAuth for pharmacy enterprises |
 
 ---
 

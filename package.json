@@ -10,6 +10,8 @@
     "start": "next start",
     "start:built": "next build && next start",
     "lint": "next lint",
+    "worker": "npx tsx src/lib/queue/maintenance-notify-worker.ts",
+    "dev:all": "concurrently --names dev,worker --prefix-colors blue,green \"npm run dev\" \"npm run worker\"",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:pull": "prisma db pull",
@@ -29,6 +31,8 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@bull-board/api": "^8.0.1",
+    "@bull-board/express": "^8.0.1",
     "@hookform/resolvers": "^3.3.4",
     "@next/bundle-analyzer": "^16.2.6",
     "@polar-sh/sdk": "^0.47.1",
@@ -68,6 +72,7 @@
     "@types/react-dom": "^19",
     "autoprefixer": "^10.0.1",
     "bcryptjs": "^3.0.3",
+    "bullmq": "^5.79.1",
     "class-variance-authority": "^0.7.1",
     "cloudinary": "^2.10.0",
     "clsx": "^2.1.0",
@@ -79,6 +84,7 @@
     "framer-motion": "^11.0.3",
     "i18next": "^26.2.0",
     "i18next-browser-languagedetector": "^8.2.1",
+    "ioredis": "^5.11.1",
     "jose": "^6.2.3",
     "jsbarcode": "^3.11.5",
     "jspdf": "^4.0.0",
@@ -113,6 +119,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/nodemailer": "^8.0.0",
     "@types/qrcode": "^1.5.6",
+    "concurrently": "^10.0.3",
     "prisma": "^6.19.3",
     "supabase": "^2.101.0"
   }

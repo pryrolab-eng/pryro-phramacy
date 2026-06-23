@@ -4,10 +4,12 @@ import {
   entitlementRouteResponse,
   guardInventoryAccessForUser,
 } from "@/lib/subscription/route-guards";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import {
   storeDeleteInventory,
   storeUpdateInventory,
 } from "@/lib/db/inventory-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function PUT(
   request: NextRequest,
@@ -28,11 +30,26 @@ export async function PUT(
       throw entErr;
     }
 
+    const pharmacyId = await requireUserPharmacyId(user.id);
     const body = await request.json();
     await storeUpdateInventory(id, {
       quantity: body.quantity,
       selling_price: body.selling_price,
       minimum_stock_level: body.minimum_stock_level,
+    });
+
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "inventory",
+      recordId: id,
+      newValues: {
+        quantity: body.quantity,
+        selling_price: body.selling_price,
+        minimum_stock_level: body.minimum_stock_level,
+      },
+      ...auditRequestMetadata(request),
     });
 
     return NextResponse.json({ success: true });
@@ -43,7 +60,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
@@ -61,7 +78,17 @@ export async function DELETE(
       throw entErr;
     }
 
+    const pharmacyId = await requireUserPharmacyId(user.id);
     await storeDeleteInventory(id);
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "DELETE",
+      tableName: "inventory",
+      recordId: id,
+      oldValues: { id },
+      ...auditRequestMetadata(request),
+    });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("DELETE /api/inventory/[id]", error);

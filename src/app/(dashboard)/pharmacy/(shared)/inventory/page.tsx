@@ -110,6 +110,18 @@ interface InventoryItem {
   notes: string
 }
 
+type ImportFailure = {
+  rowNumber: number
+  productName: string
+  error: string
+}
+
+type ImportSummary = {
+  attempted: number
+  succeeded: number
+  failures: ImportFailure[]
+} | null
+
 function toInventoryItem(row: InventoryListRow): InventoryItem {
   return {
     id: row.id,
@@ -128,7 +140,7 @@ function toInventoryItem(row: InventoryListRow): InventoryItem {
     expiryDate: row.expiryDate,
     trackByBatch: false,
     vatRate: 'A',
-    stockLocation: 'main-store',
+    stockLocation: row.stockLocationId ?? 'main-store',
     notes: '',
   }
 }
@@ -187,6 +199,8 @@ export default function InventoryPage() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [previewData, setPreviewData] = useState<any[]>([])
   const [validationErrors, setValidationErrors] = useState<string[]>([])
+  const [importSummary, setImportSummary] = useState<ImportSummary>(null)
+  const [isImporting, setIsImporting] = useState(false)
   const [barcodeDialogOpen, setBarcodeDialogOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<InventoryItem | null>(null)
   const [barcodeType, setBarcodeType] = useState('name')
@@ -274,6 +288,7 @@ export default function InventoryPage() {
         selling_price: parseFloat(newProduct.price) || 0,
         minimum_stock_level: parseInt(newProduct.minStock) || 0,
         expiry_date: newProduct.expiryDate || '2025-12-31',
+        stockLocation: newProduct.stockLocation,
       })
 
       if (canInsurance && result.medicationId) {
@@ -430,6 +445,7 @@ export default function InventoryPage() {
 
   const validateAndPreview = (data: any[]) => {
     const errors: string[] = []
+    setImportSummary(null)
     const validatedData = data.map((row: any, index) => {
       const rowNum = index + 2 // Excel row number (header is row 1)
       
@@ -480,6 +496,61 @@ export default function InventoryPage() {
       console.error('Import error:', error)
       alert('❌ Failed to import products')
     }
+  }
+
+  const confirmImportWithReport = async () => {
+    const importCount = previewData.length
+    const failures: ImportFailure[] = []
+    let succeeded = 0
+
+    setIsImporting(true)
+    setImportSummary(null)
+
+    for (let index = 0; index < previewData.length; index += 1) {
+      const row = previewData[index]
+      try {
+        const result = await addProductMutation.mutateAsync({
+          name: row['Product Name'],
+          category: row['Category'],
+          batch_number: row['Batch Number'],
+          quantity: row['Stock'],
+          unit_cost: 0,
+          selling_price: row['Price (RWF)'],
+          minimum_stock_level: row['Min Stock'],
+          expiry_date: row['Expiry Date'],
+        })
+        if (!result.success) {
+          throw new Error(result.error ?? 'Import failed')
+        }
+        succeeded += 1
+      } catch (error) {
+        failures.push({
+          rowNumber: index + 2,
+          productName: String(row['Product Name'] || 'Unnamed product'),
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
+    }
+
+    setIsImporting(false)
+    setImportSummary({ attempted: importCount, succeeded, failures })
+
+    if (failures.length === 0) {
+      setPreviewData([])
+      setValidationErrors([])
+      setIsImportDialogOpen(false)
+      toast({
+        title: 'Import complete',
+        description: `Imported ${succeeded} product${succeeded === 1 ? '' : 's'}.`,
+      })
+      return
+    }
+
+    toast({
+      title: succeeded > 0 ? 'Import partially completed' : 'Import failed',
+      description: `${succeeded} of ${importCount} products imported. Review failed rows in the dialog.`,
+      variant: 'destructive',
+    })
   }
 
   const downloadSample = () => {
@@ -871,6 +942,34 @@ export default function InventoryPage() {
                         </ul>
                       </div>
                     )}
+                    {importSummary && (
+                      <div
+                        className={`rounded-lg p-4 ${
+                          importSummary.failures.length > 0
+                            ? 'bg-amber-50'
+                            : 'bg-green-50'
+                        }`}
+                      >
+                        <h4
+                          className={`mb-2 font-medium ${
+                            importSummary.failures.length > 0
+                              ? 'text-amber-800'
+                              : 'text-green-800'
+                          }`}
+                        >
+                          Import results: {importSummary.succeeded} of {importSummary.attempted} imported
+                        </h4>
+                        {importSummary.failures.length > 0 && (
+                          <ul className="max-h-32 space-y-1 overflow-y-auto text-sm text-amber-700">
+                            {importSummary.failures.map((failure) => (
+                              <li key={`${failure.rowNumber}-${failure.productName}`}>
+                                Row {failure.rowNumber}: {failure.productName} - {failure.error}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                     <div className="p-4 bg-green-50 rounded-lg">
                       <h4 className="font-medium text-green-800 mb-2">Preview ({previewData.length} items):</h4>
                       <div className="max-h-40 overflow-y-auto text-sm">
@@ -883,11 +982,11 @@ export default function InventoryPage() {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <DashboardButton onClick={() => { setPreviewData([]); setValidationErrors([]) }} className="flex-1">
+                      <DashboardButton onClick={() => { setPreviewData([]); setValidationErrors([]); setImportSummary(null) }} className="flex-1">
                         Cancel
                       </DashboardButton>
-                      <DashboardButton tone="primary" onClick={confirmImport} disabled={validationErrors.length > 0} className="flex-1">
-                        Import {previewData.length} Products
+                      <DashboardButton tone="primary" onClick={confirmImportWithReport} disabled={validationErrors.length > 0 || isImporting} className="flex-1">
+                        {isImporting ? 'Importing...' : `Import ${previewData.length} Products`}
                       </DashboardButton>
                     </div>
                   </>

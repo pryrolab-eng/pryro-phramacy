@@ -45,6 +45,7 @@ import {
   resolveCurrentPlanPrice,
 } from "@/lib/subscription/match-current-catalog-plan";
 import { useActiveCatalogPlanRef } from "@/hooks/useActiveCatalogPlanRef";
+import { usePharmacyEntitlements } from "@/hooks/usePharmacyEntitlements";
 import { fallbackPlansForDisplay } from "@/lib/subscription/default-plans";
 import { normalizeSubscriptionPlanRow } from "@/lib/subscription/normalize-plan";
 import {
@@ -145,6 +146,7 @@ export function SubscriptionPlanManagement({
     isError: activePlanError,
     refetch: refetchActivePlan,
   } = useActiveCatalogPlanRef();
+  const { entitlements } = usePharmacyEntitlements();
   const pharmacyPlanQuery = usePharmacySubscriptionPlan();
   const scheduledQuery = useScheduledChangeQuery();
   const statusQuery = useSubscriptionStatusQuery();
@@ -287,6 +289,39 @@ export function SubscriptionPlanManagement({
 
   const currentPlanPrice = resolveCurrentPlanPrice(plans, activePlan);
 
+  const subStatus = statusQuery.data?.status;
+  const isPendingPayment = entitlements?.accessBlockReason === "pending_payment";
+  const isFirstTimeSubscriber = subStatus === "free" || (!currentPlan && !activePlan) || isPendingPayment;
+  const isExpired = subStatus === "expired";
+
+  const pendingPlan = useMemo(() => {
+    if (!isPendingPayment || !activePlan) return null;
+    return plans.find(
+      (p) => p.id === activePlan.id || p.name === activePlan.name,
+    ) ?? null;
+  }, [isPendingPayment, activePlan, plans]);
+
+  const planActionLabel = (plan: CatalogPlan) => {
+    if (isFirstTimeSubscriber) return "Subscribe";
+    if (isExpired) return "Renew";
+    if (plan.price > currentPlanPrice) return "Upgrade";
+    return "Select";
+  };
+
+  const dialogTitlePrefix = useMemo(() => {
+    if (isFirstTimeSubscriber) return "Subscribe to";
+    if (isExpired) return "Renew";
+    return "Upgrade to";
+  }, [isFirstTimeSubscriber, isExpired]);
+
+  const dialogDescription = useMemo(() => {
+    if (isFirstTimeSubscriber)
+      return "Complete payment to activate your subscription";
+    if (isExpired)
+      return "Complete payment to renew your subscription";
+    return "Complete payment to upgrade your subscription";
+  }, [isFirstTimeSubscriber, isExpired]);
+
   const activePlanLabel = useMemo(() => {
     if (currentPlan?.name) return currentPlan.name;
     if (activePlan?.name) return planDisplayName(activePlan.name);
@@ -296,17 +331,23 @@ export function SubscriptionPlanManagement({
   const upgradePlans = useMemo(
     () =>
       [...plans]
-        .filter((p) => !p.current && p.price > currentPlanPrice)
+        .filter((p) => {
+          if (p.current && !isPendingPayment) return false;
+          if (isPendingPayment && pendingPlan && p.id === pendingPlan.id) return false;
+          return p.price > currentPlanPrice;
+        })
         .sort((a, b) => a.price - b.price),
-    [plans, currentPlanPrice],
+    [plans, currentPlanPrice, isPendingPayment, pendingPlan],
   );
 
   const downgradePlans = useMemo(
     () =>
-      [...plans]
-        .filter((p) => !p.current && p.price < currentPlanPrice)
-        .sort((a, b) => b.price - a.price),
-    [plans, currentPlanPrice],
+      isPendingPayment
+        ? []
+        : [...plans]
+            .filter((p) => !p.current && p.price < currentPlanPrice)
+            .sort((a, b) => b.price - a.price),
+    [plans, currentPlanPrice, isPendingPayment],
   );
 
   const isPlanUpgrade = (plan: CatalogPlan) => plan.price > currentPlanPrice;
@@ -377,9 +418,10 @@ export function SubscriptionPlanManagement({
     const plan = plans.find(
       (p) => p.id === planIdOrName || p.name === planIdOrName
     );
-    if (!plan || plan.current) return;
+    if (!plan) return;
+    if (plan.current && !isPendingPayment) return;
 
-    if (plan.price === currentPlanPrice) {
+    if (!isFirstTimeSubscriber && !isExpired && plan.price === currentPlanPrice) {
       alert("You are already on this plan tier.");
       return;
     }
@@ -617,14 +659,55 @@ export function SubscriptionPlanManagement({
             No plans available. Contact support or try again later.
           </p>
         ) : (
-          <PlanCatalogSections
-            currentPlan={currentPlan}
-            activePlanLabel={activePlanLabel}
-            upgradePlans={upgradePlans}
-            downgradePlans={downgradePlans}
-            layout={layout}
-            onPlanSelect={(id) => void handlePlanChange(id)}
-          />
+          <div className="space-y-6">
+            {pendingPlan && (
+              <Card className="border-amber-200 bg-amber-50/50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    Awaiting payment
+                  </CardTitle>
+                  <CardDescription>
+                    You selected the {pendingPlan.name} plan during setup. Complete payment to activate it.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold">{pendingPlan.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        RWF {pendingPlan.price.toLocaleString()} / month
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => {
+                        setSelectedUpgradePlan(pendingPlan);
+                        setUpgradePaymentData({
+                          paymentMethod: "kpay",
+                          phone: customerPhone || "",
+                          email: customerEmail || "",
+                        });
+                        setIsUpgradeDialogOpen(true);
+                      }}
+                    >
+                      <CreditCard className="mr-2 h-4 w-4" />
+                      Pay now
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            <PlanCatalogSections
+              currentPlan={isPendingPayment ? null : currentPlan}
+              activePlanLabel={activePlanLabel}
+              upgradePlans={upgradePlans}
+              downgradePlans={downgradePlans}
+              layout={layout}
+              onPlanSelect={(id) => void handlePlanChange(id)}
+              isFirstTime={isFirstTimeSubscriber}
+              isExpired={isExpired}
+            />
+          </div>
         )}
       </div>
 
@@ -690,11 +773,11 @@ export function SubscriptionPlanManagement({
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Upgrade to {selectedUpgradePlan?.name} Plan</DialogTitle>
+            <DialogTitle>{dialogTitlePrefix} {selectedUpgradePlan?.name} Plan</DialogTitle>
             <DialogDescription>
               {isUpgradePaymentLoading
                 ? "Starting payment — please wait…"
-                : "Complete payment to upgrade your subscription"}
+                : dialogDescription}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

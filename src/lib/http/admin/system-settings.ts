@@ -10,6 +10,25 @@ export type AdminSystemSettingsResponse = {
     total_pharmacies: number;
     new_users_30d: number;
   };
+  systemMetrics?: {
+    systemLoad: number;
+    totalMemory: number;
+    freeMemory: number;
+    uptime: number;
+  };
+  integrations?: {
+    paymentGateway?: {
+      configured: boolean;
+      status: "healthy" | "not_configured" | string;
+      providers?: Record<string, boolean>;
+    };
+    insurance?: {
+      configured: boolean;
+      status: "healthy" | "review" | "not_configured" | string;
+      activeProviders: number;
+      activeTemplates: number;
+    };
+  };
 };
 
 export async function getAdminSystemSettings(): Promise<AdminSystemSettingsResponse> {

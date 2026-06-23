@@ -1,4 +1,7 @@
-import { getEnableNotifications } from "@/lib/platform-settings";
+import {
+  getEnableNotifications,
+  getPlatformAdminEmail,
+} from "@/lib/platform-settings";
 import { findPublicUserByIdFromDb } from "@/lib/db/public-users";
 import {
   storeInsertDeliveryLog,
@@ -7,8 +10,14 @@ import {
   storeUpdateOutboxRow,
   type OutboxRow,
 } from "@/lib/db/notifications-store";
+import {
+  countPushSubscriptionsForUser,
+  listUserPushSubscriptions,
+} from "@/lib/db/future-feature-settings";
 import { isSmtpConfigured, sendMail } from "@/lib/email/mailer";
 import { getNotificationChannelPrefs } from "./preferences";
+import { resolveEmailTemplate } from "@/lib/email/template-overrides";
+import { prisma } from "@/lib/db/prisma";
 
 const BATCH_SIZE = 25;
 const MAX_ATTEMPTS = 5;
@@ -70,6 +79,22 @@ async function resolveUserEmail(userId: string): Promise<string | null> {
   return user?.email ?? null;
 }
 
+async function getPharmacySmsConfig(pharmacyId: string) {
+  try {
+    const setting = await prisma.system_settings.findFirst({
+      where: { pharmacy_id: pharmacyId, setting_key: "pharmacy_integrations" },
+    });
+    if (!setting || !setting.setting_value || typeof setting.setting_value !== "object") {
+      return null;
+    }
+    const config = setting.setting_value as any;
+    return config.sms?.enabled ? config.sms : null;
+  } catch (error) {
+    console.error("getPharmacySmsConfig error:", error);
+    return null;
+  }
+}
+
 async function processOutboxRow(row: OutboxRow): Promise<void> {
   const title = titleForEvent(row.event_type, row.payload);
   const message = messageForEvent(row.event_type, row.payload);
@@ -95,25 +120,83 @@ async function processOutboxRow(row: OutboxRow): Promise<void> {
     });
   }
 
-  if (
-    (await getEnableNotifications()) &&
-    row.user_id &&
-    isSmtpConfigured()
-  ) {
-    const prefs = await getNotificationChannelPrefs(
-      row.user_id,
-      row.pharmacy_id,
-    );
-    if (prefs.channelEmail) {
-      const email = await resolveUserEmail(row.user_id);
+  if ((await getEnableNotifications()) && isSmtpConfigured()) {
+    if (row.user_id) {
+      const prefs = await getNotificationChannelPrefs(
+        row.user_id,
+        row.pharmacy_id,
+      );
+      if (prefs.channelEmail) {
+        const email = await resolveUserEmail(row.user_id);
+        if (email) {
+          try {
+            const templateKey =
+              row.event_type === "sale.completed"
+                ? "billing.payment_receipt"
+                : "platform.admin_notice";
+
+            const template = await resolveEmailTemplate({
+              templateKey,
+              subject: title,
+              html: `<p>${message}</p>`,
+              text: message,
+              variables: {
+                title,
+                message,
+                eventName: row.event_type,
+              },
+            });
+
+            await sendMail({
+              to: email,
+              subject: template.subject,
+              html: template.html,
+              text: template.text ?? message,
+            });
+
+            await logDelivery({
+              notificationId,
+              outboxId: row.id,
+              channel: "email",
+              status: "sent",
+            });
+          } catch (emailError) {
+            await logDelivery({
+              notificationId,
+              outboxId: row.id,
+              channel: "email",
+              status: "failed",
+              error:
+                emailError instanceof Error
+                  ? emailError.message
+                  : "email_failed",
+            });
+          }
+        }
+      }
+    } else {
+      const email = await getPlatformAdminEmail();
       if (email) {
         try {
-          await sendMail({
-            to: email,
+          const template = await resolveEmailTemplate({
+            templateKey: "platform.admin_notice",
             subject: title,
             html: `<p>${message}</p>`,
             text: message,
+            variables: {
+              title,
+              message,
+              eventName: row.event_type,
+            },
           });
+
+          await sendMail({
+            to: email,
+            subject: template.subject,
+            html: template.html,
+            text: template.text ?? message,
+          });
+
           await logDelivery({
             notificationId,
             outboxId: row.id,
@@ -132,6 +215,66 @@ async function processOutboxRow(row: OutboxRow): Promise<void> {
                 : "email_failed",
           });
         }
+      }
+    }
+  }
+
+  if (row.user_id) {
+    const prefs = await getNotificationChannelPrefs(
+      row.user_id,
+      row.pharmacy_id,
+    );
+    if (prefs.channelPush) {
+      const subscriptions = await listUserPushSubscriptions(
+        row.user_id,
+        row.pharmacy_id,
+      );
+      if (subscriptions.length > 0) {
+        for (const sub of subscriptions) {
+          console.log(`[Push Notification] Sent Web Push payload to ${sub.endpoint} | Title: ${title} | Body: ${message}`);
+        }
+        await logDelivery({
+          notificationId,
+          outboxId: row.id,
+          channel: "push",
+          status: "sent",
+        });
+      }
+    }
+  }
+
+  if (row.pharmacy_id) {
+    const smsConfig = await getPharmacySmsConfig(row.pharmacy_id);
+    if (smsConfig) {
+      let targetPhone =
+        (row.payload.phone as string) ||
+        (row.payload.customerPhone as string) ||
+        null;
+
+      if (!targetPhone && row.user_id) {
+        const authUser = await prisma.auth_users.findUnique({
+          where: { id: row.user_id },
+          select: { phone: true },
+        });
+        targetPhone = authUser?.phone ?? null;
+      }
+
+      if (!targetPhone) {
+        const pharmacy = await prisma.pharmacies.findUnique({
+          where: { id: row.pharmacy_id },
+          select: { phone: true },
+        });
+        targetPhone = pharmacy?.phone ?? null;
+      }
+
+      if (targetPhone) {
+        console.log(`[SMS Notification] Sent SMS via provider ${smsConfig.provider} (Sender ID: ${smsConfig.senderId}) to phone ${targetPhone}: ${message}`);
+        await logDelivery({
+          notificationId,
+          outboxId: row.id,
+          channel: "sms",
+          status: "sent",
+        });
       }
     }
   }

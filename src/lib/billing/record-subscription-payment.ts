@@ -1,6 +1,7 @@
 import { storeRecordSubscriptionPayment } from "@/lib/db/billing-store";
 import { isSmtpConfigured, sendMail } from "@/lib/email/mailer";
 import { paymentReceiptEmailHtml } from "@/lib/email/payment-receipt";
+import { resolveEmailTemplate } from "@/lib/email/template-overrides";
 
 /** Idempotent: invoice + payments row + receipt email after subscription payment completes. */
 export async function recordSubscriptionPayment(
@@ -26,22 +27,43 @@ export async function recordSubscriptionPayment(
     result.paidAt
   ) {
     try {
-      await sendMail({
-        to: recipient,
-        subject: `Pryrox receipt — ${result.planName} (${result.invoiceNumber})`,
-        html: paymentReceiptEmailHtml({
+      const defaultSubject = `Pryrox receipt — ${result.planName} (${result.invoiceNumber})`;
+      const formattedPaidAt = new Date(result.paidAt).toLocaleString("en-RW", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+      const defaultHtml = paymentReceiptEmailHtml({
+        pharmacyName: result.pharmacyName ?? "Your pharmacy",
+        planName: result.planName,
+        amount: result.amount,
+        currency: result.currency,
+        invoiceNumber: result.invoiceNumber,
+        paymentMethod: result.paymentMethodLabel,
+        paidAt: formattedPaidAt,
+      });
+      const defaultText = `Payment received for ${result.planName}: ${result.amount} ${result.currency}. Invoice ${result.invoiceNumber}.`;
+
+      const template = await resolveEmailTemplate({
+        templateKey: "billing.payment_receipt",
+        subject: defaultSubject,
+        html: defaultHtml,
+        text: defaultText,
+        variables: {
           pharmacyName: result.pharmacyName ?? "Your pharmacy",
           planName: result.planName,
-          amount: result.amount,
+          amount: String(result.amount),
           currency: result.currency,
           invoiceNumber: result.invoiceNumber,
           paymentMethod: result.paymentMethodLabel,
-          paidAt: new Date(result.paidAt).toLocaleString("en-RW", {
-            dateStyle: "medium",
-            timeStyle: "short",
-          }),
-        }),
-        text: `Payment received for ${result.planName}: ${result.amount} ${result.currency}. Invoice ${result.invoiceNumber}.`,
+          paidAt: formattedPaidAt,
+        },
+      });
+
+      await sendMail({
+        to: recipient,
+        subject: template.subject,
+        html: template.html,
+        text: template.text ?? defaultText,
       });
       emailSent = true;
     } catch (e) {

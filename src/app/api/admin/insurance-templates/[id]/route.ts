@@ -4,6 +4,7 @@ import {
   deleteGlobalInsuranceTemplateFromDb,
   updateGlobalInsuranceTemplateFromDb,
 } from "@/lib/db/admin";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function PUT(
   request: NextRequest,
@@ -24,6 +25,20 @@ export async function PUT(
       templateCss: body.template_css ?? "",
       isActive: body.is_active !== false,
     });
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "UPDATE",
+      tableName: "insurance_templates",
+      recordId: id,
+      newValues: {
+        id,
+        name: body.name,
+        insurance_provider: body.insurance_provider,
+        is_active: body.is_active !== false,
+      },
+      ...auditRequestMetadata(request),
+    });
     return NextResponse.json({ success: true, template: data });
   } catch (error) {
     console.error("admin insurance-templates PUT:", error);
@@ -33,7 +48,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
@@ -47,6 +62,15 @@ export async function DELETE(
     if (!deleted) {
       return NextResponse.json({ error: "Template not found" }, { status: 404 });
     }
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "DELETE",
+      tableName: "insurance_templates",
+      recordId: id,
+      oldValues: { id },
+      ...auditRequestMetadata(request),
+    });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("admin insurance-templates DELETE:", error);

@@ -58,16 +58,9 @@ export function ResetPasswordForm({ initialMessage }: Props) {
   }
 
   return (
-    <form action={resetPasswordAction} className="flex flex-col space-y-6">
+    <form action={resetPasswordAction} className="flex flex-col space-y-4">
       <input type="hidden" name="native_token" value={nativeToken} />
-      <div className="space-y-2 text-center">
-        <h1 className="text-3xl font-semibold tracking-tight">Reset password</h1>
-        <p className="text-sm text-muted-foreground">
-          Please enter your new password below.
-        </p>
-      </div>
-
-      <div className="space-y-4">
+      <div className="space-y-3">
         <div className="space-y-2">
           <Label htmlFor="password" className="text-sm font-medium">
             New password

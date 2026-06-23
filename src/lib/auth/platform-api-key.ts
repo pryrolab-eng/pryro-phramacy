@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { hashApiKeySecret, isHashedApiKeySecret } from "@/lib/auth/api-key-hash";
 import { prisma } from "@/lib/db/prisma";
 
 /** Header for third-party integrations calling Pryrox APIs. */
@@ -30,28 +31,34 @@ export async function resolvePlatformApiKey(
   token: string,
 ): Promise<PlatformApiKeyContext | null> {
   if (!token || token.length < 8) return null;
+  const tokenHash = await hashApiKeySecret(token);
 
   const row = await prisma.api_keys.findFirst({
     where: {
       pharmacy_id: null,
       is_active: true,
-      key_hash: token,
-      OR: [{ expires_at: null }, { expires_at: { gt: new Date() } }],
+      OR: [{ key_hash: tokenHash }, { key_hash: token }],
+      AND: [{ OR: [{ expires_at: null }, { expires_at: { gt: new Date() } }] }],
     },
     select: {
       id: true,
       name: true,
+      key_hash: true,
       permissions: true,
     },
   });
 
   if (!row) return null;
 
+  const updateData: { last_used_at: Date; key_hash?: string } = {
+    last_used_at: new Date(),
+  };
+  if (!isHashedApiKeySecret(row.key_hash)) {
+    updateData.key_hash = tokenHash;
+  }
+
   await prisma.api_keys
-    .update({
-      where: { id: row.id },
-      data: { last_used_at: new Date() },
-    })
+    .update({ where: { id: row.id }, data: updateData })
     .catch(() => undefined);
 
   return {

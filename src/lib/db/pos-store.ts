@@ -92,6 +92,7 @@ export async function storeQuickAddPosDrug(input: {
   sellingPrice: number;
   minimumStockLevel: number;
   expiryDate: string | null;
+  stockLocation?: string | null;
 }): Promise<{ medication: Record<string, unknown>; inventory: Record<string, unknown> }> {
   return quickAddPosDrug(input);
 }

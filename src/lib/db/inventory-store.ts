@@ -8,6 +8,7 @@ import {
   getInventoryQuantity,
   listInventoryAlertsForPharmacy,
   listInventoryForPharmacy,
+  resolveStockLocationId,
   updateInventoryItem,
   updateInventoryQuantity,
   listInventoryTransfersForPharmacy,
@@ -30,6 +31,8 @@ export type FormattedInventoryItem = {
   price: number | null;
   expiryDate: string | null;
   batchNumber: string;
+  stockLocationId: string | null;
+  stockLocationName: string | null;
   medications: InventoryListRow["medications"];
   pharmacy_id: string | null;
 };
@@ -47,6 +50,8 @@ export function formatInventoryListItem(row: InventoryListRow): FormattedInvento
       ? row.expiry_date.toISOString().slice(0, 10)
       : null,
     batchNumber: row.batch_number,
+    stockLocationId: row.stock_location_id,
+    stockLocationName: row.stock_locations?.name ?? null,
     medications: row.medications,
     pharmacy_id: row.pharmacy_id,
   };
@@ -162,7 +167,13 @@ export async function storeCreateInventory(input: {
   sellingPrice?: number;
   minimumStockLevel?: number;
   expiryDate?: string;
+  stockLocation?: string | null;
 }): Promise<Record<string, unknown>> {
+  const stockLocationId = await resolveStockLocationId({
+    pharmacyId: input.pharmacyId,
+    value: input.stockLocation,
+  });
+
   return createInventoryRow({
     pharmacyId: input.pharmacyId,
     branchId: input.branchId,
@@ -173,6 +184,7 @@ export async function storeCreateInventory(input: {
     sellingPrice: input.sellingPrice ?? 0,
     minimumStockLevel: input.minimumStockLevel ?? 0,
     expiryDate: input.expiryDate ?? "2025-12-31",
+    stockLocationId,
   });
 }
 
@@ -185,6 +197,9 @@ export async function storeAddMedicationInventory(body: {
   selling_price?: string | number;
   minimum_stock_level?: string | number;
   expiry_date?: string;
+  stockLocation?: string | null;
+  stock_location?: string | null;
+  stock_location_id?: string | null;
   pharmacyId: string;
   branchId: string;
 }): Promise<{
@@ -205,6 +220,10 @@ export async function storeAddMedicationInventory(body: {
   };
   const categoryEnum = categoryMap[body.category] ?? "otc";
   const quantity = parseInt(String(body.quantity ?? 0), 10) || 0;
+  const stockLocationId = await resolveStockLocationId({
+    pharmacyId: body.pharmacyId,
+    value: body.stock_location_id ?? body.stockLocation ?? body.stock_location,
+  });
 
   let medicationId: string;
 
@@ -219,6 +238,11 @@ export async function storeAddMedicationInventory(body: {
     if (existingInventory) {
       const newQuantity = (existingInventory.quantity_in_stock ?? 0) + quantity;
       await updateInventoryQuantity(existingInventory.id, newQuantity);
+      if (stockLocationId) {
+        await updateInventoryItem(existingInventory.id, {
+          stock_location_id: stockLocationId,
+        });
+      }
       return {
         success: true,
         message: "Quantity updated",
@@ -226,6 +250,7 @@ export async function storeAddMedicationInventory(body: {
         inventory: {
           id: existingInventory.id,
           quantity_in_stock: newQuantity,
+          stock_location_id: stockLocationId,
         },
       };
     }
@@ -249,6 +274,7 @@ export async function storeAddMedicationInventory(body: {
     sellingPrice: parseFloat(String(body.selling_price ?? 0)) || 0,
     minimumStockLevel: parseInt(String(body.minimum_stock_level ?? 0), 10) || 0,
     expiryDate: body.expiry_date || "2025-12-31",
+    stockLocationId,
   });
 
   return { success: true, medicationId, inventory };
@@ -261,6 +287,7 @@ export async function storeUpdateInventory(
     selling_price?: number;
     minimum_stock_level?: number;
     unit_cost?: number;
+    stock_location_id?: string | null;
   },
 ): Promise<void> {
   await updateInventoryItem(id, {
@@ -268,6 +295,7 @@ export async function storeUpdateInventory(
     selling_price: data.selling_price,
     minimum_stock_level: data.minimum_stock_level,
     unit_cost: data.unit_cost,
+    stock_location_id: data.stock_location_id,
   });
 }
 

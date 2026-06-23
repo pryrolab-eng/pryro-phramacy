@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { prisma } from "@/lib/db/prisma";
+import { writeAuditLog } from "@/lib/db/audit-logs";
 import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
 import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
-
-const DEFAULT_LOCATIONS = [
-  { id: "1", name: "Main Store", description: "Primary location", is_active: true },
-  { id: "2", name: "Branch", description: "Secondary location", is_active: true },
-  { id: "3", name: "Cold Storage", description: "Temperature controlled", is_active: true },
-  { id: "4", name: "Warehouse", description: "Bulk storage", is_active: true },
-];
+import {
+  appendStockLocationTemplate,
+  getStockLocationTemplates,
+  DEFAULT_STOCK_LOCATION_TEMPLATES,
+} from "@/lib/stock-location-templates";
 
 function isMissingStockLocationsTable(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -30,7 +29,7 @@ export async function GET() {
     } catch {
       const isPlatformAdmin = await resolveIsAppPlatformAdmin(user.id);
       if (isPlatformAdmin) {
-        return NextResponse.json(DEFAULT_LOCATIONS);
+        return NextResponse.json(await getStockLocationTemplates());
       }
       return NextResponse.json({ success: false, error: "Pharmacy not found" }, { status: 404 });
     }
@@ -43,10 +42,10 @@ export async function GET() {
     return NextResponse.json(locations);
   } catch (error) {
     if (isMissingStockLocationsTable(error)) {
-      return NextResponse.json(DEFAULT_LOCATIONS);
+      return NextResponse.json(DEFAULT_STOCK_LOCATION_TEMPLATES);
     }
     console.error("Error fetching locations:", error);
-    return NextResponse.json(DEFAULT_LOCATIONS);
+    return NextResponse.json(DEFAULT_STOCK_LOCATION_TEMPLATES);
   }
 }
 
@@ -63,14 +62,29 @@ export async function POST(request: NextRequest) {
     } catch {
       const isPlatformAdmin = await resolveIsAppPlatformAdmin(user.id);
       if (isPlatformAdmin) {
-        return NextResponse.json(
-          {
-            success: false,
-            error:
-              "Platform admins see default location templates only. Stock locations are managed per pharmacy in pharmacy settings.",
-          },
-          { status: 400 },
-        );
+        const body = await request.json();
+        if (!body.name || typeof body.name !== "string") {
+          return NextResponse.json(
+            { success: false, error: "Location name is required" },
+            { status: 400 },
+          );
+        }
+        const location = await appendStockLocationTemplate({
+          name: body.name,
+          description:
+            typeof body.description === "string" ? body.description : "",
+        });
+        await writeAuditLog({
+          pharmacyId: null,
+          userId: user.id,
+          action: "INSERT",
+          tableName: "system_settings",
+          recordId: undefined,
+          newValues: { setting_key: "stockLocationTemplates", location },
+          ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
+          userAgent: request.headers.get("user-agent") ?? undefined,
+        });
+        return NextResponse.json({ success: true, location });
       }
       return NextResponse.json({ success: false, error: "Pharmacy not found" }, { status: 404 });
     }
@@ -85,6 +99,16 @@ export async function POST(request: NextRequest) {
           description: body.description || "",
           is_active: true,
         },
+      });
+      await writeAuditLog({
+        pharmacyId,
+        userId: user.id,
+        action: "INSERT",
+        tableName: "stock_locations",
+        recordId: location.id,
+        newValues: location,
+        ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
+        userAgent: request.headers.get("user-agent") ?? undefined,
       });
       return NextResponse.json({ success: true, location });
     } catch (error) {

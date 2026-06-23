@@ -102,12 +102,13 @@ Per-batch stock records. One row per batch of a medication at a pharmacy.
 | `selling_price` | `decimal(10,2)` | Retail selling price per unit (default `0.00`) |
 | `minimum_stock_level` | `integer` | Low-stock alert threshold (default `0`) |
 | `expiry_date` | `date` | Batch expiry date (nullable) |
+| `stock_location_id` | `uuid` | FK → `stock_locations.id` (nullable). Stores the selected physical stock location. |
 | `manufacturing_date` | `date` | Manufacturing date (nullable) |
 | `received_date` | `timestamptz` | When the batch was received (default `now()`) |
 | `created_at` | `timestamptz` | Record creation timestamp |
 | `updated_at` | `timestamptz` | Last update timestamp (auto-updated by trigger) |
 
-**Indexes:** `idx_inventory_pharmacy_id` on `pharmacy_id`, `idx_inventory_medication_id` on `medication_id`, `idx_inventory_expiry_date` on `expiry_date`.
+**Indexes:** `idx_inventory_pharmacy_id` on `pharmacy_id`, `idx_inventory_medication_id` on `medication_id`, `idx_inventory_expiry_date` on `expiry_date`, `idx_inventory_stock_location_id` on `stock_location_id`.
 
 **Live UI updates:** Same polling hook as above; inventory rows with recent `updated_at` trigger refresh.
 
@@ -154,7 +155,7 @@ Named storage locations within a pharmacy (e.g., Main Store, Cold Storage, Wareh
 
 **RLS:** Enabled. Users can only view, insert, and update locations belonging to their own pharmacy (via `pharmacy_users` lookup).
 
-> **Note:** The `stock_locations` table is **not** in the official `supabase/migrations/` directory. It is defined in the root-level `create-stock-locations-table.sql` file. The `GET /api/settings/locations` route falls back to four hardcoded default locations if the table does not exist in the database.
+> **Note:** The `stock_locations` table and `inventory.stock_location_id` link are represented in `supabase/migrations/`. The `GET /api/settings/locations` route still returns default location options if an older database has not applied those migrations yet.
 
 ---
 
@@ -275,9 +276,7 @@ Full category management (create, edit, delete, view global categories) is avail
 
 ### Stock Location Assignment
 
-When adding a product, the user can select a stock location from a dropdown. The default value is `'main-store'`. The available locations are loaded from `GET /api/settings/locations`.
-
-**Limitation:** The selected `stockLocation` value is stored in the UI form state but is **not persisted** to the `inventory` table. The `inventory` schema has no `stock_location_id` column. Stock location assignment is UI-only and is lost on page refresh.
+When adding a product, the user can select a stock location from a dropdown. The default value is `'main-store'`. On save, `/api/inventory/add` resolves the selected value against active `stock_locations` for the pharmacy and stores the matched id in `inventory.stock_location_id`. Existing slug-style UI values such as `main-store` resolve by normalized location name.
 
 ---
 
@@ -357,11 +356,11 @@ The file is named `inventory-YYYY-MM-DD.xlsx` and downloaded directly in the bro
 The "Import" button opens a dialog for bulk product import from an `.xlsx` or `.xls` file. The flow:
 1. User uploads a file; `handleExcelImport` reads it with `xlsx` and calls `validateAndPreview`.
 2. `validateAndPreview` checks required columns (Product Name, Category, Stock, Min Stock, Price (RWF), Expiry Date, Batch Number) and shows a preview of the first three rows plus any validation errors.
-3. If there are no errors, the user clicks "Import N Products". `confirmImport` calls `POST /api/inventory/add` sequentially for each row.
+3. If there are no errors, the user clicks "Import N Products". The import calls `POST /api/inventory/add` sequentially for each row and reports row-level failures in the dialog.
 
 A "Download Sample" button generates a two-row sample `.xlsx` file to guide the user on the expected format.
 
-**Limitation:** Import calls are made sequentially in a `for` loop with no error recovery. If one row fails, the loop continues but the failed row is silently skipped. There is no rollback or partial-import report.
+**Limitation:** Import calls are sequential and there is no rollback. Successful rows remain imported if later rows fail, but failed rows are reported with row number, product name, and error message.
 
 ---
 
@@ -484,38 +483,30 @@ handleTransfer() → POST /api/inventory/transfers
 
 `src/app/api/drugs/route.ts` returns a static array of three drugs and does not interact with the database. The `POST` handler creates an in-memory object that is never persisted. This route appears to be a development placeholder and must be removed before production.
 
-### 3. Stock location assignment is not persisted
-
-The "Stock Location" field in the Add Product dialog is stored in UI state only. The `inventory` table has no `stock_location_id` column, so the selected location is never saved to the database. The `stock_locations` table exists for the Settings module but is not linked to inventory records.
-
-### 4. Adjustment reason is not stored
+### 3. Adjustment reason is not stored
 
 The stock adjustment dialog accepts a `reason` field, but `POST /api/inventory/adjustment` only updates `quantity_in_stock`. The reason is discarded. No `stock_movements` record is created for manual adjustments, so there is no audit trail for manual stock changes.
 
-### 5. Purchase does not link to the supplier
+### 4. Purchase does not link to the supplier
 
 The purchase dialog accepts a `supplier` field, but `POST /api/inventory/purchase` ignores it. The purchase is not linked to the `suppliers` table and no purchase order record is created.
 
-### 6. Pagination is not functional
+### 5. Pagination is not functional
 
 The `Pagination` component is rendered in the inventory table but is not connected to any state. All inventory items are rendered simultaneously regardless of the current page number.
 
-### 7. Inventory trend data is synthetic
+### 6. Inventory trend data is synthetic
 
 The "Inventory Trend" chart in the analytics section does not query historical data. It generates trend values by scaling the current total inventory value across the months of the current year using a linear formula. The chart will always show a smooth upward curve regardless of actual stock history.
 
-### 8. `is_global` column on `categories` is not in official migrations
+### 7. `is_global` column on `categories` is not in official migrations
 
 The `is_global` column on the `categories` table is added by `add-global-categories.sql` (a root-level loose file). It is not part of the official `supabase/migrations/` history. A fresh database deployment from migrations alone will not have this column, causing `GET /api/categories` to fail with a PostgreSQL error on the `is_global.eq.true` filter.
 
-### 9. `stock_locations` table is not in official migrations
-
-The `stock_locations` table is defined in `create-stock-locations-table.sql` (a root-level loose file), not in `supabase/migrations/`. The `GET /api/settings/locations` route handles this gracefully by returning hardcoded defaults on error, but the table must be created manually for the feature to persist data.
-
-### 10. Edit dialog only exposes three fields
+### 8. Edit dialog only exposes three fields
 
 The `PUT /api/inventory/[id]` route and the edit dialog only allow updating `quantity_in_stock`, `selling_price`, and `minimum_stock_level`. Fields such as `batch_number`, `expiry_date`, `unit_cost`, and the linked `medications` record (name, category, manufacturer) cannot be edited after creation.
 
-### 11. Error handling uses `alert()` in the add product flow
+### 9. Error handling uses `alert()` in the add product flow
 
 `handleAddProduct` uses `alert()` for both success and error feedback instead of the `toast()` system used by the rest of the page. This is inconsistent and will block the UI thread.

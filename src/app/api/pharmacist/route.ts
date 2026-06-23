@@ -22,6 +22,7 @@ import { PHARMACY_PERMISSIONS } from "@/lib/rbac/permissions";
 import { staffInviteUserMetadata } from "@/lib/auth/must-change-password";
 import { adminCreateAuthUser } from "@/lib/auth/admin-users";
 import { storeCreatePharmacyMembership } from "@/lib/db/pharmacy-users-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function POST(request: Request) {
   try {
@@ -94,6 +95,21 @@ export async function POST(request: Request) {
       pharmacyId: body.pharmacy_id,
       userId: authUser.user.id,
       role,
+    });
+
+    await writeAuditLog({
+      pharmacyId: body.pharmacy_id,
+      userId: sessionUser.id,
+      action: "INSERT",
+      tableName: "pharmacy_users",
+      recordId: authUser.user.id,
+      newValues: {
+        invitedUserId: authUser.user.id,
+        email,
+        fullName,
+        role,
+      },
+      ...auditRequestMetadata(request),
     });
 
     const emailResult = await sendStaffInviteEmail({

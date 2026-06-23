@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { scheduleSubscriptionDowngrade } from "@/lib/subscription/schedule-downgrade";
 import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function POST(request: Request) {
   try {
@@ -23,6 +24,20 @@ export async function POST(request: Request) {
 
     const pharmacyId = await requireUserPharmacyId(user.id);
     const result = await scheduleSubscriptionDowngrade(pharmacyId, targetPlanId);
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "subscriptions",
+      recordId: result.subscriptionId,
+      newValues: {
+        changeType: "downgrade_scheduled",
+        targetPlanId,
+        effectiveAt: result.effectiveAt,
+        replaced: result.replaced,
+      },
+      ...auditRequestMetadata(request),
+    });
 
     return NextResponse.json({
       success: true,

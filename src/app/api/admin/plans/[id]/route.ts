@@ -12,6 +12,7 @@ import {
   listActiveSubscriptionPlansForConflictFromDb,
   updateSubscriptionPlanFromDb,
 } from "@/lib/db/admin";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function PUT(
   request: NextRequest,
@@ -201,6 +202,21 @@ export async function PUT(
       ...plan,
       features: (updates.features as string[] | undefined) ?? plan.features,
     } as Parameters<typeof syncPlanToPolarAndSave>[0]);
+
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "UPDATE",
+      tableName: "subscription_plans",
+      recordId: id,
+      oldValues: currentPlan,
+      newValues: {
+        updates,
+        featureKeys,
+        polarSync: synced.polarSync,
+      },
+      ...auditRequestMetadata(request),
+    });
 
     return NextResponse.json({
       success: true,

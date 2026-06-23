@@ -13,10 +13,9 @@ import {
 import { findAuthUserByEmailFromDb } from "@/lib/db/auth-credentials";
 
 import type { AuthEmailResult } from "@/lib/email/auth-email-types";
-
 import { confirmationEmailHtml, recoveryEmailHtml } from "@/lib/email/templates";
-
 import { isSmtpConfigured, sendMail } from "@/lib/email/mailer";
+import { resolveEmailTemplate } from "@/lib/email/template-overrides";
 
 
 
@@ -85,25 +84,31 @@ export async function sendNativePasswordRecoveryEmail(
   const link = nativeResetLink(token);
 
   const subject = "Reset your Pryrox password";
-
   const html = recoveryEmailHtml(link);
-
   const text = `Reset your Pryrox password: ${link}`;
 
-
-
   try {
+    const template = await resolveEmailTemplate({
+      templateKey: "auth.password_reset",
+      subject,
+      html,
+      text,
+      variables: {
+        actionUrl: link,
+      },
+    });
 
-    await sendMail({ to: email, subject, html, text });
+    await sendMail({
+      to: email,
+      subject: template.subject,
+      html: template.html,
+      text: template.text ?? text,
+    });
 
     return { ok: true, provider: "nodemailer" };
-
   } catch (e) {
-
     const message = e instanceof Error ? e.message : "Failed to send email";
-
     return { ok: false, error: message };
-
   }
 
 }
@@ -143,25 +148,31 @@ export async function sendNativeSignupConfirmationEmail(options: {
   const link = nativeConfirmLink(token, redirectTo);
 
   const subject = "Confirm your Pryrox email";
-
   const html = confirmationEmailHtml(link);
-
   const text = `Confirm your Pryrox email: ${link}`;
 
-
-
   try {
+    const template = await resolveEmailTemplate({
+      templateKey: "auth.signup_confirm",
+      subject,
+      html,
+      text,
+      variables: {
+        actionUrl: link,
+      },
+    });
 
-    await sendMail({ to: options.email, subject, html, text });
+    await sendMail({
+      to: options.email,
+      subject: template.subject,
+      html: template.html,
+      text: template.text ?? text,
+    });
 
     return { ok: true, provider: "nodemailer" };
-
   } catch (e) {
-
     const message = e instanceof Error ? e.message : "Failed to send email";
-
     return { ok: false, error: message };
-
   }
 
 }

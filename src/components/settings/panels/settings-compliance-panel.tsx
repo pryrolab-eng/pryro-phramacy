@@ -1,6 +1,6 @@
 "use client";
 
-import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -25,21 +25,21 @@ export function SettingsCompliancePanel() {
       <SettingsSection title="Regulatory">
         <SettingsRow
           title="GDPR compliance"
-          description="EU data protection controls"
+          description="Platform policy managed by administrators"
         >
-          <Switch defaultChecked />
+          <Badge variant="secondary">Platform managed</Badge>
         </SettingsRow>
         <SettingsRow
           title="Audit logging"
-          description="Track sign-ins and sensitive changes"
+          description="Runtime enforcement follows the platform audit setting"
         >
-          <Switch defaultChecked />
+          <Badge variant="secondary">Platform managed</Badge>
         </SettingsRow>
         <SettingsRow
           title="Data retention period"
           description="How long records are kept"
         >
-          <Select defaultValue="7years">
+          <Select defaultValue="7years" disabled>
             <SelectTrigger className="w-[160px]">
               <SelectValue />
             </SelectTrigger>
@@ -56,12 +56,12 @@ export function SettingsCompliancePanel() {
       <SettingsSection title="Backup & recovery">
         <SettingsRow
           title="Automated backups"
-          description="Scheduled database backups"
+          description="Database backups are run from Admin settings"
         >
-          <Switch defaultChecked />
+          <Badge variant="secondary">Admin only</Badge>
         </SettingsRow>
         <SettingsRow title="Backup frequency">
-          <Select defaultValue="daily">
+          <Select defaultValue="daily" disabled>
             <SelectTrigger className="w-[160px]">
               <SelectValue />
             </SelectTrigger>

@@ -4,6 +4,7 @@ import {
   storeCreateGlobalCategory,
   storeListGlobalCategories,
 } from "@/lib/db/admin-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function GET() {
   try {
@@ -31,6 +32,15 @@ export async function POST(request: NextRequest) {
     const category = await storeCreateGlobalCategory({
       name: body.name || body.categoryName,
       description: body.description || body.categoryDescription || "",
+    });
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "INSERT",
+      tableName: "medication_categories",
+      recordId: category.id,
+      newValues: category,
+      ...auditRequestMetadata(request),
     });
 
     return NextResponse.json({ success: true, category });

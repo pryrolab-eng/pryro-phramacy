@@ -13,6 +13,7 @@ import {
   storeCreatePharmacyOwnerMembership,
   storeUpsertOwnerPublicUser,
 } from "@/lib/db/admin-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function GET() {
   try {
@@ -140,6 +141,23 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "INSERT",
+      tableName: "pharmacies",
+      recordId: pharmacy.id as string,
+      newValues: {
+        pharmacyId: pharmacy.id,
+        name: pharmacy.name,
+        email: pharmacy.email,
+        subscriptionPlan,
+        ownerUserId: authUser.user.id,
+        ownerEmail,
+      },
+      ...auditRequestMetadata(request),
+    });
 
     return NextResponse.json({
       success: true,

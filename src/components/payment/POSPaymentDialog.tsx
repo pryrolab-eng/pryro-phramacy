@@ -11,12 +11,13 @@ interface POSPaymentDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   saleData: {
-    id: string
+    id?: string
     totalAmount: number
     customerName?: string
     customerPhone?: string
+    defaultPaymentMethod?: string
   }
-  onPaymentComplete: () => void
+  onPaymentComplete: (transactionId: string) => void
 }
 
 export function POSPaymentDialog({ 
@@ -46,7 +47,7 @@ export function POSPaymentDialog({
             title: 'Payment Successful',
             description: 'Transaction completed successfully'
           })
-          onPaymentComplete()
+          onPaymentComplete(transaction.id)
           onOpenChange(false)
         } else if (data.transaction.status === 'failed') {
           clearInterval(checkInterval)
@@ -84,6 +85,9 @@ export function POSPaymentDialog({
         <PaymentForm
           amount={saleData.totalAmount}
           saleId={saleData.id}
+          customerName={saleData.customerName}
+          customerPhone={saleData.customerPhone}
+          defaultPaymentMethod={saleData.defaultPaymentMethod}
           onSuccess={handlePaymentSuccess}
           onError={handlePaymentError}
         />

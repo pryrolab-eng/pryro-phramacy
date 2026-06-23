@@ -3,6 +3,7 @@ import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { cancelScheduledSubscriptionChange } from "@/lib/subscription/cancel-scheduled-change";
 import { getScheduledSubscriptionChange } from "@/lib/subscription/get-scheduled-change";
 import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function GET() {
   try {
@@ -49,6 +50,14 @@ export async function DELETE() {
         { status: 404 },
       );
     }
+
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "subscriptions",
+      newValues: { changeType: "scheduled_change_cancelled" },
+    });
 
     return NextResponse.json({ success: true, canceled: true });
   } catch (error: unknown) {

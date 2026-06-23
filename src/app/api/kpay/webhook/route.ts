@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createHmac, timingSafeEqual } from 'crypto'
 import { recordSubscriptionPayment } from '@/lib/billing/record-subscription-payment'
 import { activatePaidSubscription } from '@/lib/subscription/activate-subscription'
 import {
-  parseIncomingWebhookBody,
+  parseIncomingWebhookText,
   pickString,
 } from '@/lib/webhooks/parse-incoming-body'
 import { paymentSuccessUrl } from '@/lib/routes/payment-paths'
@@ -14,6 +15,31 @@ import {
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+function normalizeSignature(value: string | null): string | null {
+  if (!value) return null
+  return value.trim().replace(/^sha256=/i, '')
+}
+
+function isValidWebhookSignature(request: NextRequest, rawBody: string): boolean {
+  const secret = process.env.KPAY_WEBHOOK_SECRET
+  if (!secret) return true
+
+  const received = normalizeSignature(
+    request.headers.get('x-kpay-signature') ??
+      request.headers.get('x-pryrox-signature'),
+  )
+  if (!received) return false
+
+  const expected = createHmac('sha256', secret).update(rawBody).digest('hex')
+  const receivedBuffer = Buffer.from(received, 'hex')
+  const expectedBuffer = Buffer.from(expected, 'hex')
+
+  return (
+    receivedBuffer.length === expectedBuffer.length &&
+    timingSafeEqual(receivedBuffer, expectedBuffer)
+  )
+}
 
 /** KPay server callback (returl). Must be publicly reachable — set KPAY_RETURN_URL on Vercel. */
 export async function GET() {
@@ -40,7 +66,13 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await parseIncomingWebhookBody(request)
+    const rawBody = await request.text()
+    if (!isValidWebhookSignature(request, rawBody)) {
+      console.warn('[kpay/webhook] invalid signature')
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+
+    const body = parseIncomingWebhookText(request, rawBody)
 
     const tid = pickString(body, 'tid', 'TID')
     const refid = pickString(body, 'refid', 'REFID', 'refId')

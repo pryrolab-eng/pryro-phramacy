@@ -13,6 +13,8 @@ const EMPTY: PharmacyGlobalSearchResult = {
   products: [],
   prescriptions: [],
   sales: [],
+  staff: [],
+  branches: [],
 };
 
 export async function GET(request: NextRequest) {

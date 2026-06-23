@@ -166,6 +166,18 @@ Set this explicitly in production if your app URL differs from the URL that KPay
 
 ---
 
+### `KPAY_WEBHOOK_SECRET`
+
+| | |
+|---|---|
+| **Required** | ⚙️ Optional, recommended for production |
+| **Exposed to browser** | No |
+| **Example** | `change-me-to-a-long-random-secret` |
+
+When set, `POST /api/kpay/webhook` requires an HMAC-SHA256 signature over the raw request body. Send the hex digest in `x-kpay-signature` or `x-pryrox-signature` (`sha256=<hex>` is also accepted).
+
+---
+
 ### `KPAY_REDIRECT_URL`
 
 | | |

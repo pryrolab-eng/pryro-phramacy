@@ -25,11 +25,27 @@ export type GlobalSearchSaleHit = {
   totalAmount?: number | null;
 };
 
+export type GlobalSearchStaffHit = {
+  id: string;
+  name: string;
+  email?: string | null;
+  role?: string | null;
+};
+
+export type GlobalSearchBranchHit = {
+  id: string;
+  name: string;
+  city?: string | null;
+  status?: string | null;
+};
+
 export type PharmacyGlobalSearchResult = {
   customers: GlobalSearchCustomerHit[];
   products: GlobalSearchProductHit[];
   prescriptions: GlobalSearchPrescriptionHit[];
   sales: GlobalSearchSaleHit[];
+  staff: GlobalSearchStaffHit[];
+  branches: GlobalSearchBranchHit[];
 };
 
 export type AdminGlobalSearchPharmacyHit = {
@@ -39,6 +55,26 @@ export type AdminGlobalSearchPharmacyHit = {
   phone?: string | null;
 };
 
+export type AdminGlobalSearchStaffHit = {
+  id: string;
+  name: string;
+  email?: string | null;
+  role?: string | null;
+  pharmacyId: string;
+  pharmacyName: string;
+};
+
+export type AdminGlobalSearchBranchHit = {
+  id: string;
+  name: string;
+  city?: string | null;
+  status?: string | null;
+  pharmacyId: string;
+  pharmacyName: string;
+};
+
 export type AdminGlobalSearchResult = {
   pharmacies: AdminGlobalSearchPharmacyHit[];
+  staff: AdminGlobalSearchStaffHit[];
+  branches: AdminGlobalSearchBranchHit[];
 };

@@ -7,6 +7,7 @@ import {
 } from "@/lib/subscription/route-guards";
 import { listAuditLogsForPharmacyFromDb } from "@/lib/db/audit-logs";
 import { findPublicUserByIdFromDb } from "@/lib/db/public-users";
+import { getEnableAuditLogs } from "@/lib/platform-settings";
 
 function formatAuditSummary(
   action: string,
@@ -43,6 +44,13 @@ export async function GET(request: NextRequest) {
     }
 
     const pharmacyId = await requireUserPharmacyId(user.id);
+    if (!(await getEnableAuditLogs())) {
+      return NextResponse.json(
+        { items: [], error: "audit_logs_disabled" },
+        { status: 403 },
+      );
+    }
+
     const url = new URL(request.url);
     const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50", 10), 200);
     const offset = Math.max(parseInt(url.searchParams.get("offset") ?? "0", 10), 0);

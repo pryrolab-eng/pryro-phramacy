@@ -33,6 +33,7 @@ import {
   getIpFromRequestHeaders,
 } from "@/lib/rate-limit/enforce";
 import { RATE_LIMIT_MESSAGES } from "@/lib/rate-limit/presets";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export type SignInFormState = {
   error?: string;
@@ -59,10 +60,11 @@ export const signInAction = async (
   const password = formData.get("password") as string;
   const trimmedEmail = email.trim();
   const cookieStore = await cookies();
+  const requestHeaders = await headers();
 
   const signInLimit = await enforceAuthRateLimit({
     scope: "signIn",
-    bucketKey: `${trimmedEmail.toLowerCase()}|${getIpFromRequestHeaders(await headers())}`,
+    bucketKey: `${trimmedEmail.toLowerCase()}|${getIpFromRequestHeaders(requestHeaders)}`,
     message: RATE_LIMIT_MESSAGES.signIn,
   });
   if (!signInLimit.ok) {
@@ -97,6 +99,14 @@ export const signInAction = async (
   }
 
   await establishNativeSession(result.userId);
+  await writeAuditLog({
+    pharmacyId: null,
+    userId: result.userId,
+    action: "LOGIN",
+    tableName: "auth.sessions",
+    newValues: { method: "password" },
+    ...auditRequestMetadata({ headers: requestHeaders }),
+  });
   redirect(POST_AUTH_ENTRY_PATH);
 };
 
@@ -161,8 +171,19 @@ export const signInWithGoogleAction = async () => {
 };
 
 export const signOutAction = async () => {
+  const user = await getAuthUser();
+  const requestHeaders = await headers();
   await clearNativeSessionCookie();
   await clearLegacySupabaseAuthCookies();
+  if (user) {
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: user.id,
+      action: "LOGOUT",
+      tableName: "auth.sessions",
+      ...auditRequestMetadata({ headers: requestHeaders }),
+    });
+  }
   return redirect("/sign-in");
 };
 
@@ -211,6 +232,15 @@ export const resetPasswordAction = async (formData: FormData) => {
     }
     await adminUpdateAuthUserPassword(payload.userId, password);
     await clearNativeSessionCookie();
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: payload.userId,
+      action: "UPDATE",
+      tableName: "auth.users",
+      recordId: payload.userId,
+      newValues: { securityEvent: "password_reset_completed" },
+      ...auditRequestMetadata({ headers: await headers() }),
+    });
     return encodedRedirect(
       "success",
       "/sign-in",
@@ -230,6 +260,15 @@ export const resetPasswordAction = async (formData: FormData) => {
   await adminUpdateAuthUserPassword(user.id, password);
   await clearMustChangePasswordFlag(user.id, user.user_metadata);
   await clearNativeSessionCookie();
+  await writeAuditLog({
+    pharmacyId: null,
+    userId: user.id,
+    action: "UPDATE",
+    tableName: "auth.users",
+    recordId: user.id,
+    newValues: { securityEvent: "password_reset_completed" },
+    ...auditRequestMetadata({ headers: await headers() }),
+  });
   return encodedRedirect(
     "success",
     "/sign-in",

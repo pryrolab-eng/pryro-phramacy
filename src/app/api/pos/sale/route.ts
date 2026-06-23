@@ -34,6 +34,8 @@ import { insertInsuranceClaimLines } from "@/lib/insurance/claim-lines";
 import { awardLoyaltyForSale } from "@/lib/loyalty/award-on-sale";
 import { submitPharmacySaleToEbm } from "@/lib/ebm/submit-sale";
 import { dispatchIntegrationWebhookEvent } from "@/lib/integrations/v1/webhook-deliver";
+import { prisma } from "@/lib/db/prisma";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 type SaleLine = {
   id: string;
@@ -88,6 +90,7 @@ export async function POST(request: NextRequest) {
       insuranceAmount,
       prescriptionConfirmation,
       nearExpiryAcknowledged,
+      paymentTransactionId,
     } = body as {
       customer?: Record<string, unknown>;
       items?: SaleLine[];
@@ -99,6 +102,7 @@ export async function POST(request: NextRequest) {
       insuranceAmount?: number | string;
       prescriptionConfirmation?: PrescriptionConfirmation;
       nearExpiryAcknowledged?: boolean;
+      paymentTransactionId?: string;
     };
 
     const saleItems = items ?? [];
@@ -326,6 +330,17 @@ export async function POST(request: NextRequest) {
       shiftTransactionCount: Number(openShift.transaction_count ?? 0) + 1,
     });
 
+    if (paymentTransactionId) {
+      try {
+        await prisma.payment_transactions.update({
+          where: { id: paymentTransactionId },
+          data: { sale_id: sale.id as string },
+        });
+      } catch (linkError) {
+        console.error("Failed to link payment transaction to sale:", linkError);
+      }
+    }
+
     if (insuranceProviderId && resolvedInsuranceCoverage > 0) {
       try {
         const claim = await storeCreateInsuranceClaim({
@@ -422,6 +437,30 @@ export async function POST(request: NextRequest) {
     } catch (webhookError) {
       console.error("sale.completed webhook:", webhookError);
     }
+
+    await writeAuditLog({
+      pharmacyId: pharmacy_id,
+      userId: user.id,
+      action: "INSERT",
+      tableName: "sales",
+      recordId: String(sale.id),
+      newValues: {
+        saleId: sale.id,
+        receiptNumber,
+        branchId,
+        total: saleTotal,
+        paymentMethod: dbPaymentMethod,
+        itemCount: saleItems.length,
+        ebm: ebmSubmission
+          ? {
+              ok: ebmSubmission.ok,
+              mode: ebmSubmission.mode,
+              ebmNumber: ebmSubmission.ebmNumber ?? null,
+            }
+          : null,
+      },
+      ...auditRequestMetadata(request),
+    });
 
     return NextResponse.json({
       success: true,

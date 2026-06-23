@@ -132,6 +132,13 @@ export async function updatePlatformApiKeyFromDb(input: {
   });
 }
 
+export async function deletePlatformApiKeyFromDb(id: string) {
+  const result = await prisma.api_keys.deleteMany({
+    where: { id, pharmacy_id: null },
+  });
+  return result.count > 0;
+}
+
 export async function listGlobalInsuranceTemplatesFromDb() {
   return prisma.insurance_templates.findMany({
     where: { pharmacy_id: null },

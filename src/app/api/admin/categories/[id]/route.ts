@@ -4,6 +4,7 @@ import {
   storeDeleteGlobalCategory,
   storeUpdateGlobalCategory,
 } from "@/lib/db/admin-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function PUT(
   request: NextRequest,
@@ -22,6 +23,15 @@ export async function PUT(
       description: body.description,
       isActive: body.status === "Active",
     });
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "UPDATE",
+      tableName: "medication_categories",
+      recordId: id,
+      newValues: category,
+      ...auditRequestMetadata(request),
+    });
 
     return NextResponse.json({ success: true, category });
   } catch (error) {
@@ -34,7 +44,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
@@ -51,6 +61,16 @@ export async function DELETE(
         { status: 404 },
       );
     }
+
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "DELETE",
+      tableName: "medication_categories",
+      recordId: id,
+      oldValues: { id },
+      ...auditRequestMetadata(request),
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -5,6 +5,7 @@ import {
   storeDisableTwoFactor,
   storeGetTwoFactorEnabled,
 } from "@/lib/db/public-users-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,6 +26,15 @@ export async function POST(request: NextRequest) {
 
     if (!enabled) {
       await storeDisableTwoFactor(user.id);
+      await writeAuditLog({
+        pharmacyId: null,
+        userId: user.id,
+        action: "UPDATE",
+        tableName: "auth.users",
+        recordId: user.id,
+        newValues: { twoFactorEnabled: false },
+        ...auditRequestMetadata(request),
+      });
       return NextResponse.json({ success: true, enabled: false });
     }
 

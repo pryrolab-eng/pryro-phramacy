@@ -58,26 +58,41 @@ const pharmacistNavigation = [
 
 function SubscriptionPlanCard() {
   const [planData, setPlanData] = useState({
-    plan: 'Standard',
-    daysRemaining: 25,
-    totalDays: 30,
-    status: 'active'
+    plan: 'Free',
+    daysRemaining: null as number | null,
+    status: 'free',
   })
 
   useEffect(() => {
-    // Calculate days remaining (mock data)
-    const endDate = new Date()
-    endDate.setDate(endDate.getDate() + 25)
-    const today = new Date()
-    const diffTime = endDate.getTime() - today.getTime()
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    
-    setPlanData(prev => ({ ...prev, daysRemaining: diffDays }))
+    let cancelled = false
+
+    async function loadSubscriptionStatus() {
+      try {
+        const response = await fetch('/api/subscriptions/status')
+        if (!response.ok) return
+        const data = await response.json()
+        if (cancelled) return
+        setPlanData({
+          plan: data.plan?.name ?? 'Free',
+          daysRemaining:
+            typeof data.daysRemaining === 'number' ? data.daysRemaining : null,
+          status: data.status ?? 'free',
+        })
+      } catch {
+        // Keep the default free-plan display when status cannot be loaded.
+      }
+    }
+
+    void loadSubscriptionStatus()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const getStatusColor = () => {
-    if (planData.daysRemaining <= 7) return 'text-red-600 bg-red-50'
-    if (planData.daysRemaining <= 15) return 'text-orange-600 bg-orange-50'
+    if (planData.status === 'expired') return 'text-red-600 bg-red-50'
+    if (planData.daysRemaining != null && planData.daysRemaining <= 7) return 'text-red-600 bg-red-50'
+    if (planData.daysRemaining != null && planData.daysRemaining <= 15) return 'text-orange-600 bg-orange-50'
     return 'text-green-600 bg-green-50'
   }
 
@@ -92,7 +107,7 @@ function SubscriptionPlanCard() {
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-gray-500">Days remaining</span>
             <span className={`text-[10px] px-1 py-0.5 rounded ${getStatusColor()}`}>
-              {planData.daysRemaining} days
+              {planData.daysRemaining == null ? 'No expiry' : `${planData.daysRemaining} days`}
             </span>
           </div>
           <Link href={PHARMACY_ROUTES.settings} className="block">

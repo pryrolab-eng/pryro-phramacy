@@ -6,6 +6,8 @@ import {
   type UploadCategory,
 } from "@/lib/storage/local-files";
 import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".png": "image/png",
@@ -16,6 +18,8 @@ const MIME_BY_EXT: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".pdf": "application/pdf",
   ".csv": "text/csv",
+  ".json": "application/json",
+  ".txt": "text/plain",
   ".xlsx":
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ".xls": "application/vnd.ms-excel",
@@ -48,6 +52,18 @@ export async function GET(
   const objectPath = segments.map(decodeURIComponent).join("/");
   if (!objectPath || objectPath.includes("..")) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (category === UPLOAD_CATEGORIES.pharmacyFiles) {
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const pharmacyId = await requireSessionPharmacyId(user.id);
+    if (!objectPath.startsWith(`${pharmacyId}/`)) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
   }
 
   try {

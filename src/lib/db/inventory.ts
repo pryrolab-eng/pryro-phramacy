@@ -1,4 +1,4 @@
-import type { medication_category, Prisma } from "@prisma/client";
+import { Prisma, type medication_category } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 
 export type InventoryMedicationSummary = {
@@ -12,6 +12,7 @@ export type InventoryListRow = {
   pharmacy_id: string | null;
   branch_id: string | null;
   medication_id: string | null;
+  stock_location_id: string | null;
   batch_number: string;
   quantity_in_stock: number | null;
   selling_price: number | null;
@@ -19,6 +20,7 @@ export type InventoryListRow = {
   expiry_date: Date | null;
   unit_cost: number | null;
   medications: InventoryMedicationSummary | null;
+  stock_locations: { id: string; name: string } | null;
 };
 
 function decimalToNumber(value: Prisma.Decimal | null | undefined): number | null {
@@ -26,7 +28,57 @@ function decimalToNumber(value: Prisma.Decimal | null | undefined): number | nul
   return Number(value);
 }
 
+export function isMissingStockLocationColumn(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2022" &&
+    String(error.meta?.column ?? "").includes("stock_location_id")
+  );
+}
+
 function mapInventoryRow(row: {
+  id: string;
+  pharmacy_id: string | null;
+  branch_id: string | null;
+  medication_id: string | null;
+  stock_location_id: string | null;
+  batch_number: string;
+  quantity_in_stock: number | null;
+  selling_price: Prisma.Decimal | null;
+  minimum_stock_level: number | null;
+  expiry_date: Date | null;
+  unit_cost: Prisma.Decimal | null;
+  medications: {
+    name: string;
+    category: medication_category | null;
+    pharmacy_id: string | null;
+  } | null;
+  stock_locations: { id: string; name: string } | null;
+}): InventoryListRow {
+  return {
+    id: row.id,
+    pharmacy_id: row.pharmacy_id,
+    branch_id: row.branch_id,
+    medication_id: row.medication_id,
+    stock_location_id: row.stock_location_id,
+    batch_number: row.batch_number,
+    quantity_in_stock: row.quantity_in_stock,
+    selling_price: decimalToNumber(row.selling_price),
+    minimum_stock_level: row.minimum_stock_level,
+    expiry_date: row.expiry_date,
+    unit_cost: decimalToNumber(row.unit_cost),
+    medications: row.medications
+      ? {
+          name: row.medications.name,
+          category: row.medications.category ?? "otc",
+          pharmacy_id: row.medications.pharmacy_id,
+        }
+      : null,
+    stock_locations: row.stock_locations,
+  };
+}
+
+function mapInventoryRowWithoutStockLocation(row: {
   id: string;
   pharmacy_id: string | null;
   branch_id: string | null;
@@ -43,80 +95,146 @@ function mapInventoryRow(row: {
     pharmacy_id: string | null;
   } | null;
 }): InventoryListRow {
-  return {
-    id: row.id,
-    pharmacy_id: row.pharmacy_id,
-    branch_id: row.branch_id,
-    medication_id: row.medication_id,
-    batch_number: row.batch_number,
-    quantity_in_stock: row.quantity_in_stock,
-    selling_price: decimalToNumber(row.selling_price),
-    minimum_stock_level: row.minimum_stock_level,
-    expiry_date: row.expiry_date,
-    unit_cost: decimalToNumber(row.unit_cost),
-    medications: row.medications
-      ? {
-          name: row.medications.name,
-          category: row.medications.category ?? "otc",
-          pharmacy_id: row.medications.pharmacy_id,
-        }
-      : null,
-  };
+  return mapInventoryRow({
+    ...row,
+    stock_location_id: null,
+    stock_locations: null,
+  });
+}
+
+function slugifyLocation(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+export async function resolveStockLocationId(input: {
+  pharmacyId: string;
+  value?: string | null;
+}): Promise<string | null> {
+  const raw = input.value?.trim();
+  if (!raw) return null;
+
+  const locations = await prisma.stock_locations.findMany({
+    where: { pharmacy_id: input.pharmacyId, is_active: true },
+    select: { id: true, name: true },
+    orderBy: { created_at: "asc" },
+  });
+  if (locations.length === 0) return null;
+
+  const byId = locations.find((location) => location.id === raw);
+  if (byId) return byId.id;
+
+  const wanted = slugifyLocation(raw);
+  const bySlug = locations.find((location) => slugifyLocation(location.name) === wanted);
+  return bySlug?.id ?? locations[0]?.id ?? null;
 }
 
 export async function listInventoryForPharmacy(
   pharmacyId: string,
   branchId?: string | null,
 ): Promise<InventoryListRow[]> {
-  const rows = await prisma.inventory.findMany({
-    where: {
-      pharmacy_id: pharmacyId,
-      ...(branchId ? { branch_id: branchId } : {}),
-      medications: { pharmacy_id: pharmacyId },
-    },
-    select: {
-      id: true,
-      pharmacy_id: true,
-      branch_id: true,
-      medication_id: true,
-      batch_number: true,
-      quantity_in_stock: true,
-      selling_price: true,
-      minimum_stock_level: true,
-      expiry_date: true,
-      unit_cost: true,
-      medications: {
-        select: { name: true, category: true, pharmacy_id: true },
-      },
-    },
-  });
+  const where = {
+    pharmacy_id: pharmacyId,
+    ...(branchId ? { branch_id: branchId } : {}),
+    medications: { pharmacy_id: pharmacyId },
+  };
 
-  return rows.map(mapInventoryRow);
+  try {
+    const rows = await prisma.inventory.findMany({
+      where,
+      select: {
+        id: true,
+        pharmacy_id: true,
+        branch_id: true,
+        medication_id: true,
+        stock_location_id: true,
+        batch_number: true,
+        quantity_in_stock: true,
+        selling_price: true,
+        minimum_stock_level: true,
+        expiry_date: true,
+        unit_cost: true,
+        medications: {
+          select: { name: true, category: true, pharmacy_id: true },
+        },
+        stock_locations: { select: { id: true, name: true } },
+      },
+    });
+
+    return rows.map(mapInventoryRow);
+  } catch (error) {
+    if (!isMissingStockLocationColumn(error)) throw error;
+    const rows = await prisma.inventory.findMany({
+      where,
+      select: {
+        id: true,
+        pharmacy_id: true,
+        branch_id: true,
+        medication_id: true,
+        batch_number: true,
+        quantity_in_stock: true,
+        selling_price: true,
+        minimum_stock_level: true,
+        expiry_date: true,
+        unit_cost: true,
+        medications: {
+          select: { name: true, category: true, pharmacy_id: true },
+        },
+      },
+    });
+    return rows.map(mapInventoryRowWithoutStockLocation);
+  }
 }
 
 export async function listInventoryAlertsForPharmacy(
   pharmacyId: string,
 ): Promise<InventoryListRow[]> {
-  const rows = await prisma.inventory.findMany({
-    where: { pharmacy_id: pharmacyId },
-    select: {
-      id: true,
-      pharmacy_id: true,
-      branch_id: true,
-      medication_id: true,
-      batch_number: true,
-      quantity_in_stock: true,
-      selling_price: true,
-      minimum_stock_level: true,
-      expiry_date: true,
-      unit_cost: true,
-      medications: {
-        select: { name: true, category: true, pharmacy_id: true },
-      },
-    },
-  });
+  const where = { pharmacy_id: pharmacyId };
 
-  return rows.map(mapInventoryRow);
+  try {
+    const rows = await prisma.inventory.findMany({
+      where,
+      select: {
+        id: true,
+        pharmacy_id: true,
+        branch_id: true,
+        medication_id: true,
+        stock_location_id: true,
+        batch_number: true,
+        quantity_in_stock: true,
+        selling_price: true,
+        minimum_stock_level: true,
+        expiry_date: true,
+        unit_cost: true,
+        medications: {
+          select: { name: true, category: true, pharmacy_id: true },
+        },
+        stock_locations: { select: { id: true, name: true } },
+      },
+    });
+
+    return rows.map(mapInventoryRow);
+  } catch (error) {
+    if (!isMissingStockLocationColumn(error)) throw error;
+    const rows = await prisma.inventory.findMany({
+      where,
+      select: {
+        id: true,
+        pharmacy_id: true,
+        branch_id: true,
+        medication_id: true,
+        batch_number: true,
+        quantity_in_stock: true,
+        selling_price: true,
+        minimum_stock_level: true,
+        expiry_date: true,
+        unit_cost: true,
+        medications: {
+          select: { name: true, category: true, pharmacy_id: true },
+        },
+      },
+    });
+    return rows.map(mapInventoryRowWithoutStockLocation);
+  }
 }
 
 export async function findMedicationByName(
@@ -175,7 +293,32 @@ export async function createInventoryRow(input: {
   sellingPrice: number;
   minimumStockLevel: number;
   expiryDate: string | Date;
+  stockLocationId?: string | null;
 }): Promise<Record<string, unknown>> {
+  const data = {
+    pharmacy_id: input.pharmacyId,
+    branch_id: input.branchId,
+    medication_id: input.medicationId,
+    batch_number: input.batchNumber,
+    quantity_in_stock: input.quantityInStock,
+    unit_cost: input.unitCost,
+    selling_price: input.sellingPrice,
+    minimum_stock_level: input.minimumStockLevel,
+    expiry_date: new Date(input.expiryDate),
+    ...(input.stockLocationId
+      ? { stock_location_id: input.stockLocationId }
+      : {}),
+  };
+
+  try {
+    const row = await prisma.inventory.create({ data });
+    return row as unknown as Record<string, unknown>;
+  } catch (error) {
+    if (!input.stockLocationId || !isMissingStockLocationColumn(error)) {
+      throw error;
+    }
+  }
+
   const row = await prisma.inventory.create({
     data: {
       pharmacy_id: input.pharmacyId,
@@ -209,23 +352,43 @@ export async function updateInventoryItem(
     selling_price?: number;
     minimum_stock_level?: number;
     unit_cost?: number;
+    stock_location_id?: string | null;
   },
 ): Promise<void> {
-  await prisma.inventory.update({
-    where: { id },
-    data: {
-      ...(data.quantity_in_stock !== undefined
-        ? { quantity_in_stock: data.quantity_in_stock }
-        : {}),
-      ...(data.selling_price !== undefined
-        ? { selling_price: data.selling_price }
-        : {}),
-      ...(data.minimum_stock_level !== undefined
-        ? { minimum_stock_level: data.minimum_stock_level }
-        : {}),
-      ...(data.unit_cost !== undefined ? { unit_cost: data.unit_cost } : {}),
-    },
-  });
+  const updateData = {
+    ...(data.quantity_in_stock !== undefined
+      ? { quantity_in_stock: data.quantity_in_stock }
+      : {}),
+    ...(data.selling_price !== undefined
+      ? { selling_price: data.selling_price }
+      : {}),
+    ...(data.minimum_stock_level !== undefined
+      ? { minimum_stock_level: data.minimum_stock_level }
+      : {}),
+    ...(data.unit_cost !== undefined ? { unit_cost: data.unit_cost } : {}),
+    ...(data.stock_location_id !== undefined
+      ? { stock_location_id: data.stock_location_id }
+      : {}),
+  };
+
+  try {
+    await prisma.inventory.update({ where: { id }, data: updateData });
+  } catch (error) {
+    if (
+      data.stock_location_id === undefined ||
+      !isMissingStockLocationColumn(error)
+    ) {
+      throw error;
+    }
+    const { stock_location_id: _stockLocationId, ...withoutStockLocation } =
+      updateData;
+    if (Object.keys(withoutStockLocation).length > 0) {
+      await prisma.inventory.update({
+        where: { id },
+        data: withoutStockLocation,
+      });
+    }
+  }
 }
 
 export async function getInventoryQuantity(

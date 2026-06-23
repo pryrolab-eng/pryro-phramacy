@@ -53,7 +53,10 @@ export function AdminCommandPalette() {
   const searchQuery = useAdminGlobalSearch(query, open);
   const searching = isGlobalSearchQuery(query);
   const searchData = searchQuery.data;
-  const hasDataHits = (searchData?.pharmacies.length ?? 0) > 0;
+  const hasDataHits =
+    (searchData?.pharmacies.length ?? 0) > 0 ||
+    (searchData?.staff?.length ?? 0) > 0 ||
+    (searchData?.branches?.length ?? 0) > 0;
 
   const handleOpenChange = useCallback((next: boolean) => {
     setOpen(next);
@@ -135,7 +138,7 @@ export function AdminCommandPalette() {
         <CommandEmpty>{emptyMessage}</CommandEmpty>
 
         {searching && (searchQuery.isDebouncing || searchQuery.isFetching) ? (
-          <CommandGroup heading="Pharmacies">
+          <CommandGroup heading="Search results">
             <div className="px-3 py-4 text-center text-sm text-muted-foreground">
               Searching…
             </div>
@@ -149,9 +152,9 @@ export function AdminCommandPalette() {
               onNavigate={navigate}
             />
           ) : (
-            <CommandGroup heading="Pharmacies">
+            <CommandGroup heading="Search results">
               <div className="px-3 py-4 text-center text-sm text-muted-foreground">
-                No pharmacies found for &ldquo;{query.trim()}&rdquo;.
+                No results found for &ldquo;{query.trim()}&rdquo;.
               </div>
             </CommandGroup>
           )
@@ -168,7 +171,7 @@ export function AdminCommandPalette() {
       </CommandList>
       <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 border-t px-3 py-2 text-xs text-muted-foreground">
         <span>
-          Type {MIN_GLOBAL_SEARCH_LENGTH}+ chars for pharmacies
+          Type {MIN_GLOBAL_SEARCH_LENGTH}+ chars for search
         </span>
         <span>
           <CommandShortcut className="inline">↑↓</CommandShortcut> navigate

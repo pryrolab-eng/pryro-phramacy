@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
-import { getBackupEnabled } from "@/lib/platform-settings";
 import { runPgDumpBackup } from "@/lib/backups/pg-dump";
 import {
   storeCreateBackup,
@@ -35,16 +34,6 @@ export async function POST(request: NextRequest) {
     const auth = await requirePlatformAdminApi();
     if (!auth.ok) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
-    }
-
-    if (!(await getBackupEnabled())) {
-      return NextResponse.json(
-        {
-          error: "backups_disabled",
-          message: "Backups are disabled in Admin → Settings → Operations.",
-        },
-        { status: 403 },
-      );
     }
 
     const body = await request.json().catch(() => ({}));

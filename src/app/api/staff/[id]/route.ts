@@ -16,6 +16,7 @@ import {
   storeFindPharmacyUser,
   storeUpdateStaffMember,
 } from "@/lib/db/staff-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function PUT(
   request: NextRequest,
@@ -73,6 +74,28 @@ export async function PUT(
       }
     }
 
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "pharmacy_users",
+      recordId: pharmacyUserId,
+      oldValues: {
+        role: member.role,
+        is_active: member.is_active,
+        user_id: member.user_id,
+      },
+      newValues: {
+        name: body.name,
+        phone: body.phone,
+        role: body.role,
+        isActive:
+          body.status !== undefined ? body.status !== "inactive" : undefined,
+        passwordChanged: Boolean(body.password && String(body.password).trim()),
+      },
+      ...auditRequestMetadata(request),
+    });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     const forbidden = permissionErrorResponse(error);
@@ -110,6 +133,19 @@ export async function DELETE(
     }
 
     await storeDeletePharmacyUser(pharmacyUserId);
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "DELETE",
+      tableName: "pharmacy_users",
+      recordId: pharmacyUserId,
+      oldValues: {
+        role: member.role,
+        is_active: member.is_active,
+        user_id: member.user_id,
+      },
+      ...auditRequestMetadata(request),
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

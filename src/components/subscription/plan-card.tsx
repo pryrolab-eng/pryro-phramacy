@@ -13,7 +13,7 @@ import { DashboardButton } from "@/components/dashboard";
 import { PlanFeatureList } from "@/components/subscription/plan-feature-list";
 import { cn } from "@/lib/utils";
 
-export type PlanCardAction = "current" | "upgrade" | "downgrade";
+export type PlanCardAction = "current" | "upgrade" | "downgrade" | "subscribe";
 
 export type CatalogPlan = {
   id: string;
@@ -43,8 +43,9 @@ export function PlanCard({
   const isCurrent = action === "current";
   const isUpgrade = action === "upgrade";
   const isDowngrade = action === "downgrade";
+  const isSubscribe = action === "subscribe";
   const isRecommended =
-    isUpgrade && plan.name.toLowerCase() === "standard";
+    (isUpgrade || isSubscribe) && plan.name.toLowerCase() === "standard";
 
   return (
     <article
@@ -69,7 +70,7 @@ export function PlanCard({
           <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
             Lower tier
           </span>
-        ) : isUpgrade ? (
+        ) : isUpgrade || isSubscribe ? (
           <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200">
             Higher tier
           </span>
@@ -160,6 +161,16 @@ export function PlanCard({
             >
               <ArrowDown className="mr-1.5 size-4" />
               Schedule downgrade
+            </DashboardButton>
+          ) : isSubscribe ? (
+            <DashboardButton
+              type="button"
+              tone="primary"
+              className="w-full"
+              onClick={onSelect}
+            >
+              <ArrowUpRight className="mr-1.5 size-4" />
+              Subscribe
             </DashboardButton>
           ) : (
             <DashboardButton

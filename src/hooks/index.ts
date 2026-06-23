@@ -108,6 +108,7 @@ export {
   useAdminIpWhitelist,
   useAddAdminIpWhitelistMutation,
   useCreateAdminApiKeyMutation,
+  useDeleteAdminApiKeyMutation,
   useRemoveAdminIpWhitelistMutation,
   useUpdateAdminApiKeyMutation,
   type AdminApiKeyRow,

@@ -272,10 +272,10 @@ Nine configuration cards, all persisted to `system_settings` via `PUT /api/admin
 | Platform Configuration | Platform name, admin email, maximum pharmacies |
 | Multi-Tenant Settings | Max users per pharmacy, enable multi-branch, white-label features |
 | API & Integration Limits | API rate limit (requests/hour), integration health status display |
-| Security & Access | Enable new registrations, SSO integration, data encryption |
+| Security & Access | Enable new registrations, platform IP policy, data protection status |
 | Compliance & Audit | Data retention days, audit logging, compliance report download (UI only) |
 | System Operations | Maintenance mode, enable notifications, system health dashboard (UI only) |
-| System Management | Automatic backups, automatic updates, system load display (hardcoded at 45%) |
+| System Management | Automatic backups, deployment-managed updates, dynamic system load display |
 | Stock Locations | List existing locations; add new location via dialog (calls `/api/settings/locations`) |
 | Platform Analytics | Active pharmacies, total users, new users (30d), API usage (hardcoded at 78%) |
 

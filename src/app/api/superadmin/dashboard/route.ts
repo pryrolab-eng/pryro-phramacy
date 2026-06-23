@@ -29,16 +29,38 @@ export async function GET() {
     )
     const totalUsers = users.length
 
-    const thisMonth = new Date().getMonth()
+    const now = new Date()
+    const thisMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    const nextMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
+    const previousMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
     const newRegistrations = pharmacies.filter(
-      (p) => p.created_at && new Date(p.created_at).getMonth() === thisMonth,
+      (p) =>
+        p.created_at &&
+        p.created_at >= thisMonthStart &&
+        p.created_at < nextMonthStart,
     ).length
+    const previousRegistrations = pharmacies.filter(
+      (p) =>
+        p.created_at &&
+        p.created_at >= previousMonthStart &&
+        p.created_at < thisMonthStart,
+    ).length
+    const monthlyGrowth =
+      previousRegistrations > 0
+        ? Math.round(
+            ((newRegistrations - previousRegistrations) /
+              previousRegistrations) *
+              1000,
+          ) / 10
+        : newRegistrations > 0
+          ? 100
+          : 0
 
     return NextResponse.json({
       totalPharmacies,
       activePharmacies,
       totalRevenue,
-      monthlyGrowth: 15.2,
+      monthlyGrowth,
       totalUsers,
       newRegistrations,
     })

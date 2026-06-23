@@ -13,6 +13,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { FeatureGate } from "@/components/subscription/feature-gate";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { History } from "lucide-react";
+import { ApiError } from "@/lib/http/client";
 
 function actionVariant(action: string): "default" | "secondary" | "destructive" | "outline" {
   if (action === "DELETE") return "destructive";
@@ -23,6 +24,10 @@ function actionVariant(action: string): "default" | "secondary" | "destructive" 
 export default function ActivityPage() {
   const logsQuery = useActivityLogs();
   const items = logsQuery.data?.items ?? [];
+  const auditLogsDisabled =
+    logsQuery.error instanceof ApiError &&
+    logsQuery.error.status === 403 &&
+    logsQuery.error.message === "audit_logs_disabled";
 
   return (
     <FeatureGate featureKey="reports.view">
@@ -40,6 +45,12 @@ export default function ActivityPage() {
             <div className="flex justify-center py-12">
               <Spinner className="size-6" />
             </div>
+          ) : auditLogsDisabled ? (
+            <DashboardPanelEmpty
+              icon={History}
+              title="Activity logging is disabled"
+              description="Audit logs have been turned off by the platform administrator."
+            />
           ) : items.length === 0 ? (
             <DashboardPanelEmpty
               icon={History}

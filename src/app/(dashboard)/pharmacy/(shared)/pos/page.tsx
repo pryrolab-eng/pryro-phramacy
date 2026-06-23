@@ -73,10 +73,12 @@ import { PosWorkspace } from '@/components/pos/pos-workspace'
 import { PosAddProductForm } from '@/components/pos/pos-add-product-form'
 import { PosInsuranceProcessingDialog } from '@/components/pos/pos-insurance-processing-dialog'
 import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
+import type { AiSafetyResult } from '@/lib/http/pos'
 
 type Product = PosProduct
 type CartItem = PosCartItem
 type Customer = PosCustomer
+type PosUtilityDialog = 'customer-lookup' | 'price-check' | 'void-sale' | null
 
 export default function POSPage() {
   return (
@@ -122,8 +124,11 @@ function POSPageContent() {
   const [ramaBeneficiaryOpen, setRamaBeneficiaryOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [returnsDialogOpen, setReturnsDialogOpen] = useState(false)
+  const [utilityDialog, setUtilityDialog] = useState<PosUtilityDialog>(null)
+  const [utilityInput, setUtilityInput] = useState('')
+  const [utilityReason, setUtilityReason] = useState('User requested')
   const [aiSafetyOpen, setAiSafetyOpen] = useState(false)
-  const [aiSafetyResult, setAiSafetyResult] = useState<any>(null)
+  const [aiSafetyResult, setAiSafetyResult] = useState<AiSafetyResult | null>(null)
   const [aiSafetyLoading, setAiSafetyLoading] = useState(false)
   const [rxDialogOpen, setRxDialogOpen] = useState(false)
   const [pendingNearExpiry, setPendingNearExpiry] = useState<PosProduct | null>(null)
@@ -149,6 +154,74 @@ function POSPageContent() {
   const aiSafetyMutation = useAnalyzeCartSafetyMutation()
   const insuranceLookupMutation = useInsuranceLookupMutation()
   const insuranceProcessMutation = useInsuranceProcessMutation()
+
+  const openUtilityDialog = useCallback((dialog: Exclude<PosUtilityDialog, null>) => {
+    setUtilityDialog(dialog)
+    setUtilityInput('')
+    setUtilityReason(dialog === 'void-sale' ? 'User requested' : '')
+  }, [])
+
+  const closeUtilityDialog = useCallback(() => {
+    setUtilityDialog(null)
+    setUtilityInput('')
+    setUtilityReason('User requested')
+  }, [])
+
+  const runUtilityDialog = useCallback(async () => {
+    const value = utilityInput.trim()
+    if (!utilityDialog || !value) return
+
+    try {
+      if (utilityDialog === 'customer-lookup') {
+        const customers = await customerLookupMutation.mutateAsync(value)
+        if (customers.length) {
+          const found = customers[0]
+          setCustomer((current) => ({
+            ...current,
+            name: found.name,
+            phone: found.phone ?? value,
+          }))
+          toast.success(`Found ${found.name}`)
+        } else {
+          toast.info('Customer not found')
+        }
+      }
+
+      if (utilityDialog === 'price-check') {
+        const found = await priceCheckMutation.mutateAsync(value)
+        if (found.length) {
+          toast.success(`${found[0].name}: ${found[0].price} RWF`)
+          setSearchTerm(value)
+        } else {
+          toast.info('Product not found')
+        }
+      }
+
+      if (utilityDialog === 'void-sale') {
+        const data = await voidSaleMutation.mutateAsync({
+          saleId: value,
+          reason: utilityReason.trim() || 'User requested',
+        })
+        if (data.success) {
+          toast.success('Sale voided successfully')
+        } else {
+          toast.error(data.error || 'Failed to void sale')
+        }
+      }
+
+      closeUtilityDialog()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Action failed')
+    }
+  }, [
+    closeUtilityDialog,
+    customerLookupMutation,
+    priceCheckMutation,
+    utilityDialog,
+    utilityInput,
+    utilityReason,
+    voidSaleMutation,
+  ])
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
       if (
@@ -216,21 +289,35 @@ function POSPageContent() {
     const code = searchTerm.trim()
     if (!code) {
       searchInputRef.current?.focus()
+      toast.info('Scan or enter a barcode in the product search field.')
       return
     }
+    const normalizedCode = code.toLowerCase()
     const byBarcode = productGroups.filter(
-      (g) => g.barcode && g.barcode === code,
+      (g) => g.barcode && g.barcode.toLowerCase() === normalizedCode,
     )
     if (byBarcode.length === 1) {
       handleAddGroup(byBarcode[0]!)
       setSearchTerm('')
+      toast.success(`${byBarcode[0]!.name} added from barcode`)
       return
     }
     if (filteredGroups.length === 1) {
       handleAddGroup(filteredGroups[0]!)
       setSearchTerm('')
+      toast.success(`${filteredGroups[0]!.name} added`)
+      return
     }
+    if (byBarcode.length > 1 || filteredGroups.length > 1) {
+      toast.info('Multiple products match. Select the correct product from the catalog.')
+      return
+    }
+    toast.info('No product matched that barcode or search.')
   }, [searchTerm, productGroups, filteredGroups, handleAddGroup])
+
+  useEffect(() => {
+    setAiSafetyResult(null)
+  }, [cart])
 
   const updateQuantity = (inventoryId: string, quantity: number) => {
     const { cart: next, error } = setCartLineQuantity(
@@ -344,6 +431,7 @@ function POSPageContent() {
   const completeSale = async (opts?: {
     prescriptionConfirmation?: PrescriptionConfirmation
     nearExpiryAcknowledged?: boolean
+    paymentTransactionId?: string
   }) => {
     if (cart.length === 0) {
       alert('Cart is empty. Add items to process sale.')
@@ -411,6 +499,7 @@ function POSPageContent() {
       prescriptionConfirmation,
       nearExpiryAcknowledged:
         opts?.nearExpiryAcknowledged ?? nearExpiryAcknowledged ?? cartHasNearExpiry(cart),
+      paymentTransactionId: opts?.paymentTransactionId || undefined,
     }
     
     try {
@@ -726,40 +815,9 @@ function POSPageContent() {
           const data = await holdSaleMutation.mutateAsync({ cart, customer })
           alert(data.success ? 'Sale held successfully!' : 'Failed to hold sale')
         }}
-        onLookupCustomer={async () => {
-          const phone = prompt('Enter customer phone:')
-          if (phone) {
-            const customers = await customerLookupMutation.mutateAsync(phone)
-            alert(
-              customers.length
-                ? `Found: ${customers[0].name}`
-                : 'Customer not found',
-            )
-          }
-        }}
-        onPriceCheck={async () => {
-          const query = prompt('Enter product name or barcode:')
-          if (query) {
-            const found = await priceCheckMutation.mutateAsync(query)
-            alert(
-              found.length
-                ? `${found[0].name}: ${found[0].price} RWF`
-                : 'Product not found',
-            )
-          }
-        }}
-        onVoidSale={async () => {
-          const saleId = prompt('Enter sale ID to void:')
-          if (saleId) {
-            const data = await voidSaleMutation.mutateAsync({
-              saleId,
-              reason: 'User requested',
-            })
-            alert(
-              data.success ? 'Sale voided successfully!' : 'Failed to void sale',
-            )
-          }
-        }}
+        onLookupCustomer={() => openUtilityDialog('customer-lookup')}
+        onPriceCheck={() => openUtilityDialog('price-check')}
+        onVoidSale={() => openUtilityDialog('void-sale')}
         onBackupCart={() => {
           localStorage.setItem(
             'pos_backup',
@@ -804,6 +862,82 @@ function POSPageContent() {
             })
           }
         />
+      </FeatureGate>
+
+      <Dialog open={utilityDialog !== null} onOpenChange={(open) => !open && closeUtilityDialog()}>
+        <DashboardDialogContent className="sm:max-w-md">
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>
+              {utilityDialog === 'customer-lookup' && 'Lookup customer'}
+              {utilityDialog === 'price-check' && 'Check product price'}
+              {utilityDialog === 'void-sale' && 'Void sale'}
+            </DashboardDialogTitle>
+            <DashboardDialogDescription>
+              {utilityDialog === 'customer-lookup' &&
+                'Search by customer phone and apply the first match to the sale.'}
+              {utilityDialog === 'price-check' &&
+                'Search by product name or barcode before adding it to the cart.'}
+              {utilityDialog === 'void-sale' &&
+                'Enter the sale ID and reason before voiding a completed sale.'}
+            </DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogBody className="space-y-3">
+            <Input
+              autoFocus
+              value={utilityInput}
+              onChange={(event) => setUtilityInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  void runUtilityDialog()
+                }
+              }}
+              placeholder={
+                utilityDialog === 'customer-lookup'
+                  ? 'Customer phone'
+                  : utilityDialog === 'price-check'
+                    ? 'Product name or barcode'
+                    : 'Sale ID'
+              }
+            />
+            {utilityDialog === 'void-sale' && (
+              <Input
+                value={utilityReason}
+                onChange={(event) => setUtilityReason(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    void runUtilityDialog()
+                  }
+                }}
+                placeholder="Void reason"
+              />
+            )}
+          </DashboardDialogBody>
+          <DashboardDialogActions
+            confirmLabel={
+              utilityDialog === 'customer-lookup'
+                ? 'Lookup'
+                : utilityDialog === 'price-check'
+                  ? 'Check price'
+                  : 'Void sale'
+            }
+            onConfirm={() => void runUtilityDialog()}
+            confirmDisabled={
+              !utilityInput.trim() ||
+              customerLookupMutation.isPending ||
+              priceCheckMutation.isPending ||
+              voidSaleMutation.isPending
+            }
+            confirmLoading={
+              customerLookupMutation.isPending ||
+              priceCheckMutation.isPending ||
+              voidSaleMutation.isPending
+            }
+            onCancel={closeUtilityDialog}
+          />
+        </DashboardDialogContent>
+      </Dialog>
 
       <Dialog open={ramaBeneficiaryOpen} onOpenChange={setRamaBeneficiaryOpen}>
         <DashboardDialogContent className="max-w-2xl">
@@ -899,7 +1033,6 @@ function POSPageContent() {
           />
         </DashboardDialogContent>
       </Dialog>
-      </FeatureGate>
 
       {/* Alerts drawer */}
       {alertsOpen && (
@@ -1249,7 +1382,7 @@ function POSPageContent() {
         </div>
       )}
 
-      {/* AI Safety Check Dialog */}
+      {/* Rule-based Safety Check Dialog */}
       {aiSafetyOpen && (
         <div 
           className="fixed bottom-8 right-8 w-96 bg-blue-50 shadow-lg border z-50 rounded-2xl"
@@ -1281,7 +1414,7 @@ function POSPageContent() {
             <div className="flex items-center justify-between mb-3 cursor-move">
               <h3 className="font-medium flex items-center gap-2">
                 <Brain className="h-4 w-4 text-purple-600" />
-                AI Safety Check
+                Rule-based safety check
               </h3>
               <DashboardButton tone="ghost" size="sm" onClick={() => setAiSafetyOpen(false)}>×</DashboardButton>
             </div>
@@ -1321,11 +1454,11 @@ function POSPageContent() {
                   }}
                   disabled={aiSafetyLoading || cart.length === 0}
                 >
-                  {aiSafetyLoading ? 'Analyzing...' : 'Process Analysis'}
+                  {aiSafetyLoading ? 'Checking...' : 'Run rules'}
                 </DashboardButton>
                 <DashboardButton size="sm" className="rounded-xl" onClick={() => {
                   if (aiSafetyResult) {
-                    const advice = `Safety Analysis:\n\nInteractions: ${aiSafetyResult.interactions.length}\nWarnings: ${aiSafetyResult.warnings.length}\nSeverity: ${aiSafetyResult.severity.toUpperCase()}\n\nRecommendations:\n${aiSafetyResult.recommendations.join('\n')}`
+                    const advice = `Rule-based Safety Check:\n\nInteractions: ${aiSafetyResult.interactions.length}\nWarnings: ${aiSafetyResult.warnings.length}\nSeverity: ${aiSafetyResult.severity.toUpperCase()}\n\nRecommendations:\n${aiSafetyResult.recommendations.join('\n')}`
                     alert(advice)
                   } else {
                     alert('Run analysis first')
@@ -1340,9 +1473,14 @@ function POSPageContent() {
                 aiSafetyResult?.severity === 'caution' ? 'bg-yellow-50' :
                 'bg-blue-50'
               }`}>
-                <h4 className="font-medium mb-1">AI Recommendations</h4>
+                <h4 className="font-medium mb-1">Rule-based recommendations</h4>
                 {aiSafetyResult ? (
                   <div className="space-y-2">
+                    {aiSafetyResult.source ? (
+                      <div className="text-[11px] text-gray-600">
+                        Source: {aiSafetyResult.source.name}
+                      </div>
+                    ) : null}
                     {aiSafetyResult.interactions.length > 0 && (
                       <div>
                         <div className="font-medium text-red-600">Interactions:</div>
@@ -1367,7 +1505,7 @@ function POSPageContent() {
                     </div>
                   </div>
                 ) : (
-                  <div className="text-gray-600">Click "Process Analysis" to check safety</div>
+                  <div className="text-gray-600">Run rules to check safety</div>
                 )}
               </div>
             </div>
@@ -1437,6 +1575,7 @@ function POSPageContent() {
           />
         </DashboardDialogContent>
       </Dialog>
+
     </DashboardPageShell>
   )
 }

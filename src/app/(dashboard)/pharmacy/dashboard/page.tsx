@@ -13,7 +13,6 @@ import {
   type PharmacyDashboardStats,
 } from '@/hooks'
 import { toast } from 'sonner'
-import { createClient } from '../../../../../supabase/client'
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -123,31 +122,26 @@ function PharmacyDashboardContent() {
   const createPharmacistMutation = useCreatePharmacistMutation()
 
   const handleAddPharmacist = async () => {
-    const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.user) {
+    const ctxRes = await fetch('/api/me/context', { credentials: 'include' })
+    if (!ctxRes.ok) {
       toast.error('Please sign in first')
       return
     }
+    const ctx = await ctxRes.json() as {
+      activePharmacyId?: string | null
+      memberships?: Array<{ pharmacyId: string; pharmacyName: string | null; isActive: boolean }>
+    }
+    const activeMembership =
+      ctx.memberships?.find((m) => m.isActive) ??
+      ctx.memberships?.[0]
+    const pharmacyId = ctx.activePharmacyId ?? activeMembership?.pharmacyId
 
-    const { data: currentUser } = await supabase
-      .from('pharmacy_users')
-      .select('pharmacy_id, pharmacies(name)')
-      .eq('user_id', session.user.id)
-      .single()
-
-    if (!currentUser?.pharmacy_id) {
+    if (!pharmacyId) {
       toast.error('Pharmacy not found')
       return
     }
 
-    const pharmacyJoin = currentUser.pharmacies as
-      | { name?: string }
-      | { name?: string }[]
-      | null
-    const pharmacyName = Array.isArray(pharmacyJoin)
-      ? pharmacyJoin[0]?.name
-      : pharmacyJoin?.name
+    const pharmacyName = activeMembership?.pharmacyName ?? undefined
 
     try {
       const invitedEmail = newPharmacist.email
@@ -157,7 +151,7 @@ function PharmacyDashboardContent() {
         full_name: newPharmacist.name,
         phone: newPharmacist.phone,
         role: 'pharmacist',
-        pharmacy_id: currentUser.pharmacy_id,
+        pharmacy_id: pharmacyId,
         pharmacy_name: pharmacyName,
       })
 

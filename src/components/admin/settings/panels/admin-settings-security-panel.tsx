@@ -2,6 +2,7 @@
 
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { DashboardButton } from "@/components/dashboard";
 import {
   SettingsPanelTitle,
@@ -29,9 +30,7 @@ export function AdminSettingsSecurityPanel() {
       />
 
       <SettingsSection title="Your account">
-        <div className="border-b border-neutral-100 pb-4 dark:border-neutral-800">
-          <ChangePasswordSettingsRow description="Update your platform admin sign-in password." />
-        </div>
+        <ChangePasswordSettingsRow description="Update your platform admin sign-in password." />
         <SettingsRow
           title="Two-factor authentication"
           description="Protect your platform admin sign-in with an authenticator app"
@@ -58,11 +57,23 @@ export function AdminSettingsSecurityPanel() {
         </SettingsRow>
         <SettingsRow
           title="IP whitelist"
-          description="Restrict platform admin API and console access to approved addresses"
+          description={
+            settings.ipWhitelistEnabled
+              ? "Platform admin access is limited to approved addresses"
+              : "Restrict platform admin API and console access to approved addresses"
+          }
         >
-          <DashboardButton size="sm" onClick={() => setIsIpWhitelistOpen(true)}>
-            Manage
-          </DashboardButton>
+          <div className="flex items-center gap-2">
+            <DashboardButton size="sm" onClick={() => setIsIpWhitelistOpen(true)}>
+              Manage
+            </DashboardButton>
+            <Switch
+              checked={settings.ipWhitelistEnabled}
+              onCheckedChange={(checked) =>
+                setSettings({ ...settings, ipWhitelistEnabled: checked })
+              }
+            />
+          </div>
         </SettingsRow>
       </SettingsSection>
 
@@ -89,30 +100,14 @@ export function AdminSettingsSecurityPanel() {
             }
           />
         </SettingsRow>
-        <SettingsRow
-          title="SSO integration"
-          description="Single sign-on for enterprise tenants"
-        >
-          <Switch
-            checked={settings.ssoEnabled}
-            onCheckedChange={(checked) =>
-              setSettings({ ...settings, ssoEnabled: checked })
-            }
-          />
-        </SettingsRow>
       </SettingsSection>
 
       <SettingsSection title="Data protection">
         <SettingsRow
           title="Data encryption"
-          description="AES-256 encryption for sensitive platform data"
+          description="Managed by database, hosting, and storage configuration"
         >
-          <Switch
-            checked={settings.encryptionEnabled}
-            onCheckedChange={(checked) =>
-              setSettings({ ...settings, encryptionEnabled: checked })
-            }
-          />
+          <Badge variant="secondary">Platform managed</Badge>
         </SettingsRow>
       </SettingsSection>
     </div>

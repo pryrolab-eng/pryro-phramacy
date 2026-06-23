@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateEvent, WebhookVerificationError } from "@polar-sh/sdk/webhooks";
-import { createServiceClient } from "../../../../../supabase/service";
 import { fulfillPolarSubscription } from "@/lib/polar/fulfillment";
 import { getPolarServer } from "@/lib/polar/client";
 import { resolvePolarFulfillment } from "@/lib/webhooks/polar-events";
@@ -51,7 +50,6 @@ export async function POST(request: NextRequest) {
     throw err;
   }
 
-  const admin = createServiceClient();
   const type = event.type ?? "";
   const data = (event.data ?? {}) as Record<string, unknown>;
   const { shouldFulfill, metadata, checkoutId } = resolvePolarFulfillment(
@@ -68,7 +66,6 @@ export async function POST(request: NextRequest) {
 
   if (shouldFulfill && metadata.subscription_id) {
     const result = await fulfillPolarSubscription(
-      admin,
       metadata,
       checkoutId ?? undefined,
     );

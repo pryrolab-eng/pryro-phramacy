@@ -30,7 +30,7 @@ export default function FAQsFour() {
         {
             id: 'item-4',
             question: 'What payment methods does the POS support?',
-            answer: 'The POS supports cash, card, mobile money, insurance, and mixed payments. KPay integration is available for subscription billing.',
+            answer: 'The POS supports cash, card, mobile money, insurance, and mixed payments. Subscription billing is powered by Polar.',
         },
         {
             id: 'item-5',

@@ -1,95 +1,130 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { createClient } from '../../../../../supabase/server'
-import { getEffectiveSubscriptionLabel } from '@/lib/subscription/effective-plan'
-import { resolveActivePharmacyContext } from '@/lib/pharmacy/active-pharmacy'
-import { createServiceClient } from '../../../../../supabase/service'
-import { isPharmacyOwnerRole } from '@/lib/rbac/pharmacy-roles'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { getEffectiveSubscriptionLabel } from "@/lib/subscription/effective-plan";
+import { isPharmacyOwnerRole } from "@/lib/rbac/pharmacy-roles";
+import { prisma } from "@/lib/db/prisma";
+import { writeAuditLog } from "@/lib/db/audit-logs";
+import {
+  getPharmacyLocaleFromDb,
+  upsertPharmacyLocaleFromDb,
+} from "@/lib/db/pharmacy-locale";
+import { storeFindMembershipAtPharmacy } from "@/lib/db/pharmacy-users-store";
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+    const pharmacyId = await requireUserPharmacyId(user.id);
 
-    const { data: pharmacy, error } = await supabase
-      .from('pharmacies')
-      .select('*')
-      .eq('id', pharmacyId)
-      .single()
-    
-    if (error) throw error
+    const pharmacy = await prisma.pharmacies.findUnique({
+      where: { id: pharmacyId },
+      select: {
+        name: true,
+        license_number: true,
+        city: true,
+        province: true,
+        phone: true,
+        email: true,
+        subscription_plan: true,
+        subscription_expires_at: true,
+      },
+    });
 
-    const subscription = await getEffectiveSubscriptionLabel(
-      supabase,
-      pharmacyId,
-      pharmacy.subscription_plan
-    )
-    
+    if (!pharmacy) {
+      return NextResponse.json({ error: "Pharmacy not found" }, { status: 404 });
+    }
+
+    const subscription = await getEffectiveSubscriptionLabel(pharmacyId,
+      pharmacy.subscription_plan,
+    );
+
+    const locale = await getPharmacyLocaleFromDb(pharmacyId);
+
     return NextResponse.json({
       name: pharmacy.name,
       license: pharmacy.license_number,
-      location: `${pharmacy.city}, ${pharmacy.province}`,
+      location: [pharmacy.city, pharmacy.province].filter(Boolean).join(", "),
       phone: pharmacy.phone,
       email: pharmacy.email,
       subscription,
       subscriptionExpiresAt: pharmacy.subscription_expires_at ?? null,
-      currency: 'RWF',
-      language: 'en'
-    })
+      currency: locale.currency,
+      language: locale.language,
+    });
   } catch (error) {
-    console.error('Settings fetch error:', error)
-    return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 })
+    console.error("Settings fetch error:", error);
+    return NextResponse.json({ error: "Failed to fetch settings" }, { status: 500 });
   }
 }
 
 export async function PUT(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
-    const admin = createServiceClient()
-    const ctx = await resolveActivePharmacyContext(admin, user.id)
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const membership = await storeFindMembershipAtPharmacy(user.id, pharmacyId);
 
-    if (!isPharmacyOwnerRole(ctx.role)) {
+    if (!membership || !isPharmacyOwnerRole(membership.role)) {
       return NextResponse.json(
-        { error: 'Only the pharmacy owner can update business settings' },
+        { error: "Only the pharmacy owner can update business settings" },
         { status: 403 },
-      )
+      );
     }
 
-    const body = await request.json()
-    
+    const body = await request.json();
+
     if (!body.name || !body.phone || !body.email) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
-    
-    const { error } = await supabase
-      .from('pharmacies')
-      .update({
+
+    const locationParts = String(body.location ?? "")
+      .split(",")
+      .map((part: string) => part.trim());
+
+    const updatedPharmacy = await prisma.pharmacies.update({
+      where: { id: pharmacyId },
+      data: {
         name: body.name,
         phone: body.phone,
         email: body.email,
-        city: body.location?.split(',')[0]?.trim(),
-        province: body.location?.split(',')[1]?.trim()
-      })
-      .eq('id', pharmacyId)
-    
-    if (error) throw error
-    
-    return NextResponse.json({ success: true })
+        city: locationParts[0] || null,
+        province: locationParts[1] || null,
+      },
+    });
+
+    if (body.currency || body.language) {
+      await upsertPharmacyLocaleFromDb(pharmacyId, {
+        currency: body.currency,
+        language: body.language,
+      });
+    }
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "pharmacies",
+      recordId: pharmacyId,
+      newValues: {
+        pharmacy: updatedPharmacy,
+        locale: {
+          currency: body.currency,
+          language: body.language,
+        },
+      },
+      ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
+      userAgent: request.headers.get("user-agent") ?? undefined,
+    });
+
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Settings update error:', error)
-    return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 })
+    console.error("Settings update error:", error);
+    return NextResponse.json({ error: "Failed to update settings" }, { status: 500 });
   }
 }

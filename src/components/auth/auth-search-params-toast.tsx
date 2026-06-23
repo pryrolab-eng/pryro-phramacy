@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { startTransition, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { isEmailNotConfirmedMessage } from "@/lib/auth/email-not-confirmed";
@@ -8,6 +8,7 @@ import {
   isVerificationRelatedError,
   showVerificationToast,
 } from "@/components/auth/verification-toast";
+import { stripSensitiveAuthQueryParams } from "@/lib/auth/sensitive-query-params";
 
 const AUTH_ERROR_LABELS: Record<string, string> = {
   "no-pharmacy": "No pharmacy access found. Please contact support.",
@@ -59,11 +60,17 @@ export function AuthSearchParamsToast() {
     }
     if (success) toast.success(decodeURIComponent(success));
 
-    const params = new URLSearchParams(searchParams.toString());
+    const { sanitized: params } = stripSensitiveAuthQueryParams(
+      new URLSearchParams(searchParams.toString()),
+    );
     params.delete("error");
     params.delete("success");
     const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    startTransition(() => {
+      router.replace(query ? `${pathname}?${query}` : pathname, {
+        scroll: false,
+      });
+    });
   }, [pathname, router, searchParams]);
 
   return null;

@@ -7,24 +7,35 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'
-import { useInitiateKpayPaymentMutation } from '@/hooks/useKpay'
-
 interface PaymentFormProps {
   amount: number
-  saleId?: string
-  subscriptionId?: string
-  onSuccess?: (transaction: unknown) => void
+  customerName?: string
+  customerPhone?: string
+  customerEmail?: string
+  defaultPaymentMethod?: string
+  onSuccess?: (transaction: any) => void
   onError?: (error: string) => void
 }
 
-export function PaymentForm({ amount, saleId, subscriptionId, onSuccess, onError }: PaymentFormProps) {
-  const initiateMutation = useInitiateKpayPaymentMutation()
+export function PaymentForm({
+  amount,
+  customerName = '',
+  customerPhone = '',
+  customerEmail = '',
+  defaultPaymentMethod = 'momo',
+  onSuccess,
+  onError
+}: PaymentFormProps) {
+
+  // Keep only digits for phone number
+  const cleanPhone = (phone: string) => phone.replace(/[^\d]/g, '')
+
   const [formData, setFormData] = useState({
-    customerName: '',
-    customerPhone: '',
-    customerEmail: '',
-    paymentMethod: 'momo',
-    bankId: '63510'
+    customerName,
+    customerPhone: cleanPhone(customerPhone),
+    customerEmail,
+    paymentMethod: defaultPaymentMethod,
+    bankId: defaultPaymentMethod === 'cc' ? '000' : '63510'
   })
 
   const paymentMethods = [
@@ -53,28 +64,14 @@ export function PaymentForm({ amount, saleId, subscriptionId, onSuccess, onError
     e.preventDefault()
 
     try {
-      const data = await initiateMutation.mutateAsync({
-        amount,
-        saleId,
-        subscriptionId,
-        ...formData,
-        details: saleId ? 'Pharmacy sale payment' : 'Subscription payment',
-      })
-
-      if (data.success && data.transaction?.checkoutUrl) {
-        window.location.href = data.transaction.checkoutUrl
-      } else if (data.success) {
-        onSuccess?.(data.transaction)
-      } else {
-        throw new Error(data.error || data.kpayResponse?.statusdesc || 'Payment failed')
-      }
+      onSuccess?.({ id: 'pending', status: 'initiated', ...formData })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Payment failed'
       onError?.(message)
     }
   }
 
-  const loading = initiateMutation.isPending
+  const loading = false
 
   return (
     <Card>
@@ -120,7 +117,11 @@ export function PaymentForm({ amount, saleId, subscriptionId, onSuccess, onError
             <Label htmlFor="paymentMethod">Payment Method</Label>
             <Select
               value={formData.paymentMethod}
-              onValueChange={(value) => setFormData({ ...formData, paymentMethod: value })}
+              onValueChange={(value) => setFormData({
+                ...formData,
+                paymentMethod: value,
+                bankId: value === 'cc' ? '000' : value === 'momo' ? '63510' : formData.bankId
+              })}
             >
               <SelectTrigger>
                 <SelectValue />

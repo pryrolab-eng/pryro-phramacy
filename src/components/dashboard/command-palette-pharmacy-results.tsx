@@ -1,9 +1,11 @@
 "use client";
 
 import {
+  Building2,
   FileText,
   Package,
   Receipt,
+  UserCog,
   Users,
 } from "lucide-react";
 import { CommandGroup, CommandItem } from "@/components/ui/command";
@@ -20,7 +22,9 @@ export function CommandPalettePharmacyResults({ data, onNavigate }: Props) {
     data.customers.length > 0 ||
     data.products.length > 0 ||
     data.prescriptions.length > 0 ||
-    data.sales.length > 0;
+    data.sales.length > 0 ||
+    data.staff.length > 0 ||
+    data.branches.length > 0;
 
   if (!hasAny) return null;
 
@@ -115,6 +119,48 @@ export function CommandPalettePharmacyResults({ data, onNavigate }: Props) {
               {s.customerName ? (
                 <span className="ml-2 truncate text-xs text-muted-foreground">
                   {s.customerName}
+                </span>
+              ) : null}
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      ) : null}
+
+      {data.staff.length > 0 ? (
+        <CommandGroup heading="Staff">
+          {data.staff.map((s) => (
+            <CommandItem
+              key={`staff-${s.id}`}
+              value={`staff-${s.id}`}
+              keywords={[s.name, s.email ?? "", s.role ?? "", "staff"]}
+              onSelect={() => onNavigate(PHARMACY_ROUTES.staff)}
+            >
+              <UserCog className="mr-2 h-4 w-4 text-neutral-500" />
+              <span className="min-w-0 flex-1 truncate">{s.name}</span>
+              {s.role ? (
+                <span className="ml-2 truncate text-xs text-muted-foreground">
+                  {s.role}
+                </span>
+              ) : null}
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      ) : null}
+
+      {data.branches.length > 0 ? (
+        <CommandGroup heading="Branches">
+          {data.branches.map((b) => (
+            <CommandItem
+              key={`branch-${b.id}`}
+              value={`branch-${b.id}`}
+              keywords={[b.name, b.city ?? "", b.status ?? "", "branch"]}
+              onSelect={() => onNavigate(PHARMACY_ROUTES.branches)}
+            >
+              <Building2 className="mr-2 h-4 w-4 text-neutral-500" />
+              <span className="min-w-0 flex-1 truncate">{b.name}</span>
+              {b.city ? (
+                <span className="ml-2 truncate text-xs text-muted-foreground">
+                  {b.city}
                 </span>
               ) : null}
             </CommandItem>

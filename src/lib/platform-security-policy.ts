@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { getAllowUserTwoFactorFromDb } from "@/lib/platform-settings";
 
 export const PLATFORM_SECURITY_KEYS = {
   allowUserTwoFactor: "allowUserTwoFactor",
@@ -23,22 +23,7 @@ export function parseBooleanSetting(raw: unknown, defaultValue: boolean): boolea
 
 /**
  * Platform-wide: when true, pharmacy owners/staff may enable 2FA on their own account.
- * When false, 2FA setup is hidden and sign-in skips the 2FA step.
  */
-export async function getAllowUserTwoFactor(
-  supabase: SupabaseClient,
-): Promise<boolean> {
-  const { data, error } = await supabase
-    .from("system_settings")
-    .select("setting_value")
-    .eq("setting_key", PLATFORM_SECURITY_KEYS.allowUserTwoFactor)
-    .is("pharmacy_id", null)
-    .maybeSingle();
-
-  if (error) {
-    console.error("getAllowUserTwoFactor:", error);
-    return true;
-  }
-  if (!data) return true;
-  return parseBooleanSetting(data.setting_value, true);
+export async function getAllowUserTwoFactor(): Promise<boolean> {
+  return getAllowUserTwoFactorFromDb();
 }

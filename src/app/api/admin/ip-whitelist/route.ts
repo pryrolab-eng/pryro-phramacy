@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
+import {
+  createWhitelistEntry,
+  deleteWhitelistEntry,
+  listWhitelistEntries,
+} from "@/lib/db/ip-whitelist";
 
 export async function GET() {
   const auth = await requirePlatformAdminApi();
@@ -7,18 +12,13 @@ export async function GET() {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const { data, error } = await auth.supabase
-    .from("ip_whitelist")
-    .select("*")
-    .is("pharmacy_id", null)
-    .order("created_at", { ascending: false });
-
-  if (error) {
+  try {
+    const data = await listWhitelistEntries(null);
+    return NextResponse.json({ ips: data });
+  } catch (error) {
     console.error("admin ip-whitelist GET:", error);
     return NextResponse.json({ error: "Failed to fetch IP whitelist" }, { status: 500 });
   }
-
-  return NextResponse.json({ ips: data ?? [] });
 }
 
 export async function POST(request: NextRequest) {
@@ -32,22 +32,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "IP address required" }, { status: 400 });
   }
 
-  const { data, error } = await auth.supabase
-    .from("ip_whitelist")
-    .insert({
-      pharmacy_id: null,
-      ip_address: ip,
+  try {
+    const data = await createWhitelistEntry({
+      pharmacyId: null,
+      ipAddress: ip,
       description: description || "",
-    })
-    .select()
-    .single();
-
-  if (error) {
+    });
+    return NextResponse.json({ success: true, ip: data });
+  } catch (error) {
     console.error("admin ip-whitelist POST:", error);
     return NextResponse.json({ error: "Failed to add IP" }, { status: 500 });
   }
-
-  return NextResponse.json({ success: true, ip: data });
 }
 
 export async function DELETE(request: NextRequest) {
@@ -61,16 +56,11 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "ID required" }, { status: 400 });
   }
 
-  const { error } = await auth.supabase
-    .from("ip_whitelist")
-    .delete()
-    .eq("id", id)
-    .is("pharmacy_id", null);
-
-  if (error) {
+  try {
+    await deleteWhitelistEntry(id, null);
+    return NextResponse.json({ success: true });
+  } catch (error) {
     console.error("admin ip-whitelist DELETE:", error);
     return NextResponse.json({ error: "Failed to delete IP" }, { status: 500 });
   }
-
-  return NextResponse.json({ success: true });
 }

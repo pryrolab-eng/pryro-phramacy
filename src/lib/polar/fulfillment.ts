@@ -1,6 +1,9 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordSubscriptionPayment } from "@/lib/billing/record-subscription-payment";
 import { activatePaidSubscription } from "@/lib/subscription/activate-subscription";
+import {
+  storeFindPaymentTransactionByPolarCheckoutId,
+  storeUpdatePaymentTransaction,
+} from "@/lib/db/payment-transactions-store";
 
 export type PolarCheckoutMetadata = {
   pharmacy_id?: string;
@@ -10,7 +13,7 @@ export type PolarCheckoutMetadata = {
 };
 
 export function parsePolarMetadata(
-  raw: Record<string, unknown> | null | undefined
+  raw: Record<string, unknown> | null | undefined,
 ): PolarCheckoutMetadata {
   if (!raw) return {};
   return {
@@ -31,9 +34,8 @@ export function parsePolarMetadata(
 
 /** Activate subscription and pharmacy after Polar payment succeeds. */
 export async function fulfillPolarSubscription(
-  admin: SupabaseClient,
   meta: PolarCheckoutMetadata,
-  polarCheckoutId?: string
+  polarCheckoutId?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const subscriptionId = meta.subscription_id;
 
@@ -41,7 +43,7 @@ export async function fulfillPolarSubscription(
     return { ok: false, error: "Missing subscription_id in Polar metadata" };
   }
 
-  const activated = await activatePaidSubscription(admin, subscriptionId, {
+  const activated = await activatePaidSubscription(subscriptionId, {
     paymentMethod: "polar",
     paymentReference: polarCheckoutId ?? null,
     planName: meta.plan_name,
@@ -52,23 +54,17 @@ export async function fulfillPolarSubscription(
   }
 
   if (polarCheckoutId) {
-    await admin
-      .from("payment_transactions")
-      .update({
+    const paidTx = await storeFindPaymentTransactionByPolarCheckoutId(
+      polarCheckoutId,
+    );
+
+    if (paidTx) {
+      await storeUpdatePaymentTransaction(paidTx.id, {
         status: "completed",
         completed_at: new Date().toISOString(),
         payment_provider: "polar",
-      })
-      .eq("polar_checkout_id", polarCheckoutId);
-
-    const { data: paidTx } = await admin
-      .from("payment_transactions")
-      .select("id")
-      .eq("polar_checkout_id", polarCheckoutId)
-      .maybeSingle();
-
-    if (paidTx?.id) {
-      await recordSubscriptionPayment(admin, paidTx.id as string);
+      });
+      await recordSubscriptionPayment(paidTx.id);
     }
   }
 

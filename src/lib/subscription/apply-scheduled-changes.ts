@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSubscriptionOrchestrator } from "./orchestrator";
 
 export type ApplyScheduledChangesResult = {
@@ -10,10 +9,8 @@ export type ApplyScheduledChangesResult = {
 };
 
 /** @deprecated Use SubscriptionOrchestrator.applyDueScheduledChanges + processExpiredSubscriptions */
-export async function applyScheduledSubscriptionChanges(
-  admin: SupabaseClient
-): Promise<ApplyScheduledChangesResult> {
-  const orch = createSubscriptionOrchestrator(admin);
+export async function applyScheduledSubscriptionChanges(): Promise<ApplyScheduledChangesResult> {
+  const orch = createSubscriptionOrchestrator();
   const transitions = await orch.applyDueScheduledChanges();
   const { expired } = await orch.processExpiredSubscriptions();
   return { ...transitions, expired };

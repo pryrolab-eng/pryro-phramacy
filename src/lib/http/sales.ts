@@ -1,8 +1,21 @@
 import { fetchJson } from "./client";
+import {
+  buildSalesListQueryString,
+  type SalesListPeriod,
+} from "@/lib/sales/list-query";
+
+export type SalesListParams = {
+  period?: SalesListPeriod;
+  q?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+};
 
 export const salesKeys = {
   all: ["sales"] as const,
-  list: () => [...salesKeys.all, "list"] as const,
+  list: (params?: SalesListParams) =>
+    [...salesKeys.all, "list", params ?? {}] as const,
   analytics: () => [...salesKeys.all, "analytics"] as const,
 };
 
@@ -30,8 +43,8 @@ export type SalesAnalytics = {
   weeklySales: Array<{ day?: string; sales: number }>;
   paymentBreakdown: Array<{ method: string; percentage: number }>;
   hourlySales: Array<{ hour?: string; sales: number }>;
-  monthlyComparison: Array<{ month?: string; sales: number }>;
-  customerDistribution: Array<{ name: string; value: number }>;
+  monthlyComparison: Array<{ week?: string; current: number; previous: number }>;
+  customerDistribution: Array<{ name: string; value: number; fill?: string }>;
   topCategories: Array<{ name: string; value: number; color: string }>;
 };
 
@@ -49,9 +62,13 @@ const EMPTY_LIST: SalesListResponse = {
   stats: { todayTotal: 0, weekTotal: 0, monthTotal: 0, totalSales: 0 },
 };
 
-export async function getSalesList(): Promise<SalesListResponse> {
+export async function getSalesList(
+  params?: SalesListParams,
+): Promise<SalesListResponse> {
   try {
-    return await fetchJson<SalesListResponse>("/api/sales");
+    return await fetchJson<SalesListResponse>(
+      `/api/sales${buildSalesListQueryString(params ?? {})}`,
+    );
   } catch {
     return EMPTY_LIST;
   }

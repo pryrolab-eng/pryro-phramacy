@@ -1,45 +1,15 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   getMedicationProviderEntry,
   isProviderCoverageActive,
   parseMedicationInsuranceCoverage,
 } from "@/lib/insurance/medication-coverage";
-import { resolveInsuranceProvider } from "@/lib/insurance/resolve-provider";
+import { storeResolveInsuranceProvider } from "@/lib/db/insurance-store";
+import { storeLoadMedicationInsuranceCoverage } from "@/lib/db/insurance-store";
 import type {
   CoverageLineInput,
   CoverageLineResult,
   CoverageTotals,
 } from "@/lib/insurance/types";
-
-async function loadMedicationCoverageMap(
-  admin: SupabaseClient,
-  pharmacyId: string,
-  medicationIds: string[],
-): Promise<Map<string, ReturnType<typeof parseMedicationInsuranceCoverage>>> {
-  const map = new Map<
-    string,
-    ReturnType<typeof parseMedicationInsuranceCoverage>
-  >();
-  if (medicationIds.length === 0) return map;
-
-  const uniqueIds = Array.from(new Set(medicationIds.filter(Boolean)));
-  const { data, error } = await admin
-    .from("medications")
-    .select("id, insurance_coverage")
-    .eq("pharmacy_id", pharmacyId)
-    .in("id", uniqueIds);
-
-  if (error) throw new Error(error.message);
-
-  for (const row of data ?? []) {
-    map.set(
-      row.id as string,
-      parseMedicationInsuranceCoverage(row.insurance_coverage),
-    );
-  }
-
-  return map;
-}
 
 function computeLine(
   line: CoverageLineInput,
@@ -108,24 +78,19 @@ function computeLine(
   };
 }
 
-export async function computeInsuranceCoverage(
-  admin: SupabaseClient,
-  params: {
-    pharmacyId: string;
-    providerIdOrName: string;
-    lines: CoverageLineInput[];
-  },
-): Promise<CoverageTotals | null> {
-  const provider = await resolveInsuranceProvider(
-    admin,
+export async function computeInsuranceCoverage(params: {
+  pharmacyId: string;
+  providerIdOrName: string;
+  lines: CoverageLineInput[];
+}): Promise<CoverageTotals | null> {
+  const provider = await storeResolveInsuranceProvider(
     params.pharmacyId,
     params.providerIdOrName,
   );
   if (!provider) return null;
 
-  const medIds = params.lines.map((l) => l.medicationId);
-  const coverageMap = await loadMedicationCoverageMap(
-    admin,
+  const medIds = params.lines.map((line) => line.medicationId);
+  const coverageMap = await storeLoadMedicationInsuranceCoverage(
     params.pharmacyId,
     medIds,
   );
@@ -139,8 +104,8 @@ export async function computeInsuranceCoverage(
     ),
   );
 
-  const insuranceCoverage = results.reduce((s, r) => s + r.insurerPays, 0);
-  const patientCopay = results.reduce((s, r) => s + r.patientPays, 0);
+  const insuranceCoverage = results.reduce((sum, row) => sum + row.insurerPays, 0);
+  const patientCopay = results.reduce((sum, row) => sum + row.patientPays, 0);
 
   return {
     subtotal: insuranceCoverage + patientCopay,

@@ -1,4 +1,4 @@
-import { fetchJson } from "./client";
+import { ApiError, fetchJson } from "./client";
 
 export type ActivityLogItem = {
   id: string;
@@ -31,7 +31,14 @@ export async function getActivityLogs(
     return await fetchJson<ActivityLogsResponse>(
       `/api/pharmacy/activity-logs?offset=${offset}&limit=${limit}`,
     );
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof ApiError &&
+      error.status === 403 &&
+      error.message === "audit_logs_disabled"
+    ) {
+      throw error;
+    }
     return { items: [], limit, offset };
   }
 }

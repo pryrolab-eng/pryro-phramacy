@@ -1,96 +1,67 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { prisma } from "@/lib/db/prisma";
+import { rpcProvisionBranchUsage } from "@/lib/db/saas-rpc";
 
 const DEFAULT_TX_LIMIT = 500;
+
+async function loadPlanTxLimit(planId: string): Promise<number> {
+  const plan = await prisma.subscription_plans.findUnique({
+    where: { id: planId },
+    select: { monthly_tx_limit: true },
+  });
+  return Number(plan?.monthly_tx_limit ?? DEFAULT_TX_LIMIT);
+}
 
 /**
  * Creates or updates branch_usage rows for all active branches under a main subscription.
  * Safe to call repeatedly (RPC uses ON CONFLICT DO UPDATE).
  */
-export async function provisionBranchUsageForMainSubscription(
-  admin: SupabaseClient,
-  params: {
-    pharmacyId: string;
-    subscriptionId: string;
-    planId: string | null;
-  }
-): Promise<void> {
+export async function provisionBranchUsageForMainSubscription(params: {
+  pharmacyId: string;
+  subscriptionId: string;
+  planId: string | null;
+}): Promise<void> {
   const { pharmacyId, subscriptionId, planId } = params;
   if (!planId) return;
 
-  const { data: plan, error: planErr } = await admin
-    .from("subscription_plans")
-    .select("monthly_tx_limit")
-    .eq("id", planId)
-    .maybeSingle();
+  const txLimit = await loadPlanTxLimit(planId);
 
-  if (planErr) {
-    console.error("provisionBranchUsageForMainSubscription: plan lookup", planErr);
-    return;
-  }
+  const branches = await prisma.branches.findMany({
+    where: { pharmacy_id: pharmacyId, is_active: true },
+    select: { id: true },
+  });
 
-  const txLimit = Number(plan?.monthly_tx_limit ?? DEFAULT_TX_LIMIT);
+  if (!branches.length) return;
 
-  const { data: branches, error: branchErr } = await admin
-    .from("branches")
-    .select("id")
-    .eq("pharmacy_id", pharmacyId)
-    .eq("is_active", true);
-
-  if (branchErr) {
-    console.error("provisionBranchUsageForMainSubscription: branches", branchErr);
-    return;
-  }
-
-  if (!branches?.length) return;
-
-  const results = await Promise.all(
+  await Promise.all(
     branches.map((b) =>
-      admin.rpc("provision_branch_usage", {
-        p_branch_id: b.id as string,
-        p_pharmacy_id: pharmacyId,
-        p_subscription_id: subscriptionId,
-        p_tx_limit: txLimit,
-      })
-    )
+      rpcProvisionBranchUsage({
+        branchId: b.id,
+        pharmacyId,
+        subscriptionId,
+        txLimit,
+      }).catch((error) => {
+        console.error("provisionBranchUsageForMainSubscription: rpc", error);
+      }),
+    ),
   );
-
-  for (const { error } of results) {
-    if (error) {
-      console.error("provisionBranchUsageForMainSubscription: rpc", error);
-    }
-  }
 }
 
 /** Provisions usage for a single branch (branch_addon subscriptions). */
-export async function provisionBranchUsageForBranch(
-  admin: SupabaseClient,
-  params: {
-    branchId: string;
-    pharmacyId: string;
-    subscriptionId: string;
-    planId: string;
-  }
-): Promise<void> {
-  const { data: plan, error: planErr } = await admin
-    .from("subscription_plans")
-    .select("monthly_tx_limit")
-    .eq("id", params.planId)
-    .maybeSingle();
-
-  if (planErr) {
-    console.error("provisionBranchUsageForBranch: plan lookup", planErr);
-    return;
-  }
-
-  const txLimit = Number(plan?.monthly_tx_limit ?? DEFAULT_TX_LIMIT);
-  const { error } = await admin.rpc("provision_branch_usage", {
-    p_branch_id: params.branchId,
-    p_pharmacy_id: params.pharmacyId,
-    p_subscription_id: params.subscriptionId,
-    p_tx_limit: txLimit,
-  });
-
-  if (error) {
+export async function provisionBranchUsageForBranch(params: {
+  branchId: string;
+  pharmacyId: string;
+  subscriptionId: string;
+  planId: string;
+}): Promise<void> {
+  const txLimit = await loadPlanTxLimit(params.planId);
+  try {
+    await rpcProvisionBranchUsage({
+      branchId: params.branchId,
+      pharmacyId: params.pharmacyId,
+      subscriptionId: params.subscriptionId,
+      txLimit,
+    });
+  } catch (error) {
     console.error("provisionBranchUsageForBranch: rpc", error);
   }
 }

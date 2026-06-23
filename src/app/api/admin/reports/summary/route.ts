@@ -1,34 +1,15 @@
 import { NextResponse } from "next/server";
-import { createClient, createServiceClient } from "../../../../../../supabase/server";
-import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
+import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
 import { buildAdminReportsSummary } from "@/lib/admin/reports-summary";
 
-/**
- * Legacy path — Turbopack dev can 404 nested `/api/admin/reports/summary`.
- * Prefer GET `/api/admin/reports-summary`.
- */
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const auth = await requirePlatformAdminApi();
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
-    const allowed = await resolveIsAppPlatformAdmin(supabase, user.id, null);
-    if (!allowed) {
-      return NextResponse.json(
-        { error: "Forbidden: platform admin access required" },
-        { status: 403 },
-      );
-    }
-
-    const db = createServiceClient();
-    const payload = await buildAdminReportsSummary(db);
+    const payload = await buildAdminReportsSummary();
     return NextResponse.json(payload);
   } catch (e) {
     console.error("GET /api/admin/reports/summary:", e);

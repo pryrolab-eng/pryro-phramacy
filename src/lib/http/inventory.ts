@@ -10,6 +10,8 @@ export type InventoryListRow = {
   price: number;
   expiryDate: string;
   batchNumber: string;
+  stockLocationId?: string | null;
+  stockLocationName?: string | null;
   pharmacy_id?: string;
   medications?: unknown;
 };
@@ -43,6 +45,7 @@ export type AddInventoryProductInput = {
   selling_price: number;
   minimum_stock_level: number;
   expiry_date: string;
+  stockLocation?: string;
 };
 
 export type UpdateInventoryProductInput = {

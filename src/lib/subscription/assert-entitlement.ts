@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   checkBranchCanTransact,
   incrementBranchTx,
@@ -19,7 +18,6 @@ export class EntitlementError extends Error {
 }
 
 export type RequireEntitlementInput = {
-  admin: SupabaseClient;
   pharmacyId: string;
   feature?: string;
   limit?: "users" | "branches";
@@ -33,10 +31,7 @@ export async function requirePharmacyEntitlement(
 ): Promise<void> {
   if (!isEntitlementsEnforced()) return;
 
-  const ent = await resolvePharmacyEntitlements(
-    input.admin,
-    input.pharmacyId,
-  );
+  const ent = await resolvePharmacyEntitlements(input.pharmacyId);
 
   if (!ent.isAccessAllowed) {
     throw new EntitlementError(
@@ -65,14 +60,14 @@ export async function requirePharmacyEntitlement(
   }
 
   if (input.consumeTransaction && input.branchId) {
-    const check = await checkBranchCanTransact(input.admin, input.branchId);
+    const check = await checkBranchCanTransact(input.branchId);
     if (!check.allowed) {
       throw new EntitlementError(
         check.message ?? "Monthly transaction limit reached for this branch.",
         "tx_limit_reached",
       );
     }
-    const inc = await incrementBranchTx(input.admin, input.branchId);
+    const inc = await incrementBranchTx(input.branchId);
     if (!inc.ok) {
       throw new EntitlementError(
         "Could not record transaction against branch usage.",

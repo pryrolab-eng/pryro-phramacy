@@ -1,13 +1,15 @@
+> **Stack:** Prisma (`DATABASE_URL`) for data; native JWT auth (`getAuthUser()`, cookies `pryrox_session` / `pryrox_refresh`). SQL migrations live in `supabase/migrations/` (`npm run db:sql:push`).
+
 # Settings Module
 
 ## Purpose
 
 The Settings module provides configuration management for two distinct audiences:
 
-- **Pharmacy-level settings** (`/settings`) — accessible to `pharmacy_owner`, `pharmacist`, `cashier`, and `staff` roles. Covers pharmacy profile information, branding/logo upload, API key management, stock location management, security (IP whitelist, 2FA), and subscription/billing.
-- **Platform-level settings** (`/admin/settings`) — accessible to `superadmin` only. Covers global platform configuration: tenant limits, multi-branch toggles, API rate limits, SSO, audit logging, maintenance mode, and platform analytics.
+- **Pharmacy-level settings** (`/settings`) — accessible to `pharmacy_owner`, `pharmacist`, `cashier`, and `staff` roles. Covers pharmacy profile information, branding/logo upload, stock location management, security (IP whitelist, 2FA), and subscription/billing. Platform API keys are admin-managed only.
+- **Platform-level settings** (`/admin/settings`) — accessible to `superadmin` only. Covers global platform configuration: tenant limits, multi-branch toggles, API rate limits, audit logging, maintenance mode, and platform analytics.
 
-Settings data is persisted across three primary tables (`system_settings`, `ip_whitelist`, `stock_locations`) and two secondary tables (`pharmacy_settings`, `api_keys`). Branding data is stored directly on the `pharmacies` table and in Supabase Storage.
+Settings data is persisted across three primary tables (`system_settings`, `ip_whitelist`, `stock_locations`) and two secondary tables (`pharmacy_settings`, `api_keys`). Branding logos are stored on `pharmacies.logo_url` (Cloudinary when configured, otherwise local disk via `uploadAndPersistPharmacyLogo`).
 
 ---
 
@@ -17,7 +19,7 @@ Settings data is persisted across three primary tables (`system_settings`, `ip_w
 
 | File | Route | Role Access | Description |
 |---|---|---|---|
-| `src/app/(dashboard)/settings/page.tsx` | `/settings` | All authenticated roles | Pharmacy-level settings. Eight-tab layout: General, Integrations, Analytics, Security, Billing, Notifications, Compliance, Operations. Manages pharmacy info, branding, API keys, stock locations, IP whitelist, 2FA, and subscription upgrades. |
+| `src/app/(dashboard)/settings/page.tsx` | `/settings` | All authenticated roles | Pharmacy-level settings. Eight-tab layout: General, Integrations, Analytics, Security, Billing, Notifications, Compliance, Operations. Manages pharmacy info, branding, stock locations, IP whitelist, 2FA, and subscription upgrades. |
 | `src/app/(dashboard)/admin/settings/page.tsx` | `/admin/settings` | `superadmin` | Platform-level settings. **Original version.** Uses `alert()` for feedback. Contains a "Custom Settings" card with placeholder fields (`customSetting`, `featureFlag`) that are development scaffolding. |
 | `src/app/(dashboard)/admin/settings/page-improved.tsx` | `/admin/settings` | `superadmin` | **Refactored version** of `page.tsx`. Replaces `alert()` calls with inline `error`/`success` state banners. Adds a Refresh button and a loading spinner on the Save button. Removes the placeholder "Custom Settings" card. **This file should replace `page.tsx`** — see Known Limitations. |
 
@@ -29,15 +31,14 @@ Settings data is persisted across three primary tables (`system_settings`, `ip_w
 | `/api/pharmacy/settings` | `PUT` | Yes | Updates `name`, `phone`, `email`, `city`, `province` on the `pharmacies` table. Validates required fields. |
 | `/api/pharmacy/branding` | `GET` | Yes | Returns `logoUrl`, `primaryColor`, `customDomain` from `pharmacies.logo_url`, `pharmacies.primary_color`, `pharmacies.custom_domain`. |
 | `/api/pharmacy/branding` | `PUT` | Yes | Updates branding fields on the `pharmacies` table. |
-| `/api/pharmacy/branding/upload` | `POST` | Yes | Accepts a `multipart/form-data` file upload. Stores the file in the `pharmacy-logos` Supabase Storage bucket as `{pharmacy_id}-{timestamp}.{ext}`. Returns the public URL. |
+| `/api/pharmacy/branding/upload` | `POST` | Yes | Multipart upload → Cloudinary or local `UPLOAD_CATEGORIES` path. Persists URL to `pharmacies.logo_url`. |
 
 ### API Routes — Settings Sub-modules
 
 | Route | Method | Auth | Description |
 |---|---|---|---|
-| `/api/settings/api-keys` | `GET` | Yes | Lists all API keys for the authenticated user's pharmacy from the `api_keys` table. |
-| `/api/settings/api-keys` | `POST` | Yes | Creates a new API key. Requires `name` and `key`. Stores `key_hash`, `key_prefix` (first 8 chars), and `created_by`. |
-| `/api/settings/api-keys` | `PUT` | Yes | Updates an existing API key's `name`, `key_hash`, `key_prefix`, and `is_active` status. |
+| `/api/settings/api-keys` | `GET`, `POST`, `PUT` | Yes | Deprecated with `410`; platform integration API keys are managed under Admin → Settings → Integrations. |
+| `/api/admin/api-keys` | `GET`, `POST`, `PUT` | Yes | Platform-admin API for inbound Pryrox integration keys. New/rotated keys are stored as SHA-256 hashes with display prefixes only. |
 | `/api/settings/locations` | `GET` | Yes | Lists active stock locations for the pharmacy from `stock_locations`. Falls back to four hardcoded defaults if the table is missing. |
 | `/api/settings/locations` | `POST` | Yes | Creates a new stock location with `name`, `description`, and `is_active = true`. |
 | `/api/settings/security` | `GET` | Yes | Returns the pharmacy's security settings (e.g., `ip_whitelist_enabled`) from `pharmacy_settings` where `setting_key = 'security'`. |
@@ -50,7 +51,6 @@ Settings data is persisted across three primary tables (`system_settings`, `ip_w
 | `/api/settings/security/ip-whitelist/manage` | `GET` | Yes | Lists all IP whitelist entries for the pharmacy from `ip_whitelist`. |
 | `/api/settings/security/ip-whitelist/manage` | `POST` | Yes | Adds a new IP address (`ip_address`, `description`) to `ip_whitelist`. |
 | `/api/settings/security/ip-whitelist/manage` | `DELETE` | Yes | Removes an IP whitelist entry by `id`. |
-| `/api/settings/security/sso` | `POST` | Yes | Toggles SSO on/off via `security_settings.sso_enabled`. |
 
 ### API Routes — Admin (Platform-Level) Settings
 
@@ -63,8 +63,8 @@ Settings data is persisted across three primary tables (`system_settings`, `ip_w
 
 | Route | Method | Auth | Description |
 |---|---|---|---|
-| `/api/integrations/mobile-money` | `POST` | Yes | Stub for mobile money payment initiation. Looks up the pharmacy's `Mobile Money API` key from `api_keys`. The actual MTN/Airtel API call is a `TODO` — currently returns a mock transaction object. |
-| `/api/integrations/rra-ebm` | `POST` | Yes | Stub for Rwanda Revenue Authority Electronic Billing Machine (RRA EBM) invoice submission. Looks up the pharmacy's `RRA EBM API` key from `api_keys`. The actual RRA API call is a `TODO` — currently returns a mock submission object. |
+| `/api/integrations/mobile-money` | `POST` | Yes | Returns `501` until a real MTN/Airtel provider adapter is connected. |
+| `/api/integrations/rra-ebm` | `POST` | Yes | VSDC-backed adapter; requires deployment/provider credentials before production submission. |
 
 ---
 
@@ -133,15 +133,15 @@ Stores named physical locations (warehouses, branches, cold storage) for invento
 
 ### `api_keys`
 
-Stores integration API keys per pharmacy. Used by the mobile money and RRA EBM integration routes to look up credentials.
+Stores platform integration API keys and integration credential metadata. Tenant key management is deprecated; current inbound platform API keys are managed by platform admins.
 
 | Column | Type | Description |
 |---|---|---|
 | `id` | `uuid` | Primary key |
 | `pharmacy_id` | `uuid` | Foreign key → `pharmacies.id` (CASCADE DELETE) |
 | `name` | `text` | Key name (e.g., "Mobile Money API", "RRA EBM API") |
-| `key_hash` | `text` | The API key value (stored as plain text despite the column name) |
-| `key_prefix` | `text` | First 8 characters of the key (for display) |
+| `key_hash` | `text` | For inbound platform API keys, `sha256:<digest>` of the secret. Older plaintext rows may exist until rotated or used successfully. |
+| `key_prefix` | `text` | First 8 characters of the key (for display only) |
 | `permissions` | `text[]` | Array of permission strings (default `{}`) |
 | `is_active` | `boolean` | Whether the key is active (default `true`) |
 | `last_used_at` | `timestamptz` | Last usage timestamp (nullable) |
@@ -149,9 +149,7 @@ Stores integration API keys per pharmacy. Used by the mobile money and RRA EBM i
 | `created_by` | `uuid` | Foreign key → `auth.users.id` |
 | `created_at` | `timestamptz` | Record creation timestamp |
 
-**RLS:** `pharmacy_owner` role can view and manage API keys for their pharmacy. Defined in `20240322000005_rls_policies.sql`.
-
-> **Security note:** The `key_hash` column name implies hashing, but the API route stores the raw key value directly (`key_hash: body.key`). API keys are not hashed at rest.
+**Access:** Platform API-key CRUD is guarded by platform-admin auth in `/api/admin/api-keys`. Inbound API auth accepts `Authorization: Bearer <key>` or `X-Pryrox-Api-Key`.
 
 ### `pharmacies` (branding columns)
 
@@ -159,7 +157,7 @@ Branding settings are stored directly on the `pharmacies` table rather than in a
 
 | Column | Type | Description |
 |---|---|---|
-| `logo_url` | `text` | Public URL of the pharmacy logo in Supabase Storage |
+| `logo_url` | `text` | Public URL of the pharmacy logo (Cloudinary or local static URL) |
 | `primary_color` | `text` | Hex color code for the pharmacy's brand color (default `#3b82f6`) |
 | `custom_domain` | `text` | Custom domain for white-label deployments (nullable) |
 
@@ -193,7 +191,7 @@ The General tab displays pharmacy information (name, license number, location, p
 ### General — Branding / Logo Upload
 
 The General tab includes a Branding card with:
-- **Logo upload:** A file input that calls `POST /api/pharmacy/branding/upload`. The file is stored in the `pharmacy-logos` Supabase Storage bucket as `{pharmacy_id}-{timestamp}.{ext}`. The returned public URL is saved to `pharmacies.logo_url` via `PUT /api/pharmacy/branding`.
+- **Logo upload:** File input → `POST /api/pharmacy/branding/upload` → `uploadAndPersistPharmacyLogo`. URL saved via branding API.
 - **Primary color:** A color picker that updates `pharmacies.primary_color`.
 - **Custom domain:** A text field for white-label domain configuration stored in `pharmacies.custom_domain`.
 
@@ -219,10 +217,6 @@ The Security tab includes a 2FA section with a three-step setup flow:
 
 Disabling 2FA calls `POST /api/settings/security/2fa` with `{ enabled: false }`, which clears the secret and backup codes.
 
-### Security — SSO
-
-A toggle for SSO is present in the admin settings page. The `POST /api/settings/security/sso` route stores the `sso_enabled` flag in `security_settings`. No actual SSO provider integration is implemented.
-
 ### Operations — Stock Location Management
 
 Both the pharmacy settings page (`/settings`) and the admin settings page (`/admin/settings`) include a Stock Locations card. Users can view existing locations and add new ones via a dialog form. Both pages call the same `/api/settings/locations` endpoints.
@@ -234,7 +228,7 @@ The Security tab (pharmacy settings) includes an API Keys section. Users can:
 - Add a new key via a dialog (name + key value).
 - Edit an existing key's name, value, and active status.
 
-Keys are stored in the `api_keys` table and are used by the integration routes to authenticate with third-party services.
+Platform keys are stored in the `api_keys` table and are used by `/api/integrations/v1/*` read APIs. The full secret is shown only when the admin supplies or rotates it; list responses expose the prefix, status, permissions, and timestamps.
 
 ### Billing / Subscription Upgrade
 
@@ -258,15 +252,14 @@ The `/admin/settings` page manages global platform settings stored in `system_se
 | `enableNotifications` | `boolean` | Enable system-wide notifications |
 | `maintenanceMode` | `boolean` | Put platform in maintenance mode |
 | `backupEnabled` | `boolean` | Enable automatic daily backups |
-| `autoUpdates` | `boolean` | Enable automatic system updates |
 | `maxUsersPerPharmacy` | `number` | Per-tenant user limit |
 | `apiRateLimit` | `number` | API requests per hour limit |
 | `enableWhiteLabel` | `boolean` | Allow per-tenant custom branding |
 | `enableMultiBranch` | `boolean` | Allow multi-branch pharmacies |
 | `dataRetentionDays` | `number` | Data retention period in days |
 | `enableAuditLogs` | `boolean` | Enable audit logging |
-| `ssoEnabled` | `boolean` | Enable SSO integration |
-| `encryptionEnabled` | `boolean` | Enable AES-256 data encryption |
+
+Deployment updates and infrastructure encryption are displayed as platform-managed status, not editable `system_settings` keys.
 
 ---
 
@@ -293,7 +286,7 @@ User edits pharmacy info in /settings → General tab
         ▼
 PUT /api/pharmacy/settings  { name, phone, email, location }
         │
-        ├─ supabase.auth.getUser() → verify session
+        ├─ `getAuthUser()` → verify session
         ├─ pharmacy_users → resolve pharmacy_id
         ├─ pharmacies.update({ name, phone, email, city, province })
         └─ { success: true }
@@ -307,9 +300,9 @@ User selects file in Branding card
         ▼
 POST /api/pharmacy/branding/upload  (multipart/form-data)
         │
-        ├─ supabase.auth.getUser() → verify session
+        ├─ `getAuthUser()` → verify session
         ├─ pharmacy_users → resolve pharmacy_id
-        ├─ supabase.storage.from('pharmacy-logos').upload(fileName, buffer)
+        ├─ uploadPharmacyLogo() → Cloudinary or uploads/pharmacy-logos/
         └─ Returns { url: publicUrl }
         │
         ▼
@@ -326,7 +319,7 @@ Superadmin edits settings in /admin/settings
         ▼
 PUT /api/admin/system-settings  { platformName, maxPharmacies, ... }
         │
-        ├─ supabase.auth.getUser() → verify session
+        ├─ `getAuthUser()` → verify session
         ├─ pharmacy_users → check role = 'superadmin'
         ├─ For each key-value pair:
         │     ├─ SELECT from system_settings WHERE setting_key = key AND pharmacy_id IS NULL
@@ -344,7 +337,7 @@ PUT /api/admin/system-settings  { platformName, maxPharmacies, ... }
 | `otplib` | TOTP secret generation and code verification for 2FA setup |
 | `qrcode` | QR code data URL generation for 2FA setup |
 | `crypto` | Backup code generation (Node built-in) |
-| `@supabase/supabase-js` | Supabase Storage client for logo uploads |
+| `src/lib/pharmacy/upload-pharmacy-logo.ts` | Logo upload (Cloudinary or local disk) |
 | `recharts` | Sparkline charts in the settings summary cards |
 
 ---
@@ -363,9 +356,9 @@ The IP whitelist feature allows users to add and manage allowed IP addresses, an
 
 The `stock_locations` table is defined in `create-stock-locations-table.sql` at the project root, not in `supabase/migrations/`. This means the table may not exist in fresh environments or after a migration reset. The `/api/settings/locations` route handles this gracefully by returning four hardcoded defaults, but new locations added through the UI will fail silently if the table is absent.
 
-### 4. API keys are stored in plaintext
+### 4. Legacy API key rows may need rotation
 
-Despite the column being named `key_hash`, the `/api/settings/api-keys` route stores the raw API key value directly. Keys are not hashed or encrypted at rest. Any user with database access can read all API keys in plaintext.
+New and rotated platform API keys are hashed at rest. Older rows created before the hashing change may still contain plaintext until they are used successfully by inbound API auth (which upgrades them in place) or manually rotated by an admin.
 
 ### 5. Currency and language settings are not persisted
 
@@ -375,9 +368,9 @@ The pharmacy settings form includes `currency` and `language` fields in the UI s
 
 Both `/api/integrations/mobile-money` and `/api/integrations/rra-ebm` contain `TODO` comments where the actual third-party API calls should be. They return mock response objects. The mobile money and RRA EBM integrations are not functional.
 
-### 7. SSO toggle has no backend implementation
+### 7. Enterprise SSO is future work
 
-The SSO toggle in the admin settings page stores a flag in `security_settings`, but no SSO provider (SAML, OAuth, OIDC) is configured or integrated. Enabling SSO has no effect on the authentication flow.
+Enterprise SSO is not exposed as a current setting. It should return as a dedicated SAML/OIDC project only after provider, tenant-domain, callback, and recovery requirements are defined.
 
 ### 8. `pharmacy_settings` and `system_settings` overlap
 
@@ -385,7 +378,7 @@ Two tables serve similar purposes: `pharmacy_settings` (from `20240322000004_saa
 
 ### 9. No role enforcement on the `/settings` page itself
 
-The `/settings` page is accessible to all authenticated roles, and all tabs (including API key management and security settings) are visible to `cashier` and `staff` roles. There is no per-tab or per-feature role check in the page component. Role enforcement relies entirely on RLS policies in the database.
+The `/settings` page is accessible to all authenticated roles, and all tabs (including security settings) are visible to `cashier` and `staff` roles. There is no per-tab or per-feature role check in the page component. Role enforcement relies on the underlying API routes and database policies.
 
 ### 10. Notifications, Compliance, and Analytics tabs are incomplete
 

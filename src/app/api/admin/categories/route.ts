@@ -1,57 +1,54 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { NextRequest, NextResponse } from "next/server";
+import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
+import {
+  storeCreateGlobalCategory,
+  storeListGlobalCategories,
+} from "@/lib/db/admin-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function GET() {
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-    
-    const { data: categories, error } = await supabase
-      .from('categories')
-      .select('*')
-      .is('pharmacy_id', null)
-      .order('name', { ascending: true })
-
-    if (error) {
-      console.error('Categories fetch error:', error)
-      return NextResponse.json([])
+    const auth = await requirePlatformAdminApi();
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
-    return NextResponse.json(categories || [])
+
+    const categories = await storeListGlobalCategories();
+    return NextResponse.json(categories);
   } catch (error) {
-    console.error('Categories error:', error)
-    return NextResponse.json([])
+    console.error("Categories error:", error);
+    return NextResponse.json([]);
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-    const body = await request.json()
-    
-    const { data: category, error } = await supabase
-      .from('categories')
-      .insert({
-        name: body.name || body.categoryName,
-        description: body.description || body.categoryDescription || '',
-        pharmacy_id: null,
-        is_active: true
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error('Category insert error:', error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    const auth = await requirePlatformAdminApi();
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
-    
-    return NextResponse.json({ success: true, category })
+
+    const body = await request.json();
+    const category = await storeCreateGlobalCategory({
+      name: body.name || body.categoryName,
+      description: body.description || body.categoryDescription || "",
+    });
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "INSERT",
+      tableName: "medication_categories",
+      recordId: category.id,
+      newValues: category,
+      ...auditRequestMetadata(request),
+    });
+
+    return NextResponse.json({ success: true, category });
   } catch (error) {
-    console.error('Category add error:', error)
-    return NextResponse.json({ success: false, error: 'Failed to add category' }, { status: 500 })
+    console.error("Category add error:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to add category" },
+      { status: 500 },
+    );
   }
 }

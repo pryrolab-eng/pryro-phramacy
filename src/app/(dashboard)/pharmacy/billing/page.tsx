@@ -17,6 +17,7 @@ import {
   TrendingUp,
   Calendar,
   AlertTriangle,
+  Clock,
 } from 'lucide-react'
 import {
   DashboardPageShell,
@@ -242,6 +243,25 @@ function PharmacyBillingPageContent() {
           </DashboardTabsList>
 
           <TabsContent value="plan" className="mt-6 space-y-6">
+            {summary?.main_subscription?.status === 'pending_payment' && (
+              <DashboardSectionCard
+                title="Complete payment"
+                className="border-amber-200/80 bg-amber-50/30 dark:border-amber-900/50 dark:bg-amber-950/20"
+                action={
+                  <DashboardButton size="sm" onClick={() => setActiveTab('upgrade')}>
+                    <CreditCard className="mr-1 h-4 w-4" />
+                    Pay now
+                  </DashboardButton>
+                }
+              >
+                <p className="flex items-start gap-2 text-sm text-amber-900 dark:text-amber-200">
+                  <Clock className="mt-0.5 size-4 shrink-0" />
+                  Your {summary.main_subscription.plan?.name ?? 'selected'} plan is waiting for payment.
+                  Complete payment to activate your subscription and unlock all features.
+                </p>
+              </DashboardSectionCard>
+            )}
+
             {summary?.main_subscription ? (
               <DashboardSectionCard
                 title={summary.main_subscription.plan?.name ?? 'Active plan'}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useActivePharmacy } from "@/components/providers/active-pharmacy-provider";
+import { useOptionalActivePharmacy } from "@/components/providers/active-pharmacy-provider";
 import { usePharmacyEntitlements } from "@/hooks/usePharmacyEntitlements";
 import {
   canAccessBillingWhenBlocked,
@@ -10,10 +10,16 @@ import {
 } from "@/lib/subscription/access-block";
 import { isPharmacyOwnerRole } from "@/lib/rbac/pharmacy-roles";
 
-export function useAccessBlockMessaging() {
-  const { context } = useActivePharmacy();
-  const { entitlements, isEntitlementsReady } = usePharmacyEntitlements();
-  const isOwner = isPharmacyOwnerRole(context.role);
+export function useAccessBlockMessaging(options?: { enabled?: boolean }) {
+  const pharmacyCtx = useOptionalActivePharmacy();
+  const enabled = (options?.enabled ?? true) && pharmacyCtx !== null;
+
+  const { entitlements, isEntitlementsReady } = usePharmacyEntitlements({
+    enabled,
+  });
+
+  const role = pharmacyCtx?.context.role ?? null;
+  const isOwner = isPharmacyOwnerRole(role);
   const reason: PharmacyAccessBlockReason =
     entitlements.accessBlockReason ?? "subscription_expired";
 
@@ -22,8 +28,7 @@ export function useAccessBlockMessaging() {
     [reason, isOwner],
   );
 
-  const isBlocked =
-    isEntitlementsReady && !entitlements.isAccessAllowed;
+  const isBlocked = enabled && isEntitlementsReady && !entitlements.isAccessAllowed;
 
   return {
     reason,

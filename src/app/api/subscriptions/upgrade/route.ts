@@ -1,87 +1,81 @@
-import { NextRequest } from 'next/server'
-import { createRouteHandlerClient } from '../../../../../supabase/route-handler'
-import { createServiceClient } from '../../../../../supabase/service'
+import { NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import {
   createSubscriptionOrchestrator,
   SubscriptionPlanChangeError,
-} from '@/lib/subscription/orchestrator'
-import { resolveActivePharmacyId } from '@/lib/pharmacy/active-pharmacy'
+} from "@/lib/subscription/orchestrator";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { storeResolveCatalogPlan } from "@/lib/db/subscriptions-store";
+import { storeLinkPaymentTransactionToSubscription } from "@/lib/db/payment-transactions-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-export async function POST(request: NextRequest) {
-  const { supabase, json } = createRouteHandlerClient(request)
-
+export async function POST(request: Request) {
   try {
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json()
-    const { planId, paymentTransactionId } = body
+    const body = await request.json();
+    const { planId, paymentTransactionId } = body;
 
-    if (!planId || typeof planId !== 'string') {
-      return json({ error: 'Plan is required' }, { status: 400 })
+    if (!planId || typeof planId !== "string") {
+      return NextResponse.json({ error: "Plan is required" }, { status: 400 });
     }
 
-    const admin = createServiceClient()
+    const pharmacyId = await requireUserPharmacyId(user.id);
 
-    const pharmacyId = await resolveActivePharmacyId(admin, user.id)
-    if (!pharmacyId) {
-      return json({ error: 'Pharmacy not found' }, { status: 403 })
-    }
-
-    let planQuery = admin
-      .from('subscription_plans')
-      .select('*')
-      .eq('is_active', true)
-
-    if (UUID_RE.test(planId)) {
-      planQuery = planQuery.eq('id', planId)
-    } else {
-      planQuery = planQuery.ilike('name', planId)
-    }
-
-    const { data: plan, error: planError } = await planQuery.maybeSingle()
-
-    if (planError) {
-      console.error('Plan lookup error:', planError)
-      return json({ error: `Plan error: ${planError.message}` }, { status: 404 })
-    }
-
-    if (!plan) {
-      return json(
+    let plan;
+    try {
+      plan = await storeResolveCatalogPlan(planId);
+    } catch {
+      return NextResponse.json(
         { error: `Plan "${planId}" not found or is not available` },
-        { status: 404 }
-      )
+        { status: 404 },
+      );
     }
 
-    const orch = createSubscriptionOrchestrator(admin)
-    const change = await orch.requestPlanChange(pharmacyId, plan.id as string)
+    const orch = createSubscriptionOrchestrator();
+    const change = await orch.requestPlanChange(pharmacyId, plan.id);
 
-    const subscriptionId = change.subscriptionId
+    const subscriptionId = change.subscriptionId;
     const requiresPayment =
-      'requiresPayment' in change && change.requiresPayment === true
+      "requiresPayment" in change && change.requiresPayment === true;
 
     if (paymentTransactionId) {
-      await admin
-        .from('payment_transactions')
-        .update({ subscription_id: subscriptionId })
-        .eq('id', paymentTransactionId)
+      await storeLinkPaymentTransactionToSubscription({
+        transactionId: String(paymentTransactionId),
+        subscriptionId,
+      });
     }
+
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "subscriptions",
+      recordId: subscriptionId,
+      newValues: {
+        changeType: requiresPayment ? "paid_plan_change_requested" : "plan_changed",
+        planId: plan.id,
+        planName: plan.name,
+        requiresPayment,
+        paymentTransactionId: paymentTransactionId
+          ? String(paymentTransactionId)
+          : null,
+      },
+      ...auditRequestMetadata(request),
+    });
 
     if (requiresPayment) {
       const pending = change as {
-        subscriptionId: string
-        planId: string
-        planName: string
-        amount: number
-        status: string
-      }
-      return json({
+        subscriptionId: string;
+        planId: string;
+        planName: string;
+        amount: number;
+        status: string;
+      };
+      return NextResponse.json({
         success: true,
         subscription: {
           id: pending.subscriptionId,
@@ -93,17 +87,17 @@ export async function POST(request: NextRequest) {
           expiresAt: null,
           status: pending.status,
         },
-      })
+      });
     }
 
     const active = change as {
-      subscriptionId: string
-      planId: string
-      planName: string
-      expiresAt: string
-      status: string
-    }
-    return json({
+      subscriptionId: string;
+      planId: string;
+      planName: string;
+      expiresAt: string;
+      status: string;
+    };
+    return NextResponse.json({
       success: true,
       subscription: {
         id: active.subscriptionId,
@@ -115,23 +109,21 @@ export async function POST(request: NextRequest) {
         expiresAt: active.expiresAt,
         status: active.status,
       },
-    })
-
+    });
   } catch (error: unknown) {
-    console.error('Upgrade route error:', error)
+    console.error("Upgrade route error:", error);
     if (error instanceof SubscriptionPlanChangeError) {
-      const status =
-        error.code === 'downgrade_use_schedule' ? 400 : 400
-      return json(
+      return NextResponse.json(
         {
           error: error.message,
           code: error.code,
-          scheduleDowngradeUrl: '/api/subscriptions/schedule-downgrade',
+          scheduleDowngradeUrl: "/api/subscriptions/schedule-downgrade",
         },
-        { status }
-      )
+        { status: 400 },
+      );
     }
-    const message = error instanceof Error ? error.message : 'Internal server error'
-    return json({ error: message }, { status: 500 })
+    const message =
+      error instanceof Error ? error.message : "Internal server error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

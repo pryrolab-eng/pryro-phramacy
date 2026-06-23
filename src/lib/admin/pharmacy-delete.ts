@@ -1,6 +1,9 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizeLifecycleStatus } from "@/lib/subscription/lifecycle/status";
 import type { SubscriptionLifecycleStatus } from "@/lib/subscription/lifecycle/types";
+import {
+  storeCancelSubscriptionsByIds,
+  storeListSubscriptionsForPharmacyDelete,
+} from "@/lib/db/admin-store";
 
 type SubRow = {
   id: string;
@@ -36,62 +39,43 @@ export type PreparePharmacyDeleteResult =
  * Cancels unpaid/pending checkouts, then allows delete only when no access-granting main sub remains.
  */
 export async function preparePharmacyForAdminDelete(
-  admin: SupabaseClient,
   pharmacyId: string,
 ): Promise<PreparePharmacyDeleteResult> {
-  const { data: subs, error } = await admin
-    .from("subscriptions")
-    .select("id, status, is_active, payment_method, pending_change_status")
-    .eq("pharmacy_id", pharmacyId);
+  try {
+    const rows = (await storeListSubscriptionsForPharmacyDelete(
+      pharmacyId,
+    )) as SubRow[];
 
-  if (error) {
+    const blockingIds: string[] = [];
+    const cancelIds: string[] = [];
+
+    for (const row of rows) {
+      const lifecycle = lifecycleOf(row);
+      const rawStatus = String(row.status ?? "").toLowerCase();
+      if (BLOCKING_LIFECYCLES.includes(lifecycle)) {
+        blockingIds.push(row.id);
+      } else if (
+        CANCELLABLE_BEFORE_DELETE.includes(lifecycle) ||
+        rawStatus === "pending"
+      ) {
+        cancelIds.push(row.id);
+      }
+    }
+
+    if (cancelIds.length > 0) {
+      await storeCancelSubscriptionsByIds(cancelIds);
+    }
+
+    if (blockingIds.length > 0) {
+      return { ok: false, reason: "active_subscriptions" };
+    }
+
+    return { ok: true, cancelledSubscriptionIds: cancelIds };
+  } catch (error) {
     return {
       ok: false,
       reason: "subscription_check_failed",
-      message: error.message,
+      message: error instanceof Error ? error.message : "Subscription check failed",
     };
   }
-
-  const rows = (subs ?? []) as SubRow[];
-  const blockingIds: string[] = [];
-  const cancelIds: string[] = [];
-
-  for (const row of rows) {
-    const lifecycle = lifecycleOf(row);
-    const rawStatus = String(row.status ?? "").toLowerCase();
-    if (BLOCKING_LIFECYCLES.includes(lifecycle)) {
-      blockingIds.push(row.id);
-    } else if (
-      CANCELLABLE_BEFORE_DELETE.includes(lifecycle) ||
-      rawStatus === "pending"
-    ) {
-      cancelIds.push(row.id);
-    }
-  }
-
-  if (cancelIds.length > 0) {
-    const { error: cancelError } = await admin
-      .from("subscriptions")
-      .update({
-        status: "cancelled",
-        is_active: false,
-        payment_method: "cancelled",
-        cancelled_at: new Date().toISOString(),
-      })
-      .in("id", cancelIds);
-
-    if (cancelError) {
-      return {
-        ok: false,
-        reason: "subscription_check_failed",
-        message: cancelError.message,
-      };
-    }
-  }
-
-  if (blockingIds.length > 0) {
-    return { ok: false, reason: "active_subscriptions" };
-  }
-
-  return { ok: true, cancelledSubscriptionIds: cancelIds };
 }

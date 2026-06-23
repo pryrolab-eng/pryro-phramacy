@@ -3,14 +3,12 @@
 // Body: { branch_id }
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../../supabase/server'
-import { createServiceClient } from '../../../../../../supabase/service'
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { incrementBranchTx } from '@/lib/saas/subscription-engine'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getAuthUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { branch_id } = await request.json()
@@ -18,8 +16,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'branch_id is required' }, { status: 400 })
     }
 
-    const admin = createServiceClient()
-    const result = await incrementBranchTx(admin, branch_id)
+    const result = await incrementBranchTx(branch_id)
     return NextResponse.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Failed to increment usage'

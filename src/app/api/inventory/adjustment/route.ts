@@ -1,57 +1,55 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../../supabase/server'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import {
+  entitlementRouteResponse,
+  guardInventoryAccessForUser,
+} from "@/lib/subscription/route-guards";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { storeAdjustInventoryQuantity } from "@/lib/db/inventory-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const { guardInventoryAccess, entitlementRouteResponse } = await import(
-      '@/lib/subscription/route-guards'
-    )
     try {
-      await guardInventoryAccess(supabase, user.id)
+      await guardInventoryAccessForUser(user.id);
     } catch (entErr) {
-      const res = entitlementRouteResponse(entErr)
-      if (res) return res
-      throw entErr
+      const res = entitlementRouteResponse(entErr);
+      if (res) return res;
+      throw entErr;
     }
 
-    const { productId, quantity, reason, adjustmentType } = await request.json()
-    
-    // Get current inventory item
-    const { data: inventory, error: fetchError } = await supabase
-      .from('inventory')
-      .select('quantity_in_stock')
-      .eq('id', productId)
-      .single()
-    
-    if (fetchError || !inventory) {
-      return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 })
-    }
-    
-    // Calculate new stock
-    const newStock = adjustmentType === 'increase' 
-      ? inventory.quantity_in_stock + quantity 
-      : Math.max(0, inventory.quantity_in_stock - quantity)
-    
-    // Update inventory
-    const { error: updateError } = await supabase
-      .from('inventory')
-      .update({ quantity_in_stock: newStock })
-      .eq('id', productId)
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const { productId, quantity, adjustmentType } = await request.json();
+    const newStock = await storeAdjustInventoryQuantity(
+      productId,
+      adjustmentType === "increase" ? "increase" : "decrease",
+      quantity,
+    );
 
-    if (updateError) {
-      throw updateError
-    }
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "inventory",
+      recordId: productId,
+      newValues: {
+        adjustmentType: adjustmentType === "increase" ? "increase" : "decrease",
+        quantity,
+        newStock,
+      },
+      ...auditRequestMetadata(request),
+    });
 
-    return NextResponse.json({ success: true, newStock })
+    return NextResponse.json({ success: true, newStock });
   } catch (error) {
-    console.error('Adjustment error:', error)
-    return NextResponse.json({ success: false, error: 'Adjustment failed' }, { status: 500 })
+    console.error("POST /api/inventory/adjustment", error);
+    const message = error instanceof Error ? error.message : "Adjustment failed";
+    const status = message.includes("not found") ? 404 : 500;
+    return NextResponse.json({ success: false, error: message }, { status });
   }
 }

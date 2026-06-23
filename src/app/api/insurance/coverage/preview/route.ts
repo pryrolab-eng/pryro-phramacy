@@ -1,20 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "../../../../../../supabase/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { computeInsuranceCoverage } from "@/lib/insurance/coverage-engine";
-import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
-import { createServiceClient } from "../../../../../../supabase/service";
-
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id);
+    const pharmacyId = await requireUserPharmacyId(user.id);
     const body = await request.json();
     const providerIdOrName = String(
       body.providerId ?? body.insuranceType ?? body.insurance ?? "",
@@ -28,8 +23,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const admin = createServiceClient();
-    const totals = await computeInsuranceCoverage(admin, {
+    const totals = await computeInsuranceCoverage({
       pharmacyId,
       providerIdOrName,
       lines: lines.map(

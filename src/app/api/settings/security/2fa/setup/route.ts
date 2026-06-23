@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireTwoFactorEnrollment } from '@/lib/security/require-two-factor-enrollment'
+import { storeSaveTwoFactorSetup } from '@/lib/db/public-users-store'
 import { authenticator } from 'otplib'
 import QRCode from 'qrcode'
 import crypto from 'crypto'
@@ -11,7 +12,7 @@ export async function POST() {
       return NextResponse.json({ error: gate.error }, { status: gate.status })
     }
 
-    const { user, supabase, issuer } = gate.context
+    const { user, issuer } = gate.context
 
     // Generate secret
     const secret = authenticator.generateSecret()
@@ -27,16 +28,7 @@ export async function POST() {
       crypto.randomBytes(4).toString('hex').toUpperCase()
     )
 
-    // Store secret (not enabled yet)
-    const { error } = await supabase
-      .from('users')
-      .update({
-        two_factor_secret: secret,
-        two_factor_backup_codes: backupCodes
-      })
-      .eq('id', user.id)
-
-    if (error) throw error
+    await storeSaveTwoFactorSetup(user.id, secret, backupCodes)
 
     return NextResponse.json({ 
       secret,

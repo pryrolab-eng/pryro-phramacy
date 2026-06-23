@@ -19,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Progress } from "@/components/ui/progress"
-import { Pill, Plus, Clock, CheckCircle, AlertCircle, User, Calendar, Search, Filter, Download, ArrowUpRight, FileText, Users } from 'lucide-react'
+import { Pill, Plus, Clock, CheckCircle, AlertCircle, User, Calendar, Search, Filter, Download, FileText, Users } from 'lucide-react'
 import { DashboardPageHeader, DashboardPageShell } from '@/components/dashboard'
 import { Spinner } from '@/components/ui/spinner'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts'
@@ -47,6 +47,17 @@ export default function PrescriptionsPage() {
   const createPrescriptionMutation = useCreatePrescriptionMutation()
   const updatePrescriptionMutation = useUpdatePrescriptionMutation()
   const prescriptions = (prescriptionsQuery.data ?? []) as Prescription[]
+  const totalPrescriptions = prescriptions.length
+  const pendingCount = prescriptions.filter((p) => p.status === 'pending').length
+  const completedCount = prescriptions.filter((p) => p.status === 'completed').length
+  const dispensedCount = prescriptions.filter((p) => p.status === 'dispensed').length
+  const insuranceCount = prescriptions.filter(
+    (p) => p.insurance && p.insurance !== 'None',
+  ).length
+  const percentOfTotal = (value: number) =>
+    totalPrescriptions > 0 ? Math.round((value / totalPrescriptions) * 100) : 0
+  const completionRate = percentOfTotal(completedCount + dispensedCount)
+  const insuranceRate = percentOfTotal(insuranceCount)
   const [filteredPrescriptions, setFilteredPrescriptions] = useState<Prescription[]>([])
   const loading = prescriptionsQuery.isPending
   const [isAddingPrescription, setIsAddingPrescription] = useState(false)
@@ -227,12 +238,12 @@ export default function PrescriptionsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{prescriptions.length}</div>
+            <div className="text-2xl font-bold">{totalPrescriptions}</div>
             <div className="flex items-center text-xs text-muted-foreground mt-1">
-              <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
-              +12% from last week
+              <FileText className="h-3 w-3 text-blue-500 mr-1" />
+              Live prescription count
             </div>
-            <Progress value={75} className="mt-2" />
+            <Progress value={totalPrescriptions > 0 ? 100 : 0} className="mt-2" />
           </CardContent>
         </Card>
         <Card>
@@ -243,12 +254,12 @@ export default function PrescriptionsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{prescriptions.filter(p => p.status === 'pending').length}</div>
+            <div className="text-2xl font-bold">{pendingCount}</div>
             <div className="flex items-center text-xs text-muted-foreground mt-1">
               <Clock className="h-3 w-3 text-orange-500 mr-1" />
               Awaiting processing
             </div>
-            <Progress value={40} className="mt-2" />
+            <Progress value={percentOfTotal(pendingCount)} className="mt-2" />
           </CardContent>
         </Card>
         <Card>
@@ -259,12 +270,12 @@ export default function PrescriptionsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{prescriptions.filter(p => p.status === 'completed').length}</div>
+            <div className="text-2xl font-bold">{completedCount}</div>
             <div className="flex items-center text-xs text-muted-foreground mt-1">
               <CheckCircle className="h-3 w-3 text-blue-500 mr-1" />
               Ready to dispense
             </div>
-            <Progress value={60} className="mt-2" />
+            <Progress value={percentOfTotal(completedCount)} className="mt-2" />
           </CardContent>
         </Card>
         <Card>
@@ -275,12 +286,12 @@ export default function PrescriptionsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{prescriptions.filter(p => p.status === 'dispensed').length}</div>
+            <div className="text-2xl font-bold">{dispensedCount}</div>
             <div className="flex items-center text-xs text-muted-foreground mt-1">
-              <ArrowUpRight className="h-3 w-3 text-green-500 mr-1" />
+              <CheckCircle className="h-3 w-3 text-green-500 mr-1" />
               Successfully completed
             </div>
-            <Progress value={90} className="mt-2" />
+            <Progress value={percentOfTotal(dispensedCount)} className="mt-2" />
           </CardContent>
         </Card>
       </div>
@@ -367,21 +378,21 @@ export default function PrescriptionsPage() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Completion Rate</span>
-                    <span className="text-sm text-muted-foreground">85%</span>
+                    <span className="text-sm text-muted-foreground">{completionRate}%</span>
                   </div>
-                  <Progress value={85} />
+                  <Progress value={completionRate} />
                   
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Avg Processing Time</span>
-                    <span className="text-sm text-muted-foreground">12 min</span>
+                    <span className="text-sm text-muted-foreground">Not tracked</span>
                   </div>
-                  <Progress value={70} />
+                  <Progress value={0} />
                   
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Insurance Claims</span>
-                    <span className="text-sm text-muted-foreground">67%</span>
+                    <span className="text-sm text-muted-foreground">{insuranceRate}%</span>
                   </div>
-                  <Progress value={67} />
+                  <Progress value={insuranceRate} />
                 </div>
               </CardContent>
             </Card>

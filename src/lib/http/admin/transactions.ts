@@ -15,7 +15,6 @@ export type AdminPaymentTransactionRow = {
   customer_name: string | null;
   customer_email: string | null;
   customer_phone: string | null;
-  kpay_refid: string | null;
   polar_checkout_id: string | null;
   completed_at: string | null;
   created_at: string;

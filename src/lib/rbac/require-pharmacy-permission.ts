@@ -1,4 +1,3 @@
-import { createServiceClient } from "../../../supabase/service";
 import { resolveActivePharmacyContext } from "@/lib/pharmacy/active-pharmacy";
 import {
   hasPermission,
@@ -18,16 +17,15 @@ export async function requirePharmacyPermission(
   userId: string,
   permission: PharmacyPermission,
 ) {
-  const admin = createServiceClient();
-  const ctx = await resolveActivePharmacyContext(admin, userId);
+  const ctx = await resolveActivePharmacyContext(userId);
   if (!ctx.activePharmacyId) {
     throw new PharmacyPermissionError("Pharmacy not found");
   }
-  const permissions = await loadRolePermissions(admin, ctx.role);
+  const permissions = await loadRolePermissions(ctx.role);
   if (!hasPermission(permissions, permission)) {
     throw new PharmacyPermissionError();
   }
-  return { admin, ctx, permissions };
+  return { ctx, permissions };
 }
 
 export function permissionErrorResponse(error: unknown) {

@@ -16,6 +16,8 @@ type Props = {
   downgradePlans: CatalogPlan[];
   layout?: "page" | "dialog";
   onPlanSelect: (planIdOrName: string) => void;
+  isFirstTime?: boolean;
+  isExpired?: boolean;
 };
 
 function planGridClass(layout: "page" | "dialog", singleColumn?: boolean) {
@@ -82,7 +84,15 @@ export function PlanCatalogSections({
   downgradePlans,
   layout = "page",
   onPlanSelect,
+  isFirstTime,
+  isExpired,
 }: Props) {
+  const showAllPlans = isFirstTime || isExpired;
+  const sectionTitle = showAllPlans ? "Available plans" : "Upgrade";
+  const sectionDescription = showAllPlans
+    ? "Choose a plan to get started."
+    : "Move to a higher tier for more limits and features. Payment opens after you choose a plan.";
+  const planAction = showAllPlans ? ("subscribe" as const) : ("upgrade" as const);
   return (
     <div className="space-y-8">
       <section>
@@ -120,13 +130,13 @@ export function PlanCatalogSections({
       {upgradePlans.length > 0 ? (
         <section>
           <SectionHeading
-            title="Upgrade"
-            description="Move to a higher tier for more limits and features. Payment opens after you choose a plan."
+            title={sectionTitle}
+            description={sectionDescription}
           />
           <PlanGrid
             plans={upgradePlans}
             layout={layout}
-            action="upgrade"
+            action={planAction}
             onPlanSelect={onPlanSelect}
           />
         </section>

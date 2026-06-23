@@ -1,65 +1,53 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { createClient } from '../../../../../supabase/server'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import {
+  entitlementRouteResponse,
+  guardInventoryAccessForUser,
+} from "@/lib/subscription/route-guards";
+import {
+  storeCreateSupplier,
+  storeListActiveSuppliers,
+} from "@/lib/db/inventory-store";
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const { data: suppliers, error } = await supabase
-      .from('suppliers')
-      .select('*')
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-
-    if (error) throw error
-    return NextResponse.json(suppliers)
+    const suppliers = await storeListActiveSuppliers();
+    return NextResponse.json(suppliers);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch suppliers' }, { status: 500 })
+    console.error("GET /api/inventory/suppliers", error);
+    return NextResponse.json({ error: "Failed to fetch suppliers" }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const { guardInventoryAccess, entitlementRouteResponse } = await import(
-      '@/lib/subscription/route-guards'
-    )
     try {
-      await guardInventoryAccess(supabase, user.id)
+      await guardInventoryAccessForUser(user.id);
     } catch (entErr) {
-      const res = entitlementRouteResponse(entErr)
-      if (res) return res
-      throw entErr
+      const res = entitlementRouteResponse(entErr);
+      if (res) return res;
+      throw entErr;
     }
 
-    // Get user's pharmacy_id
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const body = await request.json();
+    const supplier = await storeCreateSupplier({
+      pharmacyId,
+      name: body.name,
+      contactPerson: body.contact,
+      phone: body.phone,
+      email: body.email,
+    });
 
-    const body = await request.json()
-    
-    const { data: supplier, error } = await supabase
-      .from('suppliers')
-      .insert({
-        name: body.name,
-        contact_person: body.contact,
-        phone: body.phone,
-        email: body.email,
-        pharmacy_id: pharmacyId,
-        is_active: true
-      })
-      .select()
-      .single()
-
-    if (error) throw error
-    return NextResponse.json({ success: true, supplier })
+    return NextResponse.json({ success: true, supplier });
   } catch (error) {
-    console.error('Error creating supplier:', error)
-    return NextResponse.json({ success: false, error: 'Failed to create supplier' }, { status: 500 })
+    console.error("POST /api/inventory/suppliers", error);
+    return NextResponse.json({ success: false, error: "Failed to create supplier" }, { status: 500 });
   }
 }

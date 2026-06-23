@@ -1,25 +1,18 @@
-import { NextRequest } from "next/server";
-import { createRouteHandlerClient } from "../../../../../supabase/route-handler";
-import { createServiceClient } from "../../../../../supabase/service";
+import { NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import {
   createSubscriptionOrchestrator,
   SubscriptionPlanChangeError,
 } from "@/lib/subscription/orchestrator";
-import { resolveActivePharmacyId } from "@/lib/pharmacy/active-pharmacy";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { storeFindBranchAddonPlan } from "@/lib/db/subscriptions-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-export async function POST(request: NextRequest) {
-  const { supabase, json } = createRouteHandlerClient(request);
-
+export async function POST(request: Request) {
   try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getAuthUser();
     if (!user) {
-      return json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
@@ -30,48 +23,30 @@ export async function POST(request: NextRequest) {
       | undefined;
 
     if (!planId || typeof planId !== "string") {
-      return json({ error: "planId is required" }, { status: 400 });
+      return NextResponse.json({ error: "planId is required" }, { status: 400 });
     }
 
     if (!branchId && !branch?.name) {
-      return json(
+      return NextResponse.json(
         {
           error:
             "Provide branchId for an existing branch, or branch.name to create a new branch with this add-on.",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const admin = createServiceClient();
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const plan = await storeFindBranchAddonPlan(planId);
 
-    const pharmacyId = await resolveActivePharmacyId(admin, user.id);
-    if (!pharmacyId) {
-      return json({ error: "Pharmacy not found" }, { status: 403 });
-    }
-
-    let planQuery = admin
-      .from("subscription_plans")
-      .select("id, name, price, plan_type, is_active")
-      .eq("is_active", true)
-      .eq("plan_type", "branch_addon");
-
-    if (UUID_RE.test(planId)) {
-      planQuery = planQuery.eq("id", planId);
-    } else {
-      planQuery = planQuery.ilike("name", planId);
-    }
-
-    const { data: plan, error: planError } = await planQuery.maybeSingle();
-
-    if (planError || !plan) {
-      return json(
+    if (!plan) {
+      return NextResponse.json(
         { error: "Branch add-on plan not found or is not available" },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
-    const orch = createSubscriptionOrchestrator(admin);
+    const orch = createSubscriptionOrchestrator();
     const result = await orch.beginPaidBranchAddon(
       pharmacyId,
       plan.id as string,
@@ -85,28 +60,38 @@ export async function POST(request: NextRequest) {
               email: branch.email,
             }
           : undefined,
-      }
+      },
     );
 
-    return json({
-      success: true,
-      requiresPayment: true,
-      subscription: {
-        id: result.subscriptionId,
-        planId: result.planId,
-        planName: result.planName,
-        amount: result.amount,
-        branchId: result.branchId,
-        branchName: result.branchName,
-        status: result.status,
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "INSERT",
+      tableName: "subscriptions",
+      recordId: result.subscriptionId,
+      newValues: {
+        changeType: "branch_addon_requested",
+        planId: plan.id,
+        branchId: typeof branchId === "string" ? branchId : null,
+        newBranchName: branch?.name ?? null,
       },
+      ...auditRequestMetadata(request),
+    });
+
+    return NextResponse.json({
+      success: true,
+      subscription: result,
     });
   } catch (error: unknown) {
     if (error instanceof SubscriptionPlanChangeError) {
-      return json({ error: error.message, code: error.code }, { status: 400 });
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: 400 },
+      );
     }
+    console.error("branch-addon error:", error);
     const message =
-      error instanceof Error ? error.message : "Branch add-on checkout failed";
-    return json({ error: message }, { status: 400 });
+      error instanceof Error ? error.message : "Branch add-on failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -14,13 +14,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -45,12 +38,11 @@ import {
   resolveCurrentPlanPrice,
 } from "@/lib/subscription/match-current-catalog-plan";
 import { useActiveCatalogPlanRef } from "@/hooks/useActiveCatalogPlanRef";
+import { usePharmacyEntitlements } from "@/hooks/usePharmacyEntitlements";
 import { fallbackPlansForDisplay } from "@/lib/subscription/default-plans";
 import { normalizeSubscriptionPlanRow } from "@/lib/subscription/normalize-plan";
 import {
   createPendingSubscription,
-  pollKpayTransaction,
-  startKpaySubscriptionCheckout,
   startPolarSubscriptionCheckout,
   type PaidCheckoutContext,
   type ScheduledChangeResponse,
@@ -66,12 +58,10 @@ import {
   useInvalidateSubscriptionManagement,
   usePharmacySubscriptionPlan,
   usePlanLimitsQuery,
-  usePolarConfigEnabled,
   useScheduleDowngradeMutation,
   useScheduledChangeQuery,
   useSubscriptionPlansCatalog,
   useSubscriptionStatusQuery,
-  useValidatePhoneMutation,
 } from "@/hooks/useSubscriptionManagement";
 import { BranchAddonCheckoutDialog } from "@/components/subscription/branch-addon-checkout-dialog";
 import { PlanCatalogSections } from "@/components/subscription/plan-catalog-sections";
@@ -92,7 +82,6 @@ export type CatalogPlan = {
 type Props = {
   customerName?: string;
   customerEmail?: string;
-  customerPhone?: string;
   checkoutReturnContext?: PaidCheckoutContext;
   onPlanChanged?: () => void;
   showBranchAddons?: boolean;
@@ -122,7 +111,6 @@ function toSaasAddonPlan(plan: CatalogPlan): SaasSubscriptionPlan {
 export function SubscriptionPlanManagement({
   customerName = "Pharmacy customer",
   customerEmail = "",
-  customerPhone = "",
   checkoutReturnContext = "settings",
   onPlanChanged,
   showBranchAddons = true,
@@ -145,12 +133,11 @@ export function SubscriptionPlanManagement({
     isError: activePlanError,
     refetch: refetchActivePlan,
   } = useActiveCatalogPlanRef();
+  const { entitlements } = usePharmacyEntitlements();
   const pharmacyPlanQuery = usePharmacySubscriptionPlan();
   const scheduledQuery = useScheduledChangeQuery();
   const statusQuery = useSubscriptionStatusQuery();
   const limitsQuery = usePlanLimitsQuery();
-  const polarEnabled = usePolarConfigEnabled().data ?? false;
-  const validatePhoneMutation = useValidatePhoneMutation();
   const scheduleDowngradeMutation = useScheduleDowngradeMutation();
   const cancelScheduledMutation = useCancelScheduledChangeMutation();
 
@@ -164,8 +151,6 @@ export function SubscriptionPlanManagement({
   const [selectedDowngradePlan, setSelectedDowngradePlan] =
     useState<CatalogPlan | null>(null);
   const [upgradePaymentData, setUpgradePaymentData] = useState({
-    paymentMethod: "kpay",
-    phone: "",
     email: "",
   });
 
@@ -287,6 +272,39 @@ export function SubscriptionPlanManagement({
 
   const currentPlanPrice = resolveCurrentPlanPrice(plans, activePlan);
 
+  const subStatus = statusQuery.data?.status;
+  const isPendingPayment = entitlements?.accessBlockReason === "pending_payment";
+  const isFirstTimeSubscriber = subStatus === "free" || (!currentPlan && !activePlan) || isPendingPayment;
+  const isExpired = subStatus === "expired";
+
+  const pendingPlan = useMemo(() => {
+    if (!isPendingPayment || !activePlan) return null;
+    return plans.find(
+      (p) => p.id === activePlan.id || p.name === activePlan.name,
+    ) ?? null;
+  }, [isPendingPayment, activePlan, plans]);
+
+  const planActionLabel = (plan: CatalogPlan) => {
+    if (isFirstTimeSubscriber) return "Subscribe";
+    if (isExpired) return "Renew";
+    if (plan.price > currentPlanPrice) return "Upgrade";
+    return "Select";
+  };
+
+  const dialogTitlePrefix = useMemo(() => {
+    if (isFirstTimeSubscriber) return "Subscribe to";
+    if (isExpired) return "Renew";
+    return "Upgrade to";
+  }, [isFirstTimeSubscriber, isExpired]);
+
+  const dialogDescription = useMemo(() => {
+    if (isFirstTimeSubscriber)
+      return "Complete payment to activate your subscription";
+    if (isExpired)
+      return "Complete payment to renew your subscription";
+    return "Complete payment to upgrade your subscription";
+  }, [isFirstTimeSubscriber, isExpired]);
+
   const activePlanLabel = useMemo(() => {
     if (currentPlan?.name) return currentPlan.name;
     if (activePlan?.name) return planDisplayName(activePlan.name);
@@ -296,17 +314,23 @@ export function SubscriptionPlanManagement({
   const upgradePlans = useMemo(
     () =>
       [...plans]
-        .filter((p) => !p.current && p.price > currentPlanPrice)
+        .filter((p) => {
+          if (p.current && !isPendingPayment) return false;
+          if (isPendingPayment && pendingPlan && p.id === pendingPlan.id) return false;
+          return p.price > currentPlanPrice;
+        })
         .sort((a, b) => a.price - b.price),
-    [plans, currentPlanPrice],
+    [plans, currentPlanPrice, isPendingPayment, pendingPlan],
   );
 
   const downgradePlans = useMemo(
     () =>
-      [...plans]
-        .filter((p) => !p.current && p.price < currentPlanPrice)
-        .sort((a, b) => b.price - a.price),
-    [plans, currentPlanPrice],
+      isPendingPayment
+        ? []
+        : [...plans]
+            .filter((p) => !p.current && p.price < currentPlanPrice)
+            .sort((a, b) => b.price - a.price),
+    [plans, currentPlanPrice, isPendingPayment],
   );
 
   const isPlanUpgrade = (plan: CatalogPlan) => plan.price > currentPlanPrice;
@@ -366,8 +390,6 @@ export function SubscriptionPlanManagement({
 
     setSelectedUpgradePlan(plan);
     setUpgradePaymentData({
-      paymentMethod: "kpay",
-      phone: customerPhone || "",
       email: customerEmail || "",
     });
     setIsUpgradeDialogOpen(true);
@@ -377,9 +399,10 @@ export function SubscriptionPlanManagement({
     const plan = plans.find(
       (p) => p.id === planIdOrName || p.name === planIdOrName
     );
-    if (!plan || plan.current) return;
+    if (!plan) return;
+    if (plan.current && !isPendingPayment) return;
 
-    if (plan.price === currentPlanPrice) {
+    if (!isFirstTimeSubscriber && !isExpired && plan.price === currentPlanPrice) {
       alert("You are already on this plan tier.");
       return;
     }
@@ -401,7 +424,7 @@ export function SubscriptionPlanManagement({
   const processUpgradePayment = async () => {
     if (!selectedUpgradePlan) return;
     const plan = selectedUpgradePlan;
-    const { paymentMethod, phone, email } = upgradePaymentData;
+    const { email } = upgradePaymentData;
 
     const normalizedEmail = normalizeEmail(email);
     if (!normalizedEmail) {
@@ -412,70 +435,20 @@ export function SubscriptionPlanManagement({
       alert(INVALID_EMAIL_MESSAGE);
       return;
     }
-    if (paymentMethod === "kpay" && !phone) {
-      alert("Please enter your Mobile Money number.");
-      return;
-    }
 
     setIsUpgradePaymentLoading(true);
     try {
       const subscription = await createPendingSubscription(plan.id || plan.name);
 
-      if (paymentMethod === "polar") {
-        const polar = await startPolarSubscriptionCheckout({
-          planId: plan.id || plan.name,
-          subscriptionId: subscription.id,
-          customerEmail: normalizedEmail,
-          customerName,
-          customerPhone: phone,
-          returnContext: checkoutReturnContext,
-        });
-        setIsUpgradeDialogOpen(false);
-        window.location.href = polar.checkoutUrl;
-        return;
-      }
-
-      const phoneResult = await validatePhoneMutation.mutateAsync(phone);
-
-      if (!phoneResult.phone?.isValid || !phoneResult.phone.formatted) {
-        alert("Please enter a valid Rwanda phone number (e.g. 0788123456)");
-        return;
-      }
-
-      const paymentData = await startKpaySubscriptionCheckout({
-        plan,
+      const polar = await startPolarSubscriptionCheckout({
+        planId: plan.id || plan.name,
         subscriptionId: subscription.id,
-        customerName,
-        customerPhone: phoneResult.phone.formatted,
         customerEmail: normalizedEmail,
-        bankId: phoneResult.phone.kpayBankId,
+        customerName,
+        returnContext: checkoutReturnContext,
       });
-
       setIsUpgradeDialogOpen(false);
-
-      if (paymentData.success && paymentData.transaction?.checkoutUrl) {
-        window.location.href = paymentData.transaction.checkoutUrl;
-        return;
-      }
-
-      if (paymentData.success && paymentData.transaction?.id) {
-        alert(
-          `Payment initiated! Check your phone (${phoneResult.phone.formatted}) for the prompt.`
-        );
-        pollKpayTransaction(
-          paymentData.transaction.id,
-          async () => {
-            await refreshAll();
-            alert(`Payment successful! You are now on the ${plan.name} plan.`);
-          },
-          (msg) => alert(msg)
-        );
-      } else {
-        alert(
-          paymentData.kpayResponse?.statusdesc ||
-            "Payment failed. Please try again."
-        );
-      }
+      window.location.href = polar.checkoutUrl;
     } catch (error) {
       alert(
         error instanceof Error
@@ -617,14 +590,53 @@ export function SubscriptionPlanManagement({
             No plans available. Contact support or try again later.
           </p>
         ) : (
-          <PlanCatalogSections
-            currentPlan={currentPlan}
-            activePlanLabel={activePlanLabel}
-            upgradePlans={upgradePlans}
-            downgradePlans={downgradePlans}
-            layout={layout}
-            onPlanSelect={(id) => void handlePlanChange(id)}
-          />
+          <div className="space-y-6">
+            {pendingPlan && (
+              <Card className="border-amber-200 bg-amber-50/50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    Awaiting payment
+                  </CardTitle>
+                  <CardDescription>
+                    You selected the {pendingPlan.name} plan during setup. Complete payment to activate it.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold">{pendingPlan.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        RWF {pendingPlan.price.toLocaleString()} / month
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => {
+                        setSelectedUpgradePlan(pendingPlan);
+                        setUpgradePaymentData({
+                          email: customerEmail || "",
+                        });
+                        setIsUpgradeDialogOpen(true);
+                      }}
+                    >
+                      <CreditCard className="mr-2 h-4 w-4" />
+                      Pay now
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            <PlanCatalogSections
+              currentPlan={isPendingPayment ? null : currentPlan}
+              activePlanLabel={activePlanLabel}
+              upgradePlans={upgradePlans}
+              downgradePlans={downgradePlans}
+              layout={layout}
+              onPlanSelect={(id) => void handlePlanChange(id)}
+              isFirstTime={isFirstTimeSubscriber}
+              isExpired={isExpired}
+            />
+          </div>
         )}
       </div>
 
@@ -690,11 +702,11 @@ export function SubscriptionPlanManagement({
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Upgrade to {selectedUpgradePlan?.name} Plan</DialogTitle>
+            <DialogTitle>{dialogTitlePrefix} {selectedUpgradePlan?.name} Plan</DialogTitle>
             <DialogDescription>
               {isUpgradePaymentLoading
                 ? "Starting payment — please wait…"
-                : "Complete payment to upgrade your subscription"}
+                : dialogDescription}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -707,45 +719,6 @@ export function SubscriptionPlanManagement({
               </div>
             </div>
             <div className="space-y-3">
-              <div className="grid gap-2">
-                <Label>Payment Method</Label>
-                <Select
-                  value={upgradePaymentData.paymentMethod}
-                  onValueChange={(value) =>
-                    setUpgradePaymentData({
-                      ...upgradePaymentData,
-                      paymentMethod: value,
-                    })
-                  }
-                  disabled={isUpgradePaymentLoading}
-                >
-                  <SelectTrigger disabled={isUpgradePaymentLoading}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="kpay">Mobile Money — KPay (Rwanda)</SelectItem>
-                    {polarEnabled ? (
-                      <SelectItem value="polar">Card / international — Polar</SelectItem>
-                    ) : null}
-                  </SelectContent>
-                </Select>
-              </div>
-              {upgradePaymentData.paymentMethod === "kpay" ? (
-                <div className="grid gap-2">
-                  <Label>Phone Number</Label>
-                  <Input
-                    placeholder="0788123456"
-                    value={upgradePaymentData.phone}
-                    disabled={isUpgradePaymentLoading}
-                    onChange={(e) =>
-                      setUpgradePaymentData({
-                        ...upgradePaymentData,
-                        phone: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-              ) : null}
               <div className="grid gap-2">
                 <Label>Email</Label>
                 <Input
@@ -776,9 +749,7 @@ export function SubscriptionPlanManagement({
                 onClick={() => void processUpgradePayment()}
                 disabled={
                   isUpgradePaymentLoading ||
-                  !upgradePaymentData.email ||
-                  (upgradePaymentData.paymentMethod === "kpay" &&
-                    !upgradePaymentData.phone)
+                  !upgradePaymentData.email
                 }
                 className="flex-1"
               >
@@ -868,7 +839,6 @@ export function SubscriptionPlanManagement({
         mode="new_branch"
         initialPlanId={addonPlanTarget?.id}
         customerEmail={customerEmail}
-        customerPhone={customerPhone}
         customerName={customerName}
         onSuccess={() => {
           void refreshAll();

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "../../../../../../supabase/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
 import {
   cancelPaymentTransaction,
@@ -9,17 +9,13 @@ import {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
+    const user = await getAuthUser();
 
-    if (authError || !user) {
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const allowed = await resolveIsAppPlatformAdmin(supabase, user.id, null);
+    const allowed = await resolveIsAppPlatformAdmin(user.id);
     if (!allowed) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -30,13 +26,8 @@ export async function POST(request: NextRequest) {
       pharmacy_id?: string;
     };
 
-    const db = createServiceClient();
-
     if (body.payment_transaction_id) {
-      const result = await cancelPaymentTransaction(
-        db,
-        body.payment_transaction_id,
-      );
+      const result = await cancelPaymentTransaction(body.payment_transaction_id);
       if (!result.ok) {
         return NextResponse.json({ error: result.error }, { status: 400 });
       }
@@ -44,10 +35,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.subscription_id) {
-      const result = await cancelPendingSubscriptionById(
-        db,
-        body.subscription_id,
-      );
+      const result = await cancelPendingSubscriptionById(body.subscription_id);
       if (!result.ok) {
         return NextResponse.json({ error: result.error }, { status: 400 });
       }
@@ -55,10 +43,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.pharmacy_id) {
-      const result = await cancelPendingSubscriptionsForPharmacy(
-        db,
-        body.pharmacy_id,
-      );
+      const result = await cancelPendingSubscriptionsForPharmacy(body.pharmacy_id);
       if (result.error) {
         return NextResponse.json({ error: result.error }, { status: 400 });
       }

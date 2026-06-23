@@ -11,10 +11,10 @@ import {
 import { useSettingsPage } from "@/components/settings/settings-page-provider";
 
 export function SettingsNotificationsPanel() {
-  const { notifyPrefs, setNotifyPrefs } = useSettingsPage();
+  const { notifyPrefs, saveNotifyPrefs } = useSettingsPage();
 
   const patch = (key: keyof typeof notifyPrefs, value: boolean) => {
-    setNotifyPrefs((p) => ({ ...p, [key]: value }));
+    void saveNotifyPrefs({ ...notifyPrefs, [key]: value });
   };
 
   return (

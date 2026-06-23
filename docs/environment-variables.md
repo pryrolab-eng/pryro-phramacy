@@ -10,9 +10,9 @@ This document describes every environment variable used by **Pryrox**. Keep this
 
 | Variable | Required | Group | Server-only |
 |---|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | ✅ Required | Supabase | No |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ Required | Supabase | No |
-| `SUPABASE_SERVICE_ROLE_KEY` | ✅ Required | Supabase | **Yes** |
+| `DATABASE_URL` | ✅ Required | Database | **Yes** |
+| `NATIVE_AUTH_ENABLED` | ✅ Required | Auth | No |
+| `AUTH_SECRET` | ✅ Required | Auth | **Yes** |
 | `NEXT_PUBLIC_APP_URL` | ✅ Required | Application | No |
 | `NEXT_PUBLIC_BASE_URL` | ✅ Required | Application | No |
 | `KPAY_BASE_URL` | ✅ Required | KPay | No |
@@ -24,45 +24,48 @@ This document describes every environment variable used by **Pryrox**. Keep this
 
 ---
 
-## Supabase
+## Database
 
-These variables connect the application to your Supabase project. Find them in the Supabase dashboard under **Settings → API**.
-
-### `NEXT_PUBLIC_SUPABASE_URL`
-
-| | |
-|---|---|
-| **Required** | ✅ Yes |
-| **Exposed to browser** | Yes (`NEXT_PUBLIC_` prefix) |
-| **Example** | `https://abcdefghijklmnop.supabase.co` |
-
-The base URL of your Supabase project. Used by both the browser client and the server client to reach the Supabase REST, Auth, and Realtime APIs.
-
----
-
-### `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-
-| | |
-|---|---|
-| **Required** | ✅ Yes |
-| **Exposed to browser** | Yes (`NEXT_PUBLIC_` prefix) |
-| **Example** | `xxxxx.<payload>.<signature>` |
-
-The anonymous (public) API key for your Supabase project. This key is safe to expose to the browser because Row Level Security (RLS) policies on the database restrict what unauthenticated and authenticated users can access.
-
----
-
-### `SUPABASE_SERVICE_ROLE_KEY`
+### `DATABASE_URL`
 
 | | |
 |---|---|
 | **Required** | ✅ Yes |
 | **Exposed to browser** | 🚫 **Never — server-only** |
-| **Example** | `xxxxx.<payload>.<signature>` |
+| **Example** | `postgresql://pryrox:secret@localhost:5432/pryrox?sslmode=disable` |
 
-The service role key grants full, unrestricted access to the Supabase database, **bypassing all Row Level Security policies**. It is used exclusively in server-side API route handlers (e.g. admin operations, subscription management, webhook processing) where elevated privileges are required.
+PostgreSQL connection string used by Prisma for all application data access. On VPS deployments, point this at your local Postgres instance. URL-encode special characters in the password.
 
-**Do not assign this key to any `NEXT_PUBLIC_` variable. Do not reference it in any client component or browser-side code.**
+Apply schema migrations with `npm run db:sql:push` (Supabase CLI migration folder) or `npm run db:push` (Prisma).
+
+---
+
+## Auth
+
+Pryrox uses native JWT session cookies (`pryrox_session` / `pryrox_refresh`). SMTP delivers sign-up confirmation and password-reset emails.
+
+### `NATIVE_AUTH_ENABLED`
+
+| | |
+|---|---|
+| **Required** | ✅ Yes |
+| **Exposed to browser** | No |
+| **Default** | `true` when unset |
+| **Example** | `true` |
+
+Must be `true` for production. Set to `false` only for emergency rollback during migration.
+
+---
+
+### `AUTH_SECRET`
+
+| | |
+|---|---|
+| **Required** | ✅ Yes |
+| **Exposed to browser** | 🚫 **Never — server-only** |
+| **Example** | `openssl rand -base64 32` |
+
+Secret used to sign and verify native session JWTs. Use at least 32 random characters.
 
 ---
 
@@ -160,6 +163,18 @@ The retailer identifier assigned to your merchant account by KPay. Included in e
 The webhook URL that KPay calls with the payment result after a transaction completes. If this variable is not set, the application falls back to constructing the URL from `NEXT_PUBLIC_APP_URL`.
 
 Set this explicitly in production if your app URL differs from the URL that KPay can reach (e.g. when running behind a reverse proxy or using a custom domain).
+
+---
+
+### `KPAY_WEBHOOK_SECRET`
+
+| | |
+|---|---|
+| **Required** | ⚙️ Optional, recommended for production |
+| **Exposed to browser** | No |
+| **Example** | `change-me-to-a-long-random-secret` |
+
+When set, `POST /api/kpay/webhook` requires an HMAC-SHA256 signature over the raw request body. Send the hex digest in `x-kpay-signature` or `x-pryrox-signature` (`sha256=<hex>` is also accepted).
 
 ---
 

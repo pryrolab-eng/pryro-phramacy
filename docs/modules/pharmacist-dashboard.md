@@ -1,3 +1,5 @@
+> **Stack:** Prisma (`DATABASE_URL`) for data; native JWT auth (`getAuthUser()`, cookies `pryrox_session` / `pryrox_refresh`). SQL migrations live in `supabase/migrations/` (`npm run db:sql:push`).
+
 # Pharmacist Dashboard Module
 
 ## Purpose
@@ -20,7 +22,7 @@ The dashboard is a **client-side rendered** page (`'use client'`) that fetches d
 
 | File | Route | Method(s) | Description |
 |---|---|---|---|
-| `route.ts` | `/api/pharmacist` | `POST` | Creates a new pharmacist user. Uses the **service role key** to call `supabase.auth.admin.createUser`, then inserts a `pharmacy_users` record with `role = 'pharmacist'`. Called by staff-management flows, not by the dashboard page itself. |
+| `route.ts` | `/api/pharmacist` | `POST` | Creates a pharmacist via `adminCreateAuthUser()` + `pharmacy_users` row (`role = 'pharmacist'`). Requires authenticated pharmacy owner context. |
 | `dashboard/route.ts` | `/api/pharmacist/dashboard` | `GET` | Returns the eight KPI stats for the dashboard header cards. Resolves the caller's `pharmacy_id` from `pharmacy_users`, then queries `prescriptions`, `sales`, `prescription_processing`, `inventory_checks`, and `alert_actions`. Falls back to hardcoded mock values on any error. |
 | `prescriptions/route.ts` | `/api/pharmacist/prescriptions` | `GET`, `POST` | `GET`: Returns all `pending` prescriptions for the pharmacy, ordered by priority (descending) then creation time (ascending). `POST`: Accepts `{ prescriptionId, action }` where `action` is `'start'` (inserts a `prescription_processing` row) or `'dispense'` (marks processing complete and sets `prescriptions.status = 'dispensed'`). |
 | `activities/route.ts` | `/api/pharmacist/activities` | `GET` | Returns the four most recent sales records formatted as activity feed items (`type: 'sale'`). |
@@ -181,7 +183,7 @@ Read by `PharmacistSidebar` to display subscription plan and expiry countdown in
 | `staff` | Uses `PharmacySidebar`. No access to this route. |
 | `superadmin` | Uses `SuperadminSidebar`. No access to this route. |
 
-**Note:** The `/pharmacist-dashboard` route is protected by `middleware.ts` (redirects unauthenticated users to `/sign-in`), but there is **no server-side role check** on the page itself or its API routes. Any authenticated user who navigates directly to `/pharmacist-dashboard` will see the page regardless of their role. The API routes (`/api/pharmacist/dashboard`, `/api/pharmacist/prescriptions`, etc.) authenticate the caller via `supabase.auth.getUser()` but do not verify that the caller holds the `pharmacist` role.
+**Note:** The `/pharmacist-dashboard` route is protected by `middleware.ts` (redirects unauthenticated users to `/sign-in`), but there is **no server-side role check** on the page itself or its API routes. Any authenticated user who navigates directly to `/pharmacist-dashboard` will see the page regardless of their role. The API routes (`/api/pharmacist/dashboard`, `/api/pharmacist/prescriptions`, etc.) authenticate the caller via ``getAuthUser()`` but do not verify that the caller holds the `pharmacist` role.
 
 ---
 
@@ -326,7 +328,7 @@ fetchDashboardStats() re-runs (updates alertsHandled count)
 
 ### 2. No role enforcement on the page or its API routes
 
-The dashboard page and all `/api/pharmacist/*` routes (except `/api/pharmacist` POST, which uses the service role) authenticate the caller but do not verify the `pharmacist` role. Any authenticated user — including `cashier` or `staff` — can access these endpoints directly.
+Dashboard and `/api/pharmacist/*` routes use `getAuthUser()` but may not verify the `pharmacist` role name. Any authenticated pharmacy member can hit these endpoints if they know the URLs.
 
 ### 3. Performance metrics chart uses hardcoded data
 
@@ -354,4 +356,4 @@ The `customersServed` KPI is set to the same value as `completedSales` (today's 
 
 ### 9. `POST /api/pharmacist` uses service role without authentication
 
-The pharmacist creation endpoint (`POST /api/pharmacist`) uses `SUPABASE_SERVICE_ROLE_KEY` directly and does not verify that the caller is authenticated or holds an appropriate role (`pharmacy_owner` or `superadmin`). Any unauthenticated request with a valid JSON body can create a new user.
+The pharmacist creation endpoint (`POST /api/pharmacist`) uses `server-side Prisma (no browser exposure)` directly and does not verify that the caller is authenticated or holds an appropriate role (`pharmacy_owner` or `superadmin`). Any unauthenticated request with a valid JSON body can create a new user.

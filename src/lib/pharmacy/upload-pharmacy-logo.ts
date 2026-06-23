@@ -1,16 +1,19 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   isCloudinaryConfigured,
   uploadPharmacyLogoToCloudinary,
 } from "@/lib/cloudinary/pharmacy-logo";
 import { savePharmacyBrandingRow } from "@/lib/pharmacy/branding-db";
+import {
+  localUploadFileUrl,
+  saveLocalUpload,
+  UPLOAD_CATEGORIES,
+} from "@/lib/storage/local-files";
 
 /**
- * Upload logo to Cloudinary when configured, otherwise Supabase Storage.
+ * Upload logo to Cloudinary when configured, otherwise local disk (VPS-ready).
  * Always persists pharmacies.logo_url.
  */
 export async function uploadAndPersistPharmacyLogo(
-  supabase: SupabaseClient,
   pharmacyId: string,
   file: File | { buffer: Buffer; type: string; name: string },
 ): Promise<string> {
@@ -25,21 +28,15 @@ export async function uploadAndPersistPharmacyLogo(
     publicUrl = await uploadPharmacyLogoToCloudinary(buffer, pharmacyId, mimeType);
   } else {
     const ext = (file instanceof File ? file.name : file.name).split(".").pop() || "png";
-    const fileName = `${pharmacyId}-${Date.now()}.${ext}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("pharmacy-logos")
-      .upload(fileName, buffer, { contentType: mimeType, upsert: true });
-
-    if (uploadError) throw uploadError;
-
-    const {
-      data: { publicUrl: storageUrl },
-    } = supabase.storage.from("pharmacy-logos").getPublicUrl(fileName);
-
-    publicUrl = storageUrl;
+    const objectPath = `${pharmacyId}-${Date.now()}.${ext}`;
+    await saveLocalUpload({
+      category: UPLOAD_CATEGORIES.pharmacyLogos,
+      objectPath,
+      buffer,
+    });
+    publicUrl = localUploadFileUrl(UPLOAD_CATEGORIES.pharmacyLogos, objectPath);
   }
 
-  await savePharmacyBrandingRow(supabase, pharmacyId, { logoUrl: publicUrl });
+  await savePharmacyBrandingRow(pharmacyId, { logoUrl: publicUrl });
   return publicUrl;
 }

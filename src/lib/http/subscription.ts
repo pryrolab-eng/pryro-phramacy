@@ -110,40 +110,6 @@ export async function getPlanLimits(): Promise<PlanLimitsResponse> {
   });
 }
 
-export type KpayCheckoutResponse = {
-  success?: boolean;
-  transaction?: {
-    id?: string;
-    checkoutUrl?: string;
-  };
-  kpayResponse?: { statusdesc?: string };
-};
-
-export async function startKpaySubscriptionCheckout(params: {
-  plan: { name: string; price: number };
-  subscriptionId: string;
-  customerName: string;
-  customerPhone: string;
-  customerEmail: string;
-  bankId?: string;
-}): Promise<KpayCheckoutResponse> {
-  return fetchJson<KpayCheckoutResponse>("/api/kpay/initiate", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      amount: params.plan.price,
-      subscriptionId: params.subscriptionId,
-      paymentMethod: "momo",
-      bankId: params.bankId || "63510",
-      customerName: params.customerName,
-      customerPhone: params.customerPhone,
-      customerEmail: params.customerEmail,
-      details: `${params.plan.name} — subscription`,
-    }),
-  });
-}
-
 export type PaidCheckoutContext = "onboarding" | "settings" | "billing";
 
 export async function startPolarSubscriptionCheckout(params: {

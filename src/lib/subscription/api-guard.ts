@@ -1,43 +1,42 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { createServiceClient } from "../../../supabase/service";
-import { resolveActivePharmacyId } from "@/lib/pharmacy/active-pharmacy";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import {
   entitlementErrorResponse,
   requirePharmacyEntitlement,
 } from "./assert-entitlement";
 
-export async function getRequestPharmacyId(
-  _supabase: SupabaseClient,
-  userId: string,
-): Promise<string | null> {
-  const admin = createServiceClient();
-  return resolveActivePharmacyId(admin, userId);
+export type GuardPharmacyFeatureOptions = {
+  feature?: string;
+  limit?: "users" | "branches";
+  branchId?: string;
+  consumeTransaction?: boolean;
+};
+
+export async function getRequestPharmacyId(userId: string): Promise<string | null> {
+  try {
+    return await requireUserPharmacyId(userId);
+  } catch {
+    return null;
+  }
 }
 
-export async function guardPharmacyFeature(
-  supabase: SupabaseClient,
+export async function guardPharmacyFeatureForUser(
   userId: string,
-  options: {
-    feature?: string;
-    limit?: "users" | "branches";
-    branchId?: string;
-    consumeTransaction?: boolean;
-  },
-): Promise<{ pharmacyId: string; admin: SupabaseClient }> {
-  const pharmacyId = await getRequestPharmacyId(supabase, userId);
+  options: GuardPharmacyFeatureOptions,
+): Promise<{ pharmacyId: string }> {
+  const pharmacyId = await getRequestPharmacyId(userId);
   if (!pharmacyId) {
     throw new Error("Pharmacy not found");
   }
-  const admin = createServiceClient();
+
   await requirePharmacyEntitlement({
-    admin,
     pharmacyId,
     feature: options.feature,
     limit: options.limit,
     branchId: options.branchId,
     consumeTransaction: options.consumeTransaction,
   });
-  return { pharmacyId, admin };
+
+  return { pharmacyId };
 }
 
 export function handleEntitlementRouteError(err: unknown) {

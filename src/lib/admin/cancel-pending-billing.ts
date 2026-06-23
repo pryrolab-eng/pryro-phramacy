@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { prisma } from "@/lib/db/prisma";
 import { syncPharmacySubscriptionProjection } from "@/lib/subscription/lifecycle/pharmacy-projection";
 import { resolvePharmacyEntitlements } from "@/lib/subscription/lifecycle/entitlements";
 
@@ -10,12 +10,9 @@ export function getPendingPaymentMaxAgeDays(): number {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 7;
 }
 
-async function syncPharmacyAfterCancel(
-  admin: SupabaseClient,
-  pharmacyId: string,
-): Promise<void> {
-  const ent = await resolvePharmacyEntitlements(admin, pharmacyId);
-  await syncPharmacySubscriptionProjection(admin, pharmacyId, {
+async function syncPharmacyAfterCancel(pharmacyId: string): Promise<void> {
+  const ent = await resolvePharmacyEntitlements(pharmacyId);
+  await syncPharmacySubscriptionProjection(pharmacyId, {
     plan: ent.effectivePlan,
     expiresAt: ent.expiresAt,
     accessAllowed: ent.isAccessAllowed,
@@ -24,17 +21,15 @@ async function syncPharmacyAfterCancel(
 
 /** Cancel a single pending/processing payment transaction. */
 export async function cancelPaymentTransaction(
-  admin: SupabaseClient,
   paymentTransactionId: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const { data: tx, error: loadErr } = await admin
-    .from("payment_transactions")
-    .select("id, status, pharmacy_id")
-    .eq("id", paymentTransactionId)
-    .maybeSingle();
+  const tx = await prisma.payment_transactions.findUnique({
+    where: { id: paymentTransactionId },
+    select: { id: true, status: true, pharmacy_id: true },
+  });
 
-  if (loadErr || !tx) {
-    return { ok: false, error: loadErr?.message ?? "Payment not found" };
+  if (!tx) {
+    return { ok: false, error: "Payment not found" };
   }
 
   const status = String(tx.status ?? "");
@@ -42,76 +37,72 @@ export async function cancelPaymentTransaction(
     return { ok: false, error: `Payment is ${status}; only pending can be cancelled` };
   }
 
-  const { error } = await admin
-    .from("payment_transactions")
-    .update({
+  await prisma.payment_transactions.update({
+    where: { id: paymentTransactionId },
+    data: {
       status: "cancelled",
       error_message: "Cancelled by platform admin",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", paymentTransactionId);
+      updated_at: new Date(),
+    },
+  });
 
-  if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
 
 /** Cancel pending main (and branch) subscriptions for a pharmacy. */
 export async function cancelPendingSubscriptionsForPharmacy(
-  admin: SupabaseClient,
   pharmacyId: string,
 ): Promise<{ cancelled: number; error?: string }> {
-  const { data: rows, error: loadErr } = await admin
-    .from("subscriptions")
-    .select("id")
-    .eq("pharmacy_id", pharmacyId)
-    .in("status", [...PENDING_SUB_STATUSES]);
+  const rows = await prisma.subscriptions.findMany({
+    where: {
+      pharmacy_id: pharmacyId,
+      status: { in: [...PENDING_SUB_STATUSES] },
+    },
+    select: { id: true },
+  });
 
-  if (loadErr) return { cancelled: 0, error: loadErr.message };
-
-  const ids = (rows ?? []).map((r) => (r as { id: string }).id);
+  const ids = rows.map((row) => row.id);
   if (ids.length === 0) {
     return { cancelled: 0 };
   }
 
-  const now = new Date().toISOString();
-  const { error } = await admin
-    .from("subscriptions")
-    .update({
+  const now = new Date();
+  await prisma.subscriptions.updateMany({
+    where: { id: { in: ids } },
+    data: {
       status: "cancelled",
       is_active: false,
       payment_method: "cancelled",
       cancelled_at: now,
-    })
-    .in("id", ids);
+    },
+  });
 
-  if (error) return { cancelled: 0, error: error.message };
-
-  await admin
-    .from("payment_transactions")
-    .update({
+  await prisma.payment_transactions.updateMany({
+    where: {
+      pharmacy_id: pharmacyId,
+      status: { in: [...PENDING_TX_STATUSES] },
+    },
+    data: {
       status: "cancelled",
       error_message: "Cancelled with pending subscription",
       updated_at: now,
-    })
-    .eq("pharmacy_id", pharmacyId)
-    .in("status", [...PENDING_TX_STATUSES]);
+    },
+  });
 
-  await syncPharmacyAfterCancel(admin, pharmacyId);
+  await syncPharmacyAfterCancel(pharmacyId);
   return { cancelled: ids.length };
 }
 
 export async function cancelPendingSubscriptionById(
-  admin: SupabaseClient,
   subscriptionId: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const { data: sub, error: loadErr } = await admin
-    .from("subscriptions")
-    .select("id, pharmacy_id, status")
-    .eq("id", subscriptionId)
-    .maybeSingle();
+  const sub = await prisma.subscriptions.findUnique({
+    where: { id: subscriptionId },
+    select: { id: true, pharmacy_id: true, status: true },
+  });
 
-  if (loadErr || !sub) {
-    return { ok: false, error: loadErr?.message ?? "Subscription not found" };
+  if (!sub?.pharmacy_id) {
+    return { ok: false, error: "Subscription not found" };
   }
 
   const status = String(sub.status ?? "");
@@ -119,37 +110,34 @@ export async function cancelPendingSubscriptionById(
     return { ok: false, error: `Subscription is ${status}; only pending can be cancelled` };
   }
 
-  const pharmacyId = sub.pharmacy_id as string;
-  const now = new Date().toISOString();
-
-  const { error } = await admin
-    .from("subscriptions")
-    .update({
+  const now = new Date();
+  await prisma.subscriptions.update({
+    where: { id: subscriptionId },
+    data: {
       status: "cancelled",
       is_active: false,
       payment_method: "cancelled",
       cancelled_at: now,
-    })
-    .eq("id", subscriptionId);
+    },
+  });
 
-  if (error) return { ok: false, error: error.message };
-
-  await admin
-    .from("payment_transactions")
-    .update({
+  await prisma.payment_transactions.updateMany({
+    where: {
+      subscription_id: subscriptionId,
+      status: { in: [...PENDING_TX_STATUSES] },
+    },
+    data: {
       status: "cancelled",
       updated_at: now,
-    })
-    .eq("subscription_id", subscriptionId)
-    .in("status", [...PENDING_TX_STATUSES]);
+    },
+  });
 
-  await syncPharmacyAfterCancel(admin, pharmacyId);
+  await syncPharmacyAfterCancel(sub.pharmacy_id);
   return { ok: true };
 }
 
 /** Cron: cancel stale pending payments and subscriptions older than maxAgeDays. */
 export async function expireStalePendingPayments(
-  admin: SupabaseClient,
   maxAgeDays = getPendingPaymentMaxAgeDays(),
 ): Promise<{
   paymentsCancelled: number;
@@ -158,41 +146,41 @@ export async function expireStalePendingPayments(
 }> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - maxAgeDays);
-  const cutoffIso = cutoff.toISOString();
 
   const pharmacyIds = new Set<string>();
   let paymentsCancelled = 0;
   let subscriptionsCancelled = 0;
 
-  const { data: staleTx } = await admin
-    .from("payment_transactions")
-    .select("id, pharmacy_id")
-    .in("status", [...PENDING_TX_STATUSES])
-    .lt("created_at", cutoffIso);
+  const staleTx = await prisma.payment_transactions.findMany({
+    where: {
+      status: { in: [...PENDING_TX_STATUSES] },
+      created_at: { lt: cutoff },
+    },
+    select: { id: true, pharmacy_id: true },
+  });
 
-  for (const tx of staleTx ?? []) {
-    const id = (tx as { id: string }).id;
-    const phId = (tx as { pharmacy_id?: string }).pharmacy_id;
-    const res = await cancelPaymentTransaction(admin, id);
+  for (const tx of staleTx) {
+    const res = await cancelPaymentTransaction(tx.id);
     if (res.ok) {
       paymentsCancelled++;
-      if (phId) pharmacyIds.add(phId);
+      if (tx.pharmacy_id) pharmacyIds.add(tx.pharmacy_id);
     }
   }
 
-  const { data: staleSubs } = await admin
-    .from("subscriptions")
-    .select("id, pharmacy_id")
-    .in("status", [...PENDING_SUB_STATUSES])
-    .lt("created_at", cutoffIso);
+  const staleSubs = await prisma.subscriptions.findMany({
+    where: {
+      status: { in: [...PENDING_SUB_STATUSES] },
+      created_at: { lt: cutoff },
+    },
+    select: { id: true, pharmacy_id: true },
+  });
 
-  for (const sub of staleSubs ?? []) {
-    const id = (sub as { id: string }).id;
-    const phId = (sub as { pharmacy_id: string }).pharmacy_id;
-    const res = await cancelPendingSubscriptionById(admin, id);
+  for (const sub of staleSubs) {
+    if (!sub.pharmacy_id) continue;
+    const res = await cancelPendingSubscriptionById(sub.id);
     if (res.ok) {
       subscriptionsCancelled++;
-      pharmacyIds.add(phId);
+      pharmacyIds.add(sub.pharmacy_id);
     }
   }
 

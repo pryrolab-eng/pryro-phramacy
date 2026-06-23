@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PharmacyAccessBlockReason } from "@/lib/subscription/access-block";
 
 /** Canonical subscription lifecycle status (authoritative). */
@@ -100,8 +99,4 @@ export type PharmacyEntitlementsSnapshot = {
   usage: EntitlementUsage;
   routeFeatureMap: Record<string, string>;
   featureLabels: Record<string, string>;
-};
-
-export type SubscriptionOrchestratorDeps = {
-  admin: SupabaseClient;
 };

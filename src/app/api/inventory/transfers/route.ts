@@ -1,104 +1,113 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { createClient } from '../../../../../supabase/server'
-import { createServiceClient } from '../../../../../supabase/service'
-import { transferBranchStock } from '@/lib/pharmacy/transfer-branch-stock'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import {
+  entitlementRouteResponse,
+  guardInventoryAccessForUser,
+} from "@/lib/subscription/route-guards";
+import { storeListInventoryTransfers } from "@/lib/db/inventory-store";
+import { transferBranchStock } from "@/lib/pharmacy/transfer-branch-stock";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function GET() {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const transfers = await storeListInventoryTransfers(pharmacyId);
 
-    const { data: transfers, error } = await supabase
-      .from('inventory_transfers')
-      .select('*')
-      .eq('pharmacy_id', pharmacyId)
-      .order('created_at', { ascending: false })
-      .limit(100)
-
-    if (error) throw error
-
-    const formattedTransfers =
-      transfers?.map((t) => ({
+    return NextResponse.json(
+      transfers.map((t) => ({
         id: t.id,
         product: t.medication_name,
         quantity: t.quantity,
         from: t.from_branch_id,
         to: t.to_branch_id,
         status: t.status,
-        date: t.created_at,
-      })) ?? []
-
-    return NextResponse.json(formattedTransfers)
+        date: t.created_at?.toISOString() ?? null,
+      })),
+    );
   } catch (error) {
-    console.error('GET /api/inventory/transfers', error)
-    return NextResponse.json({ error: 'Failed to fetch transfers' }, { status: 500 })
+    console.error("GET /api/inventory/transfers", error);
+    return NextResponse.json({ error: "Failed to fetch transfers" }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const { guardInventoryAccess, entitlementRouteResponse } = await import(
-      '@/lib/subscription/route-guards'
-    )
     try {
-      await guardInventoryAccess(supabase, user.id)
+      await guardInventoryAccessForUser(user.id);
     } catch (entErr) {
-      const res = entitlementRouteResponse(entErr)
-      if (res) return res
-      throw entErr
+      const res = entitlementRouteResponse(entErr);
+      if (res) return res;
+      throw entErr;
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
-    const body = await request.json()
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const body = await request.json();
 
-    const productId = body.productId ?? body.inventoryId
-    const fromBranchId = body.fromBranchId ?? body.from
-    const toBranchId = body.toBranchId ?? body.to
-    const quantity = parseInt(String(body.quantity), 10)
+    const productId = body.productId ?? body.inventoryId;
+    const fromBranchId = body.fromBranchId ?? body.from;
+    const toBranchId = body.toBranchId ?? body.to;
+    const quantity = parseInt(String(body.quantity), 10);
 
     if (!productId || !fromBranchId || !toBranchId || !Number.isFinite(quantity)) {
       return NextResponse.json(
-        { success: false, error: 'productId, fromBranchId, toBranchId, and quantity are required' },
+        {
+          success: false,
+          error: "productId, fromBranchId, toBranchId, and quantity are required",
+        },
         { status: 400 },
-      )
+      );
     }
 
-    const admin = createServiceClient()
-    const result = await transferBranchStock(admin, {
+    const result = await transferBranchStock({
       pharmacyId,
       inventoryId: productId,
       fromBranchId,
       toBranchId,
       quantity,
-    })
+    });
+
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "INSERT",
+      tableName: "inventory_transfers",
+      recordId: result.transferId,
+      newValues: {
+        inventoryId: productId,
+        fromBranchId,
+        toBranchId,
+        quantity,
+        sourceStock: result.sourceStock,
+        destinationStock: result.destinationStock,
+      },
+      ...auditRequestMetadata(request),
+    });
 
     return NextResponse.json({
       success: true,
       newStock: result.sourceStock,
       destinationStock: result.destinationStock,
       transferId: result.transferId,
-    })
+    });
   } catch (error) {
-    console.error('POST /api/inventory/transfers', error)
+    console.error("POST /api/inventory/transfers", error);
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to create transfer',
+        error: error instanceof Error ? error.message : "Failed to create transfer",
       },
       { status: 500 },
-    )
+    );
   }
 }

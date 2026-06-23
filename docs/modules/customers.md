@@ -1,3 +1,5 @@
+> **Stack:** Prisma (`DATABASE_URL`) for data; native JWT auth (`getAuthUser()`, cookies `pryrox_session` / `pryrox_refresh`). SQL migrations live in `supabase/migrations/` (`npm run db:sql:push`).
+
 # Customers Module
 
 ## Purpose
@@ -131,7 +133,7 @@ Tracks loyalty points and tier status per customer. Defined in `supabase/migrati
 | `staff` | Full read/write | Customers link appears in `pharmacy-sidebar.tsx`. |
 
 Access is enforced at two layers:
-1. **API layer** — `GET /api/customers` and `POST /api/customers` call `supabase.auth.getUser()` and return an empty array / 401 if no session exists.
+1. **API layer** — `GET /api/customers` and `POST /api/customers` call ``getAuthUser()`` and return an empty array / 401 if no session exists.
 2. **Database layer** — RLS policies on the `customers` table restrict all operations to the authenticated user's pharmacy.
 
 ---
@@ -203,7 +205,7 @@ Each stat card includes a small sparkline chart using Recharts `AreaChart` with 
         │  GET /api/customers
         ▼
 API route (route.ts)
-        │  supabase.auth.getUser()
+        │  `getAuthUser()`
         │  SELECT pharmacy_id FROM pharmacy_users WHERE user_id = ?
         │  SELECT * FROM customers WHERE pharmacy_id = ?
         │  RLS enforces tenant isolation
@@ -214,7 +216,7 @@ PostgreSQL (customers table)
 Formatted response → page re-renders customer list
 
 POST /api/customers (add new customer)
-        │  supabase.auth.getUser()
+        │  `getAuthUser()`
         │  SELECT pharmacy_id FROM pharmacy_users WHERE user_id = ?
         │  INSERT INTO customers (pharmacy_id, name, phone, email, insurance_number)
         ▼
@@ -256,7 +258,7 @@ The `POST /api/customers/loyalty` endpoint exists and works correctly, but it is
 
 ### 5. `customer_loyalty` has no RLS policies
 
-Unlike the `customers` table, `customer_loyalty` has no Row Level Security policies defined in the migrations. Access is controlled only by the API route's session check. Direct database access (e.g., via the Supabase dashboard or a compromised service role key) would expose all loyalty records across all pharmacies.
+Unlike the `customers` table, `customer_loyalty` may have no RLS policies in migrations. The app scopes loyalty APIs via `getAuthUser()` + pharmacy id; direct SQL access bypasses that layer.
 
 ### 6. `/api/pos/customer-lookup` is a hardcoded stub
 

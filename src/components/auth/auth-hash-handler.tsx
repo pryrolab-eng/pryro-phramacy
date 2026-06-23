@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "../../../supabase/client";
 import { showVerificationToast } from "@/components/auth/verification-toast";
 
 function decodeAuthMessage(raw: string) {
@@ -10,8 +9,8 @@ function decodeAuthMessage(raw: string) {
 }
 
 /**
- * Supabase puts confirmation results in the URL hash (#error=... or #access_token=...).
- * The server never sees the hash, so this must run on the client.
+ * Handles legacy hash-based auth errors (#error=...) on the client.
+ * Native email confirmation uses query params on dedicated routes instead.
  */
 export function AuthHashHandler() {
   const router = useRouter();
@@ -35,7 +34,7 @@ export function AuthHashHandler() {
     };
 
     if (error || errorCode || errorDescription) {
-      let message = errorDescription
+      const message = errorDescription
         ? decodeAuthMessage(errorDescription)
         : error
           ? decodeAuthMessage(error)
@@ -52,20 +51,13 @@ export function AuthHashHandler() {
         return;
       }
 
-      showVerificationToast({
-        message,
-      });
+      showVerificationToast({ message });
       router.replace("/sign-in?expired=1");
       return;
     }
 
-    const supabase = createClient();
-    void supabase.auth.getSession().then(({ data: { session } }) => {
-      clearHash();
-      if (session) {
-        router.refresh();
-      }
-    });
+    clearHash();
+    router.refresh();
   }, [router]);
 
   return null;

@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { parseSettingsTab, type SettingsTabValue } from '@/lib/settings-tabs'
 import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
+import { replaceUrlShallow } from '@/lib/navigation/shallow-url'
 import { useActivePharmacy } from '@/components/providers/active-pharmacy-provider'
 import { isStaffWorkspaceRole } from '@/lib/rbac/pharmacy-roles'
 import { DashboardPageLoading } from '@/components/dashboard'
@@ -61,9 +62,7 @@ function SettingsPageInner() {
     setActiveTab(next)
     const params = new URLSearchParams(searchParams.toString())
     params.set('tab', next)
-    router.replace(`${PHARMACY_ROUTES.settings}?${params.toString()}`, {
-      scroll: false,
-    })
+    replaceUrlShallow(`${PHARMACY_ROUTES.settings}?${params.toString()}`)
   }
 
   if (loading) {

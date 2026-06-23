@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { createClient, createServiceClient } from "../../../../../../supabase/server";
-import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
+import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
 import { syncPlanToPolarAndSave } from "@/lib/polar/sync-plan-db";
 import { isPolarConfigured } from "@/lib/polar/client";
 import { dedupeSubscriptionPlansInDb } from "@/lib/subscription/dedupe-plans-db";
 import { dedupeSubscriptionPlansByName } from "@/lib/subscription/dedupe-plans";
+import { prisma } from "@/lib/db/prisma";
 
 /** Backfill / refresh Polar products for all paid active plans. */
 export async function POST() {
@@ -12,36 +12,29 @@ export async function POST() {
     if (!isPolarConfigured()) {
       return NextResponse.json(
         { error: "Polar is not configured" },
-        { status: 503 }
+        { status: 503 },
       );
     }
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const auth = await requirePlatformAdminApi();
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
-    const allowed = await resolveIsAppPlatformAdmin(supabase, user.id, null);
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    await dedupeSubscriptionPlansInDb();
 
-    const db = createServiceClient();
-    await dedupeSubscriptionPlansInDb(db);
+    const plans = await prisma.subscription_plans.findMany({
+      where: { is_active: true, price: { gt: 0 } },
+    });
 
-    const { data: plans, error } = await db
-      .from("subscription_plans")
-      .select("*")
-      .eq("is_active", true)
-      .gt("price", 0);
-
-    if (error) throw error;
-
-    const catalog = dedupeSubscriptionPlansByName(plans ?? []);
+    const catalog = dedupeSubscriptionPlansByName(
+      plans.map((p) => ({
+        ...p,
+        price: Number(p.price),
+        updated_at: p.updated_at?.toISOString() ?? null,
+        created_at: p.created_at?.toISOString() ?? null,
+      })),
+    );
 
     const results: Array<{
       id: string;
@@ -52,7 +45,15 @@ export async function POST() {
     }> = [];
 
     for (const row of catalog) {
-      const synced = await syncPlanToPolarAndSave(db, row);
+      const synced = await syncPlanToPolarAndSave({
+        id: row.id,
+        name: row.name,
+        price: Number(row.price ?? 0),
+        period: (row as { period?: string | null }).period ?? null,
+        features: (row as { features?: string[] | null }).features ?? null,
+        is_active: row.is_active,
+        polar_product_id: row.polar_product_id,
+      });
       results.push({
         id: row.id,
         name: row.name,
@@ -67,7 +68,7 @@ export async function POST() {
         (r.action === "created" ||
           r.action === "updated" ||
           r.action === "recreated") &&
-        !r.error
+        !r.error,
     ).length;
     const skipped = results.filter((r) => r.action === "skipped").length;
     const failed = results.filter((r) => r.error).length;
@@ -83,7 +84,7 @@ export async function POST() {
     console.error("POST /api/admin/plans/sync-polar", e);
     return NextResponse.json(
       { error: "Failed to sync plans to Polar" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

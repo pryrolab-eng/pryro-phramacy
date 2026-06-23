@@ -1,5 +1,5 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PharmacyMemberRole } from "@/lib/rbac/pharmacy-roles";
+import { prisma } from "@/lib/db/prisma";
 
 /** Capability keys — keep in sync with pharmacy_role_permissions seed migration. */
 export const PHARMACY_PERMISSIONS = {
@@ -53,7 +53,6 @@ let cacheLoadedAt = 0;
 const CACHE_TTL_MS = 60_000;
 
 export async function loadRolePermissions(
-  admin: SupabaseClient,
   role: string | null | undefined,
 ): Promise<PharmacyPermission[]> {
   const key = role ?? "staff";
@@ -62,16 +61,16 @@ export async function loadRolePermissions(
     return permissionsCache.get(key) ?? FALLBACK_PERMISSIONS.staff;
   }
 
-  const { data, error } = await admin
-    .from("pharmacy_role_permissions")
-    .select("role, permission");
+  const rows = await prisma.pharmacy_role_permissions.findMany({
+    select: { role: true, permission: true },
+  });
 
-  if (error || !data?.length) {
+  if (!rows.length) {
     return FALLBACK_PERMISSIONS[key] ?? FALLBACK_PERMISSIONS.staff;
   }
 
   const map = new Map<string, PharmacyPermission[]>();
-  for (const row of data) {
+  for (const row of rows) {
     const r = String(row.role);
     const list = map.get(r) ?? [];
     list.push(row.permission as PharmacyPermission);

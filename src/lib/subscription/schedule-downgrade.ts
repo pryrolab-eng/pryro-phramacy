@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSubscriptionOrchestrator } from "./orchestrator";
 
 export type ScheduleDowngradeResult = {
@@ -11,11 +10,10 @@ export type ScheduleDowngradeResult = {
 
 /** @deprecated Use SubscriptionOrchestrator.scheduleDowngrade */
 export async function scheduleSubscriptionDowngrade(
-  admin: SupabaseClient,
   pharmacyId: string,
-  targetPlanIdOrName: string
+  targetPlanIdOrName: string,
 ): Promise<ScheduleDowngradeResult> {
-  return createSubscriptionOrchestrator(admin).scheduleDowngrade(
+  return createSubscriptionOrchestrator().scheduleDowngrade(
     pharmacyId,
     targetPlanIdOrName
   );

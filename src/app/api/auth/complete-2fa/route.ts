@@ -1,54 +1,52 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '../../../../../supabase/server'
+import { NextRequest, NextResponse } from "next/server";
+import { establishNativeSession } from "@/lib/auth/native/session";
+import { storeFindVerifiedTwoFactorSession } from "@/lib/db/two-factor-sessions-store";
+import {
+  enforceAuthRateLimit,
+  getIpFromRequestHeaders,
+  rateLimitJsonResponse,
+} from "@/lib/rate-limit/enforce";
+import { RATE_LIMIT_MESSAGES } from "@/lib/rate-limit/presets";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function POST(request: NextRequest) {
   try {
-    const { sessionToken } = await request.json()
+    const { sessionToken } = await request.json();
 
-    const supabase = createServiceClient()
+    if (!sessionToken || typeof sessionToken !== "string") {
+      return NextResponse.json({ error: "Missing session" }, { status: 400 });
+    }
 
-    // Check if session is verified
-    const { data: session } = await supabase
-      .from('two_factor_sessions')
-      .select('user_id, verified')
-      .eq('session_token', sessionToken)
-      .eq('verified', true)
-      .single()
+    const ip = getIpFromRequestHeaders(request.headers);
+    const limit = await enforceAuthRateLimit({
+      scope: "complete2fa",
+      bucketKey: `${sessionToken}|${ip}`,
+      message: RATE_LIMIT_MESSAGES.complete2fa,
+    });
+    if (!limit.ok) {
+      return rateLimitJsonResponse(limit.message, limit.retryAfterSec);
+    }
 
+    const session = await storeFindVerifiedTwoFactorSession(sessionToken);
     if (!session) {
-      return NextResponse.json({ error: 'Not verified' }, { status: 400 })
+      return NextResponse.json({ error: "Not verified" }, { status: 400 });
     }
 
-    // Get user
-    const { data: { user } } = await supabase.auth.admin.getUserById(session.user_id)
-    
-    if (!user || !user.email) {
-      return NextResponse.json({ error: 'User not found' }, { status: 400 })
-    }
-
-    // Generate OTP for the user
-    const { data: otpData, error: otpError } = await supabase.auth.admin.generateLink({
-      type: 'magiclink',
-      email: user.email,
-    })
-
-    if (otpError || !otpData) {
-      console.error('OTP generation error:', otpError)
-      return NextResponse.json({ error: 'Failed to generate token' }, { status: 500 })
-    }
-
-    // Extract the token from the action link
-    const url = new URL(otpData.properties.action_link)
-    const token = url.searchParams.get('token')
-    const type = url.searchParams.get('type')
-
-    return NextResponse.json({ 
+    await establishNativeSession(session.user_id);
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: session.user_id,
+      action: "LOGIN",
+      tableName: "auth.sessions",
+      newValues: { method: "2fa" },
+      ...auditRequestMetadata(request),
+    });
+    return NextResponse.json({
       success: true,
-      token,
-      type
-    })
+      nativeSession: true,
+    });
   } catch (error) {
-    console.error('Complete 2FA error:', error)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    console.error("POST /api/auth/complete-2fa", error);
+    return NextResponse.json({ error: "Failed" }, { status: 500 });
   }
 }

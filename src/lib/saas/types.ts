@@ -4,7 +4,7 @@
 
 export type PlanType = 'main' | 'branch_addon'
 export type BillingPeriod = 'monthly' | 'yearly' | 'free'
-export type SubscriptionStatus = 'active' | 'pending' | 'cancelled' | 'expired' | 'past_due'
+export type SubscriptionStatus = 'active' | 'pending' | 'pending_payment' | 'cancelled' | 'expired' | 'past_due'
 export type SubscriptionType = 'main' | 'branch_addon'
 export type InvoiceStatus = 'pending' | 'paid' | 'overdue' | 'void'
 

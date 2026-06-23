@@ -10,9 +10,15 @@ const EMPTY_PHARMACY: PharmacyGlobalSearchResult = {
   products: [],
   prescriptions: [],
   sales: [],
+  staff: [],
+  branches: [],
 };
 
-const EMPTY_ADMIN: AdminGlobalSearchResult = { pharmacies: [] };
+const EMPTY_ADMIN: AdminGlobalSearchResult = {
+  pharmacies: [],
+  staff: [],
+  branches: [],
+};
 
 export async function searchPharmacyData(
   q: string,
@@ -28,6 +34,8 @@ export async function searchPharmacyData(
       products: data.products ?? [],
       prescriptions: data.prescriptions ?? [],
       sales: data.sales ?? [],
+      staff: data.staff ?? [],
+      branches: data.branches ?? [],
     };
   } catch {
     return EMPTY_PHARMACY;
@@ -43,7 +51,11 @@ export async function searchAdminData(
     const data = await fetchJson<AdminGlobalSearchResult>(
       `/api/admin/search?q=${encodeURIComponent(trimmed)}`,
     );
-    return { pharmacies: data.pharmacies ?? [] };
+    return {
+      pharmacies: data.pharmacies ?? [],
+      staff: data.staff ?? [],
+      branches: data.branches ?? [],
+    };
   } catch {
     return EMPTY_ADMIN;
   }

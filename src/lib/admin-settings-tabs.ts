@@ -1,4 +1,5 @@
 export const ADMIN_SETTINGS_TAB_VALUES = [
+  "profile",
   "general",
   "notifications",
   "tenants",
@@ -20,5 +21,5 @@ export function parseAdminSettingsTab(
   ) {
     return value as AdminSettingsTabValue;
   }
-  return "general";
+  return "profile";
 }

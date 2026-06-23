@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { prisma } from "@/lib/db/prisma";
 import { resolvePharmacyEntitlements } from "@/lib/subscription/lifecycle/entitlements";
 import { syncPharmacySubscriptionProjection } from "@/lib/subscription/lifecycle/pharmacy-projection";
 import { isMainTierCatalogRow } from "@/lib/subscription/normalize-plan";
@@ -15,9 +15,7 @@ export type PharmacyDataRepairResult = {
  * Re-sync pharmacy denormalized fields from subscriptions + entitlements.
  * Cancels duplicate active main subs and stale pending checkouts first.
  */
-export async function repairPharmacySubscriptionData(
-  admin: SupabaseClient,
-): Promise<PharmacyDataRepairResult> {
+export async function repairPharmacySubscriptionData(): Promise<PharmacyDataRepairResult> {
   const result: PharmacyDataRepairResult = {
     pharmaciesSynced: 0,
     duplicateSubsCancelled: 0,
@@ -26,43 +24,55 @@ export async function repairPharmacySubscriptionData(
     branchAddonReclassified: 0,
   };
 
-  const { data: activeMainSubs } = await admin
-    .from("subscriptions")
-    .select(
-      "id, subscription_plans!plan_id(name, plan_type)",
-    )
-    .eq("subscription_type", "main")
-    .in("status", ["active", "pending", "pending_payment"]);
+  const activeMainSubs = await prisma.subscriptions.findMany({
+    where: {
+      subscription_type: "main",
+      status: { in: ["active", "pending", "pending_payment"] },
+    },
+    select: {
+      id: true,
+      subscription_plans_subscriptions_plan_idTosubscription_plans: {
+        select: { name: true, plan_type: true },
+      },
+    },
+  });
 
   const reclassifyIds: string[] = [];
-  for (const row of activeMainSubs ?? []) {
-    const embedded = (row as {
-      subscription_plans?: { name?: string; plan_type?: string } | null;
-    }).subscription_plans;
+  for (const row of activeMainSubs) {
+    const embedded =
+      row.subscription_plans_subscriptions_plan_idTosubscription_plans;
     if (!embedded || isMainTierCatalogRow(embedded)) continue;
-    reclassifyIds.push(row.id as string);
+    reclassifyIds.push(row.id);
   }
   if (reclassifyIds.length > 0) {
-    const { error } = await admin
-      .from("subscriptions")
-      .update({
+    const update = await prisma.subscriptions.updateMany({
+      where: { id: { in: reclassifyIds } },
+      data: {
         subscription_type: "branch_addon",
-        updated_at: new Date().toISOString(),
-      })
-      .in("id", reclassifyIds);
-    if (!error) result.branchAddonReclassified = reclassifyIds.length;
+        updated_at: new Date(),
+      },
+    });
+    result.branchAddonReclassified = update.count;
   }
 
-  const { data: activeMain } = await admin
-    .from("subscriptions")
-    .select("id, pharmacy_id, created_at, current_period_start, start_date")
-    .eq("subscription_type", "main")
-    .eq("status", "active")
-    .eq("is_active", true);
+  const activeMain = await prisma.subscriptions.findMany({
+    where: {
+      subscription_type: "main",
+      status: "active",
+      is_active: true,
+    },
+    select: {
+      id: true,
+      pharmacy_id: true,
+      created_at: true,
+      current_period_start: true,
+      start_date: true,
+    },
+  });
 
-  const byPharmacy = new Map<string, Array<Record<string, unknown>>>();
-  for (const row of activeMain ?? []) {
-    const pid = row.pharmacy_id as string | null;
+  const byPharmacy = new Map<string, typeof activeMain>();
+  for (const row of activeMain) {
+    const pid = row.pharmacy_id;
     if (!pid) continue;
     const list = byPharmacy.get(pid) ?? [];
     list.push(row);
@@ -72,67 +82,68 @@ export async function repairPharmacySubscriptionData(
   for (const [, rows] of Array.from(byPharmacy.entries())) {
     if (rows.length <= 1) continue;
     const sorted = [...rows].sort((a, b) => {
-      const ta = new Date(
-        (a.current_period_start as string) ||
-          (a.start_date as string) ||
-          (a.created_at as string) ||
-          0,
+      const ta = (
+        a.current_period_start ??
+        a.start_date ??
+        a.created_at ??
+        new Date(0)
       ).getTime();
-      const tb = new Date(
-        (b.current_period_start as string) ||
-          (b.start_date as string) ||
-          (b.created_at as string) ||
-          0,
+      const tb = (
+        b.current_period_start ??
+        b.start_date ??
+        b.created_at ??
+        new Date(0)
       ).getTime();
       return tb - ta;
     });
-    const cancelIds = sorted.slice(1).map((r) => r.id as string);
+    const cancelIds = sorted.slice(1).map((r) => r.id);
     if (cancelIds.length === 0) continue;
-    const { error } = await admin
-      .from("subscriptions")
-      .update({
+    const update = await prisma.subscriptions.updateMany({
+      where: { id: { in: cancelIds } },
+      data: {
         status: "cancelled",
         is_active: false,
-        cancelled_at: new Date().toISOString(),
-      })
-      .in("id", cancelIds);
-    if (!error) result.duplicateSubsCancelled += cancelIds.length;
+        cancelled_at: new Date(),
+      },
+    });
+    result.duplicateSubsCancelled += update.count;
   }
 
-  const staleBefore = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const { data: stalePending } = await admin
-    .from("subscriptions")
-    .update({
+  const staleBefore = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const stalePending = await prisma.subscriptions.updateMany({
+    where: {
+      subscription_type: "main",
+      status: { in: ["pending", "pending_payment"] },
+      created_at: { lt: staleBefore },
+    },
+    data: {
       status: "cancelled",
       is_active: false,
-      cancelled_at: new Date().toISOString(),
-    })
-    .eq("subscription_type", "main")
-    .in("status", ["pending", "pending_payment"])
-    .lt("created_at", staleBefore)
-    .select("id");
-  result.stalePendingCancelled = stalePending?.length ?? 0;
+      cancelled_at: new Date(),
+    },
+  });
+  result.stalePendingCancelled = stalePending.count;
 
-  const { data: trialRows } = await admin
-    .from("pharmacies")
-    .update({ status: "active", updated_at: new Date().toISOString() })
-    .eq("status", "trial")
-    .select("id");
-  result.trialStatusNormalized = trialRows?.length ?? 0;
+  const trialRows = await prisma.pharmacies.updateMany({
+    where: { status: "trial" },
+    data: { status: "active", updated_at: new Date() },
+  });
+  result.trialStatusNormalized = trialRows.count;
 
-  const { data: pharmacies } = await admin.from("pharmacies").select("id");
-  for (const row of pharmacies ?? []) {
-    const pharmacyId = row.id as string;
+  const pharmacies = await prisma.pharmacies.findMany({
+    select: { id: true },
+  });
+  for (const row of pharmacies) {
     try {
-      const ent = await resolvePharmacyEntitlements(admin, pharmacyId);
-      await syncPharmacySubscriptionProjection(admin, pharmacyId, {
+      const ent = await resolvePharmacyEntitlements(row.id);
+      await syncPharmacySubscriptionProjection(row.id, {
         plan: ent.effectivePlan,
         expiresAt: ent.expiresAt,
         accessAllowed: ent.isAccessAllowed,
       });
       result.pharmaciesSynced += 1;
     } catch (e) {
-      console.warn("[repairPharmacySubscriptionData]", pharmacyId, e);
+      console.warn("[repairPharmacySubscriptionData]", row.id, e);
     }
   }
 

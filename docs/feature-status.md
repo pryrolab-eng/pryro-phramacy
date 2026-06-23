@@ -23,13 +23,13 @@ The table below covers all 17 feature areas required by Requirement 3.2. Each en
 
 | Sub-feature | Status | Notes |
 |---|---|---|
-| Sign-in (email + password) | ✅ Working | signInAction calls supabase.auth.signInWithPassword, sets a session cookie, and redirects to /dashboard. Role resolution and 2FA branching work correctly. |
+| Sign-in (email + password) | ✅ Working | `signInAction` uses `nativeSignInWithPassword`, sets native JWT cookies, redirects to `/app`. 2FA branching works when enabled. |
 | Sign-up (self-registration) | ❌ Broken/Incomplete | signUpAction is imported by sign-up/page.tsx but is **not exported** from src/app/actions.ts. The form submits but nothing happens. Users cannot self-register. |
 | Two-Factor Authentication (2FA) | ✅ Working | Full TOTP flow implemented: setup (/api/settings/security/2fa/setup), QR code generation, verification (/api/settings/security/2fa/verify), backup codes, and login verification (/api/auth/verify-2fa + /api/auth/complete-2fa). The magic-link session restoration is functional but fragile (see auth module docs). |
 | Password Reset | ❌ Broken/Incomplete | forgotPasswordAction is imported by forgot-password/page.tsx but is **not exported** from src/app/actions.ts. The form submits but nothing happens. Password reset is non-functional. |
-| Session management / middleware | ✅ Working | supabase/middleware.ts refreshes sessions on every request and enforces protected-path redirects correctly. |
+| Session management / middleware | ✅ Working | src/lib/middleware/update-session.ts refreshes sessions on every request and enforces protected-path redirects correctly. |
 | Rate limiting on auth endpoints | ❌ Broken/Incomplete | No rate limiting on the custom 2FA verification endpoints (/api/auth/verify-2fa, /api/auth/complete-2fa). Supabase's built-in rate limiting covers signInWithPassword only. |
-| @test.com auto-provisioning | ❌ Broken/Incomplete | signInAction contains hardcoded logic that auto-creates users and pharmacy_users records for any @test.com email. This test scaffolding is present in production code and must be removed. |
+| @test.com auto-provisioning | ✅ Fixed | The post-login router no longer auto-creates pharmacy memberships for `@test.com` addresses; users without a tenant membership go to onboarding. |
 
 **Module docs:** [docs/modules/authentication.md](modules/authentication.md)
 
@@ -54,7 +54,7 @@ The table below covers all 17 feature areas required by Requirement 3.2. Each en
 | Pharmacy management (CRUD) | ⚠️ Partial | Full CRUD works. However, DELETE /api/admin/pharmacies/[id] does not delete the associated Supabase Auth user. The pharmacy API routes use the service role key with **no authentication or authorization checks** — any caller can read, create, or delete pharmacy records. |
 | Subscription plan management | ⚠️ Partial | Create and edit plans work. Subscriber counts always display 0 (hardcoded TODO). |
 | Global category management | ✅ Working | Full CRUD for global categories via /api/admin/categories. |
-| Insurance template designer | ⚠️ Partial | The drag-and-drop canvas editor renders and allows template design. The **Save Template button does not persist to the database** — it only updates local React state. Templates are lost on page navigation. |
+| Insurance template designer | ✅ Working | The canvas serializes to `template_html` and persists via `/api/admin/insurance-templates` create/update/delete routes guarded by platform admin auth. |
 | Business reports | ⚠️ Partial | Revenue and pharmacy stats are fetched from live data. Report download buttons (Generate buttons) are not wired to any export logic. |
 | Platform settings | ⚠️ Partial | Settings are read from and written to system_settings via PUT /api/admin/system-settings. The active page.tsx uses lert() for feedback and contains placeholder "Custom Settings" fields (customSetting, eatureFlag) that pollute the settings table. The improved version (page-improved.tsx) is not active. |
 | Stock location management | ✅ Working | Stock locations can be listed and created via /api/settings/locations. Falls back to hardcoded defaults if the stock_locations table is missing. |
@@ -106,10 +106,10 @@ The table below covers all 17 feature areas required by Requirement 3.2. Each en
 | Expiry alerts (API endpoint) | ❌ Broken/Incomplete | GET /api/inventory/expiry-alerts returns **hardcoded** static data (3 items with fixed January 2024 dates). Not connected to the database. |
 | Barcode generation and printing | ✅ Working | JsBarcode renders CODE128 barcodes on canvas. Single and bulk print via window.print() work. |
 | Excel export | ✅ Working | xlsx library generates a correctly formatted .xlsx file from the current inventory array. |
-| Excel import | ⚠️ Partial | Import reads the file and calls POST /api/inventory/add per row. Sequential with no rollback — failed rows are silently skipped. No partial-import report. |
+| Excel import | ✅ Working | Import validates the workbook, calls POST /api/inventory/add per row, and reports row-level failures instead of silently skipping partial errors. |
 | Analytics charts | ⚠️ Partial | "Stock by Category" bar chart uses live data from /api/inventory/analytics. "Inventory Trend" area chart is **synthetic** — generated by scaling current total value across months, not from historical data. |
-| Pagination | ❌ Broken/Incomplete | The Pagination component is rendered but not wired to any state. All items are displayed simultaneously regardless of page number. |
-| Stock location assignment | ❌ Broken/Incomplete | The stock location field in the Add Product dialog is stored in UI state only. The inventory table has no stock_location_id column — the selected location is never persisted. |
+| Pagination | ✅ Working | Inventory uses `DashboardDataTable`, which wires TanStack pagination and page-size controls. |
+| Stock location assignment | ✅ Working | Add Product and POS quick-add persist `inventory.stock_location_id` via the pharmacy's active `stock_locations`; old slug values such as `main-store` resolve to matching locations. |
 | Multi-tenancy isolation | ⚠️ Partial | API routes correctly scope by pharmacy_id. However, a critical multi-tenancy fix (ix-inventory-isolation-complete.sql) is a root-level loose file, not in supabase/migrations/. A fresh deployment may have RLS gaps. |
 
 **Module docs:** [docs/modules/inventory.md](modules/inventory.md)
@@ -177,14 +177,14 @@ eturns record but does not restore inventory.quantity_in_stock. Also has a hardc
 
 | Sub-feature | Status | Notes |
 |---|---|---|
-| Patient list (/patients) | ⚠️ Partial | Reads from the customers table (no separate patients table). Displays name, phone, email, status, and last-visit date. The "Add Patient" button has **no onClick handler** — it is non-functional. |
+| Patient list (/patients) | ✅ Working | Reads from the customers table, displays patient-oriented customer records, and wires "Add patient" through `CustomersAddDialog` + `/api/customers`. |
 | Prescription list | ✅ Working | GET /api/prescriptions returns all prescriptions for the pharmacy. Search and status filter work client-side. |
 | Create prescription | ❌ Broken/Incomplete | POST /api/prescriptions has a critical bug: pharmacy_id falls back to the string literal 'userPharmacy.pharmacy_id' instead of the authenticated user's actual pharmacy ID. New prescriptions will fail with a foreign key constraint violation. |
 | Status workflow (pending → completed → dispensed) | ✅ Working | PUT /api/prescriptions/[id] correctly updates the status. The UI provides "Process" and "Dispense" buttons. |
 | Delete prescription | ✅ Working | DELETE /api/prescriptions/[id] hard-deletes the record. |
-| Pharmacist dispense workflow | ❌ Broken/Incomplete | POST /api/pharmacist/prescriptions with ction: 'start' or 'dispense' requires the prescription_processing table, which has **no migration file**. These actions will fail with a 500 error. |
-| Prescription analytics | ❌ Broken/Incomplete | The "Prescription Trends" bar chart uses **hardcoded** daily values. Quick Stats (85% completion rate, 12 min avg processing time) are hardcoded. Not computed from real data. |
-| RLS on prescriptions table | ❌ Broken/Incomplete | No RLS policies are defined for the prescriptions table. GET /api/prescriptions fetches all prescriptions across all pharmacies without a pharmacy_id filter. Any authenticated user can read all prescriptions. |
+| Pharmacist dispense workflow | ✅ Working | POST /api/pharmacist/prescriptions validates pharmacy scope and updates prescription status directly; no `prescription_processing` table is required for dispense. |
+| Prescription analytics | ⚠️ Partial | Header/quick stats use live counts and percentages; average processing time is shown as not tracked until a processing-time model exists. Trend chart polish remains future work. |
+| RLS on prescriptions table | ⚠️ Partial | App routes use `getAuthUser()` + pharmacy scope; database RLS policy coverage remains a separate hardening task. |
 | cancelled status | ❌ Broken/Incomplete | The prescription_status enum includes cancelled, but no UI action or API call sets this status. Prescriptions can only progress forward or be deleted. |
 
 **Module docs:** [docs/modules/patients-prescriptions.md](modules/patients-prescriptions.md)
@@ -196,7 +196,7 @@ eturns record but does not restore inventory.quantity_in_stock. Also has a hardc
 | Insurance provider list | ✅ Working | GET /api/insurance returns global and pharmacy-specific providers. Unauthenticated callers receive global providers only. |
 | Create insurance provider | ✅ Working | POST /api/insurance creates global providers (superadmin) or pharmacy-scoped providers (pharmacy owner). Role check is enforced. |
 | Update / delete insurance provider | ❌ Broken/Incomplete | No PUT/PATCH or DELETE endpoints exist for insurance providers. Editing or deactivating a provider requires direct database access. |
-| Insurance template designer (canvas) | ⚠️ Partial | The drag-and-drop canvas renders and allows template design with pre-built presets. The **Save Template button does not persist to the database** — it only updates local React state. |
+| Insurance template designer (canvas) | ✅ Working | The canvas loads saved templates, serializes designs to `template_html`, and persists create/update/delete through the admin insurance-template API. |
 | Insurance lookup | ❌ Broken/Incomplete | POST /api/insurance/lookup is a **hardcoded stub** with 3 entries. Not connected to the database. |
 | Insurance pricing | ❌ Broken/Incomplete | GET /api/insurance/pricing returns **hardcoded** in-memory prices that reset on server restart. Not connected to the database. |
 | Insurance claim processing | ❌ Broken/Incomplete | POST /api/insurance/process generates a mock claim with a random approval code. No database writes. |
@@ -230,12 +230,11 @@ eturns record but does not restore inventory.quantity_in_stock. Also has a hardc
 | KPay Mobile Money payment | ⚠️ Partial | The integration is code-complete: POST /api/kpay/initiate calls the KPay API, creates payment_transactions records, and logs to payment_logs. However, all test reports confirm KPay returns 
 etcode: 600 (invalid credentials) with the current environment. **Live payments have not been verified.** |
 | KPay card payment | ⚠️ Partial | Same as Mobile Money — code-complete but not verified with live credentials. |
-| KPay webhook | ⚠️ Partial | POST /api/kpay/webhook processes callbacks and activates subscriptions. However, there is **no webhook signature verification** — a malicious actor who knows a valid 
-efid could forge a webhook and activate a subscription without payment. |
+| KPay webhook | ✅ Working | POST /api/kpay/webhook processes callbacks and activates subscriptions. When `KPAY_WEBHOOK_SECRET` is configured it requires an HMAC-SHA256 signature. |
 | Subscription expiry enforcement | ✅ Working | SubscriptionBlocker correctly intercepts expired subscriptions and redirects to /settings. The layout's direct timestamp comparison works even if the check_expired_subscriptions() cron job is not running. |
 | check_expired_subscriptions() cron | ❌ Broken/Incomplete | The database function is defined but **never called automatically**. No cron job or Supabase Edge Function scheduler invokes it. The pharmacies.status column will not be updated to suspended on expiry without manual intervention. |
 | Subscriber counts in admin | ❌ Broken/Incomplete | The admin subscriptions page always shows 0 active subscribers for every plan (hardcoded TODO). |
-| Free plan activation | ⚠️ Partial | Free plan activation is handled inconsistently across three different code paths (/api/subscriptions/status, /api/subscriptions/upgrade, /api/payments). The legacy /api/payments path does not create a subscriptions row for free plans. |
+| Free plan activation | ✅ Working | Free plan activation uses the subscription orchestrator paths; legacy POST /api/payments now returns 410 and no longer mutates plan state. |
 | Refund / cancellation | ❌ Broken/Incomplete | No API route or UI for processing refunds, cancelling a subscription mid-period, or handling chargebacks. |
 
 **Module docs:** [docs/modules/subscription-billing.md](modules/subscription-billing.md)
@@ -247,11 +246,11 @@ efid could forge a webhook and activate a subscription without payment. |
 | Pharmacy profile (name, phone, email, location) | ✅ Working | GET/PUT /api/pharmacy/settings reads and writes the pharmacies table correctly. |
 | Currency and language settings | ❌ Broken/Incomplete | Currency and language fields are present in the UI but the PUT /api/pharmacy/settings handler does not include them in the database update. Changes are lost on page reload. |
 | Branding / logo upload | ✅ Working | Logo upload stores the file in the pharmacy-logos Supabase Storage bucket and saves the public URL to pharmacies.logo_url. Primary color and custom domain are also persisted. |
-| API key management | ⚠️ Partial | API keys can be listed, created, and edited. However, keys are stored in **plaintext** despite the column being named key_hash. No hashing or encryption at rest. |
-| Stock location management | ⚠️ Partial | Locations can be listed and created. The stock_locations table is **not in official migrations** (create-stock-locations-table.sql is a root-level loose file). Falls back to 4 hardcoded defaults if the table is missing. |
+| API key management | ✅ Working | Platform API keys can be listed, created, edited, deactivated, and scoped by permission. New/rotated inbound keys are stored as SHA-256 hashes with display prefixes only; legacy plaintext rows are accepted for compatibility and upgraded on successful use. |
+| Stock location management | ✅ Working | Locations can be listed and created via `/api/settings/locations`; the table is in `supabase/migrations`, and inventory rows can now reference `stock_locations`. |
 | IP whitelist management | ⚠️ Partial | IP entries can be added and deleted via the UI. However, the whitelist is **not enforced** — no middleware or API route reads the ip_whitelist_enabled flag to block requests. The feature is UI-complete but functionally inert. |
 | 2FA setup and management | ✅ Working | Full 3-step setup flow (QR code, verify, backup codes). Enable/disable works correctly. |
-| SSO toggle | ❌ Broken/Incomplete | The SSO toggle stores a flag in security_settings but no SSO provider (SAML, OAuth, OIDC) is configured or integrated. Enabling SSO has no effect. |
+| Enterprise SSO | Planned | No current setting or route. Future SAML/OIDC work should be designed as a dedicated auth project. |
 | Mobile Money integration | ❌ Broken/Incomplete | /api/integrations/mobile-money is a stub with a TODO comment. Returns a mock transaction object. Not connected to any MTN/Airtel API. |
 | RRA EBM integration | ❌ Broken/Incomplete | /api/integrations/rra-ebm is a stub with a TODO comment. Returns a mock submission object. Not connected to the Rwanda Revenue Authority API. |
 | Admin platform settings | ⚠️ Partial | Settings are read from and written to system_settings. The active page.tsx uses lert() for feedback and contains placeholder "Custom Settings" fields. The improved page-improved.tsx is not active (see Section 2). |
@@ -284,14 +283,14 @@ efid could forge a webhook and activate a subscription without payment. |
 
 | Sub-feature | Status | Notes |
 |---|---|---|
-| Branch list | ⚠️ Partial | GET /api/branches fetches active branches from the database. Falls back to 2 hardcoded mock branches on API failure. |
-| Add branch | ❌ Broken/Incomplete | POST /api/branches receives pharmacy_id: 'current-pharmacy-id' (a placeholder string) from the page. New branches are inserted with an invalid pharmacy_id and will not be visible to any real pharmacy tenant. |
-| Edit branch | ❌ Broken/Incomplete | The Edit button pre-fills the form but submits via POST (create) instead of PUT /api/branches/[id] (update). Every edit creates a duplicate record. |
-| PUT /api/branches/[id] | ❌ Broken/Incomplete | The PUT handler echoes the request body without calling Supabase. No database write occurs. |
-| Branch inventory preview | ❌ Broken/Incomplete | GET /api/branches/[id] always returns the same 2 hardcoded mock items regardless of branch ID. Not connected to the database. |
-| Stock transfer dialog | ❌ Broken/Incomplete | The stock transfer form collects input but makes **no API call**. No inventory_transfers record is created. The feature is UI-only scaffolding. |
-| Authentication on branch API routes | ❌ Broken/Incomplete | Neither /api/branches nor /api/branches/[id] calls supabase.auth.getUser(). Unauthenticated requests can read or write branch data. GET /api/branches also does not filter by pharmacy_id — it returns all active branches across all tenants. |
-| RLS on ranches table | ❌ Broken/Incomplete | No RLS policies are defined for ranches in the official migrations. Tenant isolation relies entirely on application-layer filtering, which is currently absent. |
+| Branch list | ✅ Working | Active UI uses GET /api/saas/branches with auth, active pharmacy context, entitlements, and branch usage. Legacy GET /api/branches returns 410. |
+| Add branch | ✅ Working | Active UI uses POST /api/saas/branches with owner/admin role check, platform multi-branch flag, and entitlement limits. Legacy POST /api/branches returns 410. |
+| Edit branch | ✅ Working | PUT /api/branches/[id] updates the branch profile and requires `branches.manage`. |
+| PUT /api/branches/[id] | ✅ Working | Prisma update scoped to the active pharmacy; rejects missing branch or missing permission. |
+| Branch inventory preview | ✅ Working | GET /api/branches/[id] returns `storeListInventory(pharmacyId, branchId)` and respects staff branch assignments. |
+| Stock transfer dialog | ✅ Working | Inventory transfers use /api/inventory/transfers and persist transfer records. |
+| Authentication on branch API routes | ✅ Working | /api/saas/branches and /api/branches/[id] use `getAuthUser()`; legacy root /api/branches is deprecated with 410. |
+| RLS on branches table | ⚠️ Partial | Tenant isolation is enforced in application routes; database RLS policy coverage remains a separate hardening task. |
 | Schema mismatch | ❌ Broken/Incomplete | The official migration defines ranches without code, manager_name, or is_main columns. The page component's TypeScript interface expects these columns. They will be undefined in production. |
 
 **Module docs:** [docs/modules/branches.md](modules/branches.md)
@@ -399,22 +398,11 @@ All 9 routes above are listed in the middleware source as explicitly **excluded*
 
 ### 4.1 Hardcoded Test Credentials in Production UI
 
-❌ **Security Issue — Critical**
+✅ **Fixed**
 
 **File:** src/app/(dashboard)/superadmin/page.tsx
 
-The Superadmin Dashboard renders a "Test User Credentials" card that displays **plaintext email and password combinations** for all test accounts directly in the UI. This card is visible to any authenticated superadmin user in production and is present in the page source code.
-
-| Role | Email | Password |
-|---|---|---|
-| Super Admin | abdousentore@gmail.com | admin123 |
-| Pharmacy Owner | pharmacy@test.com | pharmacy123 |
-| Pharmacist | pharmacist@test.com | pharmacist123 |
-| Cashier | cashier@test.com | cashier123 |
-
-**Impact:** Any person who can authenticate as the superadmin (or who can view the page source) has access to all test account credentials, including the superadmin account itself. This creates a circular credential exposure: the superadmin password is visible to anyone who can log in as the superadmin.
-
-**Required action:** Remove the entire "Test User Credentials" <Card> block from src/app/(dashboard)/superadmin/page.tsx before any production deployment.
+The legacy `/superadmin` page now redirects to `/admin`; no test credential card is rendered from that route.
 
 ---
 
@@ -438,31 +426,27 @@ This route contains a hardcoded array of test credentials (including abdousentor
 
 These routes use the Supabase service role key directly and perform **no authentication or authorization checks**. Any request that reaches these endpoints — including unauthenticated requests — can read all pharmacy data or create, modify, and delete pharmacies and categories.
 
-**Required action:** Add supabase.auth.getUser() session verification and a superadmin role check to all four routes.
+**Required action:** Add `getAuthUser()` session verification and a superadmin role check to all four routes.
 
 ---
 
-### 4.4 API Keys Stored in Plaintext
+### 4.4 Platform API Key Hashing
 
-❌ **Security Issue — High**
+✅ **Fixed**
 
-**File:** src/app/api/settings/api-keys/route.ts
+**Files:** src/app/api/admin/api-keys/route.ts, src/lib/auth/platform-api-key.ts
 
-Despite the column being named key_hash, the API route stores raw API key values directly (key_hash: body.key). API keys are not hashed or encrypted at rest. Any user with database access can read all API keys in plaintext.
-
-**Required action:** Hash API keys before storage (e.g., using crypto.createHash('sha256')). Store only the hash and a display prefix.
+New and rotated platform API keys are stored as `sha256:<digest>` with a display prefix. API authentication hashes presented tokens and can upgrade old plaintext rows after a successful legacy match.
 
 ---
 
-### 4.5 @test.com Auto-Provisioning in Production Code
+### 4.5 @test.com Auto-Provisioning
 
-❌ **Security Issue — Medium**
+✅ **Fixed**
 
-**File:** src/app/actions.ts (signInAction)
+**File:** src/lib/auth/resolve-home-redirect.ts
 
-signInAction contains logic that auto-creates users and pharmacy_users records for any email containing @test.com, assigning them to a hardcoded pharmacy UUID (aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa). This test scaffolding is present in production code and allows anyone with a @test.com email address to gain pharmacy access.
-
-**Required action:** Remove the @test.com auto-provisioning block from signInAction.
+The post-login router no longer auto-creates memberships for `@test.com` addresses or assigns users to a hardcoded pharmacy UUID. Users without a real tenant membership are sent to onboarding.
 
 ---
 
@@ -478,17 +462,13 @@ The superadmin check in both the application code and the database RLS policies 
 
 ---
 
-### 4.7 No Webhook Signature Verification on KPay Webhook
+### 4.7 KPay Webhook Signature Verification
 
-⚠️ **Security Issue — Medium**
+✅ **Fixed**
 
 **File:** src/app/api/kpay/webhook/route.ts
 
-The KPay webhook endpoint accepts any POST request that contains a valid 
-efid matching a payment_transactions row. There is no HMAC signature or shared secret verification to confirm the request genuinely originates from KPay. A malicious actor who knows a valid 
-efid could forge a webhook and activate a subscription without payment.
-
-**Required action:** Implement KPay webhook signature verification before enabling live payments.
+When `KPAY_WEBHOOK_SECRET` is configured, the KPay webhook requires an HMAC-SHA256 signature over the raw request body in `x-kpay-signature` or `x-pryrox-signature`.
 
 ---
 
@@ -500,7 +480,7 @@ efid could forge a webhook and activate a subscription without payment.
 
 The delete route uses the service role key and does not verify the caller's session or confirm that the record belongs to the caller's pharmacy. Any request with a known pharmacy_users.id can delete that record without authentication.
 
-**Required action:** Add supabase.auth.getUser() session verification and a pharmacy ownership check.
+**Required action:** Add `getAuthUser()` session verification and a pharmacy ownership check.
 
 ---
 
@@ -510,7 +490,7 @@ The delete route uses the service role key and does not verify the caller's sess
 
 **File:** src/app/api/pharmacist/route.ts
 
-The pharmacist creation endpoint uses SUPABASE_SERVICE_ROLE_KEY directly and does not verify that the caller is authenticated or holds an appropriate role. Any unauthenticated request with a valid JSON body can create a new Supabase Auth user.
+The pharmacist creation endpoint uses server-side Prisma (no browser exposure) directly and does not verify that the caller is authenticated or holds an appropriate role. Any unauthenticated request with a valid JSON body can create a new Supabase Auth user.
 
 **Required action:** Add session verification and a pharmacy_owner or superadmin role check.
 
@@ -532,12 +512,12 @@ The pharmacist creation endpoint uses SUPABASE_SERVICE_ROLE_KEY directly and doe
 
 The following items **must** be resolved before any production deployment:
 
-1. ❌ Remove the "Test User Credentials" card from src/app/(dashboard)/superadmin/page.tsx
+1. ✅ Remove the "Test User Credentials" card from src/app/(dashboard)/superadmin/page.tsx
 2. ❌ Delete src/app/api/auth/login/route.ts (hardcoded credentials + mock JWT)
 3. ❌ Remove all 9 debug/test routes (/debug-auth, /debug-supabase, /debug-rate-limit, /quick-test, /test-auth, /test-create, /test-rls, /test-roles, /test-supabase)
 4. ❌ Remove public/check-user.html and public/test-insurance.html
 5. ❌ Add authentication to /api/admin/pharmacies, /api/admin/categories, and their [id] variants
-6. ❌ Remove @test.com auto-provisioning from signInAction
+6. ✅ Remove @test.com auto-provisioning from the post-login router
 7. ❌ Implement signUpAction and orgotPasswordAction (currently non-functional)
 8. ❌ Fix POST /api/prescriptions pharmacy_id bug (string literal fallback)
 9. ❌ Fix POST /api/branches pharmacy_id bug (placeholder string)

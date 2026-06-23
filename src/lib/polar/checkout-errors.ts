@@ -62,6 +62,10 @@ export function formatPolarCheckoutError(error: unknown): string {
     return "Card payments are not configured. Try Mobile Money or contact support.";
   }
 
+  if (/already.*active.*subscription|active.*subscription.*already/i.test(raw)) {
+    return "A previous subscription was found and cleared. Please try again.";
+  }
+
   if (raw.startsWith("API error occurred:")) {
     return "Card checkout could not be started. Check your email and try again.";
   }

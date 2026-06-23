@@ -1,119 +1,162 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { createClient } from '../../../../../supabase/server'
-import { createServiceClient } from '../../../../../supabase/service'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import {
   permissionErrorResponse,
   requirePharmacyPermission,
-} from '@/lib/rbac/require-pharmacy-permission'
-import { PHARMACY_PERMISSIONS } from '@/lib/rbac/permissions'
-import { MUST_CHANGE_PASSWORD_METADATA_KEY } from '@/lib/auth/must-change-password'
+} from "@/lib/rbac/require-pharmacy-permission";
+import { PHARMACY_PERMISSIONS } from "@/lib/rbac/permissions";
+import {
+  adminUpdateAuthUserMetadata,
+  adminUpdateAuthUserPassword,
+} from "@/lib/auth/admin-users";
+import { MUST_CHANGE_PASSWORD_METADATA_KEY } from "@/lib/auth/must-change-password";
+import {
+  storeDeletePharmacyUser,
+  storeFindPharmacyUser,
+  storeUpdateStaffMember,
+} from "@/lib/db/staff-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id: pharmacyUserId } = await params
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: pharmacyUserId } = await params;
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    await requirePharmacyPermission(user.id, PHARMACY_PERMISSIONS.staffManage)
-    await requireSessionPharmacyId(supabase, user.id)
-    const admin = createServiceClient()
-    const body = await request.json()
+    await requirePharmacyPermission(user.id, PHARMACY_PERMISSIONS.staffManage);
+    const pharmacyId = await requireSessionPharmacyId(user.id);
+    const body = await request.json();
 
-    const { data: member, error: memberErr } = await admin
-      .from('pharmacy_users')
-      .select('id, user_id, pharmacy_id')
-      .eq('id', pharmacyUserId)
-      .maybeSingle()
-
-    if (memberErr || !member) {
-      return NextResponse.json({ success: false, error: 'Staff member not found' }, { status: 404 })
+    const member = await storeFindPharmacyUser(pharmacyUserId);
+    if (!member || member.pharmacy_id !== pharmacyId) {
+      return NextResponse.json(
+        { success: false, error: "Staff member not found" },
+        { status: 404 },
+      );
     }
 
-    const authUserId = member.user_id
-
-    const { error: userError } = await admin
-      .from('users')
-      .update({
-        name: body.name,
-        full_name: body.name,
-        phone: body.phone,
-      })
-      .eq('id', authUserId)
-
-    if (userError) throw userError
-
-    const pharmacyUpdates: { role?: string; is_active?: boolean } = {}
-    if (body.role !== undefined) pharmacyUpdates.role = body.role
-    if (body.status !== undefined) {
-      pharmacyUpdates.is_active = body.status !== 'inactive'
+    const authUserId = member.user_id;
+    if (!authUserId) {
+      return NextResponse.json(
+        { success: false, error: "Staff account is not linked to a user" },
+        { status: 400 },
+      );
     }
 
-    if (Object.keys(pharmacyUpdates).length > 0) {
-      const { error: roleError } = await admin
-        .from('pharmacy_users')
-        .update(pharmacyUpdates)
-        .eq('id', pharmacyUserId)
-
-      if (roleError) throw roleError
-    }
+    await storeUpdateStaffMember({
+      pharmacyUserId,
+      authUserId,
+      name: body.name,
+      phone: body.phone,
+      role: body.role,
+      isActive:
+        body.status !== undefined ? body.status !== "inactive" : undefined,
+    });
 
     if (body.password && String(body.password).trim()) {
-      const { data: authUser } = await admin.auth.admin.getUserById(authUserId)
-      const { error: passwordError } = await admin.auth.admin.updateUserById(authUserId, {
-        password: body.password,
-        user_metadata: {
-          ...(authUser?.user?.user_metadata ?? {}),
+      try {
+        await adminUpdateAuthUserPassword(authUserId, body.password);
+        await adminUpdateAuthUserMetadata(authUserId, {
           [MUST_CHANGE_PASSWORD_METADATA_KEY]: true,
-        },
-      })
-      if (passwordError) {
-        console.error('Password update error:', passwordError)
-        return NextResponse.json({ success: false, error: 'Failed to update password' })
+        });
+      } catch (passwordError) {
+        console.error("Password update error:", passwordError);
+        return NextResponse.json({
+          success: false,
+          error: "Failed to update password",
+        });
       }
     }
 
-    return NextResponse.json({ success: true })
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "pharmacy_users",
+      recordId: pharmacyUserId,
+      oldValues: {
+        role: member.role,
+        is_active: member.is_active,
+        user_id: member.user_id,
+      },
+      newValues: {
+        name: body.name,
+        phone: body.phone,
+        role: body.role,
+        isActive:
+          body.status !== undefined ? body.status !== "inactive" : undefined,
+        passwordChanged: Boolean(body.password && String(body.password).trim()),
+      },
+      ...auditRequestMetadata(request),
+    });
+
+    return NextResponse.json({ success: true });
   } catch (error) {
-    const forbidden = permissionErrorResponse(error)
+    const forbidden = permissionErrorResponse(error);
     if (forbidden) {
-      return NextResponse.json(forbidden.body, { status: forbidden.status })
+      return NextResponse.json(forbidden.body, { status: forbidden.status });
     }
-    console.error('Error updating staff:', error)
-    return NextResponse.json({ success: false, error: 'Failed to update staff member' })
+    console.error("Error updating staff:", error);
+    return NextResponse.json({
+      success: false,
+      error: "Failed to update staff member",
+    });
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id: pharmacyUserId } = await params
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: pharmacyUserId } = await params;
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    await requirePharmacyPermission(user.id, PHARMACY_PERMISSIONS.staffManage)
-    await requireSessionPharmacyId(supabase, user.id)
-    const admin = createServiceClient()
+    await requirePharmacyPermission(user.id, PHARMACY_PERMISSIONS.staffManage);
+    const pharmacyId = await requireSessionPharmacyId(user.id);
 
-    const { error: pharmacyUserError } = await admin
-      .from('pharmacy_users')
-      .delete()
-      .eq('id', pharmacyUserId)
+    const member = await storeFindPharmacyUser(pharmacyUserId);
+    if (!member || member.pharmacy_id !== pharmacyId) {
+      return NextResponse.json(
+        { success: false, error: "Staff member not found" },
+        { status: 404 },
+      );
+    }
 
-    if (pharmacyUserError) throw pharmacyUserError
+    await storeDeletePharmacyUser(pharmacyUserId);
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "DELETE",
+      tableName: "pharmacy_users",
+      recordId: pharmacyUserId,
+      oldValues: {
+        role: member.role,
+        is_active: member.is_active,
+        user_id: member.user_id,
+      },
+      ...auditRequestMetadata(request),
+    });
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true });
   } catch (error) {
-    const forbidden = permissionErrorResponse(error)
+    const forbidden = permissionErrorResponse(error);
     if (forbidden) {
-      return NextResponse.json(forbidden.body, { status: forbidden.status })
+      return NextResponse.json(forbidden.body, { status: forbidden.status });
     }
-    console.error('Error deleting staff:', error)
-    return NextResponse.json({ success: false, error: 'Failed to delete staff member' })
+    console.error("Error deleting staff:", error);
+    return NextResponse.json({
+      success: false,
+      error: "Failed to delete staff member",
+    });
   }
 }

@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "../../../../../supabase/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { computeInsuranceCoverage } from "@/lib/insurance/coverage-engine";
 import {
   mergeProviderCoverage,
   parseMedicationInsuranceCoverage,
 } from "@/lib/insurance/medication-coverage";
 import { resolveInsuranceProvider } from "@/lib/insurance/resolve-provider";
-import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
-import { createServiceClient } from "../../../../../supabase/service";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import {
+  storeFindInventorySellingPrice,
+  storeFindMedicationByName,
+  storeLoadMedicationInsuranceCoverage,
+  storeUpdateMedicationInsuranceCoverage,
+} from "@/lib/db/insurance-store";
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,27 +25,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ price: null });
     }
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ price: null });
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id);
-    const admin = createServiceClient();
+    const pharmacyId = await requireUserPharmacyId(user.id);
 
     let medId = medicationId;
     if (!medId && product) {
-      const { data: med } = await admin
-        .from("medications")
-        .select("id, name")
-        .eq("pharmacy_id", pharmacyId)
-        .ilike("name", product.trim())
-        .limit(1)
-        .maybeSingle();
+      const med = await storeFindMedicationByName(pharmacyId, product.trim());
       medId = med?.id ?? null;
     }
 
@@ -48,18 +42,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ price: null, reason: "medication_not_found" });
     }
 
-    const { data: inv } = await admin
-      .from("inventory")
-      .select("selling_price")
-      .eq("pharmacy_id", pharmacyId)
-      .eq("medication_id", medId)
-      .gt("quantity_in_stock", 0)
-      .limit(1)
-      .maybeSingle();
+    const shelf =
+      (await storeFindInventorySellingPrice(pharmacyId, medId)) ?? 0;
 
-    const shelf = Number(inv?.selling_price) || 0;
-
-    const totals = await computeInsuranceCoverage(admin, {
+    const totals = await computeInsuranceCoverage({
       pharmacyId,
       providerIdOrName: insurance,
       lines: [
@@ -87,15 +73,12 @@ export async function GET(request: NextRequest) {
 /** Mark medications as covered for an insurer by product name (legacy bulk helper). */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id);
+    const pharmacyId = await requireUserPharmacyId(user.id);
     const { insurance, priceList } = await request.json();
     if (!insurance || !priceList || typeof priceList !== "object") {
       return NextResponse.json(
@@ -104,9 +87,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const admin = createServiceClient();
     const provider = await resolveInsuranceProvider(
-      admin,
       pharmacyId,
       String(insurance),
     );
@@ -121,35 +102,37 @@ export async function POST(request: NextRequest) {
     const errors: string[] = [];
 
     for (const medicationName of Object.keys(priceList as Record<string, unknown>)) {
-      const { data: med } = await admin
-        .from("medications")
-        .select("id, insurance_coverage")
-        .eq("pharmacy_id", pharmacyId)
-        .ilike("name", medicationName.trim())
-        .limit(1)
-        .maybeSingle();
+      const med = await storeFindMedicationByName(
+        pharmacyId,
+        medicationName.trim(),
+      );
 
       if (!med?.id) {
         errors.push(`Unknown medication: ${medicationName}`);
         continue;
       }
 
-      const coverage = parseMedicationInsuranceCoverage(med.insurance_coverage);
+      const coverageMap = await storeLoadMedicationInsuranceCoverage(
+        pharmacyId,
+        [med.id],
+      );
+      const coverage = coverageMap.get(med.id) ?? parseMedicationInsuranceCoverage(null);
       const merged = mergeProviderCoverage(coverage, provider.id, {
         covered: true,
       });
 
-      const { error } = await admin
-        .from("medications")
-        .update({ insurance_coverage: merged })
-        .eq("id", med.id)
-        .eq("pharmacy_id", pharmacyId);
-
-      if (error) {
-        errors.push(`${medicationName}: ${error.message}`);
-        continue;
+      try {
+        await storeUpdateMedicationInsuranceCoverage({
+          medicationId: med.id,
+          pharmacyId,
+          coverage: merged,
+        });
+        updated += 1;
+      } catch (err) {
+        errors.push(
+          `${medicationName}: ${err instanceof Error ? err.message : "update failed"}`,
+        );
       }
-      updated += 1;
     }
 
     return NextResponse.json({

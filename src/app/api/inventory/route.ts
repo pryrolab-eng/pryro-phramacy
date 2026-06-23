@@ -1,137 +1,78 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '../../../../supabase/server'
-import { firstRelation } from '@/lib/supabase/relation'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { parseBranchScopeFromRequest } from '@/lib/pharmacy/branch-scope'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { requireUserBranchId } from "@/lib/pharmacy/get-session-branch";
+import { parseBranchScopeFromRequest } from "@/lib/pharmacy/branch-scope";
+import {
+  guardPharmacyFeatureForUser,
+  handleEntitlementRouteError,
+} from "@/lib/subscription/api-guard";
+import {
+  storeCreateInventory,
+  storeListInventory,
+} from "@/lib/db/inventory-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      console.log('No authenticated user')
-      return NextResponse.json([])
+      return NextResponse.json([]);
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
-    const scope = parseBranchScopeFromRequest(request)
-
-    console.log('Fetching inventory for pharmacy:', pharmacyId)
-
-    let inventoryQuery = supabase
-      .from('inventory')
-      .select(`
-        id,
-        pharmacy_id,
-        branch_id,
-        batch_number,
-        quantity_in_stock,
-        selling_price,
-        minimum_stock_level,
-        expiry_date,
-        unit_cost,
-        medication_id,
-        medications!inner (
-          name,
-          category,
-          pharmacy_id
-        )
-      `)
-      .eq('pharmacy_id', pharmacyId)
-      .eq('medications.pharmacy_id', pharmacyId)
-
-    if (scope.branchId) {
-      inventoryQuery = inventoryQuery.eq('branch_id', scope.branchId)
-    }
-
-    const { data: inventory, error } = await inventoryQuery
-
-    if (error) {
-      console.error('Error fetching inventory:', error)
-      throw error
-    }
-
-    console.log(`Found ${inventory?.length || 0} inventory items for pharmacy ${pharmacyId}`)
-
-    const formattedInventory = inventory?.map(item => {
-      const medications = firstRelation(item.medications)
-      return {
-      id: item.id,
-      medicationId: item.medication_id as string,
-      name: medications?.name || 'Unknown',
-      category: medications?.category || 'general',
-      stock: item.quantity_in_stock,
-      minStock: item.minimum_stock_level,
-      price: item.selling_price,
-      expiryDate: item.expiry_date,
-      batchNumber: item.batch_number,
-      medications,
-      pharmacy_id: item.pharmacy_id
-    }
-    }) || []
-
-    return NextResponse.json(formattedInventory)
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const scope = parseBranchScopeFromRequest(request);
+    const items = await storeListInventory(pharmacyId, scope.branchId);
+    return NextResponse.json(items);
   } catch (error) {
-    console.error('Error fetching inventory:', error)
-    return NextResponse.json([])
+    console.error("GET /api/inventory", error);
+    return NextResponse.json([]);
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
+    const user = await getAuthUser();
     if (!user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' })
+      return NextResponse.json({ success: false, error: "Unauthorized" });
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
-    const { requireSessionBranchId } = await import('@/lib/pharmacy/get-session-branch')
-    const branchId = await requireSessionBranchId(supabase, user.id)
+    const { pharmacyId } = await guardPharmacyFeatureForUser(user.id, {
+      feature: "inventory.access",
+    });
+    const branchId = await requireUserBranchId(user.id);
+    const body = await request.json();
 
-    const { guardPharmacyFeature, handleEntitlementRouteError } = await import(
-      '@/lib/subscription/api-guard'
-    )
-    try {
-      await guardPharmacyFeature(supabase, user.id, {
-        feature: 'inventory.access',
-      })
-    } catch (entErr) {
-      const res = handleEntitlementRouteError(entErr)
-      if (res) return res
-      throw entErr
-    }
-    
-    const body = await request.json()
-    console.log('Creating inventory for pharmacy:', pharmacyId)
-    
-    const { data: inventory, error } = await supabase
-      .from('inventory')
-      .insert({
-        pharmacy_id: pharmacyId,
-        branch_id: branchId,
-        medication_id: body.medication_id,
-        batch_number: body.batch_number,
-        quantity_in_stock: body.quantity,
-        unit_cost: body.unit_cost,
-        selling_price: body.selling_price,
-        minimum_stock_level: body.minimum_stock_level,
-        expiry_date: body.expiry_date
-      })
-      .select()
-      .single()
+    const inventory = await storeCreateInventory({
+      pharmacyId,
+      branchId,
+      medicationId: body.medication_id,
+      batchNumber: body.batch_number,
+      quantity: body.quantity,
+      unitCost: body.unit_cost,
+      sellingPrice: body.selling_price,
+      minimumStockLevel: body.minimum_stock_level,
+      expiryDate: body.expiry_date,
+      stockLocation:
+        body.stockLocation ?? body.stock_location ?? body.stock_location_id,
+    });
 
-    if (error) {
-      console.error('Error creating inventory:', error)
-      throw error
-    }
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "INSERT",
+      tableName: "inventory",
+      recordId: typeof inventory.id === "string" ? inventory.id : undefined,
+      newValues: inventory,
+      ...auditRequestMetadata(request),
+    });
 
-    console.log('Successfully created inventory item:', inventory.id)
-    return NextResponse.json({ success: true, inventory })
+    return NextResponse.json({ success: true, inventory });
   } catch (error) {
-    console.error('Error adding inventory:', error)
-    return NextResponse.json({ success: false, error: 'Failed to add inventory item' })
+    const entitlement = handleEntitlementRouteError(error);
+    if (entitlement) return entitlement;
+    console.error("POST /api/inventory", error);
+    return NextResponse.json({ success: false, error: "Failed to create inventory" });
   }
 }
+

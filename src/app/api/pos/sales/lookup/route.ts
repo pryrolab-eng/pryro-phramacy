@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "../../../../../../supabase/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import {
-  guardPharmacyFeature,
+  guardPharmacyFeatureForUser,
   handleEntitlementRouteError,
 } from "@/lib/subscription/api-guard";
+import {
+  storeLookupPosSale,
+  storeSumReturnedBySaleItem,
+} from "@/lib/db/pos-store";
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getAuthUser();
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -28,59 +29,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { pharmacyId } = await guardPharmacyFeature(supabase, user.id, {
+    const { pharmacyId } = await guardPharmacyFeatureForUser(user.id, {
       feature: "pos.returns",
       branchId: branchId ?? undefined,
     });
 
-    let query = supabase
-      .from("sales")
-      .select(
-        `
-        id,
-        receipt_number,
-        customer_name,
-        customer_phone,
-        total_amount,
-        payment_method,
-        status,
-        branch_id,
-        created_at,
-        sale_items (
-          id,
-          inventory_id,
-          medication_name,
-          quantity,
-          unit_price,
-          total_price,
-          batch_number,
-          expiry_date
-        )
-      `,
-      )
-      .eq("pharmacy_id", pharmacyId)
-      .eq("status", "completed");
+    const lookup = await storeLookupPosSale({
+      pharmacyId,
+      saleId,
+      receipt,
+      branchId,
+    });
 
-    if (saleId) {
-      query = query.eq("id", saleId);
-    } else if (receipt) {
-      query = query.ilike("receipt_number", receipt);
-    }
-
-    if (branchId) {
-      query = query.eq("branch_id", branchId);
-    }
-
-    const { data: sales, error } = await query.limit(5);
-
-    if (error) throw error;
-
-    if (!sales?.length) {
+    if (!lookup) {
       return NextResponse.json({ error: "Sale not found" }, { status: 404 });
     }
 
-    const sale = sales[0];
-    const items = (sale.sale_items ?? []) as Array<{
+    const sale = lookup.sale;
+    const items = lookup.items as Array<{
       id: string;
       inventory_id: string | null;
       medication_name: string;
@@ -88,31 +54,12 @@ export async function GET(request: NextRequest) {
       unit_price: number;
       total_price: number;
       batch_number: string | null;
-      expiry_date: string | null;
+      expiry_date: string | Date | null;
     }>;
 
-    const returnedBySaleItem: Record<string, number> = {};
-
-    const { data: returnsForSale } = await supabase
-      .from("returns")
-      .select("id")
-      .eq("sale_id", sale.id);
-
-    const returnIds = (returnsForSale ?? []).map((r) => r.id);
-
-    if (returnIds.length > 0) {
-      const { data: priorItems } = await supabase
-        .from("return_items")
-        .select("sale_item_id, quantity")
-        .in("return_id", returnIds);
-
-      for (const row of priorItems ?? []) {
-        const sid = row.sale_item_id as string;
-        if (!sid) continue;
-        returnedBySaleItem[sid] =
-          (returnedBySaleItem[sid] ?? 0) + Number(row.quantity ?? 0);
-      }
-    }
+    const returnedBySaleItem = await storeSumReturnedBySaleItem(
+      String(sale.id),
+    );
 
     return NextResponse.json({
       sale: {
@@ -134,7 +81,10 @@ export async function GET(request: NextRequest) {
             item.quantity - (returnedBySaleItem[item.id] ?? 0),
           unitPrice: item.unit_price,
           batch: item.batch_number,
-          expiryDate: item.expiry_date,
+          expiryDate:
+            item.expiry_date instanceof Date
+              ? item.expiry_date.toISOString().slice(0, 10)
+              : item.expiry_date,
         })),
       },
     });

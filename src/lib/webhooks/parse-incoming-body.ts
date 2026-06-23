@@ -16,6 +16,21 @@ export async function parseIncomingWebhookBody(
     return fromQuery;
   }
 
+  return parseIncomingWebhookText(request, text, fromQuery);
+}
+
+export function parseIncomingWebhookText(
+  request: NextRequest,
+  text: string,
+  fromQueryInput?: Record<string, unknown>,
+): Record<string, unknown> {
+  const fromQuery: Record<string, unknown> = fromQueryInput ?? {};
+  if (!fromQueryInput) {
+    request.nextUrl.searchParams.forEach((value, key) => {
+      fromQuery[key] = value;
+    });
+  }
+
   const trimmed = text.trim();
   if (!trimmed) {
     return fromQuery;

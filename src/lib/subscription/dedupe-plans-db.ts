@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { prisma } from "@/lib/db/prisma";
 import {
   comparePlanRows,
   findDuplicatePlanGroups,
@@ -15,18 +15,32 @@ export type DedupePlansDbResult = {
  * Deactivate duplicate subscription_plans (same name), keep one canonical row,
  * repoint subscriptions.plan_id to the keeper, and merge polar_product_id when missing.
  */
-export async function dedupeSubscriptionPlansInDb(
-  admin: SupabaseClient
-): Promise<DedupePlansDbResult> {
-  const { data: plans, error } = await admin
-    .from("subscription_plans")
-    .select(
-      "id, name, plan_type, price, polar_product_id, is_active, updated_at, created_at"
-    );
+export async function dedupeSubscriptionPlansInDb(): Promise<DedupePlansDbResult> {
+  const plans = await prisma.subscription_plans.findMany({
+    select: {
+      id: true,
+      name: true,
+      plan_type: true,
+      price: true,
+      polar_product_id: true,
+      is_active: true,
+      updated_at: true,
+      created_at: true,
+    },
+  });
 
-  if (error) throw error;
+  const planRows = plans.map((p) => ({
+    id: p.id,
+    name: p.name,
+    plan_type: p.plan_type,
+    price: Number(p.price),
+    polar_product_id: p.polar_product_id,
+    is_active: p.is_active,
+    updated_at: p.updated_at?.toISOString() ?? null,
+    created_at: p.created_at?.toISOString() ?? null,
+  }));
 
-  const groups = findDuplicatePlanGroups(plans ?? [], { activeOnly: true });
+  const groups = findDuplicatePlanGroups(planRows, { activeOnly: true });
   if (groups.length === 0) {
     return { deactivated: 0, subscriptionsRepointed: 0, groups: [] };
   }
@@ -36,50 +50,52 @@ export async function dedupeSubscriptionPlansInDb(
 
   for (const group of groups) {
     const [groupName, groupType] = group.name.split("::");
-    const rows = (plans ?? []).filter(
+    const rows = planRows.filter(
       (p) =>
         p.is_active !== false &&
         canonicalPlanName(p.name) === groupName &&
         (String(p.plan_type ?? "main").trim().toLowerCase() === "branch_addon"
           ? "branch_addon"
-          : "main") === (groupType === "branch_addon" ? "branch_addon" : "main")
+          : "main") === (groupType === "branch_addon" ? "branch_addon" : "main"),
     );
     rows.sort(comparePlanRows);
     const keeper = rows[0];
     const duplicates = rows.slice(1);
     if (!keeper || duplicates.length === 0) continue;
 
-    const keeperPolar = keeper.polar_product_id as string | null | undefined;
+    const keeperPolar = keeper.polar_product_id;
     for (const dup of duplicates) {
       if (!keeperPolar && dup.polar_product_id) {
-        await admin
-          .from("subscription_plans")
-          .update({ polar_product_id: dup.polar_product_id })
-          .eq("id", keeper.id);
+        await prisma.subscription_plans.update({
+          where: { id: keeper.id },
+          data: { polar_product_id: dup.polar_product_id },
+        });
       }
 
-      const { error: subErr } = await admin
-        .from("subscriptions")
-        .update({ plan_id: keeper.id })
-        .eq("plan_id", dup.id);
-
-      if (subErr) {
-        if (!subErr.message.includes("plan_id")) {
-          console.warn("dedupe: subscriptions repoint", dup.id, subErr.message);
+      try {
+        const result = await prisma.subscriptions.updateMany({
+          where: { plan_id: dup.id },
+          data: { plan_id: keeper.id },
+        });
+        if (result.count > 0) {
+          subscriptionsRepointed += result.count;
         }
-      } else {
-        subscriptionsRepointed += 1;
+      } catch (subErr) {
+        const msg = subErr instanceof Error ? subErr.message : String(subErr);
+        if (!msg.includes("plan_id")) {
+          console.warn("dedupe: subscriptions repoint", dup.id, msg);
+        }
       }
 
-      const { error: offErr } = await admin
-        .from("subscription_plans")
-        .update({ is_active: false })
-        .eq("id", dup.id);
-
-      if (offErr) {
-        console.warn("dedupe: deactivate plan", dup.id, offErr.message);
-      } else {
+      try {
+        await prisma.subscription_plans.update({
+          where: { id: dup.id },
+          data: { is_active: false },
+        });
         deactivated += 1;
+      } catch (offErr) {
+        const msg = offErr instanceof Error ? offErr.message : String(offErr);
+        console.warn("dedupe: deactivate plan", dup.id, msg);
       }
     }
   }

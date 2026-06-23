@@ -1,3 +1,5 @@
+> **Stack:** Prisma (`DATABASE_URL`) for data; native JWT auth (`getAuthUser()`, cookies `pryrox_session` / `pryrox_refresh`). SQL migrations live in `supabase/migrations/` (`npm run db:sql:push`).
+
 # Branches Module
 
 ## Purpose
@@ -177,24 +179,26 @@ Clicking "Submit Transfer" shows a browser `alert('Transfer request submitted!')
 User navigates to /branches
         │
         ▼
-BranchesPage (client component)
-        │  useEffect → fetchBranches()
-        │  fetch('GET /api/branches')
+BranchesPage (client)
+        │  GET /api/branches
         ▼
-/api/branches GET handler
-        │  createClient() → supabase server client
-        │  supabase.from('branches').select('*').eq('is_active', true)
-        │  Maps rows to frontend-compatible shape
+route.ts GET
+        │  getAuthUser() → 401
+        │  getRequestPharmacyId(userId)
+        │  prisma.branches.findMany({ pharmacy_id, is_active: true })
+        │  → formatted JSON for cards
         ▼
-Branch cards rendered in 3-column grid
+Branch grid
         │
-        ├─ "Add Branch" button → Dialog → POST /api/branches
-        │       └─ supabase.from('branches').insert({...}).select().single()
+        ├─ Add Branch → POST /api/branches
+        │       ├─ assertPlatformMultiBranchEnabled()
+        │       ├─ requirePharmacyEntitlement(branches.create, branches limit)
+        │       └─ createBranch(pharmacyId, …)  [subscription-engine / Prisma]
         │
-        ├─ "View Stock" button → GET /api/branches/[id]
-        │       └─ Returns hardcoded mock inventory (not real data)
+        ├─ View Stock → GET /api/branches/[id]  (still mock inventory in handler)
         │
-        └─ "Stock Transfer" button → Dialog → alert() only (no API call)
+        └─ Stock Transfer (page dialog) → alert only OR use POST /api/inventory/transfers
+              from inventory module with branch UUIDs
 ```
 
 ---
@@ -205,17 +209,17 @@ Branch cards rendered in 3-column grid
 
 The official migration (`20241201000015_missing_tables.sql`) defines `branches` without `code`, `manager_name`, or `is_main` columns. The page component's `Branch` TypeScript interface and the `multi_branch_schema.sql` root file include these columns. If the database was provisioned from the official migrations only, the `code` and `manager_name` fields will be `undefined` for every branch, and the "Main Branch" badge will never appear.
 
-### 2. Branch creation uses placeholder `pharmacy_id`
+### 2. Page may still send placeholder fields
 
-`POST /api/branches` receives `pharmacy_id: 'current-pharmacy-id'` from the page. The API handler uses this value directly without resolving the authenticated user's actual pharmacy. New branches are inserted with an invalid `pharmacy_id` and will not be visible to any real pharmacy tenant.
+`POST /api/branches` resolves `pharmacyId` from `getRequestPharmacyId(user.id)` — not from the request body. The page should still pass the active pharmacy id for consistency, but the API ignores invalid client placeholders.
 
 ### 3. Edit branch creates a duplicate instead of updating
 
 The "Edit" button pre-fills the form but submits via `POST` (create) rather than `PUT /api/branches/[id]` (update). Every edit produces a new branch record.
 
-### 4. `PUT /api/branches/[id]` does not persist changes
+### 4. `PUT /api/branches/[id]` may not persist changes
 
-The `PUT` handler echoes the request body as `{ success: true, branch: { id, ...body } }` without calling Supabase. No database write occurs.
+Verify the `[id]` route implementation — some handlers still echo the body without a Prisma `update`. Prefer branch settings APIs if edit is required.
 
 ### 5. Branch inventory is hardcoded mock data
 
@@ -225,9 +229,9 @@ The `PUT` handler echoes the request body as `{ success: true, branch: { id, ...
 
 The stock transfer form collects input but does not call any API. No `inventory_transfers` record is created. The feature is UI-only scaffolding.
 
-### 7. No server-side authentication or role check on API routes
+### 7. Role checks are entitlement-based, not sidebar-only
 
-Neither `/api/branches` nor `/api/branches/[id]` calls `supabase.auth.getUser()` to verify the session. Any unauthenticated request that bypasses the middleware (e.g., direct API call) can read or write branch data. The `GET /api/branches` handler also does not filter by the authenticated user's `pharmacy_id`, so it returns all active branches across all tenants.
+`GET`/`POST /api/branches` require `getAuthUser()` and scope by `getRequestPharmacyId`. Creation additionally requires platform multi-branch flag and `branches.create` entitlement. Sidebar visibility for `cashier`/`staff` may still be broader than intended — see §9.
 
 ### 8. No RLS on `branches` table in official migrations
 

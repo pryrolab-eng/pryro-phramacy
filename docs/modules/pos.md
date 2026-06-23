@@ -1,3 +1,5 @@
+> **Stack:** Prisma (`DATABASE_URL`) for data; native JWT auth (`getAuthUser()`, cookies `pryrox_session` / `pryrox_refresh`). SQL migrations live in `supabase/migrations/` (`npm run db:sql:push`).
+
 # Point of Sale (POS) Module
 
 ## Purpose
@@ -22,7 +24,7 @@ The module is designed for the Rwandan pharmacy context: it natively supports RS
 |---|---|---|---|
 | `route.ts` | `GET` | Yes (session) | Returns the 5 most recent sales for the authenticated user's pharmacy. Used to populate a "recent transactions" summary. Queries `sales` joined with `sale_items`. |
 | `products/route.ts` | `GET` | Yes (session) | Returns all in-stock inventory items for the pharmacy, formatted for the POS product grid. Accepts `?fastMoving=true` to filter for fast-moving items. Queries `inventory` joined with `medications`. |
-| `sale/route.ts` | `POST` | Yes (session) | Core sale-processing endpoint. Creates a `sales` record, inserts `sale_items`, decrements `inventory.quantity_in_stock` for each item, and creates an `insurance_claims` record when insurance is used. Returns `{ success, receiptNumber }`. |
+| `sale/route.ts` | `POST` | Yes (session) | Core sale endpoint. Requires `branchId`, open cashier shift, and `pos.access` entitlement. Validates cart (expiry, Rx, branch stock) then `storeCreatePosSale()` (Prisma transaction). Insurance uses `computeInsuranceCoverage()` + optional claim lines. Returns `{ success, receiptNumber }`. |
 | `customer-lookup/route.ts` | `GET` | No | **Stub — hardcoded data.** Accepts `?phone=` and returns matching customers from a static array. Not connected to the database. |
 | `daily-close/route.ts` | `POST` | No | **Stub — no database write.** Accepts daily totals and returns a formatted daily-close summary object. Does not persist to any table. |
 | `discounts/route.ts` | `GET`, `POST` | No (GET) / No (POST) | Reads and creates discount records in the `discounts` table. The `POST` handler has a bug: `pharmacy_id` is hardcoded to the string `'userPharmacy.pharmacy_id'` instead of the authenticated user's pharmacy. |
@@ -85,11 +87,11 @@ The primary transaction record. One row per completed sale.
 
 **Indexes:** `idx_sales_pharmacy_id` on `pharmacy_id`.
 
-**RLS:** Enabled. Users can only read and insert sales for their own pharmacy.
+**Tenant isolation:** API routes scope by `pharmacy_id` from session + active branch. DB may still have RLS from migrations.
 
 **Audit trigger:** `audit_sales` — every INSERT, UPDATE, and DELETE is logged to `audit_logs`.
 
-**Realtime:** `sales` is added to `supabase_realtime` publication.
+**Live UI:** Dashboards poll `/api/realtime/updates` for `new_sale` events (not WebSocket).
 
 ---
 
@@ -110,7 +112,7 @@ Line items for each sale. One row per product per sale.
 | `expiry_date` | `date` | Expiry date at time of sale (denormalised). |
 | `created_at` | `timestamptz` | Record creation timestamp. |
 
-**Realtime:** `sale_items` is added to `supabase_realtime` publication.
+**Stock:** Decremented in `storeCreatePosSale` (and/or DB trigger on `sale_items` insert, depending on deployment).
 
 ---
 
@@ -140,7 +142,7 @@ Customer profiles used for autocomplete in the cart panel and for quick-add from
 
 **Indexes:** `idx_customers_pharmacy_id` on `pharmacy_id`; `idx_customers_phone` on `phone`.
 
-**Realtime:** `customers` is added to `supabase_realtime` publication.
+**POS usage:** Customer autocomplete uses `GET /api/customers`; quick-add uses `POST /api/pos/quick-add-patient`.
 
 ---
 
@@ -269,36 +271,36 @@ The POS page includes an "AI Safety" button (Brain icon) that opens a dialog (`a
 ## Sale Processing Flow
 
 ```
-Cashier builds cart and selects payment method
+Cashier builds cart (active branchId from shell context)
         │
         ▼
-processSale() called (or F2 pressed)
+processSale() or F2
         │
-        ├─ Validate: cart non-empty, payment method selected
-        │
-        ▼
-POST /api/pos/sale
-        │
-        ├─ supabase.auth.getUser() → verify session
-        ├─ pharmacy_users → resolve pharmacy_id
-        │
-        ├─ If insurance: lookup insurance_providers by name
-        │
-        ├─ INSERT INTO sales (receipt_number = 'RCP-<timestamp>')
-        │
-        ├─ INSERT INTO sale_items (one row per cart item)
-        │
-        ├─ For each item: UPDATE inventory SET quantity_in_stock = quantity_in_stock - item.quantity
-        │
-        ├─ If insurance and coverage > 0: INSERT INTO insurance_claims (status = 'pending')
-        │
-        └─ Return { success: true, receiptNumber }
+        ├─ Client: cart non-empty, payment method, near-expiry ack if needed
         │
         ▼
-Client: printInvoice() → window.open() → window.print()
+POST /api/pos/sale  { branchId, items, customer, paymentMethod, … }
+        │
+        ├─ getAuthUser() → 401 if missing
+        ├─ guardPharmacyFeatureForUser(pos.access, branchId, consumeTransaction)
+        ├─ validateNoExpiredInCart / prescription / branch stock (storeGetInventoryForSale)
+        ├─ guardPosInsuranceForUser when insurance selected
+        ├─ computeInsuranceCoverage() + resolveInsuranceProvider() when applicable
+        ├─ storeFetchOpenCashierShift(userId, branchId) → 403 if no open shift
+        │
+        ├─ storeCreatePosSale()  [Prisma $transaction]
+        │     sales + sale_items + inventory decrement (+ shift link)
+        │
+        ├─ storeCreateInsuranceClaim + insertInsuranceClaimLines when coverage > 0
+        ├─ emitNotificationEvent (sale completed)
+        │
+        └─ { success: true, receiptNumber: 'RCP-<timestamp>' }
         │
         ▼
-Cart cleared, customer reset, payment fields cleared
+printInvoice() → window.print()
+        │
+        ▼
+Cart cleared; optional useRealtimeUpdates picks up new_sale on other tabs
 ```
 
 ---

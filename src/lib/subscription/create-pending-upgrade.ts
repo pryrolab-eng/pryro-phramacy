@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSubscriptionOrchestrator } from "./orchestrator";
 
 export type CatalogPlan = {
@@ -22,11 +21,10 @@ export type UpgradeResult = {
  * @deprecated Use SubscriptionOrchestrator.requestPlanChange
  */
 export async function createSubscriptionUpgrade(
-  admin: SupabaseClient,
   pharmacyId: string,
-  plan: CatalogPlan
+  plan: CatalogPlan,
 ): Promise<UpgradeResult> {
-  const orch = createSubscriptionOrchestrator(admin);
+  const orch = createSubscriptionOrchestrator();
   const planPrice = Number(plan.price ?? 0);
 
   if (planPrice <= 0) {

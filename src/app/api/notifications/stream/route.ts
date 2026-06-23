@@ -1,0 +1,89 @@
+import { NextRequest } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { storeListNotificationsSince } from "@/lib/db/notifications-store";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const POLL_MS = 3_000;
+
+export async function GET(request: NextRequest) {
+  const user = await getAuthUser();
+  if (!user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  let pharmacyId: string;
+  try {
+    pharmacyId = await requireUserPharmacyId(user.id);
+  } catch {
+    return new Response("Pharmacy not found", { status: 404 });
+  }
+
+  const encoder = new TextEncoder();
+  let lastSeen = new Date();
+  let closed = false;
+
+  const stream = new ReadableStream({
+    start(controller) {
+      const send = (payload: unknown) => {
+        if (closed) return;
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+        );
+      };
+
+      send({ type: "connected", pharmacyId });
+
+      const poll = async () => {
+        if (closed) return;
+        try {
+          const rows = await storeListNotificationsSince(
+            pharmacyId,
+            lastSeen,
+          );
+
+          for (const row of rows) {
+            if (row.created_at) {
+              lastSeen = row.created_at;
+            }
+            send({
+              type: "notification",
+              notification: {
+                id: row.id,
+                title: row.title,
+                message: row.message,
+                type: row.type,
+                read: row.is_read,
+                date: row.created_at,
+                actionUrl: row.action_url,
+              },
+            });
+          }
+        } catch (error) {
+          console.error("notifications stream poll:", error);
+        }
+      };
+
+      const interval = setInterval(() => {
+        void poll();
+      }, POLL_MS);
+      void poll();
+
+      request.signal.addEventListener("abort", () => {
+        closed = true;
+        clearInterval(interval);
+        controller.close();
+      });
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
+}

@@ -1,61 +1,83 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { NextRequest, NextResponse } from "next/server";
+import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
+import {
+  storeDeleteGlobalCategory,
+  storeUpdateGlobalCategory,
+} from "@/lib/db/admin-store";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
   try {
-    const body = await request.json()
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-    
-    const { data, error } = await supabase
-      .from('categories')
-      .update({
-        name: body.name,
-        description: body.description,
-        is_active: body.status === 'Active'
-      })
-      .eq('id', id)
-      .is('pharmacy_id', null)
-      .select()
-      .single()
-    
-    if (error) {
-      console.error('Update error:', error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    const auth = await requirePlatformAdminApi();
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
-    
-    return NextResponse.json({ success: true, category: data })
+
+    const body = await request.json();
+    const category = await storeUpdateGlobalCategory(id, {
+      name: body.name,
+      description: body.description,
+      isActive: body.status === "Active",
+    });
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "UPDATE",
+      tableName: "medication_categories",
+      recordId: id,
+      newValues: category,
+      ...auditRequestMetadata(request),
+    });
+
+    return NextResponse.json({ success: true, category });
   } catch (error) {
-    console.error('Update error:', error)
-    return NextResponse.json({ success: false, error: 'Failed to update category' }, { status: 500 })
+    console.error("Update error:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to update category" },
+      { status: 500 },
+    );
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-    
-    const { error } = await supabase
-      .from('categories')
-      .delete()
-      .eq('id', id)
-      .is('pharmacy_id', null)
-    
-    if (error) {
-      console.error('Delete error:', error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    const auth = await requirePlatformAdminApi();
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
-    
-    return NextResponse.json({ success: true })
+
+    const deleted = await storeDeleteGlobalCategory(id);
+    if (!deleted) {
+      return NextResponse.json(
+        { success: false, error: "Category not found" },
+        { status: 404 },
+      );
+    }
+
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "DELETE",
+      tableName: "medication_categories",
+      recordId: id,
+      oldValues: { id },
+      ...auditRequestMetadata(request),
+    });
+
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Delete error:', error)
-    return NextResponse.json({ success: false, error: 'Failed to delete category' }, { status: 500 })
+    console.error("Delete error:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to delete category" },
+      { status: 500 },
+    );
   }
 }

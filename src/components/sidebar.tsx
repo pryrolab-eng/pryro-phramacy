@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { createClient } from '../../supabase/client'
+import { signOutClient } from '@/lib/auth/client-sign-out'
 import { Button } from './ui/button'
 import { Card, CardContent } from './ui/card'
 import { 
@@ -58,26 +58,41 @@ const pharmacistNavigation = [
 
 function SubscriptionPlanCard() {
   const [planData, setPlanData] = useState({
-    plan: 'Standard',
-    daysRemaining: 25,
-    totalDays: 30,
-    status: 'active'
+    plan: 'Free',
+    daysRemaining: null as number | null,
+    status: 'free',
   })
 
   useEffect(() => {
-    // Calculate days remaining (mock data)
-    const endDate = new Date()
-    endDate.setDate(endDate.getDate() + 25)
-    const today = new Date()
-    const diffTime = endDate.getTime() - today.getTime()
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    
-    setPlanData(prev => ({ ...prev, daysRemaining: diffDays }))
+    let cancelled = false
+
+    async function loadSubscriptionStatus() {
+      try {
+        const response = await fetch('/api/subscriptions/status')
+        if (!response.ok) return
+        const data = await response.json()
+        if (cancelled) return
+        setPlanData({
+          plan: data.plan?.name ?? 'Free',
+          daysRemaining:
+            typeof data.daysRemaining === 'number' ? data.daysRemaining : null,
+          status: data.status ?? 'free',
+        })
+      } catch {
+        // Keep the default free-plan display when status cannot be loaded.
+      }
+    }
+
+    void loadSubscriptionStatus()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const getStatusColor = () => {
-    if (planData.daysRemaining <= 7) return 'text-red-600 bg-red-50'
-    if (planData.daysRemaining <= 15) return 'text-orange-600 bg-orange-50'
+    if (planData.status === 'expired') return 'text-red-600 bg-red-50'
+    if (planData.daysRemaining != null && planData.daysRemaining <= 7) return 'text-red-600 bg-red-50'
+    if (planData.daysRemaining != null && planData.daysRemaining <= 15) return 'text-orange-600 bg-orange-50'
     return 'text-green-600 bg-green-50'
   }
 
@@ -92,7 +107,7 @@ function SubscriptionPlanCard() {
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-gray-500">Days remaining</span>
             <span className={`text-[10px] px-1 py-0.5 rounded ${getStatusColor()}`}>
-              {planData.daysRemaining} days
+              {planData.daysRemaining == null ? 'No expiry' : `${planData.daysRemaining} days`}
             </span>
           </div>
           <Link href={PHARMACY_ROUTES.settings} className="block">
@@ -123,47 +138,26 @@ export default function Sidebar() {
     }
     
     const getUserRole = async () => {
-      const supabase = createClient()
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-        let role = 'pharmacy_owner'
-        
-        if (user) {
-          // Check if user is super admin by email
-          if (user.email === 'abdousentore@gmail.com') {
-            role = 'superadmin'
-          } else {
-            // Check pharmacy_users table for pharmacy-specific roles
-            const { data: pharmacyUser } = await supabase
-              .from('pharmacy_users')
-              .select('role')
-              .eq('user_id', user.id)
-              .eq('is_active', true)
-              .single()
-            
-            if (pharmacyUser?.role) {
-              role = pharmacyUser.role
-            } else {
-              role = 'pharmacist'
-            }
-          }
+        const res = await fetch('/api/me/context', { credentials: 'include' })
+        if (!res.ok) throw new Error('Failed to load session context')
+        const ctx = await res.json() as {
+          role?: string | null
+          user?: { fullName?: string | null; email?: string | null; isPlatformAdmin?: boolean }
         }
-        
+
+        let role = ctx.role ?? 'pharmacist'
+        if (ctx.user?.isPlatformAdmin) {
+          role = 'superadmin'
+        }
+
+        const displayName =
+          ctx.user?.fullName ||
+          ctx.user?.email?.split('@')[0] ||
+          'User'
+
         setUserRole(role)
-        
-        // Get display name from database
-        let displayName = 'User'
-        if (user) {
-          const { data: userData } = await supabase
-            .from('pharmacy_users')
-            .select('display_name')
-            .eq('user_id', user.id)
-            .single()
-          
-          displayName = userData?.display_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
-        }
-        
-        setUserName(displayName || 'User')
+        setUserName(displayName)
         sessionStorage.setItem('userRole', role)
       } catch (error) {
         console.error('Error getting user role:', error)
@@ -188,8 +182,7 @@ export default function Sidebar() {
 
   const handleSignOut = async () => {
     sessionStorage.removeItem('userRole');
-    (await createClient()).auth.signOut()
-    router.push('/sign-in')
+    await signOutClient();
   }
 
   if (isLoading) {

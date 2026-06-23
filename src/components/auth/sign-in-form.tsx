@@ -75,7 +75,11 @@ export function SignInForm({ initialEmail = "" }: SignInFormProps) {
         </div>
       ) : null}
 
-      <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+      <form
+        className="mt-8 space-y-5"
+        method="post"
+        onSubmit={handleSubmit}
+      >
         <div className="relative">
           <span className="absolute left-3 top-1/2 z-10 -translate-y-1/2 text-gray-400">
             <svg
@@ -144,7 +148,7 @@ export function SignInForm({ initialEmail = "" }: SignInFormProps) {
 
         <div className="pt-2">
           <SubmitButton
-            className="flex w-full items-center justify-center gap-2 rounded-full bg-gray-950 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+            className="flex items-center gap-2 rounded-full bg-gray-950 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800"
             pendingText="Signing in..."
           >
             Sign In

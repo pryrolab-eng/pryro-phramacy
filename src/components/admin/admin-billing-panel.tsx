@@ -290,7 +290,7 @@ export function AdminBillingPanel() {
         <TabsContent value="payments" className="mt-4">
           <DashboardDataTable
             title="Payment transactions"
-            description="KPay and Polar subscription checkouts"
+            description="Polar subscription checkouts"
             searchPlaceholder="Search pharmacy, customer, status…"
             searchValue={paymentFilter}
             onSearchChange={setPaymentFilter}

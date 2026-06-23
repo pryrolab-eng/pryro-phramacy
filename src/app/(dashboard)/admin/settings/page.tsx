@@ -1,7 +1,8 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { replaceUrlShallow } from "@/lib/navigation/shallow-url";
 
 import { AdminSettingsActivePanel } from "@/components/admin/settings/admin-settings-active-panel";
 import { AdminSettingsDialogs } from "@/components/admin/settings/admin-settings-dialogs";
@@ -18,7 +19,6 @@ import {
 } from "@/lib/admin-settings-tabs";
 
 function AdminSettingsPageInner() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { pageLoading } = useAdminSettings();
 
@@ -34,9 +34,9 @@ function AdminSettingsPageInner() {
       setActiveTab(tab);
       const params = new URLSearchParams(searchParams.toString());
       params.set("tab", tab);
-      router.replace(`/admin/settings?${params.toString()}`, { scroll: false });
+      replaceUrlShallow(`/admin/settings?${params.toString()}`);
     },
-    [router, searchParams],
+    [searchParams],
   );
 
   if (pageLoading) {

@@ -1,5 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { createSubscriptionOrchestrator } from "./orchestrator";
+import { resolvePharmacyEntitlements } from "./lifecycle/entitlements";
 
 export type ScheduledChangeInfo = {
   subscriptionId: string;
@@ -11,13 +10,10 @@ export type ScheduledChangeInfo = {
 };
 
 export async function getScheduledSubscriptionChange(
-  admin: SupabaseClient,
-  pharmacyId: string
+  pharmacyId: string,
 ): Promise<ScheduledChangeInfo | null> {
-  const scheduled = await createSubscriptionOrchestrator(
-    admin
-  ).getScheduledChange(pharmacyId);
-
+  const ent = await resolvePharmacyEntitlements(pharmacyId);
+  const scheduled = ent.scheduledChange;
   if (!scheduled) return null;
 
   return {

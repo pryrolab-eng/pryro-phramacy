@@ -9,7 +9,7 @@ import {
 } from '@/lib/landing-layout'
 
 const integrations = [
-    { name: 'KPay', description: 'Accept mobile money and card payments directly at the counter.', icon: '💳' },
+    { name: 'Polar', description: 'Accept card payments for subscriptions.', icon: '💳' },
     { name: 'RSSB Insurance', description: 'Automatically calculate how much insurance covers for each medicine.', icon: '🏥' },
     { name: 'Supabase', description: 'Your data is saved instantly and stays safe — always up to date.', icon: '⚡' },
 ]

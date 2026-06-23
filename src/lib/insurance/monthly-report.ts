@@ -1,5 +1,9 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { firstRelation } from "@/lib/supabase/relation";
+import {
+  storeLoadInsuranceTemplateForProvider,
+  storeLoadMonthlyInsuranceClaims,
+  storeLoadPharmacyForReport,
+  storeLoadSaleItemsForClaim,
+} from "@/lib/db/insurance-store";
 
 export type InsuranceReportPeriod = {
   month: number;
@@ -70,149 +74,57 @@ export function resolveInsuranceReportPeriod(
   };
 }
 
-function num(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-async function loadSaleItemsForClaim(
-  admin: SupabaseClient,
-  saleId: string | null,
-): Promise<InsuranceClaimLineItem[]> {
-  if (!saleId) return [];
-
-  const { data, error } = await admin
-    .from("sale_items")
-    .select("medication_name, quantity, unit_price, total_price")
-    .eq("sale_id", saleId);
-
-  if (error || !data?.length) return [];
-
-  return data.map((row) => {
-    const qty = num(row.quantity) || 1;
-    const unit = num(row.unit_price);
-    const total = num(row.total_price) || unit * qty;
-    return {
-      drug: String(row.medication_name ?? "Unknown"),
-      quantity: qty,
-      unitPrice: unit,
-      insurancePays: total,
-      patientPays: 0,
-    };
-  });
-}
-
-export async function loadMonthlyInsuranceReport(
-  admin: SupabaseClient,
-  params: {
-    pharmacyId: string;
-    month: number;
-    year: number;
-    providerId?: string | null;
-  },
-): Promise<InsuranceMonthlyReport> {
+export async function loadMonthlyInsuranceReport(params: {
+  pharmacyId: string;
+  month: number;
+  year: number;
+  providerId?: string | null;
+}): Promise<InsuranceMonthlyReport> {
   const period = resolveInsuranceReportPeriod(params.month, params.year);
 
-  const { data: pharmacy, error: pharmacyError } = await admin
-    .from("pharmacies")
-    .select("id, name, address, phone, email")
-    .eq("id", params.pharmacyId)
-    .maybeSingle();
-
-  if (pharmacyError) throw new Error(pharmacyError.message);
+  const pharmacy = await storeLoadPharmacyForReport(params.pharmacyId);
   if (!pharmacy) throw new Error("Pharmacy not found");
 
-  let claimsQuery = admin
-    .from("insurance_claims")
-    .select(
-      `
-      id,
-      claim_number,
-      patient_name,
-      patient_id_number,
-      claim_amount,
-      covered_amount,
-      patient_copay,
-      status,
-      created_at,
-      sale_id,
-      insurance_provider_id,
-      insurance_providers ( id, name ),
-      insurance_claim_lines (
-        medication_name,
-        quantity,
-        shelf_unit_price,
-        insurer_amount,
-        patient_amount,
-        is_covered,
-        external_code
-      )
-    `,
-    )
-    .eq("pharmacy_id", params.pharmacyId)
-    .gte("created_at", period.from)
-    .lte("created_at", period.to)
-    .order("created_at", { ascending: true });
-
-  if (params.providerId) {
-    claimsQuery = claimsQuery.eq("insurance_provider_id", params.providerId);
-  }
-
-  const { data: claimRows, error: claimsError } = await claimsQuery;
-  if (claimsError) throw new Error(claimsError.message);
+  const claimRows = await storeLoadMonthlyInsuranceClaims({
+    pharmacyId: params.pharmacyId,
+    from: period.from,
+    to: period.to,
+    providerId: params.providerId,
+  });
 
   const claims: InsuranceMonthlyClaim[] = [];
 
-  for (const row of claimRows ?? []) {
-    const provider = firstRelation(row.insurance_providers) as {
-      id?: string;
-      name?: string;
-    } | null;
-    const providerName = provider?.name ?? "Unknown";
-    const linesRaw = row.insurance_claim_lines;
-    const linesArr = Array.isArray(linesRaw)
-      ? linesRaw
-      : linesRaw
-        ? [linesRaw]
-        : [];
-
-    let items: InsuranceClaimLineItem[] = linesArr.map((line) => ({
+  for (const row of claimRows) {
+    let items: InsuranceClaimLineItem[] = row.lines.map((line) => ({
       drug: String(line.medication_name ?? "Unknown"),
-      quantity: num(line.quantity) || 1,
-      unitPrice: num(line.shelf_unit_price),
-      insurancePays: num(line.insurer_amount),
-      patientPays: num(line.patient_amount),
-      externalCode: (line.external_code as string | null) ?? null,
+      quantity: line.quantity || 1,
+      unitPrice: line.shelf_unit_price,
+      insurancePays: line.insurer_amount,
+      patientPays: line.patient_amount,
+      externalCode: line.external_code,
     }));
 
     if (items.length === 0) {
-      items = await loadSaleItemsForClaim(
-        admin,
-        row.sale_id as string | null,
-      );
+      items = await storeLoadSaleItemsForClaim(row.sale_id);
     }
 
     const totalClaim =
-      num(row.covered_amount) ||
-      num(row.claim_amount) ||
-      items.reduce((s, i) => s + i.insurancePays, 0);
+      row.covered_amount ||
+      row.claim_amount ||
+      items.reduce((sum, item) => sum + item.insurancePays, 0);
     const patientCopay =
-      num(row.patient_copay) ||
-      items.reduce((s, i) => s + i.patientPays, 0);
-
-    const created = row.created_at
-      ? String(row.created_at).slice(0, 10)
-      : period.from.slice(0, 10);
+      row.patient_copay ||
+      items.reduce((sum, item) => sum + item.patientPays, 0);
 
     claims.push({
-      id: row.id as string,
-      claimNumber: (row.claim_number as string | null) ?? null,
-      insuranceType: providerName,
-      providerId: (row.insurance_provider_id as string | null) ?? provider?.id ?? null,
-      patientName: String(row.patient_name ?? "Unknown"),
-      insuranceNumber: (row.patient_id_number as string | null) ?? null,
-      date: created,
-      status: String(row.status ?? "pending"),
+      id: row.id,
+      claimNumber: row.claim_number,
+      insuranceType: row.provider_name,
+      providerId: row.insurance_provider_id ?? null,
+      patientName: row.patient_name,
+      insuranceNumber: row.patient_id_number,
+      date: row.created_at.slice(0, 10),
+      status: row.status,
       totalClaim,
       patientCopay,
       items,
@@ -257,7 +169,6 @@ export async function loadMonthlyInsuranceReport(
 }
 
 export async function loadInsuranceTemplateForProvider(
-  admin: SupabaseClient,
   providerName: string,
   pharmacyId: string,
 ): Promise<{
@@ -267,32 +178,5 @@ export async function loadInsuranceTemplateForProvider(
   template_html: string;
   template_css: string;
 } | null> {
-  const key = providerName.trim();
-  if (!key) return null;
-
-  const { data, error } = await admin
-    .from("insurance_templates")
-    .select("id, name, insurance_provider, template_html, template_css, is_active")
-    .eq("is_active", true)
-    .or(`pharmacy_id.is.null,pharmacy_id.eq.${pharmacyId}`)
-    .order("pharmacy_id", { ascending: false, nullsFirst: false });
-
-  if (error) throw new Error(error.message);
-
-  const match = (data ?? []).find(
-    (t) =>
-      String(t.insurance_provider ?? "")
-        .trim()
-        .toLowerCase() === key.toLowerCase(),
-  );
-
-  if (!match) return null;
-
-  return {
-    id: match.id as string,
-    name: String(match.name),
-    insurance_provider: String(match.insurance_provider),
-    template_html: String(match.template_html ?? ""),
-    template_css: String(match.template_css ?? ""),
-  };
+  return storeLoadInsuranceTemplateForProvider(providerName, pharmacyId);
 }

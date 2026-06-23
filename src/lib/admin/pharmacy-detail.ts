@@ -1,9 +1,15 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   pharmacyAccessLabel,
   resolvePharmacyPlanDisplay,
   type CatalogPlanLike,
 } from "@/lib/admin/plan-stats";
+import {
+  storeFindActiveBranchAddonCatalog,
+  storeFindOwnerPublicUser,
+  storeFindPharmacyById,
+  storeListBranchAddonSubsForAdminPharmacyDetail,
+  storeListMainSubsForAdminPharmacyDetail,
+} from "@/lib/db/admin-store";
 import { resolvePharmacyEntitlements } from "@/lib/subscription/lifecycle/entitlements";
 import { normalizeLifecycleStatus } from "@/lib/subscription/lifecycle/status";
 import { isMainTierCatalogRow } from "@/lib/subscription/normalize-plan";
@@ -76,56 +82,26 @@ function formatLifecycleLabel(status: string): string {
 }
 
 export async function buildAdminPharmacyDetail(
-  admin: SupabaseClient,
   pharmacyId: string,
   catalog: CatalogPlanLike[] = [],
 ): Promise<AdminPharmacyDetail | null> {
-  const { data: pharmacy, error } = await admin
-    .from("pharmacies")
-    .select("*")
-    .eq("id", pharmacyId)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
+  const pharmacy = await storeFindPharmacyById(pharmacyId);
   if (!pharmacy) return null;
 
   const rawStatus = String(pharmacy.status ?? "active");
   const legacyAccessStatus = rawStatus === "trial" ? "active" : rawStatus;
 
-  const [ent, mainSubResult, addonSubsResult, addonCatalogResult] =
-    await Promise.all([
-      resolvePharmacyEntitlements(admin, pharmacyId),
-      admin
-        .from("subscriptions")
-        .select(
-          "id, status, is_active, expires_at, payment_method, pending_change_status, subscription_plans!plan_id(name, price, plan_type)",
-        )
-        .eq("pharmacy_id", pharmacyId)
-        .eq("subscription_type", "main")
-        .order("created_at", { ascending: false })
-        .limit(5),
-      admin
-        .from("subscriptions")
-        .select(
-          "id, status, is_active, payment_method, branch_id, subscription_plans!plan_id(name, price), branches(name)",
-        )
-        .eq("pharmacy_id", pharmacyId)
-        .eq("subscription_type", "branch_addon")
-        .order("created_at", { ascending: false }),
-      admin
-        .from("subscription_plans")
-        .select("name, price")
-        .eq("plan_type", "branch_addon")
-        .eq("is_active", true)
-        .order("price", { ascending: true })
-        .limit(1)
-        .maybeSingle(),
-    ]);
+  const [ent, mainSubRows, addonSubRows, catalogAddon] = await Promise.all([
+    resolvePharmacyEntitlements(pharmacyId),
+    storeListMainSubsForAdminPharmacyDetail(pharmacyId),
+    storeListBranchAddonSubsForAdminPharmacyDetail(pharmacyId),
+    storeFindActiveBranchAddonCatalog(),
+  ]);
 
   let mainSubscription: AdminPharmacyDetail["mainSubscription"] = null;
   let pendingMainSubscription: AdminPharmacyDetail["pendingMainSubscription"] =
     null;
-  for (const row of mainSubResult.data ?? []) {
+  for (const row of mainSubRows) {
     const embedded = (row as {
       subscription_plans?: {
         name?: string;
@@ -166,7 +142,7 @@ export async function buildAdminPharmacyDetail(
   }
 
   const branchAddonItems: AdminPharmacyBranchAddonRow[] = [];
-  for (const row of addonSubsResult.data ?? []) {
+  for (const row of addonSubRows) {
     const lifecycle = normalizeLifecycleStatus(
       (row as { status?: string }).status,
       {
@@ -193,10 +169,6 @@ export async function buildAdminPharmacyDetail(
     });
   }
 
-  const catalogAddon = addonCatalogResult.data as
-    | { name?: string; price?: unknown }
-    | null;
-
   let owner: AdminPharmacyDetail["owner"] = null;
   const ownerId = pharmacy.owner_id as string | null | undefined;
   if (ownerId) {
@@ -209,11 +181,7 @@ export async function buildAdminPharmacyDetail(
       (pharmacy.email as string | undefined)?.trim() ||
       null;
     owner = { name: ownerName, email: ownerEmail };
-    const { data: userRow } = await admin
-      .from("users")
-      .select("email, name, full_name")
-      .eq("id", ownerId)
-      .maybeSingle();
+    const userRow = await storeFindOwnerPublicUser(ownerId);
     if (userRow) {
       owner = {
         name:
@@ -273,11 +241,8 @@ export async function buildAdminPharmacyDetail(
     branchAddons: {
       activeCount: branchAddonItems.length,
       items: branchAddonItems,
-      catalogProductName: catalogAddon?.name
-        ? String(catalogAddon.name)
-        : null,
-      catalogProductPrice:
-        catalogAddon?.price != null ? Number(catalogAddon.price) : null,
+      catalogProductName: catalogAddon?.name ?? null,
+      catalogProductPrice: catalogAddon?.price ?? null,
     },
     capacity: {
       branchesInUse: ent.usage.activeBranches,

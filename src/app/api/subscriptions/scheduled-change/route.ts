@@ -1,40 +1,21 @@
-import { NextRequest } from "next/server";
-import { createRouteHandlerClient } from "../../../../../supabase/route-handler";
-import { createServiceClient } from "../../../../../supabase/service";
+import { NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { cancelScheduledSubscriptionChange } from "@/lib/subscription/cancel-scheduled-change";
 import { getScheduledSubscriptionChange } from "@/lib/subscription/get-scheduled-change";
-import { resolveActivePharmacyId } from "@/lib/pharmacy/active-pharmacy";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { writeAuditLog } from "@/lib/db/audit-logs";
 
-async function resolvePharmacyId(
-  _supabase: ReturnType<typeof createRouteHandlerClient>["supabase"],
-  admin: ReturnType<typeof createServiceClient>,
-  userId: string
-): Promise<string | null> {
-  return resolveActivePharmacyId(admin, userId);
-}
-
-export async function GET(request: NextRequest) {
-  const { supabase, json } = createRouteHandlerClient(request);
-
+export async function GET() {
   try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getAuthUser();
     if (!user) {
-      return json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const admin = createServiceClient();
-    const pharmacyId = await resolvePharmacyId(supabase, admin, user.id);
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const scheduled = await getScheduledSubscriptionChange(pharmacyId);
 
-    if (!pharmacyId) {
-      return json({ error: "Pharmacy not found" }, { status: 403 });
-    }
-
-    const scheduled = await getScheduledSubscriptionChange(admin, pharmacyId);
-
-    return json({
+    return NextResponse.json({
       scheduledChange: scheduled
         ? {
             status: scheduled.status,
@@ -49,42 +30,39 @@ export async function GET(request: NextRequest) {
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "Failed to fetch scheduled change";
-    return json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
-export async function DELETE(request: NextRequest) {
-  const { supabase, json } = createRouteHandlerClient(request);
-
+export async function DELETE() {
   try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getAuthUser();
     if (!user) {
-      return json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const admin = createServiceClient();
-    const pharmacyId = await resolvePharmacyId(supabase, admin, user.id);
-
-    if (!pharmacyId) {
-      return json({ error: "Pharmacy not found" }, { status: 403 });
-    }
-
-    const { canceled } = await cancelScheduledSubscriptionChange(
-      admin,
-      pharmacyId
-    );
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const { canceled } = await cancelScheduledSubscriptionChange(pharmacyId);
 
     if (!canceled) {
-      return json({ error: "No scheduled change to cancel" }, { status: 404 });
+      return NextResponse.json(
+        { error: "No scheduled change to cancel" },
+        { status: 404 },
+      );
     }
 
-    return json({ success: true, canceled: true });
+    await writeAuditLog({
+      pharmacyId,
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "subscriptions",
+      newValues: { changeType: "scheduled_change_cancelled" },
+    });
+
+    return NextResponse.json({ success: true, canceled: true });
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "Failed to cancel scheduled change";
-    return json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

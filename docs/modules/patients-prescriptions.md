@@ -1,3 +1,5 @@
+> **Stack:** Prisma (`DATABASE_URL`) for data; native JWT auth (`getAuthUser()`, cookies `pryrox_session` / `pryrox_refresh`). SQL migrations live in `supabase/migrations/` (`npm run db:sql:push`).
+
 # Patients & Prescriptions Module
 
 ## Purpose
@@ -82,7 +84,7 @@ Defined in `supabase/migrations/20241201000014_prescriptions_table.sql`.
 
 **Realtime:** The table is enrolled in `supabase_realtime` publication, enabling live updates on the Pharmacist Dashboard.
 
-**RLS:** No explicit RLS policies are defined in the migration. The API routes use the anon-key client (`createClient()`), so access is controlled by the session cookie. There is no row-level tenant isolation enforced at the database layer for this table.
+**Tenant isolation:** API routes use `getAuthUser()` + `requireUserPharmacyId()` + `prescriptions-store` (Prisma). DB RLS may exist from migrations but is not relied on by the app.
 
 ---
 
@@ -222,12 +224,8 @@ handleAddPrescription() (prescriptions/page.tsx)
         ▼
 /api/prescriptions route.ts (POST)
         │
-        ├─ createClient() → session-based Supabase client
-        ├─ supabase.from('prescriptions').insert({
-        │    pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',  ← BUG
-        │    patient_name, doctor_name, medications, priority,
-        │    status: 'pending', insurance_provider, notes
-        │  })
+        ├─ getAuthUser() → requireUserPharmacyId()
+        ├─ storeCreatePrescription(pharmacyId, body)
         └─ Returns { success: true, prescription }
         │
         ▼
@@ -246,7 +244,8 @@ updatePrescriptionStatus(id, newStatus) (prescriptions/page.tsx)
         ▼
 /api/prescriptions/[id] route.ts (PUT)
         │
-        ├─ supabase.from('prescriptions').update({ status }).eq('id', id)
+        ├─ getAuthUser() + pharmacy scope
+        ├─ storeUpdatePrescriptionStatus(id, status)  [Prisma]
         └─ Returns { success: true, prescription }
         │
         ▼
@@ -264,9 +263,8 @@ fetchPatients() (patients/page.tsx)
         ▼
 /api/customers route.ts (GET)
         │
-        ├─ supabase.auth.getUser() → verify session
-        ├─ pharmacy_users → resolve pharmacy_id
-        ├─ customers.select('*').eq('pharmacy_id', ...)
+        ├─ getAuthUser() → requireUserPharmacyId()
+        ├─ prisma.customers / customers-store (pharmacy_id filter)
         └─ Returns formatted array:
              { id, name, phone, email, dateOfBirth, allergies,
                insurance, totalPurchases, lastVisit, status }
@@ -283,7 +281,7 @@ setPatients(data) → renders patient list
 |---|---|
 | `recharts` | Bar chart (prescription trends) and pie chart (status distribution) on the Analytics tab |
 | `@/components/ui/chart` | shadcn/ui `ChartContainer` and `ChartTooltip` wrappers around Recharts |
-| `@/hooks/useRealtimeUpdates` | Supabase Realtime subscription used by the Pharmacist Dashboard |
+| `@/hooks/useRealtimeUpdates` | HTTP polling hook used by the Pharmacist Dashboard |
 | `@/hooks/usePharmacyStore` | Zustand store for shared inventory/sales/alerts state on the Pharmacist Dashboard |
 | `@/components/ui/spinner` | Loading spinner shown while prescriptions are being fetched |
 
@@ -291,29 +289,13 @@ setPatients(data) → renders patient list
 
 ## Known Limitations
 
-### 1. `pharmacy_id` hardcoded bug in `POST /api/prescriptions`
+### 1. DB RLS may be absent on `prescriptions`
 
-The prescription creation route contains a critical bug:
+Migrations may not define RLS on `prescriptions`. The app enforces tenancy in `storeListPrescriptions` / `storeCreatePrescription` via `requireUserPharmacyId()`. Direct SQL access still bypasses that layer.
 
-```typescript
-pharmacy_id: body.pharmacy_id || 'userPharmacy.pharmacy_id',
-```
+### 2. Legacy UI may omit fields expected by API
 
-The fallback value is the **string literal** `'userPharmacy.pharmacy_id'` — not the authenticated user's pharmacy ID. If the client does not send `pharmacy_id` in the request body (and the UI does not), every new prescription is inserted with this invalid UUID string. The insert will fail with a foreign key constraint violation unless Supabase silently ignores the constraint. This means prescription creation is effectively broken for all users who do not manually supply a `pharmacy_id`.
-
-**Fix:** Replace with a server-side lookup of the authenticated user's pharmacy:
-```typescript
-const { data: userPharmacy } = await supabase
-  .from('pharmacy_users')
-  .select('pharmacy_id')
-  .eq('user_id', user.id)
-  .single()
-pharmacy_id: userPharmacy.pharmacy_id
-```
-
-### 2. No RLS on the `prescriptions` table
-
-The `prescriptions` migration does not define any Row Level Security policies. All authenticated users with a valid session can read and modify any prescription row across all pharmacies. Tenant isolation relies entirely on the application layer filtering by `pharmacy_id`, which is not enforced in the `GET /api/prescriptions` route (it fetches all rows without a `pharmacy_id` filter).
+Older clients that POST `pharmacy_id` from the body are ignored — server always uses session pharmacy. Ensure forms do not rely on client-supplied tenant ids.
 
 ### 3. `prescription_processing` table is missing
 
@@ -339,19 +321,6 @@ If `GET /api/prescriptions` returns a non-OK response, the prescriptions page si
 
 Both the prescriptions list and the patients list load all records in a single query with no pagination or virtual scrolling. For pharmacies with large prescription histories, this will cause slow page loads and high memory usage.
 
-### 9. `GET /api/prescriptions` fetches across all pharmacies
-
-The collection endpoint does not filter by `pharmacy_id`:
-
-```typescript
-const { data: prescriptions, error } = await supabase
-  .from('prescriptions')
-  .select('*')
-  .order('created_at', { ascending: false })
-```
-
-Without RLS policies and without an application-layer `pharmacy_id` filter, this returns prescriptions from all pharmacies to any authenticated user.
-
-### 10. `lastVisit` on the patients page is derived from `created_at`
+### 9. `lastVisit` on the patients page is derived from `created_at`
 
 The `/api/customers` route maps `lastVisit` to `c.created_at?.split('T')[0]`, which is the record creation date, not the patient's most recent visit. The "New This Month" stat card on the patients page therefore counts customers created this month, not patients who visited this month.

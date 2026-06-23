@@ -27,7 +27,7 @@ export default async function ForgotPassword() {
           </Link>
 
           <h1 className="text-3xl font-bold text-gray-900">Forgot Password</h1>
-          <p className="mt-2 text-sm text-gray-500">
+          <p className="mt-2 text-base text-gray-500 leading-relaxed">
             Enter your email and we&apos;ll send you a reset link.
           </p>
 
@@ -46,12 +46,12 @@ export default async function ForgotPassword() {
         <div className="absolute top-1/2 right-0 h-40 w-40 rounded-full bg-white/5" />
 
         <div className="relative z-10 flex w-full flex-col items-center justify-center gap-6 px-12">
-          <div className="w-64 text-center">
-            <h2 className="text-2xl font-bold text-white leading-snug">Secure Account Recovery</h2>
-            <p className="mt-2 text-sm text-gray-400">We&apos;ll send a secure link to your email to reset your password safely.</p>
+          <div className="w-96 text-center">
+            <h2 className="text-3xl font-bold text-white leading-snug">Secure Account Recovery</h2>
+            <p className="mt-2 text-base text-gray-400 leading-relaxed">We&apos;ll send a secure link to your email to reset your password safely.</p>
           </div>
 
-          <div className="flex w-64 flex-wrap justify-center gap-2">
+          <div className="flex w-96 flex-wrap justify-center gap-3">
             {["Secure Link", "Email Verified", "Quick Reset", "Safe & Private"].map((f) => (
               <span key={f} className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white border border-white/20">
                 {f}

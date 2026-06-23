@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { storeCountPharmacyUsage } from "@/lib/db/pharmacy-usage-store";
 import { resolvePharmacyEntitlements } from "./lifecycle/entitlements";
 
 const DEFAULT_MAX_USERS = 5;
@@ -22,11 +22,8 @@ export type CanAddUserResult = {
   overLimit: boolean;
 };
 
-export async function getPlanLimitsForPharmacy(
-  admin: SupabaseClient,
-  pharmacyId: string
-): Promise<PlanLimits> {
-  const ent = await resolvePharmacyEntitlements(admin, pharmacyId);
+export async function getPlanLimitsForPharmacy(pharmacyId: string): Promise<PlanLimits> {
+  const ent = await resolvePharmacyEntitlements(pharmacyId);
   const plan = ent.effectivePlan;
 
   if (!plan) {
@@ -39,36 +36,14 @@ export async function getPlanLimitsForPharmacy(
   };
 }
 
-export async function getPharmacyUsage(
-  admin: SupabaseClient,
-  pharmacyId: string
-): Promise<PharmacyUsage> {
-  const [{ count: users }, { count: branches }] = await Promise.all([
-    admin
-      .from("pharmacy_users")
-      .select("id", { count: "exact", head: true })
-      .eq("pharmacy_id", pharmacyId)
-      .eq("is_active", true),
-    admin
-      .from("branches")
-      .select("id", { count: "exact", head: true })
-      .eq("pharmacy_id", pharmacyId)
-      .eq("is_active", true),
-  ]);
-
-  return {
-    activeUsers: users ?? 0,
-    activeBranches: branches ?? 0,
-  };
+export async function getPharmacyUsage(pharmacyId: string): Promise<PharmacyUsage> {
+  return storeCountPharmacyUsage(pharmacyId);
 }
 
-export async function canAddPharmacyUser(
-  admin: SupabaseClient,
-  pharmacyId: string
-): Promise<CanAddUserResult> {
+export async function canAddPharmacyUser(pharmacyId: string): Promise<CanAddUserResult> {
   const [limits, usage] = await Promise.all([
-    getPlanLimitsForPharmacy(admin, pharmacyId),
-    getPharmacyUsage(admin, pharmacyId),
+    getPlanLimitsForPharmacy(pharmacyId),
+    getPharmacyUsage(pharmacyId),
   ]);
 
   const overLimit = usage.activeUsers > limits.maxUsers;

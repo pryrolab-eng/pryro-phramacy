@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Shield } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { DashboardButton } from "@/components/dashboard";
 import {
   SettingsPanelTitle,
   SettingsSection,
@@ -18,6 +19,11 @@ export function SettingsSecurityPanel() {
     platformAllowsTwoFactor,
     setIs2FASetupOpen,
     setTwoFaMutation,
+    ipWhitelistEnabled,
+    setIsIpWhitelistOpen,
+    updateSecurityMutation,
+    ipWhitelist,
+    currentIp,
   } = useSettingsPage();
 
   return (
@@ -28,9 +34,7 @@ export function SettingsSecurityPanel() {
       />
 
       <SettingsSection title="Your account">
-        <div className="border-b border-neutral-100 pb-4 dark:border-neutral-800">
-          <ChangePasswordSettingsRow />
-        </div>
+        <ChangePasswordSettingsRow />
         <SettingsRow
           title="Two-factor authentication"
           description={
@@ -63,6 +67,54 @@ export function SettingsSecurityPanel() {
         </SettingsRow>
       </SettingsSection>
 
+      <SettingsSection title="Network access">
+        <SettingsRow
+          title="IP whitelist"
+          description={
+            ipWhitelistEnabled
+              ? "Only listed addresses can use this pharmacy workspace"
+              : "Restrict dashboard and API access to approved office or VPN IPs"
+          }
+        >
+          <div className="flex items-center gap-2">
+            <Badge variant={ipWhitelistEnabled ? "default" : "secondary"}>
+              {ipWhitelist.length} IP{ipWhitelist.length === 1 ? "" : "s"}
+            </Badge>
+            <DashboardButton size="sm" onClick={() => setIsIpWhitelistOpen(true)}>
+              Manage
+            </DashboardButton>
+            <Switch
+              checked={ipWhitelistEnabled}
+              disabled={updateSecurityMutation.isPending}
+              onCheckedChange={async (checked) => {
+                try {
+                  await updateSecurityMutation.mutateAsync({
+                    ip_whitelist_enabled: checked,
+                  });
+                  toast.success(
+                    checked
+                      ? "IP whitelist enabled — your current IP was added"
+                      : "IP whitelist disabled",
+                  );
+                } catch (err) {
+                  toast.error(
+                    err instanceof Error
+                      ? err.message
+                      : "Failed to update IP whitelist",
+                  );
+                }
+              }}
+            />
+          </div>
+        </SettingsRow>
+        {currentIp ? (
+          <p className="px-1 text-xs text-muted-foreground">
+            Your current IP:{" "}
+            <span className="font-mono text-foreground">{currentIp}</span>
+          </p>
+        ) : null}
+      </SettingsSection>
+
       <SettingsSection title="Data protection">
         <SettingsRow
           title="Data encryption"
@@ -74,25 +126,14 @@ export function SettingsSecurityPanel() {
         </SettingsRow>
         <SettingsRow
           title="Session timeout"
-          description="Auto sign-out after a period of inactivity"
+          description="Session lifetime is managed by the platform session policy"
         >
-          <Switch defaultChecked />
-        </SettingsRow>
-        <SettingsRow
-          title="SSO integration"
-          description="Single sign-on with SAML or OAuth (coming soon)"
-        >
-          <Switch disabled />
+          <Badge variant="secondary">Platform managed</Badge>
         </SettingsRow>
       </SettingsSection>
 
       <div className="flex items-start gap-2 rounded-lg border border-neutral-200/80 bg-neutral-50/50 p-4 text-xs text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800/30 dark:text-neutral-400">
         <Shield className="mt-0.5 size-4 shrink-0" />
-        <p>
-          Platform IP whitelist and API keys are managed in Admin → Settings.
-          Team members with temporary passwords must set a new password on first
-          sign-in.
-        </p>
       </div>
     </div>
   );

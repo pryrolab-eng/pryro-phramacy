@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { prisma } from "@/lib/db/prisma";
 import { normalizePlanNameForCatalog } from "./normalize-plan";
 
 export type FixCatalogTypesResult = {
@@ -24,19 +24,15 @@ const BRANCH_ADDON_NAMES = new Set([
 ]);
 
 /** Correct common mis-typed plan_type values in subscription_plans. */
-export async function fixSubscriptionPlanCatalogTypes(
-  admin: SupabaseClient
-): Promise<FixCatalogTypesResult> {
-  const { data: plans, error } = await admin
-    .from("subscription_plans")
-    .select("id, name, plan_type");
-
-  if (error) throw error;
+export async function fixSubscriptionPlanCatalogTypes(): Promise<FixCatalogTypesResult> {
+  const plans = await prisma.subscription_plans.findMany({
+    select: { id: true, name: true, plan_type: true },
+  });
 
   let mainPlansFixed = 0;
   let addonsFixed = 0;
 
-  for (const row of plans ?? []) {
+  for (const row of plans) {
     const nameKey = normalizePlanNameForCatalog(String(row.name ?? ""));
     const current =
       String(row.plan_type ?? "main").trim().toLowerCase() === "branch_addon"
@@ -52,12 +48,10 @@ export async function fixSubscriptionPlanCatalogTypes(
 
     if (!next) continue;
 
-    const { error: updateErr } = await admin
-      .from("subscription_plans")
-      .update({ plan_type: next })
-      .eq("id", row.id);
-
-    if (updateErr) throw updateErr;
+    await prisma.subscription_plans.update({
+      where: { id: row.id },
+      data: { plan_type: next },
+    });
 
     if (next === "main") mainPlansFixed++;
     else addonsFixed++;

@@ -1,6 +1,6 @@
 import { isSmtpConfigured, sendMail } from "./mailer";
-
 import { getAppUrl } from "@/lib/app-url";
+import { resolveEmailTemplate } from "@/lib/email/template-overrides";
 
 export function staffInviteEmailHtml(options: {
   fullName: string;
@@ -79,24 +79,43 @@ export async function sendStaffInviteEmail(options: {
   const signInUrl = `${getAppUrl()}/sign-in`;
   const subject = `You're invited to ${options.pharmacyName} on Pryrox`;
 
+  const defaultHtml = staffInviteEmailHtml({
+    fullName: options.fullName,
+    pharmacyName: options.pharmacyName,
+    role: options.role,
+    signInUrl,
+    temporaryPassword: options.temporaryPassword,
+  });
+
+  const defaultText = staffInviteEmailText({
+    fullName: options.fullName,
+    pharmacyName: options.pharmacyName,
+    role: options.role,
+    signInUrl,
+    temporaryPassword: options.temporaryPassword,
+  });
+
   try {
+    const template = await resolveEmailTemplate({
+      templateKey: "auth.staff_invite",
+      subject,
+      html: defaultHtml,
+      text: defaultText,
+      variables: {
+        fullName: options.fullName,
+        pharmacyName: options.pharmacyName,
+        role: options.role === "pharmacist" ? "Pharmacist" : "Staff",
+        roleLabel: options.role === "pharmacist" ? "Pharmacist" : "Staff",
+        signInUrl,
+        temporaryPassword: options.temporaryPassword,
+      },
+    });
+
     await sendMail({
       to: options.to,
-      subject,
-      html: staffInviteEmailHtml({
-        fullName: options.fullName,
-        pharmacyName: options.pharmacyName,
-        role: options.role,
-        signInUrl,
-        temporaryPassword: options.temporaryPassword,
-      }),
-      text: staffInviteEmailText({
-        fullName: options.fullName,
-        pharmacyName: options.pharmacyName,
-        role: options.role,
-        signInUrl,
-        temporaryPassword: options.temporaryPassword,
-      }),
+      subject: template.subject,
+      html: template.html,
+      text: template.text ?? defaultText,
     });
     return { ok: true };
   } catch (e) {

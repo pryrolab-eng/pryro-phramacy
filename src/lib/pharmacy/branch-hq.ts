@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { prisma } from "@/lib/db/prisma";
 
 /** Default name for the auto-provisioned distribution site (not a satellite branch). */
 export const HEADQUARTERS_BRANCH_NAME = "Headquarters (HQ)";
@@ -12,40 +12,35 @@ export type BranchRow = {
 
 /** Active HQ branch id for a pharmacy, if any. */
 export async function resolveHeadquartersBranchId(
-  admin: SupabaseClient,
   pharmacyId: string,
 ): Promise<string | null> {
-  const { data } = await admin
-    .from("branches")
-    .select("id")
-    .eq("pharmacy_id", pharmacyId)
-    .eq("is_active", true)
-    .eq("is_headquarters", true)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  const row = await prisma.branches.findFirst({
+    where: {
+      pharmacy_id: pharmacyId,
+      is_active: true,
+      is_headquarters: true,
+    },
+    orderBy: { created_at: "asc" },
+    select: { id: true },
+  });
 
-  return (data?.id as string) ?? null;
+  return row?.id ?? null;
 }
 
 /** Preferred stocking location: HQ first, else oldest active branch. */
 export async function resolveDefaultStockingBranchId(
-  admin: SupabaseClient,
   pharmacyId: string,
 ): Promise<string | null> {
-  const hq = await resolveHeadquartersBranchId(admin, pharmacyId);
+  const hq = await resolveHeadquartersBranchId(pharmacyId);
   if (hq) return hq;
 
-  const { data } = await admin
-    .from("branches")
-    .select("id")
-    .eq("pharmacy_id", pharmacyId)
-    .eq("is_active", true)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  const row = await prisma.branches.findFirst({
+    where: { pharmacy_id: pharmacyId, is_active: true },
+    orderBy: { created_at: "asc" },
+    select: { id: true },
+  });
 
-  return (data?.id as string) ?? null;
+  return row?.id ?? null;
 }
 
 /**
@@ -53,23 +48,24 @@ export async function resolveDefaultStockingBranchId(
  * Uses DB advisory lock via `ensure_pharmacy_hq_branch` to avoid duplicate rows on concurrent requests.
  */
 export async function ensureHeadquartersBranch(
-  admin: SupabaseClient,
   pharmacyId: string,
 ): Promise<string | null> {
-  const { data: rpcId, error: rpcError } = await admin.rpc(
-    "ensure_pharmacy_hq_branch",
-    { p_pharmacy_id: pharmacyId },
-  );
-
-  if (!rpcError && rpcId) {
-    return rpcId as string;
+  try {
+    const rows = await prisma.$queryRaw<
+      [{ ensure_pharmacy_hq_branch: string | null }]
+    >`
+      SELECT ensure_pharmacy_hq_branch(${pharmacyId}::uuid) AS ensure_pharmacy_hq_branch
+    `;
+    const id = rows[0]?.ensure_pharmacy_hq_branch;
+    if (id) return id;
+  } catch (error) {
+    console.error(
+      "ensureHeadquartersBranch rpc:",
+      error instanceof Error ? error.message : error,
+    );
   }
 
-  if (rpcError) {
-    console.error("ensureHeadquartersBranch rpc:", rpcError.message);
-  }
-
-  return resolveDefaultStockingBranchId(admin, pharmacyId);
+  return resolveDefaultStockingBranchId(pharmacyId);
 }
 
 export function isHeadquartersBranch(

@@ -8,7 +8,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -18,13 +17,11 @@ import {
 } from "@/components/ui/select";
 import {
   Check,
-  CreditCard,
   Loader2,
   Lock,
   Mail,
   Plus,
   Shield,
-  Smartphone,
   Users,
   X,
 } from "lucide-react";
@@ -39,10 +36,8 @@ import { createPharmacist } from "@/lib/http/pharmacist";
 import {
   useOnboardingPlans,
   useOnboardingStatus,
-  usePolarConfig,
   useSubmitOnboardingPharmacyMutation,
   useUpgradeSubscriptionMutation,
-  useValidatePhoneMutation,
 } from "@/hooks/useOnboarding";
 import {
   matchPlanByIntent,
@@ -54,13 +49,8 @@ import {
 } from "@/lib/onboarding/intent-client";
 import {
   createPendingSubscription,
-  pollKpayTransaction,
   startPolarSubscriptionCheckout,
 } from "@/lib/subscription/checkout-client";
-import {
-  startKpaySubscriptionCheckout,
-  type KpayCheckoutResponse,
-} from "@/lib/http/subscription";
 import {
   INVALID_EMAIL_MESSAGE,
   isValidEmail,
@@ -140,13 +130,8 @@ export default function OnboardingForm() {
   const plansLoading = plansQuery.isPending || plansQuery.isFetching;
   const submitPharmacyMutation = useSubmitOnboardingPharmacyMutation();
   const upgradeSubscriptionMutation = useUpgradeSubscriptionMutation();
-  const validatePhoneMutation = useValidatePhoneMutation();
-  const polarConfigQuery = usePolarConfig();
   const [selectedPlan, setSelectedPlan] = useState<PlanRow | null>(null);
-  const [paymentPhone, setPaymentPhone] = useState("");
   const [paymentEmail, setPaymentEmail] = useState("");
-  const polarEnabled = Boolean(polarConfigQuery.data?.enabled);
-  const [paymentChannel, setPaymentChannel] = useState<"kpay" | "polar">("kpay");
 
   const [invites, setInvites] = useState<TeamInviteRow[]>([
     newInviteRow(),
@@ -327,9 +312,8 @@ export default function OnboardingForm() {
           }
         }
 
-        if (ph?.email || ph?.phone) {
+        if (ph?.email) {
           setPaymentEmail(ph.email ?? "");
-          setPaymentPhone(ph.phone ?? "");
         }
       } catch {
         setStep(1);
@@ -372,12 +356,11 @@ export default function OnboardingForm() {
   };
 
   const continueToCheckout = () => {
-        if (!selectedPlan) {
+    if (!selectedPlan) {
       toast.error("Please select a plan.");
       return;
     }
     setPaymentEmail((prev) => prev || pharmacy.email);
-    setPaymentPhone((prev) => prev || pharmacy.phone);
     goToStep(3);
   };
 
@@ -415,64 +398,22 @@ export default function OnboardingForm() {
       toast.error(INVALID_EMAIL_MESSAGE);
       return;
     }
-    if (paymentChannel === "kpay" && !paymentPhone.trim()) {
-      toast.error("Enter your MTN / Airtel number for Mobile Money.");
-      return;
-    }
 
-        setLoading(true);
+    setLoading(true);
     try {
       const subscription = await createPendingSubscription(
         selectedPlan.id || selectedPlan.name,
       );
 
-      if (paymentChannel === "polar") {
-        const polar = await startPolarSubscriptionCheckout({
-          planId: selectedPlan.id || selectedPlan.name,
-          subscriptionId: subscription.id,
-          customerEmail: email,
-          customerName: pharmacy.name || "Pharmacy owner",
-          customerPhone: paymentPhone,
-          returnContext: "onboarding",
-        });
-        sessionStorage.setItem("pryrox_payment_return", "onboarding");
-        window.location.href = polar.checkoutUrl;
-        return;
-      }
-
-      const phoneResult = await validatePhoneMutation.mutateAsync(paymentPhone);
-      if (!phoneResult.phone?.isValid) {
-        toast.error("Enter a valid Rwanda phone number (e.g. 0788123456).");
-        return;
-      }
-
-      const paymentData: KpayCheckoutResponse = await startKpaySubscriptionCheckout({
-        plan: selectedPlan,
+      const polar = await startPolarSubscriptionCheckout({
+        planId: selectedPlan.id || selectedPlan.name,
         subscriptionId: subscription.id,
-        customerName: pharmacy.name || "Pharmacy owner",
-        customerPhone: phoneResult.phone.formatted ?? paymentPhone,
         customerEmail: email,
-        bankId: phoneResult.phone.kpayBankId ?? "63510",
+        customerName: pharmacy.name || "Pharmacy owner",
+        returnContext: "onboarding",
       });
-
-      if (paymentData.success && paymentData.transaction?.checkoutUrl) {
-        sessionStorage.setItem("pryrox_payment_return", "onboarding");
-        window.location.href = paymentData.transaction.checkoutUrl;
-        return;
-      }
-
-      if (paymentData.success && paymentData.transaction?.id) {
-        pollKpayTransaction(
-          paymentData.transaction.id,
-          () => goToStep(4),
-          (msg) => toast.error(msg),
-        );
-      } else {
-        toast.error(
-          paymentData.kpayResponse?.statusdesc ||
-            "Payment could not be started.",
-        );
-      }
+      sessionStorage.setItem("pryrox_payment_return", "onboarding");
+      window.location.href = polar.checkoutUrl;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -830,7 +771,7 @@ export default function OnboardingForm() {
 
           <p className="flex items-center justify-center gap-2 text-xs text-neutral-500">
             <Lock className="h-3.5 w-3.5" />
-            Secure payment via KPay or card. Cancel anytime.
+            Secure payment via card. Cancel anytime.
           </p>
 
           <OnboardingStepNav
@@ -861,39 +802,6 @@ export default function OnboardingForm() {
 
           {selectedPlan.price === 0 ? null : (
             <div className="mt-6 space-y-4">
-              {polarEnabled ? (
-                <RadioGroup
-                  value={paymentChannel}
-                  onValueChange={(v) =>
-                    setPaymentChannel(v as "kpay" | "polar")
-                  }
-                  className="grid gap-2"
-                >
-                  <Label className="flex cursor-pointer items-center gap-3 rounded-md border border-neutral-200 p-3">
-                    <RadioGroupItem value="kpay" id="pay-kpay" />
-                    <Smartphone className="h-4 w-4" />
-                    <span className="text-sm">Mobile Money (KPay)</span>
-                  </Label>
-                  <Label className="flex cursor-pointer items-center gap-3 rounded-md border border-neutral-200 p-3">
-                    <RadioGroupItem value="polar" id="pay-polar" />
-                    <CreditCard className="h-4 w-4" />
-                    <span className="text-sm">Card / international (Polar)</span>
-                  </Label>
-                </RadioGroup>
-              ) : null}
-              {paymentChannel === "kpay" ? (
-                <div className="space-y-2">
-                  <Label htmlFor="pay-phone">MTN / Airtel number</Label>
-                  <Input
-                    id="pay-phone"
-                    type="tel"
-                    className="border-neutral-200"
-                    value={paymentPhone}
-                    onChange={(e) => setPaymentPhone(e.target.value)}
-                    placeholder="0788123456"
-                  />
-                </div>
-              ) : null}
               <div className="space-y-2">
                 <Label htmlFor="pay-email">Email for receipt</Label>
                 <Input
@@ -914,9 +822,7 @@ export default function OnboardingForm() {
             primaryLabel={
               selectedPlan.price === 0
                 ? "Start with this plan"
-                : paymentChannel === "polar"
-                  ? "Pay with card"
-                  : "Pay with Mobile Money"
+                : "Pay with card"
             }
             onPrimary={() => {
               if (selectedPlan.price === 0) void completeFreePlan();

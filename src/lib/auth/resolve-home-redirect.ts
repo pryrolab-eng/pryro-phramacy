@@ -1,9 +1,15 @@
-import type { SupabaseClient, User } from "@supabase/supabase-js";
+import type { AuthUser } from "@/lib/auth/types";
+import { prisma } from "@/lib/db/prisma";
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 import { isStaffWorkspaceRole } from "@/lib/rbac/pharmacy-roles";
 import { selectPrimaryMembership } from "@/utils/select-pharmacy-membership";
+import {
+  storeListActiveMembershipsForUser,
+  storeUpsertPharmacyMembership,
+} from "@/lib/db/pharmacy-users-store";
+import { storeGetIsPlatformAdmin } from "@/lib/db/public-users-store";
 
-/** Post-login entry URL — role router only; not a workspace UI. */
+/** Post-login entry URL - role router only; not a workspace UI. */
 export const POST_AUTH_ENTRY_PATH = "/app";
 
 export type HomeRedirectResult =
@@ -12,31 +18,20 @@ export type HomeRedirectResult =
 
 /**
  * Resolves where an authenticated user should land after sign-in, OAuth, or 2FA.
- * Platform admins → /admin; tenant roles → /pharmacy/*; no tenant → /onboarding.
+ * Platform admins go to /admin; tenant roles go to /pharmacy/*; no tenant goes to /onboarding.
  */
 export async function resolveAuthenticatedHomePath(
-  supabase: SupabaseClient,
-  user: User,
+  user: Pick<AuthUser, "id" | "email">,
 ): Promise<HomeRedirectResult> {
-  const [profileRes, memberRes] = await Promise.all([
-    supabase
-      .from("users")
-      .select("is_platform_admin")
-      .eq("id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("pharmacy_users")
-      .select("pharmacy_id, role")
-      .eq("user_id", user.id)
-      .eq("is_active", true),
+  const [isPlatformAdminFlag, membershipRows] = await Promise.all([
+    storeGetIsPlatformAdmin(user.id),
+    storeListActiveMembershipsForUser(user.id),
   ]);
 
-  const publicProfile = profileRes.data;
-  const membershipRows = memberRes.data;
-  const userPharmacy = selectPrimaryMembership(membershipRows ?? undefined);
+  const userPharmacy = selectPrimaryMembership(membershipRows);
 
   const isPlatformAdmin =
-    publicProfile?.is_platform_admin === true ||
+    isPlatformAdminFlag ||
     userPharmacy?.role === "superadmin" ||
     userPharmacy?.role === "admin";
 
@@ -45,51 +40,21 @@ export async function resolveAuthenticatedHomePath(
   }
 
   if (!userPharmacy) {
-    const { data: ownedPharmacy } = await supabase
-      .from("pharmacies")
-      .select("id")
-      .eq("owner_id", user.id)
-      .limit(1)
-      .maybeSingle();
+    const ownedPharmacy = await prisma.pharmacies.findFirst({
+      where: { owner_id: user.id },
+      select: { id: true },
+    });
 
     if (ownedPharmacy?.id) {
-      const { error: repairError } = await supabase.from("pharmacy_users").upsert(
-        {
-          pharmacy_id: ownedPharmacy.id,
-          user_id: user.id,
+      try {
+        await storeUpsertPharmacyMembership({
+          pharmacyId: ownedPharmacy.id,
+          userId: user.id,
           role: "pharmacy_owner",
-          is_active: true,
-        },
-        { onConflict: "pharmacy_id,user_id" },
-      );
-
-      if (!repairError) {
+        });
         return { kind: "redirect", path: PHARMACY_ROUTES.dashboard };
-      }
-    }
-
-    if (user.email?.includes("@test.com")) {
-      const role = user.email.includes("pharmacy")
-        ? "pharmacy_owner"
-        : user.email.includes("pharmacist")
-          ? "pharmacist"
-          : "cashier";
-
-      const { error: createError } = await supabase.from("pharmacy_users").upsert({
-        pharmacy_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-        user_id: user.id,
-        role,
-        is_active: true,
-      });
-
-      if (!createError) {
-        return {
-          kind: "redirect",
-          path:
-            isStaffWorkspaceRole(role)
-              ? PHARMACY_ROUTES.staffDashboard
-              : PHARMACY_ROUTES.dashboard,
-        };
+      } catch {
+        // Membership repair failed; continue to onboarding.
       }
     }
 

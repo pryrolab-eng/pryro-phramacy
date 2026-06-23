@@ -1,101 +1,26 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { createClient } from '../../../../../supabase/server'
+import { NextRequest, NextResponse } from "next/server";
+
+const DEPRECATED_MESSAGE =
+  "Platform integration API keys are managed by Pryrox administrators (Admin → Settings → Integrations). " +
+  "They are for external developers integrating with Pryrox — not per-pharmacy tenant keys.";
 
 export async function GET() {
-  try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
-
-    const { data: apiKeys, error } = await supabase
-      .from('api_keys')
-      .select('*')
-      .eq('pharmacy_id', pharmacyId)
-      .order('created_at', { ascending: false })
-
-    if (error) throw error
-    return NextResponse.json(apiKeys || [])
-  } catch (error) {
-    console.error('Error fetching API keys:', error)
-    return NextResponse.json([])
-  }
+  return NextResponse.json(
+    { error: "deprecated", message: DEPRECATED_MESSAGE },
+    { status: 410 },
+  );
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
-
-    const body = await request.json()
-    
-    if (!body.name || !body.key) {
-      return NextResponse.json({ success: false, error: 'Name and key are required' }, { status: 400 })
-    }
-    
-    const { data: apiKey, error } = await supabase
-      .from('api_keys')
-      .insert({
-        pharmacy_id: pharmacyId,
-        name: body.name,
-        key_hash: body.key,
-        key_prefix: body.key.substring(0, 8),
-        is_active: true,
-        created_by: user.id
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error('Database error:', error)
-      throw error
-    }
-    return NextResponse.json({ success: true, apiKey })
-  } catch (error: any) {
-    console.error('Error creating API key:', error)
-    return NextResponse.json({ 
-      success: false, 
-      error: error?.message || 'Failed to create API key' 
-    }, { status: 500 })
-  }
+export async function POST(_request: NextRequest) {
+  return NextResponse.json(
+    { success: false, error: DEPRECATED_MESSAGE },
+    { status: 410 },
+  );
 }
 
-export async function PUT(request: NextRequest) {
-  try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const body = await request.json()
-    
-    const { error } = await supabase
-      .from('api_keys')
-      .update({
-        name: body.name,
-        key_hash: body.key,
-        key_prefix: body.key.substring(0, 8),
-        is_active: body.status === 'Active'
-      })
-      .eq('id', body.id)
-
-    if (error) throw error
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error('Error updating API key:', error)
-    return NextResponse.json({ success: false, error: 'Failed to update API key' }, { status: 500 })
-  }
+export async function PUT(_request: NextRequest) {
+  return NextResponse.json(
+    { success: false, error: DEPRECATED_MESSAGE },
+    { status: 410 },
+  );
 }

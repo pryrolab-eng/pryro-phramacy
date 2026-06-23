@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "../../../../../supabase/server";
-import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { resolveInsuranceProvider } from "@/lib/insurance/resolve-provider";
-import { createServiceClient } from "../../../../../supabase/service";
+import { storeFindCustomerByInsuranceNumber } from "@/lib/db/insurance-store";
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,25 +16,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id);
-    const admin = createServiceClient();
+    const pharmacyId = await requireUserPharmacyId(user.id);
 
-    const { data: customer } = await admin
-      .from("customers")
-      .select("id, name, phone, insurance_number, insurance_provider_id")
-      .eq("pharmacy_id", pharmacyId)
-      .eq("insurance_number", membership)
-      .limit(1)
-      .maybeSingle();
+    const customer = await storeFindCustomerByInsuranceNumber(
+      pharmacyId,
+      membership,
+    );
 
     if (customer) {
       let insuranceType: string | undefined;
@@ -42,9 +34,8 @@ export async function POST(request: NextRequest) {
 
       if (customer.insurance_provider_id) {
         const provider = await resolveInsuranceProvider(
-          admin,
           pharmacyId,
-          customer.insurance_provider_id as string,
+          customer.insurance_provider_id,
         );
         if (provider) {
           insuranceType = provider.name;
@@ -60,22 +51,6 @@ export async function POST(request: NextRequest) {
         coveragePercent,
         status: "active",
         source: "customers",
-      });
-    }
-
-    const demoMap: Record<string, { type: string; coverage: number }> = {
-      INS001: { type: "RSSB", coverage: 80 },
-      INS002: { type: "Radiant Insurance", coverage: 70 },
-      INS003: { type: "MMI", coverage: 90 },
-    };
-    const demo = demoMap[membership];
-    if (demo) {
-      return NextResponse.json({
-        success: true,
-        insuranceType: demo.type,
-        coveragePercent: demo.coverage,
-        status: "active",
-        source: "demo",
       });
     }
 

@@ -81,6 +81,8 @@ export function hasPharmacySearchHits(
         products: unknown[];
         prescriptions: unknown[];
         sales: unknown[];
+        staff?: unknown[];
+        branches?: unknown[];
       }
     | undefined,
 ): boolean {
@@ -89,6 +91,8 @@ export function hasPharmacySearchHits(
     data.customers.length > 0 ||
     data.products.length > 0 ||
     data.prescriptions.length > 0 ||
-    data.sales.length > 0
+    data.sales.length > 0 ||
+    (data.staff?.length ?? 0) > 0 ||
+    (data.branches?.length ?? 0) > 0
   );
 }

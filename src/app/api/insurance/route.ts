@@ -1,150 +1,103 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createServiceClient } from '../../../../supabase/server'
-import { resolveIsAppPlatformAdmin } from '@/lib/platform-admin'
-import { requireSessionPharmacyId } from '@/lib/pharmacy/get-session-pharmacy'
-import { resolveActivePharmacyContext } from '@/lib/pharmacy/active-pharmacy'
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { resolveActivePharmacyContext } from "@/lib/pharmacy/active-pharmacy";
+import {
+  storeCreateInsuranceProvider,
+  storeListAllInsuranceProviders,
+  storeListGlobalInsuranceProviders,
+  storeListPharmacyInsuranceProviders,
+} from "@/lib/db/insurance-store";
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (!user || authError) {
-      const { data: providers, error } = await supabase
-        .from('insurance_providers')
-        .select('*')
-        .is('pharmacy_id', null)
-        .eq('is_active', true)
-        .order('name', { ascending: true })
-
-      if (error) {
-        console.error('Error fetching global insurance:', error)
-        return NextResponse.json([])
-      }
-      return NextResponse.json(providers || [])
+    const user = await getAuthUser();
+    if (!user) {
+      const providers = await storeListGlobalInsuranceProviders();
+      return NextResponse.json(providers);
     }
 
-    const isSuperAdmin = await resolveIsAppPlatformAdmin(supabase, user.id, null)
+    const isSuperAdmin = await resolveIsAppPlatformAdmin(user.id);
 
     if (isSuperAdmin) {
-      const admin = createServiceClient()
-      const { data: providers, error } = await admin
-        .from('insurance_providers')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Error fetching all insurance:', error)
-        return NextResponse.json([])
-      }
-      return NextResponse.json(providers || [])
+      const providers = await storeListAllInsuranceProviders();
+      return NextResponse.json(providers);
     }
 
-    const pharmacyId = await requireSessionPharmacyId(supabase, user.id)
-
-    const { data: providers, error } = await supabase
-      .from('insurance_providers')
-      .select('*')
-      .or(`pharmacy_id.eq.${pharmacyId},pharmacy_id.is.null`)
-      .eq('is_active', true)
-      .order('name', { ascending: true })
-
-    if (error) {
-      console.error('Error fetching pharmacy insurance:', error)
-      return NextResponse.json([])
-    }
-
-    return NextResponse.json(providers || [])
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const providers = await storeListPharmacyInsuranceProviders(pharmacyId);
+    return NextResponse.json(providers);
   } catch (error) {
-    console.error('Insurance fetch error:', error)
-    return NextResponse.json([], { status: 500 })
+    console.error("GET /api/insurance", error);
+    return NextResponse.json([]);
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (!user || authError) {
-      return NextResponse.json({
-        success: false,
-        error: 'Unauthorized - Please login',
-      }, { status: 401 })
+    const body = await request.json();
+    const user = await getAuthUser();
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized - Please login" },
+        { status: 401 },
+      );
     }
 
-    const isSuperAdmin = await resolveIsAppPlatformAdmin(supabase, user.id, null)
-    const dbClient = isSuperAdmin ? createServiceClient() : supabase
+    const isSuperAdmin = await resolveIsAppPlatformAdmin(user.id);
 
-    let pharmacyId: string | null = null
+    let pharmacyId: string | null = null;
 
     if (!isSuperAdmin) {
-      const admin = createServiceClient()
-      const ctx = await resolveActivePharmacyContext(admin, user.id)
+      const ctx = await resolveActivePharmacyContext(user.id);
 
       if (!ctx.activePharmacyId) {
-        return NextResponse.json({
-          success: false,
-          error: 'User not associated with any pharmacy',
-        }, { status: 403 })
+        return NextResponse.json(
+          { success: false, error: "User not associated with any pharmacy" },
+          { status: 403 },
+        );
       }
 
-      if (!['pharmacy_owner', 'admin'].includes(ctx.role ?? '')) {
-        return NextResponse.json({
-          success: false,
-          error: 'Insufficient permissions',
-        }, { status: 403 })
+      if (!["pharmacy_owner", "admin"].includes(ctx.role ?? "")) {
+        return NextResponse.json(
+          { success: false, error: "Insufficient permissions" },
+          { status: 403 },
+        );
       }
 
-      pharmacyId = ctx.activePharmacyId
+      pharmacyId = ctx.activePharmacyId;
     }
 
     if (!body.name || !body.coverage_percentage) {
-      return NextResponse.json({
-        success: false,
-        error: 'Name and coverage percentage are required',
-      }, { status: 400 })
+      return NextResponse.json(
+        { success: false, error: "Name and coverage percentage are required" },
+        { status: 400 },
+      );
     }
 
-    const coveragePct = parseFloat(body.coverage_percentage)
-    const insuranceData = {
-      pharmacy_id: pharmacyId,
+    const coveragePct = parseFloat(body.coverage_percentage);
+    const newInsurance = await storeCreateInsuranceProvider({
+      pharmacyId,
       name: body.name.trim(),
-      coverage_percentage: coveragePct,
-      default_coverage_percent: coveragePct,
-      contact_email: body.contact_email?.trim() || null,
-      contact_phone: body.contact_phone?.trim() || null,
-      policy_number: body.policy_number?.trim() || null,
-      invoice_template: body.invoice_template || 'default',
-      template_config: body.template_config || {},
-      is_active: true,
-    }
-
-    const { data: newInsurance, error } = await dbClient
-      .from('insurance_providers')
-      .insert(insuranceData)
-      .select()
-      .single()
-
-    if (error) {
-      console.error('Database error:', error)
-      return NextResponse.json({
-        success: false,
-        error: `Database error: ${error.message}`,
-      }, { status: 500 })
-    }
+      coveragePercentage: coveragePct,
+      contactEmail: body.contact_email?.trim() || null,
+      contactPhone: body.contact_phone?.trim() || null,
+      policyNumber: body.policy_number?.trim() || null,
+      invoiceTemplate: body.invoice_template || "default",
+      templateConfig: body.template_config || {},
+    });
 
     return NextResponse.json({
       success: true,
       insurance: newInsurance,
-      message: 'Insurance provider added successfully',
-    })
+      message: "Insurance provider added successfully",
+    });
   } catch (error) {
-    console.error('Insurance add error:', error)
+    console.error("POST /api/insurance", error);
     return NextResponse.json({
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to add insurance',
-    }, { status: 500 })
+      error: error instanceof Error ? error.message : "Failed to add insurance",
+    });
   }
 }

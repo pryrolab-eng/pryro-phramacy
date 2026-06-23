@@ -1,4 +1,4 @@
-// Phone Number Validation Model for KPay Integration
+// Phone Number Validation Model
 export interface PhoneNumberModel {
   raw: string
   formatted: string
@@ -69,14 +69,4 @@ export class PhoneNumberValidator {
     }
   }
 
-  static getKPayBankId(phoneNumber: string): string {
-    const validated = this.validate(phoneNumber)
-    if (!validated.isValid) return '63510' // Default MTN
-    
-    switch (validated.carrier) {
-      case 'MTN': return '63510'
-      case 'Airtel': return '63514'
-      default: return '63510'
-    }
-  }
 }

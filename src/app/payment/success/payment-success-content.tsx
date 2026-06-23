@@ -13,17 +13,9 @@ export function PaymentSuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const provider = searchParams.get("provider");
   const checkoutId = searchParams.get("checkout_id");
-  const tid = searchParams.get("tid");
-  const refid = searchParams.get("refid");
 
-  const verification = usePaymentSuccessStatus({
-    provider,
-    checkoutId,
-    tid,
-    refid,
-  });
+  const verification = usePaymentSuccessStatus(checkoutId);
 
   const goNext = () => {
     const returnParam = searchParams.get("return");

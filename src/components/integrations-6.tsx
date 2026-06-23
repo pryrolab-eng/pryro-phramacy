@@ -4,8 +4,8 @@ import { Plus } from 'lucide-react'
 
 const integrations = [
     {
-        name: 'KPay',
-        description: 'Mobile money and card payments for pharmacy subscriptions.',
+        name: 'Polar',
+        description: 'Card payments for pharmacy subscriptions.',
         icon: '💳',
     },
     {

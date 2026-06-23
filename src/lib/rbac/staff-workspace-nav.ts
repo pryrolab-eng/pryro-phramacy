@@ -130,10 +130,9 @@ export function getStaffWorkspaceNavItems(
 
 /** Server-side nav resolution using DB permissions. */
 export async function getStaffWorkspaceNavItemsForUser(
-  admin: Parameters<typeof loadRolePermissions>[0],
   role: string | null | undefined,
 ): Promise<NavItemConfig[]> {
-  const permissions = await loadRolePermissions(admin, role);
+  const permissions = await loadRolePermissions(role);
   return getStaffWorkspaceNavItemsFromPermissions(permissions);
 }
 

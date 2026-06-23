@@ -75,6 +75,17 @@ export type AiSafetyResult = {
   warnings: string[];
   severity: string;
   recommendations: string[];
+  source?: {
+    id: string;
+    name: string;
+    clinicalDataset: boolean;
+  };
+  ruleMatches?: Array<{
+    type: string;
+    severity: string;
+    source: string;
+    message: string;
+  }>;
 };
 
 export type AiSafetyResponse = {

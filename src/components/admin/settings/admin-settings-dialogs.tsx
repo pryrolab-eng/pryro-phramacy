@@ -1,7 +1,9 @@
 "use client";
 
-import { Plus, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Download } from "lucide-react";
+import { IpWhitelistManageFields } from "@/components/security/ip-whitelist-manage-fields";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,9 +24,64 @@ import {
   DashboardDialogTitle,
 } from "@/components/dashboard";
 import { useAdminSettings } from "@/components/admin/settings/admin-settings-provider";
+import { PlatformApiKeyPermissionsFields } from "@/components/admin/settings/platform-api-key-permissions";
+
+function generateSecureKey(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `prx_${hex}`;
+}
 
 export function AdminSettingsDialogs() {
   const s = useAdminSettings();
+  const prevAddApiKeyOpen = useRef(false);
+  const [regenerateKey, setRegenerateKey] = useState("");
+  const [isRegenerateConfirmOpen, setIsRegenerateConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    if (s.isAddApiKeyOpen && !prevAddApiKeyOpen.current) {
+      s.setNewApiKey({ name: "", key: generateSecureKey(), permissions: [] });
+    }
+    prevAddApiKeyOpen.current = s.isAddApiKeyOpen;
+  }, [s.isAddApiKeyOpen]);
+
+  const handleRegenerateKey = useCallback(() => {
+    s.setNewApiKey((prev) => ({ ...prev, key: generateSecureKey() }));
+  }, [s]);
+
+  const handleCopyKey = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(s.newApiKey.key);
+      toast.success("API key copied to clipboard");
+    } catch {
+      toast.error("Failed to copy");
+    }
+  }, [s.newApiKey.key]);
+
+  const handleRegenerateConfirm = useCallback(async () => {
+    if (!s.selectedApiKey || !regenerateKey) return;
+    try {
+      await s.deleteApiKeyMutation.mutateAsync(s.selectedApiKey.id);
+      await s.createApiKeyMutation.mutateAsync({
+        name: s.selectedApiKey.name,
+        key: regenerateKey,
+        permissions: s.selectedApiKey.permissions ?? [],
+      });
+      setIsRegenerateConfirmOpen(false);
+      setRegenerateKey("");
+      s.setIsEditApiKeyOpen(false);
+      toast.success("API key regenerated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to regenerate key");
+    }
+  }, [s, regenerateKey]);
+
+  const handleRegenerateClick = useCallback(() => {
+    const newKey = generateSecureKey();
+    setRegenerateKey(newKey);
+    setIsRegenerateConfirmOpen(true);
+  }, []);
 
   return (
     <>
@@ -77,6 +134,9 @@ export function AdminSettingsDialogs() {
         <DashboardDialogContent className="sm:max-w-md">
           <DashboardDialogHeader>
             <DashboardDialogTitle>Add platform API key</DashboardDialogTitle>
+            <p className="text-sm text-muted-foreground">
+              For external developers integrating with Pryrox — not per-pharmacy keys.
+            </p>
           </DashboardDialogHeader>
           <DashboardDialogBody className="grid gap-4">
             <div className="grid gap-2">
@@ -89,26 +149,52 @@ export function AdminSettingsDialogs() {
               />
             </div>
             <div className="grid gap-2">
-              <Label>Key</Label>
+              <div className="flex items-center justify-between">
+                <Label>Generated key</Label>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={handleCopyKey}
+                    className="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  >
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRegenerateKey}
+                    className="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  >
+                    Regenerate
+                  </button>
+                </div>
+              </div>
               <Input
                 value={s.newApiKey.key}
-                onChange={(e) =>
-                  s.setNewApiKey({ ...s.newApiKey, key: e.target.value })
-                }
+                readOnly
+                className="font-mono text-xs select-all"
               />
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Copy this key now — it won&apos;t be shown again after saving.
+              </p>
             </div>
+            <PlatformApiKeyPermissionsFields
+              permissions={s.newApiKey.permissions}
+              onChange={(permissions) =>
+                s.setNewApiKey({ ...s.newApiKey, permissions })
+              }
+            />
           </DashboardDialogBody>
           <DashboardDialogActions
             confirmLabel="Add key"
             onCancel={() => {
               s.setIsAddApiKeyOpen(false);
-              s.setNewApiKey({ name: "", key: "" });
+              s.setNewApiKey({ name: "", key: "", permissions: [] });
             }}
             onConfirm={async () => {
               try {
                 await s.createApiKeyMutation.mutateAsync(s.newApiKey);
                 s.setIsAddApiKeyOpen(false);
-                s.setNewApiKey({ name: "", key: "" });
+                s.setNewApiKey({ name: "", key: "", permissions: [] });
                 toast.success("API key added");
               } catch (error) {
                 toast.error(
@@ -140,23 +226,33 @@ export function AdminSettingsDialogs() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label>Key</Label>
-                <Input
-                  value={String(s.selectedApiKey.key ?? "")}
-                  onChange={(e) =>
-                    s.setSelectedApiKey((prev) =>
-                      prev ? { ...prev, key: e.target.value } : prev,
-                    )
-                  }
-                />
+                <div className="flex items-center justify-between">
+                  <Label>Current key</Label>
+                  <button
+                    type="button"
+                    onClick={handleRegenerateClick}
+                    disabled={s.deleteApiKeyMutation.isPending || s.createApiKeyMutation.isPending}
+                    className="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
+                  >
+                    Regenerate
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 font-mono text-xs text-muted-foreground bg-muted px-3 py-2 rounded select-all">
+                    {s.selectedApiKey.key_prefix}••••••••••••••••••••••••••••••••
+                  </code>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Full key is never shown again. Regenerating will revoke the current key immediately.
+                </p>
               </div>
               <div className="grid gap-2">
                 <Label>Status</Label>
                 <Select
-                  value={String(s.selectedApiKey.status ?? "Active")}
+                  value={String(s.selectedApiKey.status ?? (s.selectedApiKey.is_active ? "Active" : "Inactive"))}
                   onValueChange={(value) =>
                     s.setSelectedApiKey((prev) =>
-                      prev ? { ...prev, status: value } : prev,
+                      prev ? { ...prev, status: value, is_active: value === "Active" } : prev,
                     )
                   }
                 >
@@ -169,6 +265,14 @@ export function AdminSettingsDialogs() {
                   </SelectContent>
                 </Select>
               </div>
+              <PlatformApiKeyPermissionsFields
+                permissions={s.selectedApiKey.permissions ?? []}
+                onChange={(permissions) =>
+                  s.setSelectedApiKey((prev) =>
+                    prev ? { ...prev, permissions } : prev,
+                  )
+                }
+              />
             </DashboardDialogBody>
           ) : null}
           <DashboardDialogActions
@@ -180,8 +284,8 @@ export function AdminSettingsDialogs() {
                 await s.updateApiKeyMutation.mutateAsync({
                   id: s.selectedApiKey.id,
                   name: s.selectedApiKey.name,
-                  key: String(s.selectedApiKey.key ?? ""),
                   status: String(s.selectedApiKey.status ?? "Active"),
+                  permissions: s.selectedApiKey.permissions ?? [],
                 });
                 s.setIsEditApiKeyOpen(false);
                 toast.success("API key updated");
@@ -195,81 +299,81 @@ export function AdminSettingsDialogs() {
         </DashboardDialogContent>
       </Dialog>
 
+      <Dialog open={isRegenerateConfirmOpen} onOpenChange={setIsRegenerateConfirmOpen}>
+        <DashboardDialogContent className="sm:max-w-md">
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Regenerate API key</DashboardDialogTitle>
+            <DashboardDialogDescription>
+              A new key has been generated. The old key will be revoked immediately.
+            </DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogBody className="grid gap-4">
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between">
+                <Label>New generated key</Label>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(regenerateKey);
+                      toast.success("API key copied to clipboard");
+                    } catch {
+                      toast.error("Failed to copy");
+                    }
+                  }}
+                  className="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  Copy
+                </button>
+              </div>
+              <Input
+                value={regenerateKey}
+                readOnly
+                className="font-mono text-xs select-all"
+              />
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Copy this key now — it won&apos;t be shown again after confirming.
+              </p>
+            </div>
+          </DashboardDialogBody>
+          <DashboardDialogActions
+            confirmLabel="Confirm & regenerate"
+            cancelLabel="Cancel"
+            onCancel={() => {
+              setIsRegenerateConfirmOpen(false);
+              setRegenerateKey("");
+            }}
+            onConfirm={handleRegenerateConfirm}
+            confirmLoading={s.deleteApiKeyMutation.isPending || s.createApiKeyMutation.isPending}
+          />
+        </DashboardDialogContent>
+      </Dialog>
+
       <Dialog open={s.isIpWhitelistOpen} onOpenChange={s.setIsIpWhitelistOpen}>
         <DashboardDialogContent className="sm:max-w-lg">
           <DashboardDialogHeader>
             <DashboardDialogTitle>Platform IP whitelist</DashboardDialogTitle>
             <DashboardDialogDescription>
-              Allowed addresses for platform admin access
+              Allowed addresses for platform admin access. Save platform settings
+              after enabling the whitelist — your current IP is added automatically.
             </DashboardDialogDescription>
           </DashboardDialogHeader>
-          <DashboardDialogBody className="space-y-4">
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                placeholder="192.168.1.100"
-                value={s.newIp.ip}
-                onChange={(e) => s.setNewIp({ ...s.newIp, ip: e.target.value })}
-              />
-              <Input
-                placeholder="Description"
-                value={s.newIp.description}
-                onChange={(e) =>
-                  s.setNewIp({ ...s.newIp, description: e.target.value })
-                }
-              />
-            </div>
-            <DashboardButton
-              onClick={async () => {
-                if (!s.newIp.ip) return;
-                try {
-                  const result = await s.addIpMutation.mutateAsync(s.newIp);
-                  if (result.success) {
-                    s.setNewIp({ ip: "", description: "" });
-                    toast.success("IP added");
-                  } else {
-                    toast.error("Failed to add IP");
-                  }
-                } catch {
-                  toast.error("Failed to add IP");
+          <DashboardDialogBody>
+            <IpWhitelistManageFields
+              ips={s.ipWhitelist}
+              newIp={s.newIp}
+              onNewIpChange={s.setNewIp}
+              addPending={s.addIpMutation.isPending}
+              onAdd={async (body) => {
+                const result = await s.addIpMutation.mutateAsync(body);
+                if (!result.success) {
+                  throw new Error("Failed to add IP");
                 }
               }}
-              disabled={!s.newIp.ip}
-            >
-              <Plus className="mr-1.5 h-4 w-4" />
-              Add IP
-            </DashboardButton>
-            <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-neutral-200/80 p-3 dark:border-neutral-700">
-              {s.ipWhitelist.length === 0 ? (
-                <p className="text-center text-sm text-neutral-500">
-                  No whitelisted IPs yet
-                </p>
-              ) : (
-                s.ipWhitelist.map((ip) => (
-                  <div
-                    key={ip.id}
-                    className="flex items-center justify-between rounded-lg border border-neutral-100 px-3 py-2 dark:border-neutral-800"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{ip.ip_address}</p>
-                      <p className="text-xs text-neutral-500">{ip.description}</p>
-                    </div>
-                    <DashboardButton
-                      size="sm"
-                      onClick={async () => {
-                        try {
-                          await s.removeIpMutation.mutateAsync(ip.id);
-                          toast.success("IP removed");
-                        } catch {
-                          toast.error("Failed to remove IP");
-                        }
-                      }}
-                    >
-                      <X className="h-3 w-3" />
-                    </DashboardButton>
-                  </div>
-                ))
-              )}
-            </div>
+              onRemove={async (id) => {
+                await s.removeIpMutation.mutateAsync(id);
+              }}
+            />
           </DashboardDialogBody>
         </DashboardDialogContent>
       </Dialog>
@@ -356,6 +460,29 @@ export function AdminSettingsDialogs() {
                       {code}
                     </div>
                   ))}
+                </div>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    Store these codes securely — they won&apos;t be shown again.
+                  </p>
+                  <DashboardButton
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const content = `Pryrox 2FA Backup Codes\nGenerated: ${new Date().toISOString()}\n\n${s.backupCodes.join("\n")}\n\nEach code can be used once. Keep this file safe.`;
+                      const blob = new Blob([content], { type: "text/plain" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `pryrox-2fa-backup-${Date.now()}.txt`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      toast.success("Backup codes downloaded");
+                    }}
+                  >
+                    <Download className="mr-1.5 h-4 w-4" />
+                    Download
+                  </DashboardButton>
                 </div>
                 <DashboardButton
                   tone="primary"

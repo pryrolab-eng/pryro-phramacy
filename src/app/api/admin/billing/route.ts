@@ -1,31 +1,16 @@
 import { NextResponse } from "next/server";
-import { createClient, createServiceClient } from "../../../../../supabase/server";
-import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
+import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
 import { buildAdminBillingPayload } from "@/lib/admin/billing-enrichment";
 
 /** GET /api/admin/billing — payments, pharmacy billing rows, reconciliation. */
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const auth = await requirePlatformAdminApi();
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
-    const allowed = await resolveIsAppPlatformAdmin(supabase, user.id, null);
-    if (!allowed) {
-      return NextResponse.json(
-        { error: "Forbidden: platform admin access required" },
-        { status: 403 },
-      );
-    }
-
-    const db = createServiceClient();
-    const payload = await buildAdminBillingPayload(db);
+    const payload = await buildAdminBillingPayload();
     return NextResponse.json(payload);
   } catch (error) {
     console.error("GET /api/admin/billing", error);

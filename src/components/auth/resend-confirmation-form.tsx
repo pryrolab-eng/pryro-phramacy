@@ -15,7 +15,7 @@ type Props = {
 export function ResendConfirmationForm({
   defaultEmail = "",
   emailReadOnly = false,
-  submitLabel = "Resend confirmation email",
+  submitLabel = "Resend",
 }: Props) {
   const [email, setEmail] = useState(defaultEmail);
   const mutation = useResendConfirmationMutation();

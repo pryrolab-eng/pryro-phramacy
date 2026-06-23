@@ -1,42 +1,45 @@
-import { NextRequest } from "next/server";
-import { createRouteHandlerClient } from "../../../../../supabase/route-handler";
-import { createServiceClient } from "../../../../../supabase/service";
+import { NextResponse } from "next/server";
+import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { scheduleSubscriptionDowngrade } from "@/lib/subscription/schedule-downgrade";
-import { resolveActivePharmacyId } from "@/lib/pharmacy/active-pharmacy";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
-export async function POST(request: NextRequest) {
-  const { supabase, json } = createRouteHandlerClient(request);
-
+export async function POST(request: Request) {
   try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getAuthUser();
     if (!user) {
-      return json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
-    const targetPlanId = body.target_plan_id ?? body.targetPlanId ?? body.planId;
+    const targetPlanId =
+      body.target_plan_id ?? body.targetPlanId ?? body.planId;
 
     if (!targetPlanId || typeof targetPlanId !== "string") {
-      return json({ error: "target_plan_id is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "target_plan_id is required" },
+        { status: 400 },
+      );
     }
 
-    const admin = createServiceClient();
-
-    const pharmacyId = await resolveActivePharmacyId(admin, user.id);
-    if (!pharmacyId) {
-      return json({ error: "Pharmacy not found" }, { status: 403 });
-    }
-
-    const result = await scheduleSubscriptionDowngrade(
-      admin,
+    const pharmacyId = await requireUserPharmacyId(user.id);
+    const result = await scheduleSubscriptionDowngrade(pharmacyId, targetPlanId);
+    await writeAuditLog({
       pharmacyId,
-      targetPlanId
-    );
+      userId: user.id,
+      action: "UPDATE",
+      tableName: "subscriptions",
+      recordId: result.subscriptionId,
+      newValues: {
+        changeType: "downgrade_scheduled",
+        targetPlanId,
+        effectiveAt: result.effectiveAt,
+        replaced: result.replaced,
+      },
+      ...auditRequestMetadata(request),
+    });
 
-    return json({
+    return NextResponse.json({
       success: true,
       effectiveAt: result.effectiveAt,
       replaced: result.replaced,
@@ -48,6 +51,6 @@ export async function POST(request: NextRequest) {
     console.error("schedule-downgrade error:", error);
     const message =
       error instanceof Error ? error.message : "Failed to schedule downgrade";
-    return json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -23,11 +23,8 @@ import { CreditCard, GitBranch, Loader2 } from 'lucide-react'
 import type { SubscriptionPlan } from '@/lib/saas/types'
 import {
   createPendingBranchAddon,
-  pollKpayTransaction,
-  startKpaySubscriptionCheckout,
   startPolarSubscriptionCheckout,
 } from '@/lib/subscription/checkout-client'
-import { usePolarConfig } from '@/hooks/useOnboarding'
 import {
   INVALID_EMAIL_MESSAGE,
   isValidEmail,
@@ -48,7 +45,6 @@ type Props = {
   initialPlanId?: string
   customerName?: string
   customerEmail?: string
-  customerPhone?: string
   onSuccess?: () => void
 }
 
@@ -62,7 +58,6 @@ export function BranchAddonCheckoutDialog({
   initialPlanId,
   customerName = 'Pharmacy customer',
   customerEmail = '',
-  customerPhone = '',
   onSuccess,
 }: Props) {
   const [selectedPlanId, setSelectedPlanId] = useState(initialPlanId ?? '')
@@ -72,11 +67,7 @@ export function BranchAddonCheckoutDialog({
     phone: '',
     email: '',
   })
-  const [paymentMethod, setPaymentMethod] = useState<'kpay' | 'polar'>('kpay')
-  const [phone, setPhone] = useState(customerPhone)
   const [email, setEmail] = useState(customerEmail)
-  const polarConfigQuery = usePolarConfig()
-  const polarEnabled = Boolean(polarConfigQuery.data?.enabled)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -87,10 +78,9 @@ export function BranchAddonCheckoutDialog({
   useEffect(() => {
     if (open) {
       setError(null)
-      setPhone(customerPhone)
       setEmail(customerEmail)
     }
-  }, [open, customerEmail, customerPhone])
+  }, [open, customerEmail])
 
   const selectedPlan = addonPlans.find((p) => p.id === selectedPlanId)
 
@@ -112,10 +102,6 @@ export function BranchAddonCheckoutDialog({
       setError(INVALID_EMAIL_MESSAGE)
       return
     }
-    if (paymentMethod === 'kpay' && !phone.trim()) {
-      setError('Phone number is required for Mobile Money')
-      return
-    }
 
     setLoading(true)
     setError(null)
@@ -135,49 +121,14 @@ export function BranchAddonCheckoutDialog({
             : undefined,
       })
 
-      if (paymentMethod === 'polar') {
-        const polar = await startPolarSubscriptionCheckout({
-          planId: selectedPlan.id,
-          subscriptionId: subscription.id,
-          customerEmail: normalizedEmail,
-          customerName,
-          customerPhone: phone.trim() || undefined,
-          returnContext: 'settings',
-        })
-        window.location.href = polar.checkoutUrl
-        return
-      }
-
-      const kpay = await startKpaySubscriptionCheckout({
-        plan: { name: selectedPlan.name, price: Number(selectedPlan.price) },
+      const polar = await startPolarSubscriptionCheckout({
+        planId: selectedPlan.id,
         subscriptionId: subscription.id,
-        customerName,
-        customerPhone: phone.trim(),
         customerEmail: normalizedEmail,
+        customerName,
+        returnContext: 'settings',
       })
-
-      if (kpay.success && kpay.transaction?.checkoutUrl) {
-        window.location.href = kpay.transaction.checkoutUrl
-        return
-      }
-
-      if (kpay.transaction?.id) {
-        pollKpayTransaction(
-          kpay.transaction.id,
-          () => {
-            setLoading(false)
-            onOpenChange(false)
-            onSuccess?.()
-          },
-          (msg) => {
-            setLoading(false)
-            setError(msg)
-          }
-        )
-        return
-      }
-
-      throw new Error('Payment could not be started')
+      window.location.href = polar.checkoutUrl
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Payment failed')
       setLoading(false)
@@ -290,37 +241,6 @@ export function BranchAddonCheckoutDialog({
                   RWF {Number(selectedPlan.price).toLocaleString()}
                 </span>
               </div>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label>Payment method</Label>
-            <Select
-              value={paymentMethod}
-              onValueChange={(v) => setPaymentMethod(v as 'kpay' | 'polar')}
-              disabled={loading}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="kpay">Mobile Money (KPay)</SelectItem>
-                {polarEnabled ? (
-                  <SelectItem value="polar">Card (Polar)</SelectItem>
-                ) : null}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {paymentMethod === 'kpay' && (
-            <div>
-              <Label>Phone</Label>
-              <Input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="0788123456"
-                disabled={loading}
-              />
             </div>
           )}
 

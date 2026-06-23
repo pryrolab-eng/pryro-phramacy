@@ -1,37 +1,27 @@
-import { NextRequest } from "next/server";
-import { createRouteHandlerClient } from "../../../../../supabase/route-handler";
-import { sendPasswordRecoveryEmail } from "@/lib/email/auth-emails";
-import { RESET_PASSWORD_PATH } from "@/lib/middleware/auth-routes";
+import { NextRequest, NextResponse } from "next/server";
+import { sendNativePasswordRecoveryEmail } from "@/lib/email/native-auth-emails";
 
 export async function POST(request: NextRequest) {
-  const { json } = createRouteHandlerClient(request);
-
   try {
     const body = await request.json();
     const email = (body.email as string)?.trim();
 
     if (!email) {
-      return json({ error: "Email is required." }, { status: 400 });
+      return NextResponse.json({ error: "Email is required." }, { status: 400 });
     }
 
-    const redirectTo =
-      (body.next as string)?.trim() ||
-      (body.redirect_to as string)?.trim() ||
-      RESET_PASSWORD_PATH;
-
-    const result = await sendPasswordRecoveryEmail(email, redirectTo);
-
+    const result = await sendNativePasswordRecoveryEmail(email);
     if (!result.ok) {
-      return json({ error: result.error }, { status: 400 });
+      return NextResponse.json({ error: result.error }, { status: 400 });
     }
 
-    return json({
+    return NextResponse.json({
       success: true,
       provider: result.provider,
       message: "Check your email for a password reset link.",
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unexpected error";
-    return json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

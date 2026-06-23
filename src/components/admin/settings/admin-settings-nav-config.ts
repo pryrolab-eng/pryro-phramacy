@@ -6,6 +6,7 @@ import {
   FileText,
   Globe,
   Shield,
+  User,
   Users,
   Zap,
 } from "lucide-react";
@@ -26,6 +27,7 @@ export const ADMIN_SETTINGS_NAV_GROUPS: AdminSettingsNavGroup[] = [
   {
     label: "Account",
     items: [
+      { id: "profile", label: "Profile", icon: User },
       { id: "general", label: "General", icon: Globe },
       { id: "notifications", label: "Notifications", icon: Bell },
     ],

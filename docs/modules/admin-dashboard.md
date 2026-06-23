@@ -1,3 +1,5 @@
+> **Stack:** Prisma (`DATABASE_URL`) for data; native JWT auth (`getAuthUser()`, cookies `pryrox_session` / `pryrox_refresh`). SQL migrations live in `supabase/migrations/` (`npm run db:sql:push`).
+
 # Admin Dashboard Module
 
 ## Purpose
@@ -20,17 +22,17 @@ The Admin Dashboard is the **pharmacy-owner-level** management interface in Pryr
 | `reports/page.tsx` | `/admin/reports` | Business analytics. Queries the `payments`, `pharmacies`, `pharmacy_users`, and `subscription_plans` tables directly via the Supabase browser client. Displays total revenue, active pharmacies, total users, monthly revenue chart, plan revenue breakdown, and a list of downloadable report types (UI only — download buttons are not wired to actual export logic). |
 | `settings/page.tsx` | `/admin/settings` | **Current active settings page.** Platform configuration UI with 9 setting cards: Platform Configuration, Multi-Tenant Settings, API & Integration Limits, Security & Access, Compliance & Audit, System Operations, System Management, Stock Locations, Platform Analytics, and a "Custom Settings" card with placeholder fields (`customSetting`, `featureFlag`). Uses `alert()` for success/error feedback. |
 | `settings/page-improved.tsx` | `/admin/settings` *(not active)* | **Refactored version of `page.tsx`.** Replaces `alert()` calls with inline `setError`/`setSuccess` state banners. Adds a Refresh button and a loading spinner on the Save button. Removes the placeholder "Custom Settings" card. **See cleanup recommendation below.** |
-| `stores/page.tsx` | `/admin/stores` | Pharmacy management. Lists all registered pharmacies fetched from `/api/admin/pharmacies`. Supports full CRUD: add a new pharmacy (creates a Supabase Auth user + `pharmacies` record + optional `profiles` and `pharmacy_users` records), edit pharmacy details and owner credentials, delete a pharmacy. |
+| `stores/page.tsx` | `/admin/stores` | Pharmacy management. Lists pharmacies from `/api/admin/pharmacies`. CRUD: `adminCreateAuthUser()` + `storeCreatePharmacy()` + owner membership on create. |
 | `subscriptions/page.tsx` | `/admin/subscriptions` | Subscription plan management. Lists plans from `subscription_plans` table. Supports create and edit via modal dialogs. Subscriber counts are fetched but always display `0` (the `users` field is hardcoded to `0` with a `TODO` comment). Falls back to hardcoded mock data if the API call fails. |
 
 ### API Routes (`src/app/api/admin/`)
 
 | Route | Method | Auth | Description |
 |---|---|---|---|
-| `/api/admin/pharmacies` | `GET` | Service role (no user auth check) | Returns all rows from `pharmacies` ordered by `created_at` descending. Uses the service role key directly — no session check. |
-| `/api/admin/pharmacies` | `POST` | Service role (no user auth check) | Creates a Supabase Auth user, inserts a `pharmacies` record, and optionally creates `profiles` and `pharmacy_users` records. |
-| `/api/admin/pharmacies/[id]` | `PUT` | Service role (no user auth check) | Updates pharmacy fields. Optionally updates the owner's password and email via `supabase.auth.admin.updateUserById`. |
-| `/api/admin/pharmacies/[id]` | `DELETE` | Service role (no user auth check) | Deletes the pharmacy record. Does **not** delete the associated Supabase Auth user. |
+| `/api/admin/pharmacies` | `GET` | ⚠️ Often no auth check | `buildAdminPharmaciesList()` via Prisma. |
+| `/api/admin/pharmacies` | `POST` | Session varies by deployment | `adminCreateAuthUser` + `storeCreatePharmacy` + owner membership. |
+| `/api/admin/pharmacies/[id]` | `PUT` | Platform admin | Updates pharmacy fields. Optionally updates owner password/email via `adminUpdateAuthUserPassword` / `adminUpdateAuthUserEmail`. |
+| `/api/admin/pharmacies/[id]` | `DELETE` | ⚠️ Verify auth | Deletes pharmacy; may call `adminDeleteAuthUser` for owner — confirm route implementation. |
 | `/api/admin/categories` | `GET` | Service role (no user auth check) | Returns all `categories` where `is_global = true` and `is_active = true`. |
 | `/api/admin/categories` | `POST` | Service role (no user auth check) | Inserts a new global category (`is_global = true`, `pharmacy_id = null`). |
 | `/api/admin/categories/[id]` | `PUT` | Service role (no user auth check) | Updates a global category's name, description, and active status. |
@@ -193,7 +195,7 @@ Backup job records. Managed via `/api/admin/backups`.
 | `cashier` | No access. |
 | `staff` | No access. |
 
-> **Security gap:** The `/api/admin/pharmacies`, `/api/admin/categories`, and `/api/admin/pharmacies/[id]` routes use the Supabase service role key directly and perform **no authentication or authorization checks**. Any authenticated (or even unauthenticated) caller who can reach these endpoints can read, create, update, or delete pharmacy records. See Known Limitations.
+> **Security gap:** Several `/api/admin/*` routes use Prisma without consistent `getAuthUser()` + platform-admin checks. See Known Limitations §1.
 
 ---
 
@@ -218,9 +220,9 @@ The landing page aggregates live data from multiple API calls on mount:
 Full CRUD interface for registered pharmacies:
 
 - **List** all pharmacies with name, license number, address, status badge, and subscription plan badge
-- **Add** a new pharmacy: creates a Supabase Auth user for the owner, inserts the `pharmacies` record, and optionally creates `profiles` and `pharmacy_users` records. Supports assigning insurance providers with adjustable coverage percentages at creation time.
-- **Edit** an existing pharmacy: updates all fields including owner name, email, and optionally resets the owner's password via `supabase.auth.admin.updateUserById`
-- **Delete** a pharmacy: removes the `pharmacies` row but does **not** delete the associated Supabase Auth user
+- **Add** a new pharmacy: `adminCreateAuthUser` for owner, `storeCreatePharmacy`, membership rows. Insurance assignment at creation where implemented.
+- **Edit** an existing pharmacy: updates all fields including owner name, email, and optionally resets the owner's password via `adminUpdateAuthUserPassword`
+- **Delete** a pharmacy: removes `pharmacies` row; verify whether owner `auth.users` row is deleted
 
 ### 3. Subscription Plan Management (`/admin/subscriptions`)
 
@@ -270,10 +272,10 @@ Nine configuration cards, all persisted to `system_settings` via `PUT /api/admin
 | Platform Configuration | Platform name, admin email, maximum pharmacies |
 | Multi-Tenant Settings | Max users per pharmacy, enable multi-branch, white-label features |
 | API & Integration Limits | API rate limit (requests/hour), integration health status display |
-| Security & Access | Enable new registrations, SSO integration, data encryption |
+| Security & Access | Enable new registrations, platform IP policy, data protection status |
 | Compliance & Audit | Data retention days, audit logging, compliance report download (UI only) |
 | System Operations | Maintenance mode, enable notifications, system health dashboard (UI only) |
-| System Management | Automatic backups, automatic updates, system load display (hardcoded at 45%) |
+| System Management | Automatic backups, deployment-managed updates, dynamic system load display |
 | Stock Locations | List existing locations; add new location via dialog (calls `/api/settings/locations`) |
 | Platform Analytics | Active pharmacies, total users, new users (30d), API usage (hardcoded at 78%) |
 
@@ -303,27 +305,21 @@ Two versions of the admin settings page exist in the same directory:
 Admin user navigates to /admin/*
         │
         ▼
-Client component mounts → useEffect fires
+Client component mounts → fetch admin APIs
         │
-        ├─ fetch('/api/admin/pharmacies')   → GET pharmacies table (service role)
-        ├─ fetch('/api/admin/plans')        → GET subscription_plans (SSR session)
-        ├─ fetch('/api/admin/categories')   → GET global categories (service role)
-        └─ fetch('/api/admin/system-settings') → GET system_settings + analytics (SSR session + superadmin check)
-        │
-        ▼
-API Route Handler
-        │
-        ├─ createClient() → Supabase server client (SSR) or direct service role client
-        ├─ [some routes] supabase.auth.getUser() → verify session
-        ├─ [system-settings only] check pharmacy_users.role = 'superadmin'
-        └─ supabase.from('table').select/insert/update/delete
+        ├─ GET /api/admin/pharmacies     → buildAdminPharmaciesList() [Prisma]
+        ├─ GET /api/admin/plans          → getAuthUser() + prisma.subscription_plans
+        ├─ GET /api/admin/categories     → Prisma (verify auth on route)
+        └─ GET /api/admin/system-settings → getAuthUser() + platform admin check
         │
         ▼
-PostgreSQL (Supabase) → RLS policies
+Prisma (DATABASE_URL) → PostgreSQL
         │
         ▼
-JSON response → React state update → UI re-renders
+JSON → React state → UI
 ```
+
+> **Note:** Some admin routes (e.g. `GET /api/admin/pharmacies`) still omit `getAuthUser()` — see Known Limitations §1.
 
 ---
 
@@ -331,7 +327,7 @@ JSON response → React state update → UI re-renders
 
 ### 1. Missing authentication on pharmacy and category API routes
 
-`/api/admin/pharmacies`, `/api/admin/pharmacies/[id]`, `/api/admin/categories`, and `/api/admin/categories/[id]` use the Supabase service role key directly and perform no session or role checks. Any request that reaches these endpoints — including unauthenticated requests — can read all pharmacy data or create/modify/delete pharmacies and categories. This is a significant security gap.
+`/api/admin/pharmacies`, `/api/admin/pharmacies/[id]`, `/api/admin/categories`, and `/api/admin/categories/[id]` use Prisma with `DATABASE_URL` but may perform **no session or platform-admin check** on some methods. Any caller who can reach these endpoints may read or mutate platform data. Harden with `getAuthUser()` + `resolveIsAppPlatformAdmin()`.
 
 ### 2. Subscriber counts always show zero
 
@@ -355,11 +351,11 @@ Both `/api/admin/backups` (POST) and `/api/admin/insurance-templates` (POST) set
 
 ### 7. Pharmacy deletion does not clean up auth users
 
-`DELETE /api/admin/pharmacies/[id]` removes the `pharmacies` row but does not call `supabase.auth.admin.deleteUser()`. The Supabase Auth user for the pharmacy owner remains active and can still sign in after the pharmacy is deleted.
+`DELETE /api/admin/pharmacies/[id]` removes the pharmacy row; verify whether `adminDeleteAuthUser` is called for the owner — orphaned `auth.users` rows may still sign in if not cleaned up.
 
-### 8. Reports page uses browser Supabase client directly
+### 8. Reports page may query data without API indirection
 
-`reports/page.tsx` imports `createClient` from `supabase/client.ts` (the browser client) and queries the database directly from the client component. This bypasses the API route layer and exposes the query logic to the browser. It also means the queries run with the anon key and are subject to RLS policies, which may return empty results if the authenticated user does not have the appropriate role.
+Admin reports should use API routes + Prisma. Audit any client components that still query Postgres directly instead of `fetch('/api/admin/...')`.
 
 ### 9. `page.tsx` Custom Settings card contains placeholder fields
 

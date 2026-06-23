@@ -4,7 +4,7 @@ export type PhoneValidationResult = {
   phone?: {
     isValid: boolean;
     formatted?: string;
-    kpayBankId?: string;
+
   };
 };
 

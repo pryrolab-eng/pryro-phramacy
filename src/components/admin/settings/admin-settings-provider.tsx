@@ -9,7 +9,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import {
@@ -20,11 +20,13 @@ import {
   useAddAdminIpWhitelistMutation,
   useCreateAdminApiKeyMutation,
   useCreateStockLocationMutation,
+  useDeleteAdminApiKeyMutation,
   useRemoveAdminIpWhitelistMutation,
   useStockLocations,
   useUpdateAdminApiKeyMutation,
   type AdminApiKeyRow,
 } from "@/hooks";
+import { getMeContext, meContextKeys } from "@/lib/http/me-context";
 import {
   useSetTwoFaEnabledMutation,
   useSetupTwoFaMutation,
@@ -32,19 +34,41 @@ import {
   useVerifyTwoFaMutation,
 } from "@/hooks/usePharmacySettingsPage";
 import { updateAdminSystemSettings } from "@/lib/http/admin/system-settings";
+import { parseNumberSetting } from "@/lib/platform-settings";
 import {
   defaultAdminPlatformSettings,
   type AdminPlatformSettings,
 } from "@/components/admin/settings/admin-settings-types";
 
+export type AdminProfileState = {
+  name: string;
+  fullName: string;
+  email: string;
+};
+
 export type AdminSettingsContextValue = {
   settings: AdminPlatformSettings;
   setSettings: Dispatch<SetStateAction<AdminPlatformSettings>>;
+  profile: AdminProfileState;
+  setProfile: Dispatch<SetStateAction<AdminProfileState>>;
   analytics: {
     active_pharmacies: number;
     total_users: number;
     total_pharmacies: number;
     new_users_30d: number;
+  };
+  systemLoad: number;
+  integrationStatus: {
+    paymentGateway: {
+      configured: boolean;
+      status: string;
+    };
+    insurance: {
+      configured: boolean;
+      status: string;
+      activeProviders: number;
+      activeTemplates: number;
+    };
   };
   stockLocations: Array<{ id: string; name: string; description?: string | null }>;
   apiKeys: AdminApiKeyRow[];
@@ -68,14 +92,17 @@ export type AdminSettingsContextValue = {
   setIsAddApiKeyOpen: (open: boolean) => void;
   isEditApiKeyOpen: boolean;
   setIsEditApiKeyOpen: (open: boolean) => void;
-  newApiKey: { name: string; key: string };
-  setNewApiKey: Dispatch<SetStateAction<{ name: string; key: string }>>;
+  newApiKey: { name: string; key: string; permissions: string[] };
+  setNewApiKey: Dispatch<
+    SetStateAction<{ name: string; key: string; permissions: string[] }>
+  >;
   selectedApiKey: (AdminApiKeyRow & { status?: string; key?: string }) | null;
   setSelectedApiKey: Dispatch<
     SetStateAction<(AdminApiKeyRow & { status?: string; key?: string }) | null>
   >;
   createApiKeyMutation: ReturnType<typeof useCreateAdminApiKeyMutation>;
   updateApiKeyMutation: ReturnType<typeof useUpdateAdminApiKeyMutation>;
+  deleteApiKeyMutation: ReturnType<typeof useDeleteAdminApiKeyMutation>;
   isIpWhitelistOpen: boolean;
   setIsIpWhitelistOpen: (open: boolean) => void;
   newIp: { ip: string; description: string };
@@ -119,6 +146,7 @@ function useAdminSettingsState(): AdminSettingsContextValue {
   const createLocationMutation = useCreateStockLocationMutation();
   const createApiKeyMutation = useCreateAdminApiKeyMutation();
   const updateApiKeyMutation = useUpdateAdminApiKeyMutation();
+  const deleteApiKeyMutation = useDeleteAdminApiKeyMutation();
   const addIpMutation = useAddAdminIpWhitelistMutation();
   const removeIpMutation = useRemoveAdminIpWhitelistMutation();
   const setTwoFaMutation = useSetTwoFaEnabledMutation();
@@ -134,7 +162,11 @@ function useAdminSettingsState(): AdminSettingsContextValue {
   const [isIpWhitelistOpen, setIsIpWhitelistOpen] = useState(false);
   const [is2FASetupOpen, setIs2FASetupOpen] = useState(false);
   const [newLocation, setNewLocation] = useState({ name: "", description: "" });
-  const [newApiKey, setNewApiKey] = useState({ name: "", key: "" });
+  const [newApiKey, setNewApiKey] = useState({
+    name: "",
+    key: "",
+    permissions: [] as string[],
+  });
   const [newIp, setNewIp] = useState({ ip: "", description: "" });
   const [selectedApiKey, setSelectedApiKey] = useState<
     (AdminApiKeyRow & { status?: string; key?: string }) | null
@@ -144,24 +176,107 @@ function useAdminSettingsState(): AdminSettingsContextValue {
   const [verifyCode, setVerifyCode] = useState("");
   const [setupStep, setSetupStep] = useState<"qr" | "verify" | "backup">("qr");
   const [settings, setSettings] = useState(defaultAdminPlatformSettings);
+  const [profile, setProfile] = useState<AdminProfileState>({
+    name: "",
+    fullName: "",
+    email: "",
+  });
   const [analytics, setAnalytics] = useState({
     active_pharmacies: 0,
     total_users: 0,
     total_pharmacies: 0,
     new_users_30d: 0,
   });
+  const [systemLoad, setSystemLoad] = useState(45);
+  const [integrationStatus, setIntegrationStatus] = useState({
+    paymentGateway: {
+      configured: false,
+      status: "not_configured",
+    },
+    insurance: {
+      configured: false,
+      status: "not_configured",
+      activeProviders: 0,
+      activeTemplates: 0,
+    },
+  });
+
+  const meContextQuery = useQuery({
+    queryKey: meContextKeys.all,
+    queryFn: getMeContext,
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (meContextQuery.data) {
+      const user = meContextQuery.data.user;
+      setProfile({
+        name: user.fullName?.split(" ")[0] ?? "",
+        fullName: user.fullName ?? "",
+        email: user.email ?? "",
+      });
+    }
+  }, [meContextQuery.data]);
 
   useEffect(() => {
     const payload = settingsQuery.data;
     if (!payload) return;
     if (payload.settings) {
+      const raw = payload.settings as Partial<AdminPlatformSettings>;
+      const {
+        autoUpdates: _legacyAutoUpdates,
+        encryptionEnabled: _legacyEncryptionEnabled,
+        ssoEnabled: _legacySsoEnabled,
+        ...supportedRaw
+      } = raw as Partial<AdminPlatformSettings> & Record<string, unknown>;
       setSettings((prev) => ({
         ...prev,
-        ...(payload.settings as Partial<AdminPlatformSettings>),
+        ...supportedRaw,
+        apiRateLimit: parseNumberSetting(
+          supportedRaw.apiRateLimit,
+          prev.apiRateLimit,
+        ),
+        maxPharmacies: parseNumberSetting(
+          supportedRaw.maxPharmacies,
+          prev.maxPharmacies,
+        ),
+        maxUsersPerPharmacy: parseNumberSetting(
+          supportedRaw.maxUsersPerPharmacy,
+          prev.maxUsersPerPharmacy,
+        ),
+        dataRetentionDays: parseNumberSetting(
+          supportedRaw.dataRetentionDays,
+          prev.dataRetentionDays,
+        ),
       }));
     }
     if (payload.analytics) {
       setAnalytics(payload.analytics);
+    }
+    if (payload.systemMetrics) {
+      setSystemLoad(payload.systemMetrics.systemLoad);
+    }
+    const paymentGateway = payload.integrations?.paymentGateway;
+    if (paymentGateway) {
+      setIntegrationStatus((prev) => ({
+        ...prev,
+        paymentGateway: {
+          configured: paymentGateway.configured,
+          status: paymentGateway.status,
+        },
+      }));
+    }
+    const insurance = payload.integrations?.insurance;
+    if (insurance) {
+      setIntegrationStatus((prev) => ({
+        ...prev,
+        insurance: {
+          configured: insurance.configured,
+          status: insurance.status,
+          activeProviders: insurance.activeProviders,
+          activeTemplates: insurance.activeTemplates,
+        },
+      }));
     }
   }, [settingsQuery.data]);
 
@@ -177,10 +292,23 @@ function useAdminSettingsState(): AdminSettingsContextValue {
       setSaving(true);
       setError(null);
       setSuccess(null);
-      await updateAdminSystemSettings(settings as Record<string, unknown>);
+      await Promise.all([
+        updateAdminSystemSettings(settings as Record<string, unknown>),
+        fetch("/api/me/profile", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: profile.name,
+            full_name: profile.fullName,
+          }),
+        }).then((res) => {
+          if (!res.ok) throw new Error("Failed to save profile");
+        }),
+      ]);
       await queryClient.invalidateQueries({ queryKey: adminSystemSettingsQueryKey });
+      await queryClient.invalidateQueries({ queryKey: ["me", "context"] });
       setSuccess("Settings saved successfully.");
-      toast.success("Platform settings saved");
+      toast.success("Settings saved");
       setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
       const message =
@@ -213,7 +341,11 @@ function useAdminSettingsState(): AdminSettingsContextValue {
   return {
     settings,
     setSettings,
+    profile,
+    setProfile,
     analytics,
+    systemLoad,
+    integrationStatus,
     stockLocations: locationsQuery.data ?? [],
     apiKeys: apiKeysQuery.data ?? [],
     ipWhitelist: ipWhitelistQuery.data?.ips ?? [],
@@ -238,6 +370,7 @@ function useAdminSettingsState(): AdminSettingsContextValue {
     setSelectedApiKey,
     createApiKeyMutation,
     updateApiKeyMutation,
+    deleteApiKeyMutation,
     isIpWhitelistOpen,
     setIsIpWhitelistOpen,
     newIp,

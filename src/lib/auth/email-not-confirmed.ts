@@ -1,5 +1,3 @@
-import type { AuthError } from "@supabase/supabase-js";
-
 export function isEmailNotConfirmedError(
   error: { message?: string; code?: string } | null | undefined,
 ): boolean {
@@ -21,4 +19,4 @@ export function isEmailNotConfirmedMessage(raw: string): boolean {
   );
 }
 
-export type AuthErrorLike = Pick<AuthError, "message" | "code">;
+export type AuthErrorLike = { message?: string; code?: string };

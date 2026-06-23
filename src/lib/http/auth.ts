@@ -68,6 +68,7 @@ export async function verify2FACode(
 export type Complete2FAResponse = {
   token?: string;
   type?: string;
+  nativeSession?: boolean;
   error?: string;
 };
 

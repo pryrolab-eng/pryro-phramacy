@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
+import {
+  deleteGlobalInsuranceTemplateFromDb,
+  updateGlobalInsuranceTemplateFromDb,
+} from "@/lib/db/admin";
+import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function PUT(
   request: NextRequest,
@@ -12,30 +17,38 @@ export async function PUT(
   }
 
   const body = await request.json();
-  const { data, error } = await auth.supabase
-    .from("insurance_templates")
-    .update({
+  try {
+    const data = await updateGlobalInsuranceTemplateFromDb(id, {
       name: body.name,
-      insurance_provider: body.insurance_provider,
-      template_html: body.template_html,
-      template_css: body.template_css ?? "",
-      is_active: body.is_active !== false,
-    })
-    .eq("id", id)
-    .is("pharmacy_id", null)
-    .select()
-    .single();
-
-  if (error) {
+      insuranceProvider: body.insurance_provider,
+      templateHtml: body.template_html,
+      templateCss: body.template_css ?? "",
+      isActive: body.is_active !== false,
+    });
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "UPDATE",
+      tableName: "insurance_templates",
+      recordId: id,
+      newValues: {
+        id,
+        name: body.name,
+        insurance_provider: body.insurance_provider,
+        is_active: body.is_active !== false,
+      },
+      ...auditRequestMetadata(request),
+    });
+    return NextResponse.json({ success: true, template: data });
+  } catch (error) {
     console.error("admin insurance-templates PUT:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Failed to update template";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  return NextResponse.json({ success: true, template: data });
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
@@ -44,16 +57,24 @@ export async function DELETE(
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const { error } = await auth.supabase
-    .from("insurance_templates")
-    .delete()
-    .eq("id", id)
-    .is("pharmacy_id", null);
-
-  if (error) {
+  try {
+    const deleted = await deleteGlobalInsuranceTemplateFromDb(id);
+    if (!deleted) {
+      return NextResponse.json({ error: "Template not found" }, { status: 404 });
+    }
+    await writeAuditLog({
+      pharmacyId: null,
+      userId: auth.user.id,
+      action: "DELETE",
+      tableName: "insurance_templates",
+      recordId: id,
+      oldValues: { id },
+      ...auditRequestMetadata(request),
+    });
+    return NextResponse.json({ success: true });
+  } catch (error) {
     console.error("admin insurance-templates DELETE:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Failed to delete template";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  return NextResponse.json({ success: true });
 }

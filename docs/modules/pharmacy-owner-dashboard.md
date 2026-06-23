@@ -1,3 +1,5 @@
+> **Stack:** Prisma (`DATABASE_URL`) for data; native JWT auth (`getAuthUser()`, cookies `pryrox_session` / `pryrox_refresh`). SQL migrations live in `supabase/migrations/` (`npm run db:sql:push`).
+
 # Pharmacy Owner Dashboard Module
 
 ## Purpose
@@ -41,8 +43,8 @@ The dashboard is a **client component** (`'use client'`) that fetches live data 
 |---|---|---|---|
 | `/api/stock-alerts` | `GET` | Yes (session) | Returns `{ all, lowStock, expiring }` arrays derived from the `inventory` table. `lowStock` = items where `quantity_in_stock <= minimum_stock_level`. `expiring` = items expiring within 60 days. |
 | `/api/pos` | `GET` | — | Fetched on mount to populate the Recent Sales list. (See POS module for full documentation.) |
-| `/api/pharmacist` | `POST` | Bearer token (manual) | Creates a new Supabase Auth user and inserts a `pharmacy_users` record with the specified role. Called by the Add Pharmacist dialog. Uses the service role key. |
-| `/api/realtime/updates` | `GET` | — | Polled every 5 seconds by `useRealtimeUpdates`. Returns pending update events (`inventory_update`, `new_sale`, etc.) that trigger data refreshes. |
+| `/api/pharmacist` | `POST` | Session + `staff.manage` | Staff invite: `adminCreateAuthUser()` + membership + SMTP invite. Called by Add Pharmacist dialog. |
+| `/api/realtime/updates` | `GET` | Session | Polled every 5s by `useRealtimeUpdates`. Scoped to session pharmacy via Prisma. |
 
 ### Components
 
@@ -81,7 +83,7 @@ The tenant record for the pharmacy. The dashboard reads this table (via `pharmac
 | `status` | `text` | `active` or `suspended` |
 | `subscription_plan` | `text` | `trial`, `standard`, or `premium` |
 | `subscription_expires_at` | `timestamptz` | Subscription expiry date; checked by layout and sidebar |
-| `logo_url` | `text` | URL of the pharmacy logo (Supabase Storage) |
+| `logo_url` | `text` | Public URL of pharmacy logo (Cloudinary or local upload) |
 | `primary_color` | `text` | Hex color for branding (default `#3b82f6`) |
 | `custom_domain` | `text` | Optional custom domain |
 | `invoice_template` | `jsonb` | Invoice layout configuration (see `/api/pharmacy/invoice-template`) |
@@ -221,11 +223,10 @@ Three action buttons in the page header:
 
 A modal form that collects full name, email, phone, and password for a new pharmacist. On submit, it:
 
-1. Retrieves the current session from the Supabase browser client.
-2. Looks up the caller's `pharmacy_id` from `pharmacy_users`.
-3. `POST /api/pharmacist` with the credentials and `pharmacy_id`.
-4. The API route uses the Supabase Admin API (`auth.admin.createUser`) to create the Supabase Auth user with `email_confirm: true`, then inserts a `pharmacy_users` record with `role: 'pharmacist'`.
-5. On success, shows an `alert()` with the new login credentials for the owner to share manually.
+1. Resolves active `pharmacy_id` from dashboard context (`/api/me/context` or provider).
+2. `POST /api/pharmacist` with credentials, role, and `pharmacy_id`.
+3. API: `getAuthUser()` → `adminCreateAuthUser()` → `storeCreatePharmacyMembership()` → `sendStaffInviteEmail()`.
+4. On success, UI may show `alert()` with temporary password if email delivery failed.
 
 ### Subscription Status Display
 
@@ -272,7 +273,7 @@ PharmacyDashboard (client component)
                 └─ PharmacyInventoryChart → GET /api/pharmacy/inventory-chart
 ```
 
-Each API route resolves the caller's `pharmacy_id` from `pharmacy_users` using the session cookie, ensuring all data is scoped to the authenticated user's pharmacy (tenant isolation via RLS).
+Each API route uses `getAuthUser()` and resolves `pharmacy_id` via `requireSessionPharmacyId` / `getRequestPharmacyId` (and branch scope where applicable).
 
 ---
 
@@ -284,7 +285,7 @@ Each API route resolves the caller's `pharmacy_id` from `pharmacy_users` using t
 | `@/components/ui/chart` | `ChartContainer`, `ChartTooltip`, `ChartTooltipContent` — shadcn/ui chart wrappers |
 | `@/components/ui/card`, `badge`, `button`, `dialog`, `input`, `label`, `select`, `tabs`, `progress`, `separator`, `scroll-area`, `avatar` | shadcn/ui primitives used throughout the page |
 | `lucide-react` | Icons (`Package`, `DollarSign`, `Users`, `AlertTriangle`, `Clock`, `ShoppingCart`, `Pill`, `Calendar`, etc.) |
-| `@supabase/supabase-js` | Browser Supabase client used in the Add Pharmacist dialog to retrieve the session |
+| `/api/me/context` | Active pharmacy + session context for staff flows |
 
 ---
 
@@ -298,40 +299,26 @@ Each API route resolves the caller's `pharmacy_id` from `pharmacy_users` using t
 
 The `stats` object returned by `/api/pharmacy/dashboard` always sets `activeStaff: 8` and `pendingOrders: 0`. These values are not queried from the database.
 
-### 3. `/api/pharmacy/inventory-chart` has a broken pharmacy filter
+### 3. Verify chart and template routes after migration
 
-The route contains a literal string `'userPharmacy.pharmacy_id'` instead of the actual variable value in the Supabase query:
+Re-audit `/api/pharmacy/inventory-chart` and `/api/pharmacy/invoice-template` for `getAuthUser()` + correct `pharmacy_id` scoping. Earlier versions used string-literal bugs and no session checks.
 
-```typescript
-.eq('medications.pharmacy_id', 'userPharmacy.pharmacy_id')  // ← bug: string literal
-```
-
-This means the query returns data for all pharmacies (or no data, depending on RLS), not just the authenticated user's pharmacy. The route also does not call `supabase.auth.getUser()`, so it has no session-based tenant isolation.
-
-### 4. `/api/pharmacy/invoice-template` has a broken pharmacy filter
-
-Same issue as above — the route uses the string `'userPharmacy.pharmacy_id'` as a literal value in both `GET` and `PUT` operations. Invoice template reads and writes will fail silently or affect the wrong record.
-
-### 5. `/api/pharmacy/invoice-template` and `/api/pharmacy/inventory-chart` have no authentication
-
-Neither route calls `supabase.auth.getUser()`. Any unauthenticated request can read or overwrite invoice template data.
-
-### 6. Add Pharmacist uses `alert()` for credential delivery
+### 4. Add Pharmacist may use `alert()` for credential delivery
 
 After successfully creating a pharmacist, the dashboard displays the new user's plaintext password in a browser `alert()` dialog. This is not a secure credential delivery mechanism and the password is visible in the browser's JavaScript call stack.
 
-### 7. Real-time updates use polling, not WebSockets
+### 5. Real-time updates use polling, not WebSockets
 
-`useRealtimeUpdates` simulates real-time behavior by polling `/api/realtime/updates` every 5 seconds. Supabase Realtime (WebSocket-based) is not used. This means updates have up to a 5-second delay and generate continuous HTTP traffic even when there is nothing to update.
+`useRealtimeUpdates` polls `/api/realtime/updates` every 5 seconds (HTTP, not WebSocket). Expect up to 5s delay and steady background traffic while the page is open.
 
-### 8. No role enforcement on the page
+### 6. No role enforcement on the page
 
-The dashboard page does not verify that the authenticated user has the `pharmacy_owner` role. A `cashier` or `staff` user can access the same page and see all stats, including the Add Pharmacist quick action. The Add Pharmacist API route (`/api/pharmacist`) also does not check the caller's role.
+The dashboard page does not verify `pharmacy_owner` role in the component. Cashiers/staff may see owner widgets; `/api/pharmacist` enforces `staff.manage` permission rather than role name alone.
 
-### 9. Fallback mock data masks real errors
+### 7. Fallback mock data masks real errors
 
 All API calls in the `useEffect` catch block silently fall back to hardcoded mock data. Errors are only logged to the console. A user will see plausible-looking numbers even when the database is completely unreachable, with no visible error state.
 
-### 10. `useRealtimeUpdates` callback causes infinite re-render risk
+### 8. `useRealtimeUpdates` callback causes infinite re-render risk
 
 The `onUpdate` callback is passed inline to `useRealtimeUpdates`, which uses it inside a `useEffect` dependency array. Because the callback is recreated on every render, this can cause the polling interval to be cleared and restarted on every render cycle. The current implementation avoids this only because the `useEffect` in `useRealtimeUpdates` does not list `onUpdate` in its dependency array (which is itself a lint warning).

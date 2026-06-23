@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { prisma } from "@/lib/db/prisma";
 import { normalizeLifecycleStatus } from "@/lib/subscription/lifecycle/status";
 import { isMainTierCatalogRow } from "@/lib/subscription/normalize-plan";
 import { normalizeStoredPaymentCurrency } from "@/lib/polar/payment-record";
@@ -68,56 +68,30 @@ function formatLifecycleLabel(status: string): string {
 }
 
 export async function buildAdminBillingPayload(
-  db: SupabaseClient,
   options?: { limit?: number },
 ): Promise<AdminBillingPayload> {
   const limit = options?.limit ?? 300;
 
-  const { data: transactions, error: txError } = await db
-    .from("payment_transactions")
-    .select(
-      `
-      id,
-      pharmacy_id,
-      amount,
-      currency,
-      status,
-      payment_provider,
-      payment_method,
-      customer_name,
-      customer_email,
-      completed_at,
-      created_at,
-      pharmacies ( id, name, email )
-    `,
-    )
-    .order("created_at", { ascending: false })
-    .limit(limit);
+  const transactionRows = await prisma.payment_transactions.findMany({
+    orderBy: { created_at: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      pharmacy_id: true,
+      amount: true,
+      currency: true,
+      status: true,
+      payment_provider: true,
+      payment_method: true,
+      customer_name: true,
+      customer_email: true,
+      completed_at: true,
+      created_at: true,
+      pharmacies: { select: { id: true, name: true, email: true } },
+    },
+  });
 
-  if (txError) throw txError;
-
-  const payments: AdminBillingPaymentRow[] = (transactions ?? []).map((tx) => {
-    const row = tx as {
-      id: string;
-      pharmacy_id: string;
-      amount?: unknown;
-      currency?: string | null;
-      status: string;
-      payment_provider?: string | null;
-      payment_method?: string | null;
-      customer_name?: string | null;
-      customer_email?: string | null;
-      completed_at?: string | null;
-      created_at: string;
-      pharmacies?:
-        | { name?: string; email?: string | null }
-        | { name?: string; email?: string | null }[]
-        | null;
-    };
-    const ph = Array.isArray(row.pharmacies)
-      ? row.pharmacies[0]
-      : row.pharmacies;
-
+  const payments: AdminBillingPaymentRow[] = transactionRows.map((row) => {
     const normalized = normalizeStoredPaymentCurrency(
       Number(row.amount ?? 0),
       row.currency,
@@ -126,18 +100,18 @@ export async function buildAdminBillingPayload(
 
     return {
       id: row.id,
-      pharmacy_id: row.pharmacy_id,
-      pharmacy_name: ph?.name ?? "—",
-      pharmacy_email: ph?.email ?? null,
+      pharmacy_id: row.pharmacy_id ?? "",
+      pharmacy_name: row.pharmacies?.name ?? "—",
+      pharmacy_email: row.pharmacies?.email ?? null,
       amount: normalized.amount,
       currency: normalized.currency,
-      status: row.status,
+      status: row.status ?? "pending",
       payment_provider: row.payment_provider ?? row.payment_method ?? null,
       customer_email: row.customer_email ?? null,
       customer_name: row.customer_name ?? null,
       catalog_plan_name: null,
-      created_at: row.created_at,
-      completed_at: row.completed_at ?? null,
+      created_at: row.created_at?.toISOString() ?? new Date().toISOString(),
+      completed_at: row.completed_at?.toISOString() ?? null,
     };
   });
 
@@ -145,7 +119,6 @@ export async function buildAdminBillingPayload(
   let completed_count = 0;
   let pending_count = 0;
   let failed_count = 0;
-
   const platformCurrency = getPlatformCurrency();
 
   for (const p of payments) {
@@ -160,65 +133,46 @@ export async function buildAdminBillingPayload(
     }
   }
 
-  const { data: pharmacyRows, error: phError } = await db
-    .from("pharmacies")
-    .select("id, name, email, status")
-    .order("name", { ascending: true })
-    .limit(limit);
+  const pharmacyRows = await prisma.pharmacies.findMany({
+    orderBy: { name: "asc" },
+    take: limit,
+    select: { id: true, name: true, email: true, status: true },
+  });
 
-  if (phError) throw phError;
+  const pharmacyIds = pharmacyRows.map((p) => p.id);
 
-  const pharmacyIds = (pharmacyRows ?? []).map((p) => (p as { id: string }).id);
+  const subRows = pharmacyIds.length
+    ? await prisma.subscriptions.findMany({
+        where: { pharmacy_id: { in: pharmacyIds } },
+        select: {
+          id: true,
+          pharmacy_id: true,
+          status: true,
+          is_active: true,
+          expires_at: true,
+          subscription_type: true,
+          payment_method: true,
+          pending_change_status: true,
+          plan_id: true,
+          plan: true,
+          subscription_plans_subscriptions_plan_idTosubscription_plans: {
+            select: { name: true, plan_type: true },
+          },
+        },
+      })
+    : [];
 
-  const { data: subRows, error: subError } = pharmacyIds.length
-    ? await db
-        .from("subscriptions")
-        .select(
-          `
-          id,
-          pharmacy_id,
-          status,
-          is_active,
-          expires_at,
-          subscription_type,
-          payment_method,
-          pending_change_status,
-          plan_id,
-          plan,
-          subscription_plans!plan_id ( name, plan_type )
-        `,
-        )
-        .in("pharmacy_id", pharmacyIds)
-    : { data: [], error: null };
-
-  if (subError) throw subError;
-
-  type SubRow = {
-    pharmacy_id: string;
-    status?: string;
-    is_active?: boolean;
-    expires_at?: string | null;
-    subscription_type?: string;
-    payment_method?: string | null;
-    pending_change_status?: string | null;
-    plan?: string | null;
-    subscription_plans?: { name?: string; plan_type?: string } | null;
-  };
+  type SubRow = (typeof subRows)[number];
 
   const subsByPharmacy = new Map<string, SubRow[]>();
-  for (const s of (subRows ?? []) as SubRow[]) {
+  for (const s of subRows) {
+    if (!s.pharmacy_id) continue;
     const list = subsByPharmacy.get(s.pharmacy_id) ?? [];
     list.push(s);
     subsByPharmacy.set(s.pharmacy_id, list);
   }
 
-  const pharmacies: AdminBillingPharmacyRow[] = (pharmacyRows ?? []).map((p) => {
-    const ph = p as {
-      id: string;
-      name?: string;
-      email?: string | null;
-      status?: string;
-    };
+  const pharmacies: AdminBillingPharmacyRow[] = pharmacyRows.map((ph) => {
     const subs = subsByPharmacy.get(ph.id) ?? [];
     const mainSubs = subs.filter((s) => s.subscription_type === "main");
     const addons = subs.filter(
@@ -237,7 +191,8 @@ export async function buildAdminBillingPayload(
     let expires_at: string | null = null;
 
     for (const m of mainSubs) {
-      const embedded = m.subscription_plans;
+      const embedded =
+        m.subscription_plans_subscriptions_plan_idTosubscription_plans;
       if (embedded && !isMainTierCatalogRow(embedded)) continue;
       const lifecycle = normalizeLifecycleStatus(m.status ?? "", {
         is_active: m.is_active,
@@ -253,7 +208,7 @@ export async function buildAdminBillingPayload(
       if (lifecycle === "active" && !main_plan_name) {
         main_plan_name = planLabel;
         main_billing_status = formatLifecycleLabel(lifecycle);
-        expires_at = m.expires_at ?? null;
+        expires_at = m.expires_at?.toISOString() ?? null;
       }
     }
 
@@ -273,16 +228,16 @@ export async function buildAdminBillingPayload(
   const reconciliation: AdminBillingReconciliationRow[] = [];
   const pharmaciesWithPendingMain = new Set<string>();
 
-  for (const row of (subRows ?? []) as Array<SubRow & { id?: string; plan_id?: string | null }>) {
+  for (const row of subRows) {
+    if (!row.pharmacy_id) continue;
     const lifecycle = normalizeLifecycleStatus(row.status ?? "", {
       is_active: row.is_active,
       payment_method: row.payment_method,
       pending_change_status: row.pending_change_status,
     });
-    if (
-      row.subscription_type === "main" &&
-      lifecycle === "pending_payment"
-    ) {
+    const embedded =
+      row.subscription_plans_subscriptions_plan_idTosubscription_plans;
+    if (row.subscription_type === "main" && lifecycle === "pending_payment") {
       const ph = pharmacies.find((x) => x.pharmacy_id === row.pharmacy_id);
       pharmaciesWithPendingMain.add(row.pharmacy_id);
       reconciliation.push({
@@ -290,7 +245,7 @@ export async function buildAdminBillingPayload(
         kind: "pending_main",
         pharmacy_id: row.pharmacy_id,
         pharmacy_name: ph?.pharmacy_name ?? null,
-        detail: `Awaiting payment for ${row.subscription_plans?.name ?? row.plan ?? "plan"}`,
+        detail: `Awaiting payment for ${embedded?.name ?? row.plan ?? "plan"}`,
         payment_transaction_id: null,
         subscription_id: row.id ?? null,
         can_cancel: true,
@@ -312,8 +267,7 @@ export async function buildAdminBillingPayload(
   }
 
   for (const p of payments) {
-    const isPendingTx =
-      p.status === "pending" || p.status === "processing";
+    const isPendingTx = p.status === "pending" || p.status === "processing";
     if (!p.pharmacy_id || p.pharmacy_name === "—") {
       reconciliation.push({
         id: `tx-${p.id}`,

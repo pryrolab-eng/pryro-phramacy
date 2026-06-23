@@ -344,21 +344,6 @@ Routes that require authentication are marked with 🔒 below.
 **Description:** Upgrades a pharmacy's subscription plan  
 **Methods:** POST
 
-### POST `/api/kpay/initiate` 🔒
-**Authentication:** Yes (`getAuthUser()`)  
-**Description:** Initiates a KPay payment (mobile money or card)  
-**Methods:** POST
-
-### GET `/api/kpay/status` 🔒
-**Authentication:** Yes (`getAuthUser()`)  
-**Description:** Checks the status of a KPay transaction  
-**Methods:** GET
-
-### POST `/api/kpay/webhook`
-**Authentication:** Uses Prisma with platform-admin checks  
-**Description:** Webhook endpoint for KPay payment notifications  
-**Methods:** POST
-
 ### GET `/api/plans` 🔒
 **Authentication:** Yes (`getAuthUser()`)  
 **Description:** Fetches all active subscription plans  

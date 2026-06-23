@@ -315,7 +315,6 @@ export async function listAdminPaymentTransactionsFromDb(limit = 200) {
       customer_name: true,
       customer_email: true,
       customer_phone: true,
-      kpay_refid: true,
       polar_checkout_id: true,
       completed_at: true,
       created_at: true,

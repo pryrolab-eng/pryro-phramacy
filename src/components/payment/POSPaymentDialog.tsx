@@ -1,11 +1,9 @@
 'use client'
 
-import { useState } from 'react'
 import { PaymentForm } from '@/components/payment/PaymentForm'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
-import { pollKpayTransactionStatus } from '@/hooks/useKpay'
+
 
 interface POSPaymentDialogProps {
   open: boolean
@@ -27,7 +25,6 @@ export function POSPaymentDialog({
   onPaymentComplete 
 }: POSPaymentDialogProps) {
   const { toast } = useToast()
-  const [checking, setChecking] = useState(false)
 
   const handlePaymentSuccess = async (transaction: any) => {
     toast({
@@ -35,37 +32,8 @@ export function POSPaymentDialog({
       description: 'Waiting for payment confirmation...'
     })
 
-    // Poll for payment status
-    const checkInterval = setInterval(async () => {
-      setChecking(true)
-      try {
-        const data = await pollKpayTransactionStatus(transaction.id)
-
-        if (data.transaction.status === 'completed') {
-          clearInterval(checkInterval)
-          toast({
-            title: 'Payment Successful',
-            description: 'Transaction completed successfully'
-          })
-          onPaymentComplete(transaction.id)
-          onOpenChange(false)
-        } else if (data.transaction.status === 'failed') {
-          clearInterval(checkInterval)
-          toast({
-            title: 'Payment Failed',
-            description: data.transaction.error_message || 'Payment was not successful',
-            variant: 'destructive'
-          })
-        }
-      } catch (error) {
-        console.error('Status check error:', error)
-      } finally {
-        setChecking(false)
-      }
-    }, 5000) // Check every 5 seconds
-
-    // Stop checking after 5 minutes
-    setTimeout(() => clearInterval(checkInterval), 300000)
+    onPaymentComplete(transaction.id)
+    onOpenChange(false)
   }
 
   const handlePaymentError = (error: string) => {
@@ -84,18 +52,12 @@ export function POSPaymentDialog({
         </DialogHeader>
         <PaymentForm
           amount={saleData.totalAmount}
-          saleId={saleData.id}
           customerName={saleData.customerName}
           customerPhone={saleData.customerPhone}
           defaultPaymentMethod={saleData.defaultPaymentMethod}
           onSuccess={handlePaymentSuccess}
           onError={handlePaymentError}
         />
-        {checking && (
-          <div className="text-center text-sm text-muted-foreground">
-            Checking payment status...
-          </div>
-        )}
       </DialogContent>
     </Dialog>
   )

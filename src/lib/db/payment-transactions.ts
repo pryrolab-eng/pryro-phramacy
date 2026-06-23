@@ -6,10 +6,6 @@ export type PaymentTransactionRow = {
   pharmacy_id: string | null;
   sale_id: string | null;
   subscription_id: string | null;
-  kpay_tid: string | null;
-  kpay_refid: string;
-  kpay_authkey: string | null;
-  kpay_checkout_url: string | null;
   amount: number;
   currency: string | null;
   payment_method: string;
@@ -20,8 +16,6 @@ export type PaymentTransactionRow = {
   customer_email: string | null;
   customer_number: string | null;
   status: string | null;
-  kpay_status_id: string | null;
-  kpay_status_desc: string | null;
   mom_transaction_id: string | null;
   pay_account: string | null;
   payment_details: string | null;
@@ -38,10 +32,6 @@ function mapPaymentTransaction(row: {
   pharmacy_id: string | null;
   sale_id: string | null;
   subscription_id: string | null;
-  kpay_tid: string | null;
-  kpay_refid: string;
-  kpay_authkey: string | null;
-  kpay_checkout_url: string | null;
   amount: unknown;
   currency: string | null;
   payment_method: string;
@@ -52,8 +42,6 @@ function mapPaymentTransaction(row: {
   customer_email: string | null;
   customer_number: string | null;
   status: string | null;
-  kpay_status_id: string | null;
-  kpay_status_desc: string | null;
   mom_transaction_id: string | null;
   pay_account: string | null;
   payment_details: string | null;
@@ -69,10 +57,6 @@ function mapPaymentTransaction(row: {
     pharmacy_id: row.pharmacy_id,
     sale_id: row.sale_id,
     subscription_id: row.subscription_id,
-    kpay_tid: row.kpay_tid,
-    kpay_refid: row.kpay_refid,
-    kpay_authkey: row.kpay_authkey,
-    kpay_checkout_url: row.kpay_checkout_url,
     amount: Number(row.amount),
     currency: row.currency,
     payment_method: row.payment_method,
@@ -83,8 +67,6 @@ function mapPaymentTransaction(row: {
     customer_email: row.customer_email,
     customer_number: row.customer_number,
     status: row.status,
-    kpay_status_id: row.kpay_status_id,
-    kpay_status_desc: row.kpay_status_desc,
     mom_transaction_id: row.mom_transaction_id,
     pay_account: row.pay_account,
     payment_details: row.payment_details,
@@ -125,24 +107,6 @@ export async function findPaymentTransactionByIdFromDb(
   id: string,
 ): Promise<PaymentTransactionRow | null> {
   const row = await prisma.payment_transactions.findUnique({ where: { id } });
-  return row ? mapPaymentTransaction(row) : null;
-}
-
-export async function findPaymentTransactionByKpayRefidFromDb(
-  refid: string,
-): Promise<PaymentTransactionRow | null> {
-  const row = await prisma.payment_transactions.findUnique({
-    where: { kpay_refid: refid },
-  });
-  return row ? mapPaymentTransaction(row) : null;
-}
-
-export async function findPaymentTransactionByKpayTidFromDb(
-  tid: string,
-): Promise<PaymentTransactionRow | null> {
-  const row = await prisma.payment_transactions.findUnique({
-    where: { kpay_tid: tid },
-  });
   return row ? mapPaymentTransaction(row) : null;
 }
 

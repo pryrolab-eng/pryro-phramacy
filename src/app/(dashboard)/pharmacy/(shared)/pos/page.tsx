@@ -73,7 +73,6 @@ import { PosWorkspace } from '@/components/pos/pos-workspace'
 import { PosAddProductForm } from '@/components/pos/pos-add-product-form'
 import { PosInsuranceProcessingDialog } from '@/components/pos/pos-insurance-processing-dialog'
 import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
-import { POSPaymentDialog } from '@/components/payment/POSPaymentDialog'
 import type { AiSafetyResult } from '@/lib/http/pos'
 
 type Product = PosProduct
@@ -137,8 +136,6 @@ function POSPageContent() {
   const [prescriptionConfirmed, setPrescriptionConfirmed] = useState(false)
   const [nearExpiryAcknowledged, setNearExpiryAcknowledged] = useState(false)
   const [checkoutAfterRx, setCheckoutAfterRx] = useState(false)
-  const [kpayDialogOpen, setKpayDialogOpen] = useState(false)
-  const [kpayTransactionId, setKpayTransactionId] = useState<string | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const loading =
     isContextHydrating ||
@@ -478,12 +475,6 @@ function POSPageContent() {
       return
     }
 
-    // Trigger KPay dialog if payment method is card or mobile and no transaction ID is verified yet
-    if ((paymentMethod === 'mobile' || paymentMethod === 'card') && !opts?.paymentTransactionId) {
-      setKpayDialogOpen(true)
-      return
-    }
-
     const prescriptionConfirmation: PrescriptionConfirmation | undefined =
       opts?.prescriptionConfirmation ??
       (prescriptionConfirmed
@@ -545,7 +536,6 @@ function POSPageContent() {
       setPrescriptionConfirmed(false)
       setNearExpiryAcknowledged(false)
       setRxForm({ patientName: '', prescriberName: '', notes: '' })
-      setKpayTransactionId(null)
       
     } catch (error) {
       console.error('Sale processing error:', error)
@@ -1586,23 +1576,6 @@ function POSPageContent() {
         </DashboardDialogContent>
       </Dialog>
 
-      <POSPaymentDialog
-        open={kpayDialogOpen}
-        onOpenChange={setKpayDialogOpen}
-        saleData={{
-          totalAmount: getPatientAmount(),
-          customerName: customer.name || 'Walk-in Customer',
-          customerPhone: customer.phone || undefined,
-          defaultPaymentMethod: paymentMethod === 'mobile' ? 'momo' : 'cc',
-        }}
-        onPaymentComplete={(transactionId) => {
-          setKpayTransactionId(transactionId)
-          void completeSale({
-            paymentTransactionId: transactionId,
-            nearExpiryAcknowledged: true,
-          })
-        }}
-      />
     </DashboardPageShell>
   )
 }

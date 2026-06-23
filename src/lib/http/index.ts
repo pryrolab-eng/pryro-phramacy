@@ -107,14 +107,6 @@ export {
   type PrescriptionRow,
 } from "./prescriptions";
 export {
-  getKpayTransactionStatus,
-  initiateKpayPayment,
-  kpayKeys,
-  type InitiateKpayPaymentInput,
-  type InitiateKpayPaymentResponse,
-  type KpayStatusResponse,
-} from "./kpay";
-export {
   analyzeCartSafety,
   checkPosPrice,
   getPosFastMovingProducts,
@@ -236,7 +228,6 @@ export {
   getScheduledChange,
   getSubscriptionStatus,
   scheduleSubscriptionDowngrade,
-  startKpaySubscriptionCheckout,
   startPolarSubscriptionCheckout,
   subscriptionKeys,
   upgradeSubscription,

@@ -16,7 +16,6 @@
    - [Layer 2 — `src/app/(dashboard)/layout.tsx`](#layer-2--srcappdashboardlayouttsx)
 6. [Data Flow](#data-flow)
 7. [Data & Auth Layer](#data--auth-layer)
-8. [KPay Payment Integration](#kpay-payment-integration)
 
 ---
 
@@ -47,10 +46,10 @@ Authentication uses **native JWT cookies** (`pryrox_session`, `pryrox_refresh`) 
 └──────────┬──────────────────────────────────────┬───────────────┘
            │ Prisma (DATABASE_URL)               │ fetch (server)
 ┌──────────▼──────────────┐           ┌────────────▼──────────────┐
-│   PostgreSQL             │           │   KPay Payment Gateway    │
-│  ─ Application schema    │           │   pay.esicia.com          │
-│  ─ auth.users + sessions │           │   Mobile Money / Cards    │
-│  ─ Legacy RLS policies*  │           └───────────────────────────┘
+│   PostgreSQL             │           │   Payment Gateway         │
+│  ─ Application schema    │           │   Polar (Card/Intl)       │
+│  ─ auth.users + sessions │           └───────────────────────────┘
+│  ─ Legacy RLS policies*  │
 └─────────────────────────┘
 * RLS exists from migrations; the app uses Prisma with service credentials and enforces tenancy in route handlers.
 ```
@@ -67,7 +66,7 @@ Authentication uses **native JWT cookies** (`pryrox_session`, `pryrox_refresh`) 
 | State management | Zustand (`usePharmacyStore`) |
 | Forms | React Hook Form + Zod resolvers |
 | Backend / DB | PostgreSQL + Prisma; native JWT auth; local disk / Cloudinary uploads |
-| Payments | KPay gateway (`src/lib/kpay.ts`) |
+| Payments | Polar gateway (`src/lib/polar/`) |
 | Export | jsPDF, jspdf-autotable, xlsx, jsbarcode |
 | i18n | i18next (EN, RW, FR, SW — defined, not yet wired into UI) |
 | 2FA | otplib + qrcode |
@@ -218,92 +217,6 @@ Client re-renders  ←  React state update / router.refresh()
 | Which pharmacy? | `requireSessionPharmacyId()`, `resolveActivePharmacyContext()` |
 | Plan features | `resolvePharmacyEntitlements()` |
 | Sign out (client) | `signOutClient()` → `POST /api/auth/signout` |
-
----
-
-## KPay Payment Integration
-
-KPay (`pay.esicia.com`) is the payment gateway used for pharmacy subscription billing. The integration lives in `src/lib/kpay.ts` and is consumed by API route handlers — it is never called directly from Client Components.
-
-### Supported Payment Methods
-
-| Method Code | Description |
-|---|---|
-| `momo` | Mobile Money (MTN, Airtel) |
-| `cc` | Visa / Mastercard |
-| `bank` | Bank transfer |
-| `spenn` | Spenn |
-| `smartcash` | Smartcash |
-
-### Payment Initiation Flow
-
-```
-1. Client Component submits subscription/payment form
-       │
-       ▼
-2. POST /api/kpay/initiate  (Route Handler)
-       │  Constructs KPayPaymentRequest:
-       │    msisdn, email, amount, currency (RWF),
-       │    refid (unique per transaction),
-       │    retailerid  ← KPAY_RETAILER_ID
-       │    returl      ← KPAY_RETURN_URL  (webhook callback)
-       │    redirecturl ← KPAY_REDIRECT_URL (post-payment redirect)
-       │
-       ▼
-3. KPayService.initiatePayment()
-       │  POST https://pay.esicia.com
-       │  Authorization: Basic base64(username:password)
-       │  Content-Type: application/json
-       │
-       ▼
-4. KPay returns KPayPaymentResponse
-       │    reply, url, success, authkey, tid, refid, retcode
-       │
-       ▼
-5. Route Handler returns { url } to client
-       │
-       ▼
-6. Client redirects user to KPay-hosted payment page (url)
-```
-
-### Webhook Callback
-
-When the payment completes (or fails), KPay sends a `POST` request to `KPAY_RETURN_URL` (defaults to `{APP_URL}/api/kpay/webhook`). The webhook handler:
-
-1. Parses the `KPayWebhookPayload` (`tid`, `refid`, `statusid`, `statusdesc`).
-2. Looks up the subscription record by `refid`.
-3. Updates the subscription status in the `subscriptions` table.
-4. Returns a `200 OK` to acknowledge receipt.
-
-### Post-Payment Redirect
-
-After the user completes payment on the KPay-hosted page, KPay redirects the browser to `KPAY_REDIRECT_URL` (defaults to `{APP_URL}/payment/success`). This page reads the transaction result from query parameters or session state and displays a confirmation to the user.
-
-### Error Codes
-
-The `KPayService.getErrorMessage(retcode)` method maps KPay numeric return codes to human-readable messages:
-
-| Code | Meaning |
-|---|---|
-| `0` | No error — transaction being processed |
-| `401` | Missing authentication header |
-| `600` | Invalid username / password |
-| `602` | IP not whitelisted |
-| `603` | Missing required parameters |
-| `607` | Failed mobile money transaction |
-| `608` | Duplicate `refid` |
-| `611` | Transaction not found |
-
-### Environment Variables
-
-| Variable | Required | Default | Purpose |
-|---|---|---|---|
-| `KPAY_BASE_URL` | Yes | `https://pay.esicia.com` | KPay API endpoint |
-| `KPAY_USERNAME` | Yes | — | Merchant username |
-| `KPAY_PASSWORD` | Yes | — | Merchant password |
-| `KPAY_RETAILER_ID` | Yes | `02` | Retailer identifier |
-| `KPAY_RETURN_URL` | No | `{APP_URL}/api/kpay/webhook` | Webhook callback URL |
-| `KPAY_REDIRECT_URL` | No | `{APP_URL}/payment/success` | Post-payment redirect URL |
 
 ---
 

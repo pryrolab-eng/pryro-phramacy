@@ -33,7 +33,7 @@ Pryrox is a SaaS platform that lets independent pharmacies and pharmacy chains m
 | Forms | React Hook Form + Zod |
 | Backend / Database | PostgreSQL via Prisma (Supabase-hosted, used as database only) |
 | Auth | Native JWT (bcryptjs, custom `/api/auth/*` routes — **no** `@supabase` SDK imports) |
-| Payments | KPay (Mobile Money + Card) + Polar (card/international) |
+| Payments | Polar (card/international) |
 | Job queue | Redis + BullMQ (email notifications, maintenance alerts) |
 | Export | jsPDF, jspdf-autotable, xlsx, jsbarcode |
 | 2FA | otplib + qrcode |
@@ -49,7 +49,6 @@ See [`docs/architecture.md`](docs/architecture.md) for the full architectural br
 - **PostgreSQL** 14+ (hosted Supabase or local)
 - **Redis** (for email job queue / maintenance notifications)
 - **SMTP** for sign-up confirmation and password-reset emails
-- A **KPay merchant account** for mobile money payments (optional)
 - A **Polar account** for card/international subscription payments (optional)
 
 ---
@@ -118,7 +117,7 @@ A working `.env` file requires the following variables. See [`docs/environment-v
 | `DATABASE_URL` | PostgreSQL connection string (Prisma) |
 | `NATIVE_AUTH_ENABLED` | Set to `true` (native JWT cookies + SMTP auth) |
 | `AUTH_SECRET` | Secret for signing session JWTs (min 32 characters) |
-| `NEXT_PUBLIC_APP_URL` | Public application URL (used in KPay/Polar callbacks and auth emails) |
+| `NEXT_PUBLIC_APP_URL` | Public application URL (used in Polar callbacks and auth emails) |
 | `SMTP_HOST` | SMTP server hostname |
 | `SMTP_PORT` | SMTP server port (usually 587) |
 | `SMTP_USER` | SMTP username |
@@ -129,10 +128,6 @@ A working `.env` file requires the following variables. See [`docs/environment-v
 
 | Variable | Purpose |
 |---|---|
-| `KPAY_BASE_URL` | KPay API endpoint (default `https://pay.esicia.com`) |
-| `KPAY_USERNAME` | KPay merchant username |
-| `KPAY_PASSWORD` | KPay merchant password |
-| `KPAY_RETAILER_ID` | KPay retailer identifier |
 | `POLAR_ACCESS_TOKEN` | Polar organization access token (`polar_pat_...`) |
 | `POLAR_WEBHOOK_SECRET` | Polar webhook secret (`whsec_...`) |
 | `POLAR_SERVER` | `sandbox` (dev) or `production` |
@@ -205,10 +200,10 @@ There is **no** `roles` table. Application access is modeled as follows:
 └──────────┬──────────────────────────────────────┬───────────────┘
            │ Prisma (DATABASE_URL)                │ fetch (server)
 ┌──────────▼──────────────┐           ┌───────────▼───────────────┐
-│   PostgreSQL            │           │   Payment Gateways        │
-│  · Application tables   │           │   KPay (Mobile Money)     │
-│  · Native auth tables   │           │   Polar (Card/Intl)       │
-│  · app_sessions         │           └───────────────────────────┘
+│   PostgreSQL            │           │   Payment Gateway         │
+│  · Application tables   │           │   Polar (Card/Intl)       │
+│  · Native auth tables   │           └───────────────────────────┘
+│  · app_sessions         │
 └─────────────────────────┘
 ┌─────────────────────────┐
 │   Redis + BullMQ        │
@@ -255,9 +250,8 @@ pryrox/
 │   │   ├── api/                 # REST-style Route Handlers
 │   │   │   ├── admin/           # Admin settings, maintenance, API keys
 │   │   │   ├── auth/            # Native JWT auth (sign-in, sign-up, 2FA, OAuth)
-│   │   │   ├── billing/         # KPay payment processing
+│   │   │   ├── billing/         # Billing and payment processing
 │   │   │   ├── entitlements/    # Feature access / plan enforcement
-│   │   │   ├── kpay/            # KPay webhooks and callbacks
 │   │   │   ├── me/              # Current user context, profile
 │   │   │   ├── polar/           # Polar checkout, webhooks, status polling
 │   │   │   ├── saas/            # Subscription CRUD, invoices, plans
@@ -277,7 +271,7 @@ pryrox/
 │   │   ├── billing/             # Format billing, limit display
 │   │   ├── db/                  # Prisma store functions (subscriptions, payments)
 │   │   ├── email/               # Email templates (maintenance, staff invites)
-│   │   ├── kpay.ts              # KPay client
+│   │   ├── polar.ts             # Polar client
 │   │   ├── platform-settings.ts # Platform settings helpers
 │   │   ├── polar/               # Polar client, fulfillment, checkout errors
 │   │   ├── queue/               # Redis connection, BullMQ queue, worker

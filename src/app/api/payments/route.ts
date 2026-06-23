@@ -43,14 +43,14 @@ export async function GET() {
 }
 
 /**
- * Legacy plan checkout — prefer POST /api/subscriptions/upgrade and /api/kpay/initiate.
+ * Legacy plan checkout — prefer POST /api/subscriptions/upgrade and /api/polar/checkout.
  */
 export async function POST() {
   return NextResponse.json(
     {
       error: "deprecated_endpoint",
       message:
-        "Use POST /api/subscriptions/upgrade followed by /api/kpay/initiate or /api/polar/checkout.",
+        "Use POST /api/subscriptions/upgrade followed by /api/polar/checkout.",
     },
     { status: 410 },
   );

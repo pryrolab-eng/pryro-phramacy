@@ -11,11 +11,7 @@ export async function POST(request: NextRequest) {
 
     if (phoneNumber) {
       const phoneValidation = PhoneNumberValidator.validate(phoneNumber)
-      const bankId = PhoneNumberValidator.getKPayBankId(phoneNumber)
-      results.phone = {
-        ...phoneValidation,
-        kpayBankId: bankId
-      }
+      results.phone = phoneValidation
     }
 
     if (cardNumber) {
@@ -26,10 +22,7 @@ export async function POST(request: NextRequest) {
         cvv || '', 
         holderName || ''
       )
-      results.card = {
-        ...cardValidation,
-        kpayBankId: CardValidator.getKPayBankId()
-      }
+      results.card = cardValidation
     }
 
     return NextResponse.json(results)

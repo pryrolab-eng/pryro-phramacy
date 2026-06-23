@@ -10,7 +10,6 @@ const MAINTENANCE_EXEMPT_EXACT = new Set([
 const MAINTENANCE_EXEMPT_PREFIXES = [
   "/api/auth/",
   "/api/cron/",
-  "/api/kpay/webhook",
   "/api/polar/webhook",
   "/admin",
   "/superadmin",

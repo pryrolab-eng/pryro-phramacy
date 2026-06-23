@@ -14,13 +14,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -50,8 +43,6 @@ import { fallbackPlansForDisplay } from "@/lib/subscription/default-plans";
 import { normalizeSubscriptionPlanRow } from "@/lib/subscription/normalize-plan";
 import {
   createPendingSubscription,
-  pollKpayTransaction,
-  startKpaySubscriptionCheckout,
   startPolarSubscriptionCheckout,
   type PaidCheckoutContext,
   type ScheduledChangeResponse,
@@ -67,12 +58,10 @@ import {
   useInvalidateSubscriptionManagement,
   usePharmacySubscriptionPlan,
   usePlanLimitsQuery,
-  usePolarConfigEnabled,
   useScheduleDowngradeMutation,
   useScheduledChangeQuery,
   useSubscriptionPlansCatalog,
   useSubscriptionStatusQuery,
-  useValidatePhoneMutation,
 } from "@/hooks/useSubscriptionManagement";
 import { BranchAddonCheckoutDialog } from "@/components/subscription/branch-addon-checkout-dialog";
 import { PlanCatalogSections } from "@/components/subscription/plan-catalog-sections";
@@ -93,7 +82,6 @@ export type CatalogPlan = {
 type Props = {
   customerName?: string;
   customerEmail?: string;
-  customerPhone?: string;
   checkoutReturnContext?: PaidCheckoutContext;
   onPlanChanged?: () => void;
   showBranchAddons?: boolean;
@@ -123,7 +111,6 @@ function toSaasAddonPlan(plan: CatalogPlan): SaasSubscriptionPlan {
 export function SubscriptionPlanManagement({
   customerName = "Pharmacy customer",
   customerEmail = "",
-  customerPhone = "",
   checkoutReturnContext = "settings",
   onPlanChanged,
   showBranchAddons = true,
@@ -151,8 +138,6 @@ export function SubscriptionPlanManagement({
   const scheduledQuery = useScheduledChangeQuery();
   const statusQuery = useSubscriptionStatusQuery();
   const limitsQuery = usePlanLimitsQuery();
-  const polarEnabled = usePolarConfigEnabled().data ?? false;
-  const validatePhoneMutation = useValidatePhoneMutation();
   const scheduleDowngradeMutation = useScheduleDowngradeMutation();
   const cancelScheduledMutation = useCancelScheduledChangeMutation();
 
@@ -166,8 +151,6 @@ export function SubscriptionPlanManagement({
   const [selectedDowngradePlan, setSelectedDowngradePlan] =
     useState<CatalogPlan | null>(null);
   const [upgradePaymentData, setUpgradePaymentData] = useState({
-    paymentMethod: "kpay",
-    phone: "",
     email: "",
   });
 
@@ -407,8 +390,6 @@ export function SubscriptionPlanManagement({
 
     setSelectedUpgradePlan(plan);
     setUpgradePaymentData({
-      paymentMethod: "kpay",
-      phone: customerPhone || "",
       email: customerEmail || "",
     });
     setIsUpgradeDialogOpen(true);
@@ -443,7 +424,7 @@ export function SubscriptionPlanManagement({
   const processUpgradePayment = async () => {
     if (!selectedUpgradePlan) return;
     const plan = selectedUpgradePlan;
-    const { paymentMethod, phone, email } = upgradePaymentData;
+    const { email } = upgradePaymentData;
 
     const normalizedEmail = normalizeEmail(email);
     if (!normalizedEmail) {
@@ -454,70 +435,20 @@ export function SubscriptionPlanManagement({
       alert(INVALID_EMAIL_MESSAGE);
       return;
     }
-    if (paymentMethod === "kpay" && !phone) {
-      alert("Please enter your Mobile Money number.");
-      return;
-    }
 
     setIsUpgradePaymentLoading(true);
     try {
       const subscription = await createPendingSubscription(plan.id || plan.name);
 
-      if (paymentMethod === "polar") {
-        const polar = await startPolarSubscriptionCheckout({
-          planId: plan.id || plan.name,
-          subscriptionId: subscription.id,
-          customerEmail: normalizedEmail,
-          customerName,
-          customerPhone: phone,
-          returnContext: checkoutReturnContext,
-        });
-        setIsUpgradeDialogOpen(false);
-        window.location.href = polar.checkoutUrl;
-        return;
-      }
-
-      const phoneResult = await validatePhoneMutation.mutateAsync(phone);
-
-      if (!phoneResult.phone?.isValid || !phoneResult.phone.formatted) {
-        alert("Please enter a valid Rwanda phone number (e.g. 0788123456)");
-        return;
-      }
-
-      const paymentData = await startKpaySubscriptionCheckout({
-        plan,
+      const polar = await startPolarSubscriptionCheckout({
+        planId: plan.id || plan.name,
         subscriptionId: subscription.id,
-        customerName,
-        customerPhone: phoneResult.phone.formatted,
         customerEmail: normalizedEmail,
-        bankId: phoneResult.phone.kpayBankId,
+        customerName,
+        returnContext: checkoutReturnContext,
       });
-
       setIsUpgradeDialogOpen(false);
-
-      if (paymentData.success && paymentData.transaction?.checkoutUrl) {
-        window.location.href = paymentData.transaction.checkoutUrl;
-        return;
-      }
-
-      if (paymentData.success && paymentData.transaction?.id) {
-        alert(
-          `Payment initiated! Check your phone (${phoneResult.phone.formatted}) for the prompt.`
-        );
-        pollKpayTransaction(
-          paymentData.transaction.id,
-          async () => {
-            await refreshAll();
-            alert(`Payment successful! You are now on the ${plan.name} plan.`);
-          },
-          (msg) => alert(msg)
-        );
-      } else {
-        alert(
-          paymentData.kpayResponse?.statusdesc ||
-            "Payment failed. Please try again."
-        );
-      }
+      window.location.href = polar.checkoutUrl;
     } catch (error) {
       alert(
         error instanceof Error
@@ -683,8 +614,6 @@ export function SubscriptionPlanManagement({
                       onClick={() => {
                         setSelectedUpgradePlan(pendingPlan);
                         setUpgradePaymentData({
-                          paymentMethod: "kpay",
-                          phone: customerPhone || "",
                           email: customerEmail || "",
                         });
                         setIsUpgradeDialogOpen(true);
@@ -791,45 +720,6 @@ export function SubscriptionPlanManagement({
             </div>
             <div className="space-y-3">
               <div className="grid gap-2">
-                <Label>Payment Method</Label>
-                <Select
-                  value={upgradePaymentData.paymentMethod}
-                  onValueChange={(value) =>
-                    setUpgradePaymentData({
-                      ...upgradePaymentData,
-                      paymentMethod: value,
-                    })
-                  }
-                  disabled={isUpgradePaymentLoading}
-                >
-                  <SelectTrigger disabled={isUpgradePaymentLoading}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="kpay">Mobile Money — KPay (Rwanda)</SelectItem>
-                    {polarEnabled ? (
-                      <SelectItem value="polar">Card / international — Polar</SelectItem>
-                    ) : null}
-                  </SelectContent>
-                </Select>
-              </div>
-              {upgradePaymentData.paymentMethod === "kpay" ? (
-                <div className="grid gap-2">
-                  <Label>Phone Number</Label>
-                  <Input
-                    placeholder="0788123456"
-                    value={upgradePaymentData.phone}
-                    disabled={isUpgradePaymentLoading}
-                    onChange={(e) =>
-                      setUpgradePaymentData({
-                        ...upgradePaymentData,
-                        phone: e.target.value,
-                      })
-                    }
-                  />
-                </div>
-              ) : null}
-              <div className="grid gap-2">
                 <Label>Email</Label>
                 <Input
                   type="email"
@@ -859,9 +749,7 @@ export function SubscriptionPlanManagement({
                 onClick={() => void processUpgradePayment()}
                 disabled={
                   isUpgradePaymentLoading ||
-                  !upgradePaymentData.email ||
-                  (upgradePaymentData.paymentMethod === "kpay" &&
-                    !upgradePaymentData.phone)
+                  !upgradePaymentData.email
                 }
                 className="flex-1"
               >
@@ -951,7 +839,6 @@ export function SubscriptionPlanManagement({
         mode="new_branch"
         initialPlanId={addonPlanTarget?.id}
         customerEmail={customerEmail}
-        customerPhone={customerPhone}
         customerName={customerName}
         onSuccess={() => {
           void refreshAll();

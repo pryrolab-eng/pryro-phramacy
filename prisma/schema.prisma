@@ -1246,10 +1246,6 @@ model payment_transactions {
   pharmacy_id         String?        @db.Uuid
   sale_id             String?        @db.Uuid
   subscription_id     String?        @db.Uuid
-  kpay_tid            String?        @unique
-  kpay_refid          String         @unique
-  kpay_authkey        String?
-  kpay_checkout_url   String?
   amount              Decimal        @db.Decimal(10, 2)
   currency            String?        @default("RWF")
   payment_method      String
@@ -1260,8 +1256,6 @@ model payment_transactions {
   customer_email      String?
   customer_number     String?
   status              String?        @default("pending")
-  kpay_status_id      String?
-  kpay_status_desc    String?
   mom_transaction_id  String?
   pay_account         String?
   payment_details     String?
@@ -1270,7 +1264,7 @@ model payment_transactions {
   completed_at        DateTime?      @db.Timestamptz(6)
   created_at          DateTime?      @default(now()) @db.Timestamptz(6)
   updated_at          DateTime?      @default(now()) @db.Timestamptz(6)
-  payment_provider    String         @default("kpay")
+  payment_provider    String         @default("polar")
   polar_checkout_id   String?
   payment_logs        payment_logs[]
   pharmacies          pharmacies?    @relation(fields: [pharmacy_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -1278,8 +1272,6 @@ model payment_transactions {
   subscriptions       subscriptions? @relation(fields: [subscription_id], references: [id], onUpdate: NoAction)
 
   @@index([created_at], map: "idx_payment_transactions_created_at")
-  @@index([kpay_refid], map: "idx_payment_transactions_kpay_refid")
-  @@index([kpay_tid], map: "idx_payment_transactions_kpay_tid")
   @@index([pharmacy_id], map: "idx_payment_transactions_pharmacy_id")
   @@index([sale_id], map: "idx_payment_transactions_sale_id")
   @@index([status], map: "idx_payment_transactions_status")

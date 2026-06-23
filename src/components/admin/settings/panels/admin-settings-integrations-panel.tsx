@@ -125,7 +125,7 @@ export function AdminSettingsIntegrationsPanel() {
       >
         <SettingsRow
           title="Payment gateway"
-          description="KPay, Polar, and related checkout integrations"
+          description="Polar and related checkout integrations"
         >
           <AdminStatusChip
             tone={integrationTone(integrationStatus.paymentGateway.status)}

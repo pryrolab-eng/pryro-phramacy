@@ -137,7 +137,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const refid = `polar-${checkout.id}`;
     const { amount, currency, paymentDetailsSuffix } = polarTransactionAmounts(
       Number(plan.price),
     );
@@ -145,7 +144,6 @@ export async function POST(request: NextRequest) {
     const transaction = await storeCreatePaymentTransaction({
       pharmacy_id: membership.pharmacy_id,
       subscription_id: subscriptionId,
-      kpay_refid: refid,
       polar_checkout_id: checkout.id,
       payment_provider: "polar",
       amount,
@@ -156,7 +154,6 @@ export async function POST(request: NextRequest) {
       customer_phone: body.customerPhone || null,
       payment_details: `${plan.name} subscription — ${paymentDetailsSuffix}`,
       status: "pending",
-      kpay_checkout_url: checkout.url,
     });
 
     return NextResponse.json({

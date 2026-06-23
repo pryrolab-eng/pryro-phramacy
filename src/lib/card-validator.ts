@@ -1,4 +1,4 @@
-// Card Validation Model for KPay Integration
+// Card Validation Model
 export interface CardModel {
   number: string
   maskedNumber: string
@@ -116,7 +116,5 @@ export class CardValidator {
     return /^[0-9]{3}$/.test(cvv)
   }
 
-  static getKPayBankId(): string {
-    return '000' // KPay bank ID for card payments
-  }
+
 }

@@ -10,7 +10,6 @@ import {
 } from "@/lib/auth/platform-api-key";
 
 const PLATFORM_API_BYPASS_PREFIXES = [
-  "/api/kpay/webhook",
   "/api/polar/webhook",
   "/api/cron/",
 ] as const;

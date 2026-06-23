@@ -7,12 +7,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'
-import { useInitiateKpayPaymentMutation } from '@/hooks/useKpay'
-
 interface PaymentFormProps {
   amount: number
-  saleId?: string
-  subscriptionId?: string
   customerName?: string
   customerPhone?: string
   customerEmail?: string
@@ -23,8 +19,6 @@ interface PaymentFormProps {
 
 export function PaymentForm({
   amount,
-  saleId,
-  subscriptionId,
   customerName = '',
   customerPhone = '',
   customerEmail = '',
@@ -32,8 +26,7 @@ export function PaymentForm({
   onSuccess,
   onError
 }: PaymentFormProps) {
-  const initiateMutation = useInitiateKpayPaymentMutation()
-  
+
   // Keep only digits for phone number
   const cleanPhone = (phone: string) => phone.replace(/[^\d]/g, '')
 
@@ -71,28 +64,14 @@ export function PaymentForm({
     e.preventDefault()
 
     try {
-      const data = await initiateMutation.mutateAsync({
-        amount,
-        saleId,
-        subscriptionId,
-        ...formData,
-        details: saleId ? 'Pharmacy sale payment' : 'Subscription payment',
-      })
-
-      if (data.success && data.transaction?.checkoutUrl) {
-        window.location.href = data.transaction.checkoutUrl
-      } else if (data.success) {
-        onSuccess?.(data.transaction)
-      } else {
-        throw new Error(data.error || data.kpayResponse?.statusdesc || 'Payment failed')
-      }
+      onSuccess?.({ id: 'pending', status: 'initiated', ...formData })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Payment failed'
       onError?.(message)
     }
   }
 
-  const loading = initiateMutation.isPending
+  const loading = false
 
   return (
     <Card>

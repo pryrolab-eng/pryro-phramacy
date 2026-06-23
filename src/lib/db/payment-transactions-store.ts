@@ -1,8 +1,6 @@
 import {
   createPaymentTransactionFromDb,
   findPaymentTransactionByIdFromDb,
-  findPaymentTransactionByKpayRefidFromDb,
-  findPaymentTransactionByKpayTidFromDb,
   findPaymentTransactionByPolarCheckoutIdFromDb,
   insertPaymentLogFromDb,
   linkPaymentTransactionToSubscriptionFromDb,
@@ -32,10 +30,6 @@ export async function storeCreatePaymentTransaction(
     subscriptions: data.subscription_id
       ? { connect: { id: data.subscription_id as string } }
       : undefined,
-    kpay_refid: data.kpay_refid as string,
-    kpay_tid: (data.kpay_tid as string | null) ?? undefined,
-    kpay_authkey: (data.kpay_authkey as string | null) ?? undefined,
-    kpay_checkout_url: (data.kpay_checkout_url as string | null) ?? undefined,
     amount: data.amount as number,
     currency: (data.currency as string) ?? "RWF",
     payment_method: data.payment_method as string,
@@ -47,7 +41,7 @@ export async function storeCreatePaymentTransaction(
     customer_number: (data.customer_number as string | null) ?? undefined,
     payment_details: (data.payment_details as string | null) ?? undefined,
     status: (data.status as string) ?? "pending",
-    payment_provider: (data.payment_provider as string) ?? "kpay",
+    payment_provider: (data.payment_provider as string) ?? "polar",
     polar_checkout_id: (data.polar_checkout_id as string | null) ?? undefined,
     error_message: (data.error_message as string | null) ?? undefined,
   });
@@ -71,18 +65,6 @@ export async function storeFindPaymentTransactionById(
   id: string,
 ): Promise<PaymentTransactionRow | null> {
   return findPaymentTransactionByIdFromDb(id);
-}
-
-export async function storeFindPaymentTransactionByKpayRefid(
-  refid: string,
-): Promise<PaymentTransactionRow | null> {
-  return findPaymentTransactionByKpayRefidFromDb(refid);
-}
-
-export async function storeFindPaymentTransactionByKpayTid(
-  tid: string,
-): Promise<PaymentTransactionRow | null> {
-  return findPaymentTransactionByKpayTidFromDb(tid);
 }
 
 export async function storeFindPaymentTransactionByPolarCheckoutId(

@@ -10,7 +10,6 @@ import {
 } from "@/lib/security/ip-whitelist-policy";
 
 const WEBHOOK_API_PREFIXES = [
-  "/api/kpay/webhook",
   "/api/polar/webhook",
   "/api/cron/",
 ] as const;

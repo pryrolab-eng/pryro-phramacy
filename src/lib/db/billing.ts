@@ -230,9 +230,9 @@ export async function recordSubscriptionPaymentFromDb(
     tx.payment_provider === "polar" || tx.payment_method === "polar"
       ? "Card (Polar)"
       : tx.payment_method === "momo"
-        ? "Mobile Money (KPay)"
+        ? "Mobile Money"
         : tx.payment_method === "cc"
-          ? "Card (KPay)"
+          ? "Card"
           : tx.payment_method || tx.payment_provider || "Payment";
 
   const invoice = await prisma.invoices.create({

@@ -54,11 +54,6 @@ function getSystemMetrics() {
 
 async function getIntegrations() {
   const polarConfigured = Boolean(process.env.POLAR_ACCESS_TOKEN?.trim());
-  const kpayConfigured = Boolean(
-    process.env.KPAY_USERNAME?.trim() &&
-      process.env.KPAY_PASSWORD?.trim() &&
-      process.env.KPAY_RETURN_URL?.trim(),
-  );
   const [
     activeGlobalInsuranceProviders,
     activePharmacyInsuranceProviders,
@@ -86,11 +81,10 @@ async function getIntegrations() {
 
   return {
     paymentGateway: {
-      configured: polarConfigured || kpayConfigured,
-      status: polarConfigured || kpayConfigured ? "healthy" : "not_configured",
+      configured: polarConfigured,
+      status: polarConfigured ? "healthy" : "not_configured",
       providers: {
         polar: polarConfigured,
-        kpay: kpayConfigured,
       },
     },
     insurance: {

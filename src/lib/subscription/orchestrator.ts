@@ -431,7 +431,7 @@ export class SubscriptionOrchestrator {
   }
 
   /**
-   * Idempotent-safe paid activation after KPay/Polar confirmation.
+   * Idempotent-safe paid activation after Polar confirmation.
    * Sets expires_at from payment time (not pending creation time).
    */
   async activateAfterPayment(

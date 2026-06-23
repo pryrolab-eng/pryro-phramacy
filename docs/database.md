@@ -271,7 +271,7 @@ All other 34 files follow the `YYYYMMDDHHMMSS_description.sql` convention.
 | `is_active` | `boolean` | Default `true`. |
 | `amount` | `decimal(10,2)` | Amount paid. Default `0.00`. |
 | `currency` | `text` | Default `RWF`. |
-| `payment_reference` | `text` | KPay TID or manual reference. |
+| `payment_reference` | `text` | External payment reference. |
 | `payment_method` | `text` | Added later. E.g. `momo`, `cc`. |
 | `created_at` | `timestamptz` | Default `now()`. |
 | `updated_at` | `timestamptz` | Auto-updated by trigger. |
@@ -312,7 +312,7 @@ All other 34 files follow the `YYYYMMDDHHMMSS_description.sql` convention.
 
 ### `payments`
 
-**Purpose:** Records individual payment transactions against invoices. Separate from `payment_transactions` (which is KPay-specific).
+**Purpose:** Records individual payment transactions against invoices.
 
 **Migration:** `20241203000001_billing_system.sql`
 
@@ -360,7 +360,7 @@ All other 34 files follow the `YYYYMMDDHHMMSS_description.sql` convention.
 
 ### `payment_transactions`
 
-**Purpose:** KPay-specific payment transaction records. Tracks the full lifecycle of a KPay payment from checkout URL generation through webhook confirmation. Links to both `sales` and `subscriptions`.
+**Purpose:** Payment transaction records for subscription billing via Polar. Links to both `sales` and `subscriptions`.
 
 **Migration:** `20240325000001_kpay_integration.sql`
 
@@ -370,27 +370,14 @@ All other 34 files follow the `YYYYMMDDHHMMSS_description.sql` convention.
 | `pharmacy_id` | `uuid` | FK → `pharmacies(id)` ON DELETE CASCADE. |
 | `sale_id` | `uuid` | FK → `sales(id)` ON DELETE SET NULL. Nullable. |
 | `subscription_id` | `uuid` | FK → `subscriptions(id)` ON DELETE SET NULL. Nullable. |
-| `kpay_tid` | `text` | Unique. KPay transaction ID (assigned after payment). |
-| `kpay_refid` | `text` | Unique. Not null. Merchant-generated reference ID. |
-| `kpay_authkey` | `text` | KPay auth key returned at checkout. |
-| `kpay_checkout_url` | `text` | Redirect URL for the payment page. |
 | `amount` | `decimal(10,2)` | Not null. |
 | `currency` | `text` | Default `RWF`. |
-| `payment_method` | `text` | Not null. Values: `momo`, `cc`, `bank`, `spenn`, `smartcash`. |
-| `bank_id` | `text` | Bank identifier for bank transfers. |
-| `bank_name` | `text` | Bank name. |
+| `payment_method` | `text` | Not null. Values: `card`. |
+| `status` | `text` | Default `pending`. Values: `pending`, `processing`, `completed`, `failed`, `cancelled`. |
 | `customer_name` | `text` | Not null. |
 | `customer_phone` | `text` | Nullable. |
 | `customer_email` | `text` | Nullable. |
-| `customer_number` | `text` | Customer account number. |
-| `status` | `text` | Default `pending`. Values: `pending`, `processing`, `completed`, `failed`, `cancelled`. |
-| `kpay_status_id` | `text` | KPay status code from webhook. |
-| `kpay_status_desc` | `text` | KPay status description. |
-| `mom_transaction_id` | `text` | Mobile money transaction ID. |
-| `pay_account` | `text` | Account that made the payment. |
-| `payment_details` | `text` | Raw payment details string. |
 | `error_message` | `text` | Error description if failed. |
-| `webhook_received_at` | `timestamptz` | When the KPay webhook arrived. |
 | `completed_at` | `timestamptz` | Set by trigger when status → `completed`. |
 | `created_at` | `timestamptz` | Default `now()`. |
 | `updated_at` | `timestamptz` | Auto-updated by trigger. |
@@ -405,7 +392,7 @@ All other 34 files follow the `YYYYMMDDHHMMSS_description.sql` convention.
 
 ### `payment_logs`
 
-**Purpose:** Debug log for every KPay API call and webhook event. Stores raw request/response payloads for troubleshooting.
+**Purpose:** Debug log for payment API calls and webhook events. Stores raw request/response payloads for troubleshooting.
 
 **Migration:** `20240325000001_kpay_integration.sql`
 

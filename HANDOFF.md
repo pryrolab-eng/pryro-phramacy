@@ -45,10 +45,10 @@ Pryrox is a multi-tenant pharmacy management SaaS platform built with Next.js 14
 | Admin billing dashboard | ✅ Complete | Revenue KPIs, transaction history, plan analytics. |
 | Entitlements / feature gating | ✅ Complete | Sidebar hiding, in-page locks, API enforcement. |
 | KPay mobile money | ❌ Removed | Service discontinued. All KPay code deleted from codebase. |
-| Subscription cancellation/refund | ❌ Not implemented | No UI or API for mid-period cancellation or refunds. |
-| Subscriber count in admin | ❌ Not hardcoded | Always displays 0 (hardcoded TODO). |
+| Subscription cancellation | ✅ Complete | `BillingCancelDialog` → `POST /api/saas/subscription/cancel` → orchestrator updates DB. Auth + role check enforced. |
+| Subscriber count in admin | ✅ Complete | `/api/admin/plans` queries active subscriptions by plan_id, enriches response with `active_subscriber_count`. Displayed in admin subscriptions panel. |
 
-**Why incomplete:** KPay was removed because the service is no longer available. Polar is fully operational. Subscription cancellation requires business logic decisions (proration, refund policy) that need stakeholder input.
+**Why incomplete:** KPay was removed because the service is no longer available. Polar is fully operational.
 
 ### 3. Admin Platform Settings
 
@@ -189,7 +189,7 @@ Pryrox is a multi-tenant pharmacy management SaaS platform built with Next.js 14
 | **Insurance** | Claim processing, pricing, lookup, claims reporting | All endpoints are hardcoded stubs. No database integration. |
 | **Customer management** | Edit/delete, purchase history, loyalty integration | Minimum viable flow (add + autocomplete) was prioritized. |
 | **Staff management** | Role enforcement, activate/deactivate, full CRUD | Built for pharmacist creation only. |
-| **Subscription** | Cancellation/refund, subscriber counts | Requires business logic decisions (proration, refund policy). |
+| **Subscription** | Refund handling, proration logic | Cancellation works; refund/proration requires business decisions. |
 | **Real-time updates** | WebSocket implementation | Currently HTTP polling (5s interval). Supabase Realtime was planned but not implemented. |
 
 ### Technical Debt

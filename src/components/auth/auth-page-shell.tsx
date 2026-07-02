@@ -49,7 +49,7 @@ function MarketingPanel({ showLogo = false }: { showLogo?: boolean }) {
           {FEATURES.map((f) => (
             <span
               key={f}
-              className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-white"
+              className="rounded-[10px] border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-white"
             >
               {f}
             </span>
@@ -103,7 +103,7 @@ export function AuthPageShell({
           </Link>
           <Link
             href="/"
-            className="absolute right-5 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50"
+            className="absolute right-5 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[10px] border border-gray-200 text-gray-500 hover:bg-gray-50"
             aria-label="Back to home"
           >
             <svg
@@ -129,7 +129,7 @@ export function AuthPageShell({
             <div className="mx-auto w-full min-w-0 max-w-md">
               <Link
                 href="/"
-                className="mb-5 hidden h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50 lg:inline-flex"
+                className="mb-5 hidden h-9 w-9 items-center justify-center rounded-[10px] border border-gray-200 text-gray-500 hover:bg-gray-50 lg:inline-flex"
                 aria-label="Back to home"
               >
                 <svg

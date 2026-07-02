@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input"
 import {
   DollarSign,
   Download,
+  FileSpreadsheet,
   Package,
   RefreshCw,
   ShoppingCart,
@@ -64,6 +65,7 @@ import {
   DashboardPanelEmpty,
 } from "@/components/dashboard"
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths"
+import { exportReportsPdf, exportReportsExcel } from "@/lib/reports/export-reports"
 
 const chartConfig = {
   sales: { label: "Sales (RWF)", color: "#3b82f6" },
@@ -240,9 +242,13 @@ function ReportsPageInner() {
         }
         actions={
           <DashboardToolbar>
-            <DashboardButton onClick={() => window.print()}>
+            <DashboardButton onClick={() => exportReportsPdf(reportsData, inventoryData, { startDate, endDate })}>
               <Download className="h-4 w-4" />
-              Export PDF
+              PDF
+            </DashboardButton>
+            <DashboardButton onClick={() => exportReportsExcel(reportsData, inventoryData)}>
+              <FileSpreadsheet className="h-4 w-4" />
+              Excel
             </DashboardButton>
             <DashboardButton onClick={fetchReportsData}>
               <RefreshCw className="h-4 w-4" />

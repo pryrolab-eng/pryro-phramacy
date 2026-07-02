@@ -7,7 +7,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
-  DialogTrigger,
   DashboardButton,
   DashboardDialogContent,
   DashboardDialogHeader,
@@ -17,7 +16,6 @@ import {
   DashboardDialogActions,
   DashboardMetricGrid,
   DashboardStatCard,
-  DashboardSectionCard,
   DashboardDataTable,
   DashboardTabsList,
   DashboardAlertDialogContent,
@@ -25,15 +23,10 @@ import {
   DashboardAlertDialogTitle,
   DashboardAlertDialogDescription,
   DashboardAlertDialogActions,
-  DashboardToolbar,
 } from "@/components/dashboard";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { AdminFeedbackDialog, type AdminFeedbackVariant } from "@/components/admin/admin-feedback-dialog";
-import {
-  PolarSyncDialog,
-  type PolarSyncPlanResult,
-} from "@/components/admin/polar-sync-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,16 +38,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Building2, Layers, Loader2, Plus, Users } from "lucide-react";
+import { Building2, Layers, Plus, TrendingUp, Users } from "lucide-react";
 import { AdminPageHeader } from '@/components/admin/admin-page-header'
 import {
   adminSubscriptionPlanColumns,
   type SubscriptionPlanTableRow,
 } from '@/components/admin/admin-subscriptions-columns'
-import { Tabs, TabsContent, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsTrigger } from '@/components/ui/tabs'
 import { Spinner } from '@/components/ui/spinner';
+import { AnimatePresence, motion } from "motion/react";
+import { formatMoney } from "@/lib/platform-currency";
 import { useAdminPlans } from '@/hooks'
-import { createAdminPlan, dedupeAdminPlans, fixAdminPlanCatalog, syncAllPlansToPolar, updateAdminPlan, type AdminSubscriptionPlanRow } from '@/lib/http/admin/plans'
+import { createAdminPlan, updateAdminPlan, type AdminSubscriptionPlanRow } from '@/lib/http/admin/plans'
 import { invalidateAllPlanCaches } from '@/lib/query/invalidate-plan-caches'
 import { PlanFeatureMatrix } from '@/components/admin/plan-feature-matrix'
 import { PlanLimitFields } from '@/components/admin/plan-limit-fields'
@@ -64,6 +59,13 @@ import {
   applyPlanLimitsForFeatures,
   validateMainPlanLimitAlignment,
 } from '@/lib/subscription/plan-limit-alignment'
+
+const panelTransition = {
+  initial: { opacity: 0, y: 10 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+  transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const },
+};
 
 type PlanCard = SubscriptionPlanTableRow & {
   features: string[]
@@ -154,14 +156,6 @@ export function AdminSubscriptionsPanel() {
   const [isSavingPlan, setIsSavingPlan] = useState(false)
   const [togglingPlanId, setTogglingPlanId] = useState<string | null>(null)
 
-  const [dedupeLoading, setDedupeLoading] = useState(false)
-  const [fixCatalogLoading, setFixCatalogLoading] = useState(false)
-  const [polarSyncOpen, setPolarSyncOpen] = useState(false)
-  const [polarSyncLoading, setPolarSyncLoading] = useState(false)
-  const [polarSyncError, setPolarSyncError] = useState<string | null>(null)
-  const [polarSyncStats, setPolarSyncStats] = useState({ synced: 0, failed: 0, skipped: 0 })
-  const [polarSyncResults, setPolarSyncResults] = useState<PolarSyncPlanResult[]>([])
-
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [feedbackTitle, setFeedbackTitle] = useState('')
   const [feedbackMessage, setFeedbackMessage] = useState('')
@@ -192,76 +186,16 @@ export function AdminSubscriptionsPanel() {
     () => plans.reduce((s, p) => s + p.users, 0),
     [plans],
   )
+  const estimatedMrr = useMemo(
+    () =>
+      plans.reduce(
+        (sum, p) => sum + (p.price > 0 ? p.price * p.users : 0),
+        0,
+      ),
+    [plans],
+  )
 
-  const handleRemoveDuplicates = async () => {
-    setDedupeLoading(true)
-    try {
-      const result = await dedupeAdminPlans()
-      await invalidateAllPlanCaches(queryClient)
-      showFeedback(
-        result.deactivated > 0 ? 'Duplicates removed' : 'No duplicates',
-        result.message ??
-          (result.deactivated > 0
-            ? `Deactivated ${result.deactivated} duplicate plan row(s). In Polar, archive extra "${result.duplicateGroupsBefore > 0 ? 'Basic/Standard/Premium' : ''}" products manually if they remain.`
-            : 'Each active plan name appears only once in the database.'),
-        result.deactivated > 0 ? 'success' : 'warning'
-      )
-    } catch (error) {
-      showFeedback(
-        'Could not remove duplicates',
-        error instanceof Error ? error.message : 'Dedupe failed',
-        'error'
-      )
-    } finally {
-      setDedupeLoading(false)
-    }
-  }
-
-  const handleSyncAllToPolar = async () => {
-    setPolarSyncOpen(true)
-    setPolarSyncLoading(true)
-    setPolarSyncError(null)
-    setPolarSyncResults([])
-    setPolarSyncStats({ synced: 0, failed: 0, skipped: 0 })
-
-    try {
-      const result = await syncAllPlansToPolar()
-      await invalidateAllPlanCaches(queryClient)
-      setPolarSyncStats({
-        synced: result.synced,
-        failed: result.failed,
-        skipped: (result as { skipped?: number }).skipped ?? 0,
-      })
-      setPolarSyncResults((result.results ?? []) as PolarSyncPlanResult[])
-    } catch (error) {
-      setPolarSyncError(
-        error instanceof Error ? error.message : 'Polar sync failed'
-      )
-    } finally {
-      setPolarSyncLoading(false)
-    }
-  }
-
-  const handleFixCatalogTypes = async () => {
-    setFixCatalogLoading(true)
-    try {
-      const result = await fixAdminPlanCatalog()
-      await invalidateAllPlanCaches(queryClient)
-      showFeedback(
-        result.mainPlansFixed + result.addonsFixed > 0 ? 'Catalog fixed' : 'Catalog OK',
-        result.message ?? 'Plan types verified.',
-        result.mainPlansFixed + result.addonsFixed > 0 ? 'success' : 'warning'
-      )
-    } catch (error) {
-      showFeedback(
-        'Could not fix catalog',
-        error instanceof Error ? error.message : 'Fix failed',
-        'error'
-      )
-    } finally {
-      setFixCatalogLoading(false)
-    }
-  }
+  const [activeTab, setActiveTab] = useState<"main" | "addons">("main")
 
   const handleAddPlan = async () => {
     setIsAddingPlanLoading(true)
@@ -476,17 +410,6 @@ export function AdminSubscriptionsPanel() {
 
   return (
     <>
-      <PolarSyncDialog
-        open={polarSyncOpen}
-        onOpenChange={setPolarSyncOpen}
-        loading={polarSyncLoading}
-        error={polarSyncError}
-        synced={polarSyncStats.synced}
-        failed={polarSyncStats.failed}
-        skipped={polarSyncStats.skipped}
-        results={polarSyncResults}
-      />
-
       <AdminFeedbackDialog
         open={feedbackOpen}
         onOpenChange={setFeedbackOpen}
@@ -528,9 +451,18 @@ export function AdminSubscriptionsPanel() {
             title="Subscription catalog"
             description="Main plans and branch add-ons — subscriber counts use plan_id when available"
             actions={
-              <DashboardButton tone="outline" asChild>
-                <Link href="/admin/stores">View stores</Link>
-              </DashboardButton>
+              <div className="flex flex-wrap items-center gap-2">
+                <DashboardButton tone="outline" asChild>
+                  <Link href="/admin/stores">View stores</Link>
+                </DashboardButton>
+                <DashboardButton
+                  tone="primary"
+                  onClick={() => setIsAddingPlan(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" strokeWidth={1.75} />
+                  Create plan
+                </DashboardButton>
+              </div>
             }
           />
 
@@ -541,7 +473,8 @@ export function AdminSubscriptionsPanel() {
                 {duplicateGroups.length === 1 ? '' : 's'} detected
               </p>
               <p className="mt-1">
-                Use <strong>Maintenance</strong> → Remove duplicates to keep one row per tier.
+                Review duplicate plan names and deactivate or merge extras so each
+                tier has one active row.
               </p>
             </div>
           ) : null}
@@ -554,26 +487,40 @@ export function AdminSubscriptionsPanel() {
             </p>
           ) : null}
 
-          <DashboardMetricGrid className="mb-4 sm:grid-cols-3">
+          <DashboardMetricGrid className="mb-4">
             <DashboardStatCard
               label="Main plans"
               icon={Layers}
               value={mainPlans.length}
+              loading={plansQuery.isPending}
             />
             <DashboardStatCard
               label="Branch add-ons"
               icon={Building2}
               value={addonPlans.length}
+              loading={plansQuery.isPending}
             />
             <DashboardStatCard
               label="Active subscribers"
               icon={Users}
               value={totalSubscribers}
               hint="Across all plan tiers"
+              loading={plansQuery.isPending}
+            />
+            <DashboardStatCard
+              label="Est. MRR"
+              icon={TrendingUp}
+              value={formatMoney(estimatedMrr)}
+              hint="From active paid subscriptions"
+              loading={plansQuery.isPending}
+              valueClassName="text-2xl sm:text-3xl"
             />
           </DashboardMetricGrid>
 
-          <Tabs defaultValue="main">
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => setActiveTab(v as "main" | "addons")}
+          >
             <DashboardTabsList>
               <TabsTrigger value="main">
                 Main plans ({mainPlans.length})
@@ -581,10 +528,17 @@ export function AdminSubscriptionsPanel() {
               <TabsTrigger value="addons">
                 Branch add-ons ({addonPlans.length})
               </TabsTrigger>
-              <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
             </DashboardTabsList>
 
-            <TabsContent value="main" className="mt-4">
+            <AnimatePresence mode="wait">
+              {activeTab === "main" ? (
+                <motion.div
+                  key="main-tab"
+                  role="tabpanel"
+                  aria-label="Main plans"
+                  className="mt-4"
+                  {...panelTransition}
+                >
               <DashboardDataTable
                 title="Main subscription plans"
                 description="Pharmacy tier products — not branch slot add-ons"
@@ -594,9 +548,17 @@ export function AdminSubscriptionsPanel() {
                 initialSorting={[{ id: 'users', desc: true }]}
                 emptyMessage="No main plans yet."
               />
-            </TabsContent>
+                </motion.div>
+              ) : null}
 
-            <TabsContent value="addons" className="mt-4">
+              {activeTab === "addons" ? (
+                <motion.div
+                  key="addons-tab"
+                  role="tabpanel"
+                  aria-label="Branch add-ons"
+                  className="mt-4"
+                  {...panelTransition}
+                >
               <DashboardDataTable
                 title="Branch add-ons"
                 description="Extra location slots — never shown as a pharmacy&apos;s main plan"
@@ -605,201 +567,147 @@ export function AdminSubscriptionsPanel() {
                 data={addonPlans}
                 emptyMessage="No branch add-on products yet."
               />
-            </TabsContent>
-
-            <TabsContent value="maintenance" className="mt-4">
-              <DashboardSectionCard
-                title="Catalog maintenance"
-                description="Fix plan types, remove duplicates, sync Polar, or create a plan"
-              >
-                <DashboardToolbar className="mb-4 w-full border-0 bg-transparent p-0 shadow-none">
-                  <DashboardButton
-                    tone="outline"
-                    disabled={fixCatalogLoading || dedupeLoading || polarSyncLoading}
-                    onClick={() => void handleFixCatalogTypes()}
-                  >
-                    {fixCatalogLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Fixing…
-                      </>
-                    ) : (
-                      'Fix plan types'
-                    )}
-                  </DashboardButton>
-                  <DashboardButton
-                    tone="outline"
-                    disabled={dedupeLoading || polarSyncLoading || fixCatalogLoading}
-                    onClick={() => void handleRemoveDuplicates()}
-                  >
-                    {dedupeLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Cleaning…
-                      </>
-                    ) : (
-                      'Remove duplicates'
-                    )}
-                  </DashboardButton>
-                  <DashboardButton
-                    tone="outline"
-                    disabled={polarSyncLoading || dedupeLoading}
-                    onClick={() => void handleSyncAllToPolar()}
-                  >
-                    {polarSyncLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Syncing…
-                      </>
-                    ) : (
-                      'Sync all to Polar'
-                    )}
-                  </DashboardButton>
-                <Dialog open={isAddingPlan} onOpenChange={setIsAddingPlan}>
-                  <DialogTrigger asChild>
-                    <DashboardButton tone="primary">
-                      <Plus className="mr-2 h-4 w-4" strokeWidth={1.75} />
-                      Create plan
-                    </DashboardButton>
-                  </DialogTrigger>
-                  <DashboardDialogContent className={cn(planDialogContentClassName)}>
-                    <DashboardDialogHeader className="shrink-0">
-                      <DashboardDialogTitle>Add plan</DashboardDialogTitle>
-                      <DashboardDialogDescription>
-                        Define pricing, features, and limits for a new catalog entry.
-                      </DashboardDialogDescription>
-                    </DashboardDialogHeader>
-                    <DashboardDialogBody className="min-h-0 max-h-none flex-1 overflow-y-auto">
-                    <div className="grid gap-4">
-                      <div className="grid gap-2">
-                        <Label>Plan Name</Label>
-                        <Input
-                          value={newPlan.name}
-                          onChange={(e) => setNewPlan({...newPlan, name: e.target.value})}
-                          placeholder="e.g. Starter"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Use a unique name. Similar names (e.g. Starter vs stater) are blocked.
-                        </p>
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>Price (RWF)</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={newPlan.price}
-                          onChange={(e) => setNewPlan({...newPlan, price: e.target.value})}
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>Billing cadence</Label>
-                        <Select
-                          value={newPlan.billing_cadence}
-                          disabled={
-                            newPlan.price !== '' && parseInt(newPlan.price, 10) === 0
-                          }
-                          onValueChange={(value: 'monthly' | 'yearly') =>
-                            setNewPlan({ ...newPlan, billing_cadence: value })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="monthly">Monthly</SelectItem>
-                            <SelectItem value="yearly">Yearly</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">
-                          {newPlan.price !== '' && parseInt(newPlan.price, 10) === 0
-                            ? 'Free plans are stored without a monthly/yearly charge.'
-                            : 'Shown on pricing as /month or /year.'}
-                        </p>
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>Plan type</Label>
-                        <Select
-                          value={newPlan.plan_type}
-                          onValueChange={(value: 'main' | 'branch_addon') => {
-                            const limits = defaultPlanLimits(value)
-                            setNewPlan({
-                              ...newPlan,
-                              plan_type: value,
-                              max_branches: String(limits.max_branches),
-                              max_users: String(limits.max_users),
-                              monthly_tx_limit: String(limits.monthly_tx_limit),
-                            })
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="main">Main subscription plan</SelectItem>
-                            <SelectItem value="branch_addon">Branch add-on</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {newPlan.plan_type === 'main' ? (
-                        <div className="grid gap-2">
-                          <Label>Plan features</Label>
-                          <PlanFeatureMatrix
-                            selectedKeys={newPlanFeatureKeys}
-                            onChange={(keys) => {
-                              setNewPlanFeatureKeys(keys)
-                              const aligned = applyPlanLimitsForFeatures({
-                                feature_keys: keys,
-                                max_branches: Number(newPlan.max_branches) || 1,
-                                max_users: Number(newPlan.max_users) || 1,
-                                monthly_tx_limit: Number(newPlan.monthly_tx_limit) || 0,
-                              })
-                              setNewPlan({
-                                ...newPlan,
-                                max_branches: String(aligned.max_branches),
-                                max_users: String(aligned.max_users),
-                                monthly_tx_limit: String(aligned.monthly_tx_limit),
-                              })
-                            }}
-                          />
-                        </div>
-                      ) : null}
-                      <div className="grid gap-2">
-                        <Label>Plan limits</Label>
-                        <PlanLimitFields
-                          planType={newPlan.plan_type}
-                          featureKeys={newPlanFeatureKeys}
-                          maxBranches={Number(newPlan.max_branches) || 1}
-                          maxUsers={Number(newPlan.max_users) || 1}
-                          monthlyTxLimit={Number(newPlan.monthly_tx_limit) || 0}
-                          onMaxBranchesChange={(value) =>
-                            setNewPlan({ ...newPlan, max_branches: String(value) })
-                          }
-                          onMaxUsersChange={(value) =>
-                            setNewPlan({ ...newPlan, max_users: String(value) })
-                          }
-                          onMonthlyTxLimitChange={(value) =>
-                            setNewPlan({ ...newPlan, monthly_tx_limit: String(value) })
-                          }
-                        />
-                      </div>
-                    </div>
-                    </DashboardDialogBody>
-                    <DashboardDialogActions
-                      cancelLabel="Cancel"
-                      confirmLabel="Add plan"
-                      onCancel={() => setIsAddingPlan(false)}
-                      onConfirm={() => void handleAddPlan()}
-                      confirmDisabled={
-                        !newPlan.name || newPlan.price === '' || isAddingPlanLoading
-                      }
-                      confirmLoading={isAddingPlanLoading}
-                    />
-                  </DashboardDialogContent>
-                </Dialog>
-                </DashboardToolbar>
-              </DashboardSectionCard>
-            </TabsContent>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </Tabs>
+
+          <Dialog open={isAddingPlan} onOpenChange={setIsAddingPlan}>
+            <DashboardDialogContent className={cn(planDialogContentClassName)}>
+              <DashboardDialogHeader className="shrink-0">
+                <DashboardDialogTitle>Add plan</DashboardDialogTitle>
+                <DashboardDialogDescription>
+                  Define pricing, features, and limits for a new catalog entry.
+                </DashboardDialogDescription>
+              </DashboardDialogHeader>
+              <DashboardDialogBody className="min-h-0 max-h-none flex-1 overflow-y-auto">
+                <div className="grid gap-4">
+                  <div className="grid gap-2">
+                    <Label>Plan Name</Label>
+                    <Input
+                      value={newPlan.name}
+                      onChange={(e) => setNewPlan({ ...newPlan, name: e.target.value })}
+                      placeholder="e.g. Starter"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Use a unique name. Similar names (e.g. Starter vs stater) are
+                      blocked.
+                    </p>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Price (RWF)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={newPlan.price}
+                      onChange={(e) => setNewPlan({ ...newPlan, price: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Billing cadence</Label>
+                    <Select
+                      value={newPlan.billing_cadence}
+                      disabled={
+                        newPlan.price !== "" && parseInt(newPlan.price, 10) === 0
+                      }
+                      onValueChange={(value: "monthly" | "yearly") =>
+                        setNewPlan({ ...newPlan, billing_cadence: value })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                        <SelectItem value="yearly">Yearly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {newPlan.price !== "" && parseInt(newPlan.price, 10) === 0
+                        ? "Free plans are stored without a monthly/yearly charge."
+                        : "Shown on pricing as /month or /year."}
+                    </p>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Plan type</Label>
+                    <Select
+                      value={newPlan.plan_type}
+                      onValueChange={(value: "main" | "branch_addon") => {
+                        const limits = defaultPlanLimits(value)
+                        setNewPlan({
+                          ...newPlan,
+                          plan_type: value,
+                          max_branches: String(limits.max_branches),
+                          max_users: String(limits.max_users),
+                          monthly_tx_limit: String(limits.monthly_tx_limit),
+                        })
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="main">Main subscription plan</SelectItem>
+                        <SelectItem value="branch_addon">Branch add-on</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {newPlan.plan_type === "main" ? (
+                    <div className="grid gap-2">
+                      <Label>Plan features</Label>
+                      <PlanFeatureMatrix
+                        selectedKeys={newPlanFeatureKeys}
+                        onChange={(keys) => {
+                          setNewPlanFeatureKeys(keys)
+                          const aligned = applyPlanLimitsForFeatures({
+                            feature_keys: keys,
+                            max_branches: Number(newPlan.max_branches) || 1,
+                            max_users: Number(newPlan.max_users) || 1,
+                            monthly_tx_limit: Number(newPlan.monthly_tx_limit) || 0,
+                          })
+                          setNewPlan({
+                            ...newPlan,
+                            max_branches: String(aligned.max_branches),
+                            max_users: String(aligned.max_users),
+                            monthly_tx_limit: String(aligned.monthly_tx_limit),
+                          })
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                  <div className="grid gap-2">
+                    <Label>Plan limits</Label>
+                    <PlanLimitFields
+                      planType={newPlan.plan_type}
+                      featureKeys={newPlanFeatureKeys}
+                      maxBranches={Number(newPlan.max_branches) || 1}
+                      maxUsers={Number(newPlan.max_users) || 1}
+                      monthlyTxLimit={Number(newPlan.monthly_tx_limit) || 0}
+                      onMaxBranchesChange={(value) =>
+                        setNewPlan({ ...newPlan, max_branches: String(value) })
+                      }
+                      onMaxUsersChange={(value) =>
+                        setNewPlan({ ...newPlan, max_users: String(value) })
+                      }
+                      onMonthlyTxLimitChange={(value) =>
+                        setNewPlan({ ...newPlan, monthly_tx_limit: String(value) })
+                      }
+                    />
+                  </div>
+                </div>
+              </DashboardDialogBody>
+              <DashboardDialogActions
+                cancelLabel="Cancel"
+                confirmLabel="Add plan"
+                onCancel={() => setIsAddingPlan(false)}
+                onConfirm={() => void handleAddPlan()}
+                confirmDisabled={
+                  !newPlan.name || newPlan.price === "" || isAddingPlanLoading
+                }
+                confirmLoading={isAddingPlanLoading}
+              />
+            </DashboardDialogContent>
+          </Dialog>
 
           <Dialog open={isEditingPlan} onOpenChange={setIsEditingPlan}>
             <DashboardDialogContent className={cn(planDialogContentClassName)}>

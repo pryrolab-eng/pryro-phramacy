@@ -86,6 +86,8 @@ export type AiSafetyResult = {
     source: string;
     message: string;
   }>;
+  aiPowered?: boolean;
+  reasoning?: string;
 };
 
 export type AiSafetyResponse = {

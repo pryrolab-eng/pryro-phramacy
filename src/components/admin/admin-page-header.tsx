@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { isValidElement, useEffect, type ReactNode } from 'react'
+import { isValidElement, useEffect, useRef, type ReactNode } from 'react'
 
 import { useDashboardScrollHeader } from '@/components/shell/dashboard-scroll-header-context'
 import { dashboardText } from '@/components/dashboard/dashboard-tokens'
@@ -47,11 +47,17 @@ export function AdminPageHeader({
   const { isPinned, setHeaderConfig, registerSentinel } =
     useDashboardScrollHeader()
   const resolvedPinTitle = resolvePinTitle(title, pinTitle)
+  const sentinelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setHeaderConfig({ title: resolvedPinTitle })
     return () => setHeaderConfig(null)
   }, [resolvedPinTitle, setHeaderConfig])
+
+  useEffect(() => {
+    registerSentinel(sentinelRef.current)
+    return () => registerSentinel(null)
+  }, [registerSentinel])
 
   return (
     <div className={cn('relative', className)}>
@@ -84,7 +90,7 @@ export function AdminPageHeader({
         ) : null}
       </motion.div>
       <div
-        ref={registerSentinel}
+        ref={sentinelRef}
         className="pointer-events-none absolute bottom-0 left-0 h-px w-full"
         aria-hidden
       />

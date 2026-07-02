@@ -11,7 +11,7 @@ export type PhoneValidationResult = {
 export async function validatePhoneNumber(
   phoneNumber: string,
 ): Promise<PhoneValidationResult> {
-  return fetchJson<PhoneValidationResult>("/api/test-validation", {
+  return fetchJson<PhoneValidationResult>("/api/validation/phone", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ phoneNumber }),

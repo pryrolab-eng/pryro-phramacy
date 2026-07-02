@@ -191,23 +191,31 @@ export type InventoryChartRow = {
   quantity_in_stock: number | null;
   minimum_stock_level: number | null;
   created_at: string;
+  updated_at: string | null;
 };
 
 export function buildInventoryChart(rows: InventoryChartRow[]) {
   const monthlyData: Record<string, { inStock: number; lowStock: number }> = {};
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+
+  const now = new Date();
+  const months: string[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(d.toLocaleString("en-US", { month: "short" }));
+  }
 
   rows.forEach((item) => {
-    const month = months[new Date(item.created_at).getMonth()];
-    if (!monthlyData[month]) {
-      monthlyData[month] = { inStock: 0, lowStock: 0 };
+    const d = new Date(item.updated_at ?? item.created_at);
+    const monthKey = d.toLocaleString("en-US", { month: "short" });
+    if (!monthlyData[monthKey]) {
+      monthlyData[monthKey] = { inStock: 0, lowStock: 0 };
     }
     const qty = item.quantity_in_stock ?? 0;
     const min = item.minimum_stock_level ?? 0;
     if (qty <= min) {
-      monthlyData[month].lowStock++;
+      monthlyData[monthKey].lowStock++;
     } else {
-      monthlyData[month].inStock++;
+      monthlyData[monthKey].inStock++;
     }
   });
 

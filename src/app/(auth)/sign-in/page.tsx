@@ -30,7 +30,7 @@ export default async function SignInPage({ searchParams }: LoginProps) {
           {/* Back button */}
           <Link
             href="/"
-            className="mb-8 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+            className="mb-8 inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5M12 5l-7 7 7 7" />
@@ -82,7 +82,7 @@ export default async function SignInPage({ searchParams }: LoginProps) {
 
           <div className="flex w-96 flex-wrap justify-center gap-3">
             {["POS & Sales", "Inventory", "Prescriptions", "Insurance", "Reports", "Multi-Branch"].map((f) => (
-              <span key={f} className="rounded-full bg-white/10 px-3 py-1 text-sm font-medium text-white border border-white/20">
+              <span key={f} className="rounded-[10px] bg-white/10 px-3 py-1 text-sm font-medium text-white border border-white/20">
                 {f}
               </span>
             ))}

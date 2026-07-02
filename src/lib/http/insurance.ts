@@ -95,10 +95,16 @@ export type UploadInsurancePricingInput = {
   priceList: Record<string, number>;
 };
 
+export type UploadInsurancePricingResult = {
+  success: boolean;
+  upserted: number;
+  errors?: string[];
+};
+
 export async function uploadInsurancePricing(
   body: UploadInsurancePricingInput,
-): Promise<void> {
-  await fetchJson("/api/insurance/pricing", {
+): Promise<UploadInsurancePricingResult> {
+  return fetchJson<UploadInsurancePricingResult>("/api/insurance/pricing", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -152,4 +158,38 @@ export async function processInsuranceClaim(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+export type ClaimStatus = "pending" | "processing" | "approved" | "rejected";
+
+export type UpdateClaimStatusInput = {
+  claimId: string;
+  status: ClaimStatus;
+  notes?: string;
+  approvedAmount?: number;
+};
+
+export type UpdateClaimStatusResult = {
+  success: boolean;
+  claim: {
+    id: string;
+    status: string;
+    approved_amount: number | null;
+    processed_at: string | null;
+    notes: string | null;
+  };
+};
+
+export async function updateClaimStatus(
+  input: UpdateClaimStatusInput,
+): Promise<UpdateClaimStatusResult> {
+  const { claimId, ...body } = input;
+  return fetchJson<UpdateClaimStatusResult>(
+    `/api/insurance/claims/${claimId}/status`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
 }

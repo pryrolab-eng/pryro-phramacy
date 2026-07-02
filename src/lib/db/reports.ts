@@ -176,6 +176,7 @@ export async function fetchInventoryChartRows(pharmacyId: string) {
       quantity_in_stock: true,
       minimum_stock_level: true,
       created_at: true,
+      updated_at: true,
     },
   });
 
@@ -183,6 +184,7 @@ export async function fetchInventoryChartRows(pharmacyId: string) {
     quantity_in_stock: row.quantity_in_stock,
     minimum_stock_level: row.minimum_stock_level,
     created_at: row.created_at?.toISOString() ?? new Date().toISOString(),
+    updated_at: row.updated_at?.toISOString() ?? null,
   }));
 }
 

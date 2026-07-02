@@ -92,7 +92,7 @@ export function ResetPasswordForm({ initialMessage }: Props) {
         </div>
       </div>
 
-      <Button type="submit" className="w-full">
+      <Button type="submit" className="w-full rounded-[10px]">
         Reset password
       </Button>
 

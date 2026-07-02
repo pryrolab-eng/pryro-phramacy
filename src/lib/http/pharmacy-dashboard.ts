@@ -151,11 +151,6 @@ const FALLBACK_CATEGORY_SALES: CategorySalesChartPoint[] = [
   { category: "otc", sales: 200, fill: "var(--color-otc)" },
 ];
 
-const FALLBACK_INVENTORY_CHART: InventoryChartPoint[] = [
-  { month: "Jan", inStock: 850, lowStock: 45 },
-  { month: "Feb", inStock: 920, lowStock: 32 },
-];
-
 export async function getPharmacyWeeklySalesChart(): Promise<WeeklySalesChartPoint[]> {
   try {
     const data = await fetchJson<WeeklySalesChartPoint[]>(
@@ -187,10 +182,8 @@ export async function getPharmacyInventoryChart(): Promise<InventoryChartPoint[]
     const data = await fetchJson<InventoryChartPoint[]>(
       "/api/pharmacy/inventory-chart",
     );
-    return Array.isArray(data) && data.length > 0
-      ? data
-      : FALLBACK_INVENTORY_CHART;
+    return Array.isArray(data) ? data : [];
   } catch {
-    return FALLBACK_INVENTORY_CHART;
+    return [];
   }
 }

@@ -1,8 +1,9 @@
 "use client"
 
 import { Bar, BarChart, XAxis } from "recharts"
+import { Package } from "lucide-react"
 
-import { DashboardChartCard } from "@/components/dashboard"
+import { DashboardChartCard, DashboardPanelEmpty } from "@/components/dashboard"
 import {
   ChartConfig,
   ChartTooltip,
@@ -25,6 +26,15 @@ export function PharmacyInventoryChart() {
       description="Monthly inventory levels overview"
       config={chartConfig}
       loading={chartQuery.isPending}
+      empty={
+        chartData.length === 0 ? (
+          <DashboardPanelEmpty
+            icon={Package}
+            title="No inventory data"
+            description="Add inventory items to see stock level trends here."
+          />
+        ) : undefined
+      }
     >
       <BarChart accessibilityLayer data={chartData}>
         <XAxis

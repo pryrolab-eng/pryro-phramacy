@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useDashboardScrollHeader } from "@/components/shell/dashboard-scroll-header-context";
 import { cn } from "@/lib/utils";
 import { dashboardText } from "./dashboard-tokens";
@@ -21,11 +21,17 @@ export function DashboardPageHeader({
 }: Props) {
   const { isPinned, setHeaderConfig, registerSentinel } =
     useDashboardScrollHeader();
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setHeaderConfig({ title });
     return () => setHeaderConfig(null);
   }, [title, setHeaderConfig]);
+
+  useEffect(() => {
+    registerSentinel(sentinelRef.current);
+    return () => registerSentinel(null);
+  }, [registerSentinel]);
 
   return (
     <div className={cn("relative", className)}>
@@ -56,7 +62,7 @@ export function DashboardPageHeader({
         ) : null}
       </motion.div>
       <div
-        ref={registerSentinel}
+        ref={sentinelRef}
         className="pointer-events-none absolute bottom-0 left-0 h-px w-full"
         aria-hidden
       />

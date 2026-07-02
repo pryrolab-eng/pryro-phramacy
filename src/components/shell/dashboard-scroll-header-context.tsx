@@ -34,17 +34,27 @@ export function DashboardScrollHeaderProvider({
   const [isPinned, setIsPinned] = useState(false);
   const [config, setHeaderConfig] = useState<HeaderConfig | null>(null);
   const scrollRootRef = useRef<HTMLElement | null>(null);
-  const observerRef = useRef<IntersectionObserver | null>(null);
   const sentinelRef = useRef<HTMLElement | null>(null);
+  const [observerKey, setObserverKey] = useState(0);
 
-  const connectObserver = useCallback(() => {
-    observerRef.current?.disconnect();
-    observerRef.current = null;
+  const setScrollRoot = useCallback((element: HTMLElement | null) => {
+    scrollRootRef.current = element;
+    setObserverKey((key) => key + 1);
+  }, []);
 
+  const registerSentinel = useCallback((element: HTMLElement | null) => {
+    sentinelRef.current = element;
+    setObserverKey((key) => key + 1);
+  }, []);
+
+  useEffect(() => {
     const sentinel = sentinelRef.current;
-    if (!sentinel) return;
+    if (!sentinel) {
+      setIsPinned(false);
+      return;
+    }
 
-    observerRef.current = new IntersectionObserver(
+    const observer = new IntersectionObserver(
       ([entry]) => {
         setIsPinned(!entry.isIntersecting);
       },
@@ -54,28 +64,9 @@ export function DashboardScrollHeaderProvider({
         threshold: 0,
       },
     );
-    observerRef.current.observe(sentinel);
-  }, []);
-
-  const setScrollRoot = useCallback(
-    (element: HTMLElement | null) => {
-      scrollRootRef.current = element;
-      connectObserver();
-    },
-    [connectObserver],
-  );
-
-  const registerSentinel = useCallback(
-    (element: HTMLElement | null) => {
-      sentinelRef.current = element;
-      connectObserver();
-    },
-    [connectObserver],
-  );
-
-  useEffect(() => {
-    return () => observerRef.current?.disconnect();
-  }, []);
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [observerKey]);
 
   const value = useMemo(
     () => ({

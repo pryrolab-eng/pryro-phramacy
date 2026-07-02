@@ -465,8 +465,8 @@ export function FeatureCatalogPanel() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
         <DashboardSectionCard
           title="Groups"
-          className="lg:w-56 shrink-0"
-          contentClassName="p-2 pt-0"
+          className="shrink-0 lg:sticky lg:top-4 lg:w-56 lg:self-start lg:max-h-[calc(100dvh-2rem)] lg:flex lg:flex-col"
+          contentClassName="min-h-0 flex-1 overflow-y-auto p-2 pt-0"
         >
           <nav className="space-y-0.5">
             <button

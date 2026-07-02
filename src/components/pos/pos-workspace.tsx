@@ -112,6 +112,8 @@ export type PosWorkspaceProps = {
   hasOpenShift?: boolean;
   shiftCheckReady?: boolean;
   showTeamShifts?: boolean;
+  canHold?: boolean;
+  canVoid?: boolean;
 };
 
 function PaymentMethodButton({
@@ -190,6 +192,8 @@ export function PosWorkspace(props: PosWorkspaceProps) {
     hasOpenShift = true,
     shiftCheckReady = true,
     showTeamShifts = false,
+    canHold = true,
+    canVoid = true,
   } = props;
 
   const shiftBlocksSale = shiftCheckReady && !hasOpenShift;
@@ -758,7 +762,9 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                   <DashboardButton className="flex-1">More</DashboardButton>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={onHoldSale}>Hold sale</DropdownMenuItem>
+                  {canHold && (
+                    <DropdownMenuItem onClick={onHoldSale}>Hold sale</DropdownMenuItem>
+                  )}
                   <DropdownMenuItem onClick={onLookupCustomer}>
                     Find customer
                   </DropdownMenuItem>
@@ -770,12 +776,14 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                       Backup cart
                     </DropdownMenuItem>
                   ) : null}
-                  <DropdownMenuItem
-                    className="text-red-600"
-                    onClick={onVoidSale}
-                  >
-                    Void sale
-                  </DropdownMenuItem>
+                  {canVoid && (
+                    <DropdownMenuItem
+                      className="text-red-600"
+                      onClick={onVoidSale}
+                    >
+                      Void sale
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

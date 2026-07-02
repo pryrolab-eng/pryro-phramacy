@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { pharmacyId } = await guardPharmacyFeatureForUser(user.id, {
-      feature: "pos.access",
+      feature: "pos.void",
     });
 
     const voidedSale = await storeVoidPosSale({

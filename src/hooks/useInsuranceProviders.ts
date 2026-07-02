@@ -3,11 +3,14 @@
 import {
   getInsuranceProviders,
   insuranceProvidersQueryKey,
+  updateClaimStatus,
   uploadInsurancePricing,
+  type UpdateClaimStatusInput,
   type UploadInsurancePricingInput,
 } from "@/lib/http/insurance";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminListQueryDefaults } from "@/lib/query/admin-query-options";
+import { insuranceReportsKey } from "@/lib/http/insurance-reports";
 
 export { insuranceProvidersQueryKey } from "@/lib/http/insurance";
 export type { InsuranceProviderRow } from "@/lib/http/insurance";
@@ -27,4 +30,14 @@ export function useUploadInsurancePricingMutation() {
   });
 }
 
-export type { UploadInsurancePricingInput };
+export function useUpdateClaimStatusMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateClaimStatusInput) => updateClaimStatus(input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["reports", "insurance-claims"] });
+    },
+  });
+}
+
+export type { UploadInsurancePricingInput, UpdateClaimStatusInput };

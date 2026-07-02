@@ -94,7 +94,7 @@ export default function PolarPricing() {
             </div>
 
             <div className="relative">
-                <div className="grid grid-cols-1 items-stretch gap-5 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6 xl:grid-cols-4 2xl:gap-8">
+                <div className="mx-auto grid max-w-5xl grid-cols-1 items-stretch gap-5 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6 2xl:max-w-6xl 2xl:gap-8">
                     {plans.map((plan) => {
                         const displayPrice = getDisplayPrice(plan.price)
                         const annualTotal = getAnnualTotal(plan.price)

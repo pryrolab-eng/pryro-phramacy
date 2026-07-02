@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
 
     const pharmacyId = await requireUserPharmacyId(user.id);
-    const { productId, quantity, adjustmentType } = await request.json();
+    const { productId, quantity, adjustmentType, reason } = await request.json();
     const newStock = await storeAdjustInventoryQuantity(
       productId,
       adjustmentType === "increase" ? "increase" : "decrease",
@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
         adjustmentType: adjustmentType === "increase" ? "increase" : "decrease",
         quantity,
         newStock,
+        ...(reason ? { reason } : {}),
       },
       ...auditRequestMetadata(request),
     });

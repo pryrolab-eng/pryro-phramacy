@@ -111,7 +111,7 @@ export function AdminInsuranceProvidersPanel() {
         pageSizeOptions={[10, 15, 25]}
         stickyHeader
         initialSorting={[{ id: "name", desc: false }]}
-        emptyMessage="No providers yet. Add one in the sidebar form below."
+        emptyMessage="No providers yet. Use Add provider to create one."
         isLoading={providersQuery.isPending && providers.length === 0}
         error={
           providersQuery.isError

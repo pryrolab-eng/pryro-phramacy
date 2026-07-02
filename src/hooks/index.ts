@@ -36,6 +36,7 @@ export {
 export {
   insuranceProvidersQueryKey,
   useInsuranceProviders,
+  useUpdateClaimStatusMutation,
   useUploadInsurancePricingMutation,
   type InsuranceProviderRow,
 } from "./useInsuranceProviders";

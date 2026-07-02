@@ -838,6 +838,8 @@ function POSPageContent() {
         hasOpenShift={hasOpenShift}
         shiftCheckReady={shiftCheckReady}
         showTeamShifts={isPharmacyOwner}
+        canHold={can('pos.hold')}
+        canVoid={can('pos.void')}
       />
 
       <FeatureGate featureKey="pos.insurance" hideWhenLocked>

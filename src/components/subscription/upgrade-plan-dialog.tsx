@@ -36,8 +36,7 @@ export function UpgradePlanDialog({
             {featureLabel ? (
               <span className="inline-flex flex-wrap items-center justify-center gap-2">
                 <span>Choose a plan that unlocks</span>
-                <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2.5 py-0.5 text-xs font-semibold text-primary">
-                  <Sparkles className="size-3.5" />
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500 bg-amber-500/5 px-2.5 py-0.5 text-xs font-semibold text-amber-600">
                   {featureLabel}
                 </span>
               </span>

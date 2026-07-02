@@ -1,6 +1,8 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Activity,
   BarChart3,
+  Bot,
   Building2,
   CreditCard,
   FileText,
@@ -98,6 +100,12 @@ export const ADMIN_SIDEBAR_GROUPS: AdminNavGroup[] = [
   {
     label: "Platform",
     items: [
+      {
+        title: "AI Audit Logs",
+        url: "/admin/ai-trace-events",
+        icon: Activity,
+        keywords: "ai nemotron drug safety analytics audit trace",
+      },
       {
         title: "Settings",
         url: "/admin/settings",

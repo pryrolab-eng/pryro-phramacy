@@ -28,10 +28,10 @@ export default async function AccessDeniedPage({
         </p>
       ) : null}
       <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-        <DashboardButton asChild tone="primary">
+        <DashboardButton asChild tone="primary" className="rounded-[10px]">
           <Link href="/sign-in">Back to sign in</Link>
         </DashboardButton>
-        <DashboardButton asChild tone="outline">
+        <DashboardButton asChild tone="outline" className="rounded-[10px]">
           <Link href="/">Home</Link>
         </DashboardButton>
       </div>

@@ -147,7 +147,7 @@ A working `.env` file requires the following variables. See [`docs/environment-v
 | `CLOUDINARY_CLOUD_NAME` | Cloudinary CDN for pharmacy logos |
 | `CLOUDINARY_API_KEY` | Cloudinary API key |
 | `CLOUDINARY_API_SECRET` | Cloudinary API secret |
-| `CRON_SECRET` | Vercel cron auth token |
+| `CRON_SECRET` | Auth token for `/api/cron/*` (external scheduler e.g. cron-job.org) |
 | `POLAR_CHECKOUT_CURRENCY` | Checkout currency (default `usd`) |
 | `POLAR_RWF_PER_USD` | RWF/USD rate for price conversion (default `1300`) |
 

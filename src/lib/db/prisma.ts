@@ -9,9 +9,12 @@ function resolveDatasourceUrl(): string | undefined {
   try {
     const url = new URL(raw);
     if (!url.searchParams.has("connection_limit")) {
+      // Serverless: one connection per isolate. Session poolers (e.g. Supabase :5432)
+      // have a small max pool — many lambdas × N connections exhaust it quickly.
+      const isServerless = Boolean(process.env.VERCEL);
       url.searchParams.set(
         "connection_limit",
-        process.env.NODE_ENV === "development" ? "5" : "10",
+        isServerless ? "1" : process.env.NODE_ENV === "development" ? "5" : "3",
       );
     }
     if (!url.searchParams.has("pool_timeout")) {
@@ -35,6 +38,4 @@ export const prisma =
         : ["error"],
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+globalForPrisma.prisma = prisma;

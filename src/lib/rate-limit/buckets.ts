@@ -97,7 +97,10 @@ async function consumeFromDb(
 function useDbRateLimitStore(): boolean {
   if (process.env.RATE_LIMIT_STORE === "postgres") return true;
   if (process.env.RATE_LIMIT_STORE === "memory") return false;
-  // Dev + single-node: avoid a DB round-trip on every API request.
+  // Postgres rate limits hit the DB on every API request — avoid as a silent
+  // default on serverless (Vercel + small Supabase session pools). Use Redis
+  // (REDIS_URL) for distributed limits, or memory per isolate otherwise.
+  if (process.env.VERCEL) return false;
   return isPrismaConfigured() && process.env.NODE_ENV === "production";
 }
 

@@ -1,6 +1,5 @@
 "use client";
 
-import { KeyRound } from "lucide-react";
 import { AuthBrandingLogo } from "@/components/auth-branding";
 import { ChangePasswordForm } from "@/components/auth/change-password-form";
 
@@ -15,10 +14,6 @@ export function AppEntrySetPassword({ onComplete }: Props) {
       <div className="w-full max-w-sm">
         <div className="mb-8 flex justify-center">
           <AuthBrandingLogo />
-        </div>
-
-        <div className="mb-6 flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <KeyRound className="size-5" />
         </div>
 
         <h1 className="text-xl font-semibold tracking-tight text-neutral-900">

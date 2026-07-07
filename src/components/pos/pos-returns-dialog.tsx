@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -120,7 +121,7 @@ export function PosReturnsDialog({ open, onOpenChange, branchId }: Props) {
     if (!branchId || !sale) return;
 
     if (!hasOpenShift) {
-      alert("Open your cashier shift before processing a return.");
+      toast.error("Open your cashier shift before processing a return.");
       return;
     }
 
@@ -134,13 +135,13 @@ export function PosReturnsDialog({ open, onOpenChange, branchId }: Props) {
       }));
 
     if (items.length === 0) {
-      alert("Select at least one item to return.");
+      toast.error("Select at least one item to return.");
       return;
     }
 
     for (const item of items) {
       if (!isDispositionAllowed(reason, item.disposition)) {
-        alert(
+        toast.error(
           `Cannot use "${dispositionLabel(item.disposition)}" for reason "${reason}".`,
         );
         return;
@@ -158,12 +159,12 @@ export function PosReturnsDialog({ open, onOpenChange, branchId }: Props) {
         refundAmount: refundTotal,
         items,
       });
-      alert(
-        `Return processed. Refund: ${(result.refundAmount ?? refundTotal).toLocaleString()} RWF`,
-      );
+      toast.success("Return processed", {
+        description: `Refund ${(result.refundAmount ?? refundTotal).toLocaleString()} RWF`,
+      });
       onOpenChange(false);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Return failed");
+      toast.error(e instanceof Error ? e.message : "Return failed");
     }
   };
 

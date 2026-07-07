@@ -7,8 +7,6 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
-  Loader2,
-  Receipt,
   RefreshCw,
   Wallet,
 } from 'lucide-react'
@@ -64,8 +62,6 @@ export function AdminBillingPanel() {
   const pharmaciesQuery = useAdminPharmacies()
   const plansQuery = useAdminPlans()
 
-  const [backfilling, setBackfilling] = useState(false)
-  const [backfillMsg, setBackfillMsg] = useState<string | null>(null)
   const [paymentFilter, setPaymentFilter] = useState('')
   const [pharmacyFilter, setPharmacyFilter] = useState('')
   const [detailPharmacyId, setDetailPharmacyId] = useState<string | null>(null)
@@ -130,26 +126,6 @@ export function AdminBillingPanel() {
       }
     )
   }, [detailPharmacyId, pharmaciesQuery.data, pharmacies])
-
-  const handleBackfill = async () => {
-    setBackfilling(true)
-    setBackfillMsg(null)
-    try {
-      const res = await fetchJson<{ synced: number; skipped: number }>(
-        '/api/admin/transactions/backfill',
-        { method: 'POST' },
-      )
-      setBackfillMsg(`Created ${res.synced} invoice(s). ${res.skipped} skipped.`)
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: adminBillingQueryKey }),
-        queryClient.invalidateQueries({ queryKey: adminReportsSummaryQueryKey }),
-      ])
-    } catch (e) {
-      setBackfillMsg(e instanceof Error ? e.message : 'Backfill failed')
-    } finally {
-      setBackfilling(false)
-    }
-  }
 
   if (billingQuery.isLoading) {
     return (
@@ -219,18 +195,6 @@ export function AdminBillingPanel() {
               />
               Refresh
             </DashboardButton>
-            <DashboardButton
-              tone="outline"
-              onClick={() => void handleBackfill()}
-              disabled={backfilling}
-            >
-              {backfilling ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Receipt className="mr-2 h-4 w-4" strokeWidth={1.75} />
-              )}
-              Sync invoices
-            </DashboardButton>
             <DashboardButton tone="outline" asChild>
               <Link href="/admin/reports">Reports</Link>
             </DashboardButton>
@@ -238,7 +202,6 @@ export function AdminBillingPanel() {
         }
       />
 
-      {backfillMsg ? <BillingNotice message={backfillMsg} /> : null}
       {cancelMsg ? <BillingNotice message={cancelMsg} /> : null}
 
       <DashboardMetricGrid className="mb-4 lg:grid-cols-4">

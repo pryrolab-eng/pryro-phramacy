@@ -68,6 +68,8 @@ export type DataTableProps<TData, TValue> = {
   /** Server-side pagination */
   manualPagination?: boolean;
   pageCount?: number;
+  /** Total row count for server-side pagination (footer + page count). */
+  rowCount?: number;
   paginationState?: PaginationState;
   onPaginationChange?: OnChangeFn<PaginationState>;
 
@@ -112,6 +114,7 @@ export function DataTable<TData, TValue>({
   showRowCount,
   manualPagination = false,
   pageCount,
+  rowCount,
   paginationState: controlledPagination,
   onPaginationChange: onControlledPaginationChange,
   isLoading = false,
@@ -197,6 +200,7 @@ export function DataTable<TData, TValue>({
       : undefined,
     manualPagination,
     pageCount: manualPagination ? pageCount : undefined,
+    rowCount: manualPagination ? rowCount : undefined,
     enableSorting,
   });
 

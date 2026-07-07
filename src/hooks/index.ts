@@ -36,6 +36,7 @@ export {
 export {
   insuranceProvidersQueryKey,
   useInsuranceProviders,
+  useUpdateClaimStatusMutation,
   useUploadInsurancePricingMutation,
   type InsuranceProviderRow,
 } from "./useInsuranceProviders";
@@ -132,7 +133,6 @@ export {
   checkPosTransactionAllowed,
   posKeys,
   useAnalyzeCartSafetyMutation,
-  useCustomerSearch,
   useHoldPosSaleMutation,
   useIncrementBranchUsageMutation,
   useInsuranceLookupMutation,
@@ -254,5 +254,8 @@ export {
   customersKeys,
   useCreateCustomerMutation,
   useCustomers,
+  useCustomerSearch,
   type CustomerRow,
+  type CustomerSearchResult,
 } from "./useCustomers";
+export { useLocalListSearch } from "./useLocalListSearch";

@@ -26,8 +26,23 @@ import {
   DashboardSectionCard,
   DashboardStatCard,
   DashboardTabsList,
+  Dialog,
+  DashboardDialogBody,
+  DashboardDialogContent,
+  DashboardDialogDescription,
+  DashboardDialogHeader,
+  DashboardDialogTitle,
+  DashboardDialogActions,
+  dashboardSurfaces,
+  dashboardText,
 } from "@/components/dashboard";
-import { Tabs, TabsContent, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Tabs, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import {
   DashboardAlertDialogActions,
@@ -50,6 +65,7 @@ import {
   serializeCanvas,
   type CanvasElement,
 } from "@/lib/admin/insurance-template-canvas";
+import { printInsuranceTemplatePreview } from "@/lib/admin/insurance-template-print";
 import {
   INSURANCE_PRESET_LABELS,
   loadInsuranceTemplatePreset,
@@ -66,6 +82,14 @@ import {
 } from "@/hooks/useAdminInsuranceTemplates";
 import { useInsuranceProviders } from "@/hooks/useInsuranceProviders";
 import { cn } from "@/lib/utils";
+import { AnimatePresence, motion } from "motion/react";
+
+const panelTransition = {
+  initial: { opacity: 0, y: 10 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+  transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const },
+};
 
 const emptyProviderForm = () => ({
   name: "",
@@ -87,12 +111,12 @@ export function AdminInsuranceTemplatesPanel() {
   const [templateName, setTemplateName] = useState("");
   const [insuranceProvider, setInsuranceProvider] = useState("");
   const [elements, setElements] = useState<CanvasElement[]>([]);
-  const [selectedElement, setSelectedElement] = useState<CanvasElement | null>(
-    null,
-  );
+  const [selectedElement, setSelectedElement] = useState<CanvasElement | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [providerForm, setProviderForm] = useState(emptyProviderForm);
   const [providerSubmitting, setProviderSubmitting] = useState(false);
+  const [addProviderOpen, setAddProviderOpen] = useState(false);
+  const [presetPickerKey, setPresetPickerKey] = useState(0);
   const [activeTab, setActiveTab] = useState<"design" | "providers">("design");
 
   const savedTemplates = templatesQuery.data ?? [];
@@ -103,15 +127,11 @@ export function AdminInsuranceTemplatesPanel() {
     return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
   }, [providersQuery.data]);
 
-  const updateElementProperty = (property: string, value: unknown) => {
-    if (!selectedElement) return;
-    setElements((prev) =>
-      prev.map((el) =>
-        el.id === selectedElement.id ? { ...el, [property]: value } : el,
-      ),
-    );
-    setSelectedElement({ ...selectedElement, [property]: value });
-  };
+  const activeInsurersCount = useMemo(
+    () =>
+      (providersQuery.data ?? []).filter((p) => p.is_active !== false).length,
+    [providersQuery.data],
+  );
 
   const handleNewDraft = () => {
     setSavedTemplateId(null);
@@ -159,10 +179,10 @@ export function AdminInsuranceTemplatesPanel() {
   };
 
   const handleDeleteSaved = async () => {
-    if (!deleteTargetId) return;
+    if (!savedTemplateId) return;
     try {
-      await deleteMutation.mutateAsync(deleteTargetId);
-      if (savedTemplateId === deleteTargetId) handleNewDraft();
+      await deleteMutation.mutateAsync(savedTemplateId);
+      handleNewDraft();
       setDeleteTargetId(null);
       toast.success("Template deleted");
     } catch (error) {
@@ -182,6 +202,7 @@ export function AdminInsuranceTemplatesPanel() {
       });
       setInsuranceProvider(providerForm.name.trim());
       setProviderForm(emptyProviderForm());
+      setAddProviderOpen(false);
       setActiveTab("providers");
       toast.success("Insurance provider added");
     } catch (error) {
@@ -190,6 +211,21 @@ export function AdminInsuranceTemplatesPanel() {
       );
     } finally {
       setProviderSubmitting(false);
+    }
+  };
+
+  const handlePrintPreview = () => {
+    if (elements.length === 0) {
+      toast.error("Add elements to the canvas or load a preset before printing.");
+      return;
+    }
+    const opened = printInsuranceTemplatePreview({
+      elements,
+      templateName: templateName.trim() || "Insurance template preview",
+      insuranceProvider: insuranceProvider.trim() || undefined,
+    });
+    if (!opened) {
+      toast.error("Could not open print preview. Allow pop-ups for this site.");
     }
   };
 
@@ -247,15 +283,114 @@ export function AdminInsuranceTemplatesPanel() {
             ) : null}
           </>
         }
-        actions={
-          activeTab === "design" ? (
-            <div className="flex flex-wrap gap-2">
-              <DashboardButton tone="outline" onClick={() => window.print()}>
+      />
+
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as "design" | "providers")}
+        className="space-y-4"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <DashboardTabsList>
+            <TabsTrigger value="design">
+              <Layers className="mr-1.5 size-4" />
+              Template design
+            </TabsTrigger>
+            <TabsTrigger value="providers">
+              <ShieldPlus className="mr-1.5 size-4" />
+              Insurance providers
+            </TabsTrigger>
+          </DashboardTabsList>
+          <DashboardButton
+            tone="primary"
+            size="sm"
+            onClick={() => setAddProviderOpen(true)}
+          >
+            <ShieldPlus className="mr-1.5 size-4" />
+            Add provider
+          </DashboardButton>
+        </div>
+
+        <DashboardMetricGrid>
+          <DashboardStatCard
+            label="Saved templates"
+            icon={FileText}
+            value={savedTemplates.length}
+          />
+          <DashboardStatCard
+            label="Canvas elements"
+            icon={Layers}
+            value={elements.length}
+          />
+          <DashboardStatCard
+            label="Insurance providers"
+            icon={ShieldPlus}
+            value={providerOptions.length}
+          />
+          <DashboardStatCard
+            label="Active insurers"
+            icon={Table2}
+            value={activeInsurersCount}
+          />
+        </DashboardMetricGrid>
+
+        <AnimatePresence mode="wait">
+          {activeTab === "design" ? (
+            <motion.div
+              key="design-tab"
+              role="tabpanel"
+              aria-label="Template design"
+              className="mt-0 space-y-4"
+              {...panelTransition}
+            >
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200/80 bg-white px-4 py-3 dark:border-neutral-700 dark:bg-neutral-900/40">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <DashboardButton tone="outline" size="sm" onClick={handleNewDraft}>
+                New draft
+              </DashboardButton>
+              <DashboardButton
+                tone="outline"
+                size="sm"
+                onClick={() => {
+                  setElements([]);
+                  setSelectedElement(null);
+                }}
+              >
+                Clear canvas
+              </DashboardButton>
+              <span className="text-sm text-neutral-500">
+                {savedTemplateId ? "Editing saved template" : "Unsaved draft"}
+              </span>
+            </div>
+            <Select
+              key={presetPickerKey}
+              onValueChange={(v) => {
+                applyPreset(v as InsuranceTemplatePresetId);
+                setPresetPickerKey((k) => k + 1);
+              }}
+            >
+              <SelectTrigger className="h-8 w-[min(100%,220px)] shrink-0">
+                <SelectValue placeholder="Starter layout" />
+              </SelectTrigger>
+              <SelectContent>
+                {(
+                  Object.keys(INSURANCE_PRESET_LABELS) as InsuranceTemplatePresetId[]
+                ).map((key) => (
+                  <SelectItem key={key} value={key}>
+                    {INSURANCE_PRESET_LABELS[key].title} —{" "}
+                    {INSURANCE_PRESET_LABELS[key].subtitle}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
+              <DashboardButton tone="outline" size="sm" onClick={handlePrintPreview}>
                 <Printer className="mr-1.5 size-4" />
                 Print preview
               </DashboardButton>
               <DashboardButton
                 tone="primary"
+                size="sm"
                 onClick={() => void handleSave()}
                 disabled={
                   createMutation.isPending ||
@@ -268,166 +403,106 @@ export function AdminInsuranceTemplatesPanel() {
                 {savedTemplateId ? "Update template" : "Save template"}
               </DashboardButton>
             </div>
-          ) : null
-        }
-      />
-
-      <Tabs
-        value={activeTab}
-        onValueChange={(v) => setActiveTab(v as "design" | "providers")}
-        className="space-y-4"
-      >
-        <DashboardTabsList>
-          <TabsTrigger value="design">
-            <Layers className="mr-1.5 size-4" />
-            Template design
-          </TabsTrigger>
-          <TabsTrigger value="providers">
-            <ShieldPlus className="mr-1.5 size-4" />
-            Insurance providers
-          </TabsTrigger>
-        </DashboardTabsList>
-
-        <TabsContent value="design" className="mt-0 space-y-4">
-          <DashboardMetricGrid className="lg:grid-cols-2">
-            <DashboardStatCard
-              label="Saved templates"
-              icon={FileText}
-              value={savedTemplates.length}
-            />
-            <DashboardStatCard
-              label="Canvas elements"
-              icon={Layers}
-              value={elements.length}
-            />
-          </DashboardMetricGrid>
-
-          <DashboardSectionCard
-            title="Starter layouts"
-            description="Load a preset onto the canvas (replaces current elements)"
-          >
-            <div className="grid gap-3 sm:grid-cols-3">
-              {(
-                Object.keys(INSURANCE_PRESET_LABELS) as InsuranceTemplatePresetId[]
-              ).map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => applyPreset(key)}
-                  className={cn(
-                    "rounded-lg border border-neutral-200/80 bg-neutral-50/50 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/40 dark:border-neutral-700 dark:bg-neutral-800/30 dark:hover:border-blue-800",
-                  )}
-                >
-                  <p className="font-medium text-neutral-900 dark:text-neutral-100">
-                    {INSURANCE_PRESET_LABELS[key].title}
-                  </p>
-                  <p className="mt-1 text-xs text-neutral-500">
-                    {INSURANCE_PRESET_LABELS[key].subtitle}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </DashboardSectionCard>
-
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200/80 bg-white px-4 py-3 dark:border-neutral-700 dark:bg-neutral-900/40">
-            <DashboardButton tone="outline" size="sm" onClick={handleNewDraft}>
-              New draft
-            </DashboardButton>
-            <DashboardButton
-              tone="outline"
-              size="sm"
-              onClick={() => {
-                setElements([]);
-                setSelectedElement(null);
-              }}
-            >
-              Clear canvas
-            </DashboardButton>
-            <span className="text-sm text-neutral-500">
-              {savedTemplateId ? "Editing saved template" : "Unsaved draft"}
-            </span>
           </div>
 
           <div className="grid gap-6 lg:grid-cols-12">
             <div className="space-y-4 lg:col-span-3">
-          <DashboardSectionCard title="Saved templates" description="Platform-wide layouts">
-            <div className="space-y-3">
-              <Select
-                value={savedTemplateId ?? "__new__"}
-                onValueChange={(v) => {
-                  if (v === "__new__") handleNewDraft();
-                  else handleLoadSaved(v);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select template" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__new__">New draft</SelectItem>
-                  {savedTemplates.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name} · {t.insurance_provider}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {savedTemplateId ? (
-                <DashboardButton
-                  tone="outline"
-                  size="sm"
-                  className="w-full text-destructive hover:text-destructive"
-                  onClick={() => setDeleteTargetId(savedTemplateId)}
-                >
-                  <Trash2 className="mr-1.5 size-3.5" />
-                  Delete saved template
-                </DashboardButton>
-              ) : null}
-            </div>
-          </DashboardSectionCard>
-
-          <DashboardSectionCard title="Template details">
-            <div className="space-y-3">
-              <div className="grid gap-2">
-                <Label>Template name</Label>
-                <Input
-                  value={templateName}
-                  onChange={(e) => setTemplateName(e.target.value)}
-                  placeholder="e.g. RSSB medical claim"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Insurance provider</Label>
-                <Select
-                  value={insuranceProvider}
-                  onValueChange={setInsuranceProvider}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select provider" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {providerOptions.map((name) => (
-                      <SelectItem key={name} value={name}>
-                        {name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </DashboardSectionCard>
-
-              <DashboardSectionCard title="Components">
-                <InsuranceComponentPalette onDragStart={() => undefined} />
+              <DashboardSectionCard title="Saved templates" description="Platform-wide layouts">
+                <div className="space-y-3">
+                  <Select
+                    value={savedTemplateId ?? "__new__"}
+                    onValueChange={(v) => {
+                      if (v === "__new__") handleNewDraft();
+                      else handleLoadSaved(v);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select template" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__new__">New draft</SelectItem>
+                      {savedTemplates.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name} · {t.insurance_provider}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {savedTemplateId ? (
+                    <DashboardButton
+                      tone="outline"
+                      size="sm"
+                      className="w-full text-destructive hover:text-destructive"
+                      onClick={() => setDeleteTargetId(savedTemplateId)}
+                    >
+                      <Trash2 className="mr-1.5 size-3.5" />
+                      Delete saved template
+                    </DashboardButton>
+                  ) : null}
+                </div>
               </DashboardSectionCard>
+
+              <DashboardSectionCard title="Template details">
+                <div className="space-y-3">
+                  <div className="grid gap-2">
+                    <Label>Template name</Label>
+                    <Input
+                      value={templateName}
+                      onChange={(e) => setTemplateName(e.target.value)}
+                      placeholder="e.g. RSSB medical claim"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Insurance provider</Label>
+                    <Select
+                      value={insuranceProvider}
+                      onValueChange={setInsuranceProvider}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select provider" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {providerOptions.map((name) => (
+                          <SelectItem key={name} value={name}>
+                            {name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </DashboardSectionCard>
+
+              <Accordion
+                type="single"
+                collapsible
+                defaultValue="components"
+                className={cn(dashboardSurfaces.card, "overflow-hidden")}
+              >
+                <AccordionItem value="components" className="border-0">
+                  <AccordionTrigger
+                    className={cn(
+                      dashboardSurfaces.sectionHeader,
+                      "border-b border-neutral-100 py-3 hover:no-underline sm:py-4 dark:border-neutral-800",
+                      dashboardText.sectionTitle,
+                    )}
+                  >
+                    Components
+                  </AccordionTrigger>
+                  <AccordionContent className={dashboardSurfaces.sectionBody}>
+                    <motion.div
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      <InsuranceComponentPalette onDragStart={() => undefined} />
+                    </motion.div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             </div>
 
             <div className="lg:col-span-6">
-              <DashboardSectionCard
-                title="Design canvas"
-            description="Drag components from the left; click to select and resize"
-            contentClassName="p-4"
-          >
-            <div id="insurance-template-print">
               <InsuranceTemplateDesignerCanvas
                 elements={elements}
                 selectedElement={selectedElement}
@@ -436,129 +511,236 @@ export function AdminInsuranceTemplatesPanel() {
                 onDropComponent={handleDropComponent}
               />
             </div>
-          </DashboardSectionCard>
-        </div>
 
-        <div className="lg:col-span-3">
-          {selectedElement ? (
-            <DashboardSectionCard title="Properties">
-              <div className="space-y-3">
-                {selectedElement.type !== "line" &&
-                selectedElement.type !== "image" ? (
-                  <div className="grid gap-2">
-                    <Label>Text / label</Label>
-                    <Input
-                      value={String(
-                        selectedElement.text ?? selectedElement.label ?? "",
-                      )}
-                      onChange={(e) =>
-                        updateElementProperty(
-                          selectedElement.text ? "text" : "label",
-                          e.target.value,
-                        )
-                      }
-                    />
+            <div className="lg:col-span-3">
+              <AnimatePresence mode="wait">
+                {selectedElement ? (
+                  <motion.div
+                    key={String(selectedElement.id)}
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -10 }}
+                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    <DashboardSectionCard title="Properties">
+                  <div className="space-y-3">
+                    {selectedElement.type !== "line" &&
+                    selectedElement.type !== "image" ? (
+                      <div className="grid gap-2">
+                        <Label>Text / label</Label>
+                        <Input
+                          value={String(
+                            selectedElement.text ?? selectedElement.label ?? "",
+                          )}
+                          onChange={(e) =>
+                            setElements((prev) =>
+                              prev.map((el) =>
+                                el.id === selectedElement.id
+                                  ? {
+                                      ...el,
+                                      text: selectedElement.text
+                                        ? undefined
+                                        : e.target.value,
+                                      label: selectedElement.label
+                                        ? undefined
+                                        : e.target.value,
+                                    }
+                                  : el,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                    ) : null}
+                    {selectedElement.type === "image" ? (
+                      <div className="grid gap-2">
+                        <Label>Image URL</Label>
+                        <Input
+                          value={String(selectedElement.src ?? "")}
+                          onChange={(e) =>
+                            setElements((prev) =>
+                              prev.map((el) =>
+                                el.id === selectedElement.id
+                                  ? { ...el, src: e.target.value }
+                                  : el,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                    ) : null}
+                    <div className="grid gap-2">
+                      <Label>Font size</Label>
+                      <Input
+                        type="number"
+                        value={Number(selectedElement.fontSize ?? 16)}
+                        onChange={(e) =>
+                          setElements((prev) =>
+                            prev.map((el) =>
+                              el.id === selectedElement.id
+                                ? { ...el, fontSize: Number(e.target.value) }
+                                : el,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="grid gap-2">
+                        <Label>X</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={595}
+                          value={Number(selectedElement.x ?? 0)}
+                          onChange={(e) =>
+                            setElements((prev) =>
+                              prev.map((el) =>
+                                el.id === selectedElement.id
+                                  ? { ...el, x: Math.max(0, Math.min(595, Number(e.target.value))) }
+                                  : el,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Y</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={842}
+                          value={Number(selectedElement.y ?? 0)}
+                          onChange={(e) =>
+                            setElements((prev) =>
+                              prev.map((el) =>
+                                el.id === selectedElement.id
+                                  ? { ...el, y: Math.max(0, Math.min(842, Number(e.target.value))) }
+                                  : el,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="grid gap-2">
+                        <Label>Width</Label>
+                        <Input
+                          type="number"
+                          min={20}
+                          value={Number(selectedElement.width ?? 100)}
+                          onChange={(e) =>
+                            setElements((prev) =>
+                              prev.map((el) =>
+                                el.id === selectedElement.id
+                                  ? { ...el, width: Math.max(20, Number(e.target.value)) }
+                                  : el,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Height</Label>
+                        <Input
+                          type="number"
+                          min={20}
+                          value={Number(selectedElement.height ?? 30)}
+                          onChange={(e) =>
+                            setElements((prev) =>
+                              prev.map((el) =>
+                                el.id === selectedElement.id
+                                  ? { ...el, height: Math.max(20, Number(e.target.value)) }
+                                  : el,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+                    <DashboardButton
+                      tone="outline"
+                      size="sm"
+                      className="w-full text-destructive hover:text-destructive"
+                      onClick={() => {
+                        setElements((prev) =>
+                          prev.filter((el) => el.id !== selectedElement.id),
+                        );
+                        setSelectedElement(null);
+                      }}
+                    >
+                      Remove element
+                    </DashboardButton>
                   </div>
-                ) : null}
-                {selectedElement.type === "image" ? (
-                  <div className="grid gap-2">
-                    <Label>Image URL</Label>
-                    <Input
-                      value={String(selectedElement.src ?? "")}
-                      onChange={(e) => updateElementProperty("src", e.target.value)}
-                    />
-                  </div>
-                ) : null}
-                <div className="grid gap-2">
-                  <Label>Font size</Label>
-                  <Input
-                    type="number"
-                    value={Number(selectedElement.fontSize ?? 16)}
-                    onChange={(e) =>
-                      updateElementProperty("fontSize", Number(e.target.value))
-                    }
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="grid gap-2">
-                    <Label>Width</Label>
-                    <Input
-                      type="number"
-                      value={Number(selectedElement.width ?? 0)}
-                      onChange={(e) =>
-                        updateElementProperty("width", Number(e.target.value))
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Height</Label>
-                    <Input
-                      type="number"
-                      value={Number(selectedElement.height ?? 0)}
-                      onChange={(e) =>
-                        updateElementProperty("height", Number(e.target.value))
-                      }
-                    />
-                  </div>
-                </div>
-                <DashboardButton
-                  tone="outline"
-                  size="sm"
-                  className="w-full text-destructive hover:text-destructive"
-                  onClick={() => {
-                    setElements((prev) =>
-                      prev.filter((el) => el.id !== selectedElement.id),
-                    );
-                    setSelectedElement(null);
-                  }}
-                >
-                  Remove element
-                </DashboardButton>
-              </div>
-            </DashboardSectionCard>
-          ) : (
-            <DashboardSectionCard title="Properties">
-              <p className="text-sm text-neutral-500">
-                Select an element on the canvas to edit its properties.
-              </p>
-            </DashboardSectionCard>
-          )}
-        </div>
+                    </DashboardSectionCard>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="properties-empty"
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -10 }}
+                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    <DashboardSectionCard title="Properties">
+                      <p className="text-sm text-neutral-500">
+                        Select an element on the canvas to edit its properties.
+                      </p>
+                    </DashboardSectionCard>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
-        </TabsContent>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="providers-tab"
+              role="tabpanel"
+              aria-label="Insurance providers"
+              className="mt-0 space-y-4"
+              {...panelTransition}
+            >
+              <AdminInsuranceProvidersPanel />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Tabs>
 
-        <TabsContent value="providers" className="mt-0 space-y-4">
-          <DashboardMetricGrid className="lg:grid-cols-2">
-            <DashboardStatCard
-              label="Insurance providers"
-              icon={ShieldPlus}
-              value={providerOptions.length}
-            />
-            <DashboardStatCard
-              label="Active insurers"
-              icon={Table2}
-              value={
-                (providersQuery.data ?? []).filter((p) => p.is_active !== false)
-                  .length
-              }
-            />
-          </DashboardMetricGrid>
-
-          <DashboardSectionCard
-            title="Add insurance provider"
-            description="Creates a global provider visible to pharmacies at POS"
-          >
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <Dialog
+        open={addProviderOpen}
+        onOpenChange={(open) => {
+          setAddProviderOpen(open);
+          if (!open) setProviderForm(emptyProviderForm());
+        }}
+      >
+        <DashboardDialogContent className="max-w-lg">
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Add insurance provider</DashboardDialogTitle>
+            <DashboardDialogDescription>
+              Creates a global provider visible to pharmacies at POS.
+            </DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogBody className="space-y-4">
+            <div className="grid gap-2">
+              <Label htmlFor="add-prov-name">Provider name</Label>
               <Input
-                placeholder="Provider name"
+                id="add-prov-name"
+                placeholder="e.g. RSSB, MMI"
                 value={providerForm.name}
                 onChange={(e) =>
                   setProviderForm({ ...providerForm, name: e.target.value })
                 }
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="add-prov-coverage">Default coverage %</Label>
               <Input
+                id="add-prov-coverage"
                 type="number"
-                placeholder="Coverage %"
+                min={0}
+                max={100}
                 value={providerForm.coverage_percentage}
                 onChange={(e) =>
                   setProviderForm({
@@ -567,8 +749,13 @@ export function AdminInsuranceTemplatesPanel() {
                   })
                 }
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="add-prov-email">Contact email</Label>
               <Input
-                placeholder="Contact email"
+                id="add-prov-email"
+                type="email"
+                placeholder="billing@insurer.com"
                 value={providerForm.contact_email}
                 onChange={(e) =>
                   setProviderForm({
@@ -577,19 +764,23 @@ export function AdminInsuranceTemplatesPanel() {
                   })
                 }
               />
-              <DashboardButton
-                tone="primary"
-                disabled={providerSubmitting || !providerForm.name.trim()}
-                onClick={() => void handleAddProvider()}
-              >
-                {providerSubmitting ? "Adding…" : "Add provider"}
-              </DashboardButton>
             </div>
-          </DashboardSectionCard>
-
-          <AdminInsuranceProvidersPanel />
-        </TabsContent>
-      </Tabs>
+          </DashboardDialogBody>
+          <DashboardDialogActions
+            cancelLabel="Cancel"
+            confirmLabel={providerSubmitting ? "Adding…" : "Add provider"}
+            onCancel={() => {
+              if (!providerSubmitting) {
+                setAddProviderOpen(false);
+                setProviderForm(emptyProviderForm());
+              }
+            }}
+            onConfirm={() => void handleAddProvider()}
+            confirmDisabled={providerSubmitting || !providerForm.name.trim()}
+            confirmLoading={providerSubmitting}
+          />
+        </DashboardDialogContent>
+      </Dialog>
 
       <AlertDialog
         open={Boolean(deleteTargetId)}

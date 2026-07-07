@@ -1,10 +1,13 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   useUsers,
 } from '@/hooks/useUsers'
+import { useLocalListSearch } from '@/hooks/useLocalListSearch'
+import { filterStaffForSearch } from '@/lib/staff/search-staff'
 import {
   createPharmacist,
   type StaffInviteCredentials,
@@ -29,9 +32,9 @@ import { StaffListRow } from '@/components/staff/staff-list-row'
 import { StaffDetailSheet } from '@/components/staff/staff-detail-sheet'
 import {
   StaffAddDialog,
-  StaffAddDialogTrigger,
   type StaffInviteInput,
 } from '@/components/staff/staff-add-dialog'
+import { StaffImportDialog } from '@/components/staff/staff-import-dialog'
 import { StaffInviteCredentialsDialog } from '@/components/staff/staff-invite-credentials-dialog'
 import {
   Users,
@@ -40,11 +43,14 @@ import {
   Wallet,
   RefreshCw,
   UserPlus,
+  Upload,
+  Plus,
 } from 'lucide-react'
 import { FeatureGate } from '@/components/subscription/feature-gate'
 import { useActivePharmacy } from '@/components/providers/active-pharmacy-provider'
 
 export default function StaffManagePage() {
+  const searchParams = useSearchParams()
   const usersQuery = useUsers()
   const { activePharmacyId, context, isPending: ctxPending } = useActivePharmacy()
 
@@ -57,7 +63,17 @@ export default function StaffManagePage() {
   const stats = useMemo(() => staffStats(staff), [staff])
 
   const [searchTerm, setSearchTerm] = useState('')
+  const filterStaff = useCallback(
+    (rows: StaffUser[], q: string) => filterStaffForSearch(rows, q),
+    [],
+  )
+  const { filtered } = useLocalListSearch(
+    searchTerm,
+    usersQuery.data,
+    filterStaff,
+  )
   const [addOpen, setAddOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [invitePending, setInvitePending] = useState(false)
   const [selectedMember, setSelectedMember] = useState<StaffUser | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -67,22 +83,16 @@ export default function StaffManagePage() {
   const [credentialsEmailError, setCredentialsEmailError] = useState<string>()
   const [credentialsMemberName, setCredentialsMemberName] = useState<string>()
 
-  const filtered = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase()
-    if (!q) return staff
-    return staff.filter(
-      (m) =>
-        m.name.toLowerCase().includes(q) ||
-        m.email.toLowerCase().includes(q) ||
-        m.phone.toLowerCase().includes(q) ||
-        m.role.toLowerCase().includes(q),
-    )
-  }, [staff, searchTerm])
+  useEffect(() => {
+    if (searchParams.get('import') === '1') {
+      setImportOpen(true)
+    }
+  }, [searchParams])
 
   const handleInvite = async (input: StaffInviteInput) => {
     if (!activePharmacyId) {
       toast.error('Pharmacy not found')
-      return
+      throw new Error('Pharmacy not found')
     }
     setInvitePending(true)
     try {
@@ -163,13 +173,18 @@ export default function StaffManagePage() {
                 Refresh
               </DashboardButton>
               <FeatureGate featureKey="staff.invite" compact>
-                <StaffAddDialog
-                  open={addOpen}
-                  onOpenChange={setAddOpen}
-                  onSubmit={handleInvite}
-                  isPending={invitePending}
-                  trigger={<StaffAddDialogTrigger />}
-                />
+                <DashboardButton onClick={() => setImportOpen(true)}>
+                  <Upload className="mr-1.5 h-4 w-4" />
+                  Import Excel
+                </DashboardButton>
+                <DashboardButton
+                  type="button"
+                  tone="primary"
+                  onClick={() => setAddOpen(true)}
+                >
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  Invite staff
+                </DashboardButton>
               </FeatureGate>
             </DashboardToolbar>
           }
@@ -236,7 +251,11 @@ export default function StaffManagePage() {
               {staff.length === 0 && (
                 <div className="mt-4 flex justify-center">
                   <FeatureGate featureKey="staff.invite" compact>
-                    <DashboardButton tone="primary" onClick={() => setAddOpen(true)}>
+                    <DashboardButton
+                      type="button"
+                      tone="primary"
+                      onClick={() => setAddOpen(true)}
+                    >
                       <UserPlus className="mr-1.5 h-4 w-4" />
                       Invite staff
                     </DashboardButton>
@@ -281,6 +300,15 @@ export default function StaffManagePage() {
           credentials={pendingCredentials}
           emailError={credentialsEmailError}
           memberName={credentialsMemberName}
+        />
+
+        <StaffImportDialog open={importOpen} onOpenChange={setImportOpen} />
+
+        <StaffAddDialog
+          open={addOpen}
+          onOpenChange={setAddOpen}
+          onSubmit={handleInvite}
+          isPending={invitePending}
         />
       </DashboardPageShell>
     </FeatureGate>

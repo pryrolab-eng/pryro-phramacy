@@ -20,6 +20,7 @@ import {
   getSaasBranches,
   type CreateSaasBranchInput,
 } from '@/lib/http/saas-branches'
+import { SEARCH_LIST_STALE_MS } from '@/lib/search/constants'
 import type {
   PharmacySubscriptionSummary,
   SubscriptionInvoice,
@@ -71,14 +72,15 @@ export function useCancelSubscription() {
   })
 }
 
-export function useSaasBranches() {
+export function useSaasBranches(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: saasKeys.branches(),
     queryFn: async () => {
       const data = await getSaasBranches()
       return data.branches
     },
-    staleTime: 15 * 1000,
+    enabled: options?.enabled ?? true,
+    staleTime: SEARCH_LIST_STALE_MS,
     refetchOnWindowFocus: true,
   })
 }

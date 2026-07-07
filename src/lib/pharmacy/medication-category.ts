@@ -21,15 +21,15 @@ export function resolveMedicationCategoryEnum(label: string): string {
   return LABEL_TO_ENUM[key] ?? "otc";
 }
 
-/** Whether a catalog chip / filter label matches a product's stored enum category. */
+/** Whether a catalog chip / filter label matches a product category name. */
 export function medicationCategoryMatchesFilter(
   filterLabel: string,
   productCategory: string | null | undefined,
 ): boolean {
   if (filterLabel === "all") return true;
   if (!productCategory) return false;
-  const normalized = filterLabel.trim().toLowerCase();
-  if (productCategory === filterLabel) return true;
-  if (productCategory.toLowerCase() === normalized) return true;
+  const filter = filterLabel.trim().toLowerCase();
+  const product = productCategory.trim().toLowerCase();
+  if (filter === product) return true;
   return resolveMedicationCategoryEnum(filterLabel) === productCategory;
 }

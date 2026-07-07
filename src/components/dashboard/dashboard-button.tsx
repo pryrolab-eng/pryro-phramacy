@@ -1,3 +1,4 @@
+import * as React from "react";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { dashboardButtonClass, dashboardSurfaces } from "./dashboard-tokens";
@@ -9,12 +10,13 @@ type DashboardButtonProps = ButtonProps & {
 };
 
 /** Dashboard action button — use instead of raw `Button` on dashboard surfaces. */
-export function DashboardButton({
-  tone = "outline",
-  className,
-  size = "sm",
-  ...props
-}: DashboardButtonProps) {
+export const DashboardButton = React.forwardRef<
+  HTMLButtonElement,
+  DashboardButtonProps
+>(function DashboardButton(
+  { tone = "outline", className, size = "sm", ...props },
+  ref,
+) {
   const toneClass =
     tone === "primary"
       ? dashboardButtonClass.primary
@@ -33,13 +35,15 @@ export function DashboardButton({
 
   return (
     <Button
+      ref={ref}
       size={size}
       variant={variant}
       className={cn(toneClass, className)}
       {...props}
     />
   );
-}
+});
+DashboardButton.displayName = "DashboardButton";
 
 /** Groups header / toolbar actions (Export, New sale, etc.). */
 export function DashboardToolbar({

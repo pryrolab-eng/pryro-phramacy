@@ -18,6 +18,7 @@ export type PosProduct = {
 };
 
 export type PosCustomer = {
+  id?: string | null;
   name: string;
   phone: string;
   insuranceNumber: string;
@@ -64,6 +65,7 @@ export type QuickAddPatientResult = {
   success: boolean;
   error?: string;
   customer?: {
+    id?: string;
     name: string;
     phone: string;
     insurance_number?: string | null;
@@ -86,6 +88,8 @@ export type AiSafetyResult = {
     source: string;
     message: string;
   }>;
+  aiPowered?: boolean;
+  reasoning?: string;
 };
 
 export type AiSafetyResponse = {
@@ -166,11 +170,13 @@ export async function holdPosSale(payload: {
 
 export async function lookupPosCustomerByPhone(
   phone: string,
-): Promise<Array<{ name: string; phone?: string }>> {
+): Promise<Array<{ id?: string | null; name: string; phone?: string }>> {
   const data = await fetchJson<unknown>(
     `/api/pos/customer-lookup?phone=${encodeURIComponent(phone)}`,
   );
-  return Array.isArray(data) ? (data as Array<{ name: string; phone?: string }>) : [];
+  return Array.isArray(data)
+    ? (data as Array<{ id?: string | null; name: string; phone?: string }>)
+    : [];
 }
 
 export async function checkPosPrice(

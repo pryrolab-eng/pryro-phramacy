@@ -5,27 +5,26 @@ import {
   entitlementRouteResponse,
   guardReportsAccessForUser,
 } from "@/lib/subscription/route-guards";
-import { listAuditLogsForPharmacyFromDb } from "@/lib/db/audit-logs";
+import {
+  countAuditLogsForPharmacyFromDb,
+  getAuditLogStatsForPharmacyFromDb,
+  listAuditLogFacetsForPharmacyFromDb,
+  listAuditLogsForPharmacyFromDb,
+  type AuditLogListFilters,
+} from "@/lib/db/audit-logs";
 import { findPublicUserByIdFromDb } from "@/lib/db/public-users";
+import { formatAuditSummary } from "@/lib/audit/format-activity-log";
 import { getEnableAuditLogs } from "@/lib/platform-settings";
 
-function formatAuditSummary(
-  action: string,
-  tableName: string | null,
-  newValues: unknown,
-  oldValues: unknown,
-): string {
-  const table = tableName ?? "record";
-  if (action === "INSERT") return `Created ${table}`;
-  if (action === "DELETE") return `Deleted ${table}`;
-  if (action === "UPDATE") {
-    const nv = newValues as Record<string, unknown> | null;
-    const name = nv?.name ?? nv?.customer_name ?? nv?.receipt_number;
-    if (name) return `Updated ${table}: ${String(name)}`;
-    return `Updated ${table}`;
-  }
-  if (oldValues || newValues) return `${action} on ${table}`;
-  return `${action} ${table}`;
+function parseFilters(url: URL): AuditLogListFilters {
+  return {
+    action: url.searchParams.get("action") ?? undefined,
+    table: url.searchParams.get("table") ?? undefined,
+    userId: url.searchParams.get("userId") ?? undefined,
+    search: url.searchParams.get("q") ?? undefined,
+    from: url.searchParams.get("from") ?? undefined,
+    to: url.searchParams.get("to") ?? undefined,
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -46,19 +45,34 @@ export async function GET(request: NextRequest) {
     const pharmacyId = await requireUserPharmacyId(user.id);
     if (!(await getEnableAuditLogs())) {
       return NextResponse.json(
-        { items: [], error: "audit_logs_disabled" },
+        { items: [], total: 0, error: "audit_logs_disabled" },
         { status: 403 },
       );
     }
 
     const url = new URL(request.url);
-    const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50", 10), 200);
+    const limit = Math.min(
+      parseInt(url.searchParams.get("limit") ?? "25", 10),
+      100,
+    );
     const offset = Math.max(parseInt(url.searchParams.get("offset") ?? "0", 10), 0);
+    const filters = parseFilters(url);
+    const includeFacets = url.searchParams.get("facets") === "1";
 
-    const logs = await listAuditLogsForPharmacyFromDb(pharmacyId, limit, offset);
+    const [logs, total, stats, facets] = await Promise.all([
+      listAuditLogsForPharmacyFromDb(pharmacyId, limit, offset, filters),
+      countAuditLogsForPharmacyFromDb(pharmacyId, filters),
+      getAuditLogStatsForPharmacyFromDb(pharmacyId, filters),
+      includeFacets
+        ? listAuditLogFacetsForPharmacyFromDb(pharmacyId)
+        : Promise.resolve(null),
+    ]);
 
     const userIds = Array.from(
-      new Set(logs.map((l) => l.user_id).filter(Boolean)),
+      new Set([
+        ...logs.map((l) => l.user_id).filter(Boolean),
+        ...(facets?.userIds ?? []),
+      ]),
     ) as string[];
 
     const userLabels: Record<string, string> = {};
@@ -91,11 +105,39 @@ export async function GET(request: NextRequest) {
       ),
     }));
 
-    return NextResponse.json({ items, limit, offset });
+    const facetUsers = facets
+      ? [
+          { id: "system", label: "System" },
+          ...facets.userIds.map((id) => ({
+            id,
+            label: userLabels[id] ?? "User",
+          })),
+        ]
+      : undefined;
+
+    return NextResponse.json({
+      items,
+      total,
+      limit,
+      offset,
+      stats: {
+        total: stats.total,
+        inserts: stats.byAction.INSERT ?? 0,
+        updates: stats.byAction.UPDATE ?? 0,
+        deletes: stats.byAction.DELETE ?? 0,
+      },
+      facets: facets
+        ? {
+            tables: facets.tables,
+            actions: facets.actions,
+            users: facetUsers,
+          }
+        : undefined,
+    });
   } catch (error) {
     console.error("GET /api/pharmacy/activity-logs", error);
     return NextResponse.json(
-      { items: [], error: "Failed to load activity" },
+      { items: [], total: 0, error: "Failed to load activity" },
       { status: 500 },
     );
   }

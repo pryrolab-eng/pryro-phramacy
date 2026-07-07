@@ -10,17 +10,30 @@ function loyaltyTier(points: number): string {
 
 export async function awardLoyaltyForSale(input: {
   pharmacyId: string;
+  customerId?: string | null;
   customerPhone?: string | null;
   customerName?: string | null;
   saleTotal: number;
 }): Promise<{ awarded: boolean; points?: number; customerId?: string }> {
-  const phone = input.customerPhone?.trim();
-  if (!phone) return { awarded: false };
+  let customer: { id: string; name: string } | null = null;
 
-  const customer = await prisma.customers.findFirst({
-    where: { pharmacy_id: input.pharmacyId, phone },
-    select: { id: true, name: true },
-  });
+  if (input.customerId) {
+    customer = await prisma.customers.findFirst({
+      where: { pharmacy_id: input.pharmacyId, id: input.customerId },
+      select: { id: true, name: true },
+    });
+  }
+
+  if (!customer) {
+    const phone = input.customerPhone?.trim();
+    if (!phone) return { awarded: false };
+
+    customer = await prisma.customers.findFirst({
+      where: { pharmacy_id: input.pharmacyId, phone },
+      select: { id: true, name: true },
+    });
+  }
+
   if (!customer) return { awarded: false };
 
   const pointsEarned = Math.max(

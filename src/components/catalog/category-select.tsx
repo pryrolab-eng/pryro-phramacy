@@ -22,20 +22,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { encodeCategoryCatalogValue } from "@/lib/db/medication-category-ref";
+import type { CategoryCatalogItem } from "@/lib/pharmacy/category-catalog";
 
 const CREATE_VALUE = "__create_category__";
 
-export type CategorySelectOption = { id: string; name: string };
+export type CategorySelectOption = Pick<CategoryCatalogItem, "id" | "name" | "scope">;
 
 export type CategorySelectProps = {
   value: string;
   onValueChange: (value: string) => void;
   categories: CategorySelectOption[];
-  onCreateCategory: (name: string) => Promise<{ success: boolean; error?: string }>;
+  onCreateCategory: (
+    name: string,
+  ) => Promise<{ success: boolean; categoryId?: string; error?: string }>;
   placeholder?: string;
   disabled?: boolean;
   className?: string;
 };
+
+function optionValue(category: CategorySelectOption): string {
+  return encodeCategoryCatalogValue(category);
+}
 
 export function CategorySelect({
   value,
@@ -68,11 +76,13 @@ export function CategorySelect({
     setCreateError(null);
     try {
       const result = await onCreateCategory(trimmed);
-      if (!result.success) {
+      if (!result.success || !result.categoryId) {
         setCreateError(result.error ?? "Failed to add category");
         return;
       }
-      onValueChange(trimmed);
+      onValueChange(
+        encodeCategoryCatalogValue({ scope: "pharmacy", id: result.categoryId }),
+      );
       setCreateOpen(false);
       setNewName("");
     } catch (err) {
@@ -105,8 +115,9 @@ export function CategorySelect({
           ) : (
             <>
               {categories.map((category) => (
-                <SelectItem key={category.id} value={category.name}>
+                <SelectItem key={`${category.scope}:${category.id}`} value={optionValue(category)}>
                   {category.name}
+                  {category.scope === "global" ? " (Global)" : null}
                 </SelectItem>
               ))}
               <SelectSeparator />

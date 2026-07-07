@@ -4,7 +4,6 @@ import {
   Building2,
   CreditCard,
   FileText,
-  HeartPulse,
   History,
   LayoutDashboard,
   Package,
@@ -21,18 +20,14 @@ export type NavItemConfig = {
   url: string;
   icon: LucideIcon;
   featureKey: string;
+  /** Shown on the right in the sidebar (hidden when collapsed). */
+  shortcutKeys?: string[];
 };
 
 export const PHARMACY_NAV_ITEMS: NavItemConfig[] = [
   { title: "Dashboard", url: PHARMACY_ROUTES.dashboard, icon: LayoutDashboard, featureKey: "app.dashboard" },
   { title: "Inventory", url: PHARMACY_ROUTES.inventory, icon: Package, featureKey: "inventory.access" },
   { title: "POS", url: PHARMACY_ROUTES.pos, icon: ShoppingCart, featureKey: "pos.access" },
-  {
-    title: "Insurer coverage",
-    url: PHARMACY_ROUTES.insuranceMedicines,
-    icon: HeartPulse,
-    featureKey: "pos.insurance",
-  },
   { title: "Sales", url: PHARMACY_ROUTES.sales, icon: BarChart3, featureKey: "sales.view" },
   { title: "Customers", url: PHARMACY_ROUTES.customers, icon: Users, featureKey: "customers.access" },
   { title: "Patients", url: PHARMACY_ROUTES.patients, icon: UserPlus, featureKey: "patients.access" },
@@ -41,7 +36,7 @@ export const PHARMACY_NAV_ITEMS: NavItemConfig[] = [
   { title: "Activity", url: PHARMACY_ROUTES.activity, icon: History, featureKey: "reports.view" },
   { title: "Branches", url: PHARMACY_ROUTES.branches, icon: Building2, featureKey: "branches.access" },
   { title: "Billing", url: PHARMACY_ROUTES.billing, icon: CreditCard, featureKey: "billing.self_serve" },
-  { title: "Settings", url: PHARMACY_ROUTES.settings, icon: Settings, featureKey: "settings.access" },
+  { title: "Settings", url: PHARMACY_ROUTES.settings, icon: Settings, featureKey: "settings.access", shortcutKeys: ["⌘", ","] },
 ];
 
 export const PHARMACIST_NAV_ITEMS: NavItemConfig[] = [
@@ -49,7 +44,7 @@ export const PHARMACIST_NAV_ITEMS: NavItemConfig[] = [
   { title: "Prescriptions", url: PHARMACY_ROUTES.prescriptions, icon: FileText, featureKey: "prescriptions.access" },
   { title: "Inventory", url: PHARMACY_ROUTES.inventory, icon: Package, featureKey: "inventory.access" },
   { title: "POS", url: PHARMACY_ROUTES.pos, icon: ShoppingCart, featureKey: "pos.access" },
-  { title: "Settings", url: PHARMACY_ROUTES.settings, icon: Settings, featureKey: "settings.access" },
+  { title: "Settings", url: PHARMACY_ROUTES.settings, icon: Settings, featureKey: "settings.access", shortcutKeys: ["⌘", ","] },
 ];
 
 /** Cashier and staff: POS-first navigation */
@@ -57,7 +52,7 @@ export const CASHIER_NAV_ITEMS: NavItemConfig[] = [
   { title: "POS", url: PHARMACY_ROUTES.pos, icon: ShoppingCart, featureKey: "pos.access" },
   { title: "Sales", url: PHARMACY_ROUTES.sales, icon: BarChart3, featureKey: "sales.view" },
   { title: "Customers", url: PHARMACY_ROUTES.customers, icon: Users, featureKey: "customers.access" },
-  { title: "Settings", url: PHARMACY_ROUTES.settings, icon: Settings, featureKey: "settings.access" },
+  { title: "Settings", url: PHARMACY_ROUTES.settings, icon: Settings, featureKey: "settings.access", shortcutKeys: ["⌘", ","] },
 ];
 
 export function isCashierLikeRole(role: string | null | undefined): boolean {

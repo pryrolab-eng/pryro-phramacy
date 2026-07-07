@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Printer, RefreshCw } from "lucide-react";
+import { FileText, Printer, RefreshCw, Check, X, Clock, Loader } from "lucide-react";
 import {
   DashboardButton,
   DashboardFilterBar,
@@ -30,6 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   getInsuranceClaimsReport,
   insuranceReportsKey,
@@ -37,7 +38,10 @@ import {
 import {
   getInsuranceProviders,
   insuranceProvidersQueryKey,
+  type UpdateClaimStatusInput,
 } from "@/lib/http/insurance";
+import { useUpdateClaimStatusMutation } from "@/hooks/useInsuranceProviders";
+import { toast } from "sonner";
 
 const MONTHS = [
   { value: "1", label: "January" },
@@ -61,6 +65,32 @@ export function InsuranceClaimsReportPanel() {
   const [providerId, setProviderId] = useState<string>("all");
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
+  const statusMutation = useUpdateClaimStatusMutation();
+
+  const VALID_TRANSITIONS: Record<string, UpdateClaimStatusInput["status"][]> = {
+    pending: ["processing", "approved", "rejected"],
+    processing: ["approved", "rejected"],
+    approved: [],
+    rejected: ["pending"],
+  };
+
+  const handleStatusChange = async (
+    claimId: string,
+    currentStatus: string,
+    newStatus: UpdateClaimStatusInput["status"],
+  ) => {
+    const allowed = VALID_TRANSITIONS[currentStatus] ?? [];
+    if (!allowed.includes(newStatus)) return;
+
+    try {
+      await statusMutation.mutateAsync({ claimId, status: newStatus });
+      toast.success(`Claim ${newStatus}`);
+    } catch (err) {
+      toast.error("Failed to update status", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  };
 
   const providersQuery = useQuery({
     queryKey: insuranceProvidersQueryKey,
@@ -288,7 +318,58 @@ export function InsuranceClaimsReportPanel() {
                       {claim.patientCopay.toLocaleString()}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{claim.status}</Badge>
+                      <div className="flex items-center gap-1">
+                        <Badge
+                          variant={
+                            claim.status === "approved"
+                              ? "default"
+                              : claim.status === "rejected"
+                                ? "destructive"
+                                : claim.status === "processing"
+                                  ? "secondary"
+                                  : "outline"
+                          }
+                        >
+                          {claim.status}
+                        </Badge>
+                        {(VALID_TRANSITIONS[claim.status] ?? []).length > 0 && (
+                          <Select
+                            value=""
+                            onValueChange={(v) =>
+                              handleStatusChange(
+                                claim.id,
+                                claim.status,
+                                v as UpdateClaimStatusInput["status"],
+                              )
+                            }
+                          >
+                            <SelectTrigger className="h-6 w-auto border-0 bg-transparent p-0 text-xs text-muted-foreground hover:text-foreground [&>svg]:hidden">
+                              <span className="px-1">···</span>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(VALID_TRANSITIONS[claim.status] ?? []).map(
+                                (s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {s === "processing" && (
+                                      <Clock className="mr-1 inline h-3 w-3" />
+                                    )}
+                                    {s === "approved" && (
+                                      <Check className="mr-1 inline h-3 w-3 text-green-600" />
+                                    )}
+                                    {s === "rejected" && (
+                                      <X className="mr-1 inline h-3 w-3 text-red-600" />
+                                    )}
+                                    {s === "pending" && (
+                                      <Clock className="mr-1 inline h-3 w-3" />
+                                    )}
+                                    Mark {s}
+                                  </SelectItem>
+                                ),
+                              )}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                   {expandedClaimId === claim.id && claim.items.length > 0 ? (

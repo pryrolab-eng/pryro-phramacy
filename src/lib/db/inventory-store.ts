@@ -1,4 +1,3 @@
-import type { medication_category } from "@prisma/client";
 import {
   createInventoryRow,
   createMedication,
@@ -18,6 +17,7 @@ import {
   type InventoryTransferRow,
   type SupplierRow,
 } from "@/lib/db/inventory";
+import { resolveMedicationCategoryRef } from "@/lib/db/medication-category-ref";
 
 export type { InventoryListRow };
 
@@ -208,17 +208,9 @@ export async function storeAddMedicationInventory(body: {
   medicationId: string;
   inventory: Record<string, unknown>;
 }> {
-  const categoryMap: Record<string, medication_category> = {
-    "Pain Relief": "otc",
-    Antibiotics: "prescription",
-    Vitamins: "supplement",
-    Prescription: "prescription",
-    OTC: "otc",
-    Controlled: "controlled",
-    "Medical Device": "medical_device",
-    general: "otc",
-  };
-  const categoryEnum = categoryMap[body.category] ?? "otc";
+  const categoryRef = await resolveMedicationCategoryRef(body.pharmacyId, body.category, {
+    createIfMissing: true,
+  });
   const quantity = parseInt(String(body.quantity ?? 0), 10) || 0;
   const stockLocationId = await resolveStockLocationId({
     pharmacyId: body.pharmacyId,
@@ -258,8 +250,7 @@ export async function storeAddMedicationInventory(body: {
     const newMed = await createMedication({
       pharmacyId: body.pharmacyId,
       name: body.name,
-      category: categoryEnum,
-      requiresPrescription: categoryEnum === "prescription",
+      categoryRef,
     });
     medicationId = newMed.id;
   }
@@ -342,4 +333,61 @@ export async function storeCreateSupplier(input: {
   email?: string;
 }): Promise<SupplierRow> {
   return createSupplierFromDb(input);
+}
+
+export async function storeBatchImportInventory(input: {
+  pharmacyId: string;
+  branchId: string;
+  rows: Array<{
+    name: string;
+    category: string;
+    quantity: number;
+    batch_number: string;
+    unit_cost: number;
+    selling_price: number;
+    minimum_stock_level: number;
+    expiry_date: string;
+  }>;
+}): Promise<{
+  attempted: number;
+  succeeded: number;
+  failures: Array<{ rowNumber: number; label: string; error: string }>;
+}> {
+  const failures: Array<{ rowNumber: number; label: string; error: string }> =
+    [];
+  let succeeded = 0;
+
+  for (let index = 0; index < input.rows.length; index += 1) {
+    const row = input.rows[index]!;
+    try {
+      const result = await storeAddMedicationInventory({
+        name: row.name,
+        category: row.category,
+        quantity: row.quantity,
+        batch_number: row.batch_number,
+        unit_cost: row.unit_cost,
+        selling_price: row.selling_price,
+        minimum_stock_level: row.minimum_stock_level,
+        expiry_date: row.expiry_date,
+        pharmacyId: input.pharmacyId,
+        branchId: input.branchId,
+      });
+      if (!result.success) {
+        throw new Error("Import failed");
+      }
+      succeeded += 1;
+    } catch (error) {
+      failures.push({
+        rowNumber: index + 2,
+        label: row.name || "Unnamed product",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+
+  return {
+    attempted: input.rows.length,
+    succeeded,
+    failures,
+  };
 }

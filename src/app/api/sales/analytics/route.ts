@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { PRYROX_CUSTOMER_CHART_COLORS } from "@/lib/brand/colors";
 import { prisma } from "@/lib/db/prisma";
 import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import {
+  buildRegisteredCustomerIndex,
+  classifySaleCustomerSegment,
+} from "@/lib/sales/customer-segment";
 
 const EMPTY_RESPONSE = {
   weeklySales: [],
@@ -181,34 +186,55 @@ export async function GET() {
                 : "bg-yellow-500",
       }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 4);
+      .slice(0, 20);
 
     const allSales = await prisma.sales.findMany({
       where: { pharmacy_id: pharmacyId, created_at: { gte: monthAgo } },
-      select: { customer_name: true, insurance_provider_id: true },
+      select: {
+        customer_id: true,
+        customer_name: true,
+        customer_phone: true,
+        insurance_provider_id: true,
+      },
     });
+
+    const registeredCustomers = await prisma.customers.findMany({
+      where: { pharmacy_id: pharmacyId, is_active: { not: false } },
+      select: { name: true, phone: true },
+    });
+
+    const registeredIndex = buildRegisteredCustomerIndex(registeredCustomers);
 
     let walkIn = 0;
     let regular = 0;
     let insurance = 0;
 
     for (const sale of allSales) {
-      if (sale.insurance_provider_id) {
-        insurance++;
-      } else if (sale.customer_name && sale.customer_name !== "Walk-in Customer") {
-        regular++;
-      } else {
-        walkIn++;
-      }
+      const segment = classifySaleCustomerSegment(sale, registeredIndex);
+      if (segment === "insurance") insurance++;
+      else if (segment === "regular") regular++;
+      else walkIn++;
     }
 
     const total = walkIn + regular + insurance;
     const customerDistribution =
       total > 0
         ? [
-            { name: "Walk-in", value: Math.round((walkIn / total) * 100), fill: "#8b5cf6" },
-            { name: "Regular", value: Math.round((regular / total) * 100), fill: "#10b981" },
-            { name: "Insurance", value: Math.round((insurance / total) * 100), fill: "#3b82f6" },
+            {
+              name: "Walk-in",
+              value: Math.round((walkIn / total) * 100),
+              fill: PRYROX_CUSTOMER_CHART_COLORS.walkIn,
+            },
+            {
+              name: "Regular",
+              value: Math.round((regular / total) * 100),
+              fill: PRYROX_CUSTOMER_CHART_COLORS.regular,
+            },
+            {
+              name: "Insurance",
+              value: Math.round((insurance / total) * 100),
+              fill: PRYROX_CUSTOMER_CHART_COLORS.insurance,
+            },
           ]
         : [];
 

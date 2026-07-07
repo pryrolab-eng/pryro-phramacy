@@ -1,25 +1,16 @@
-"use client";
+import { redirect } from "next/navigation";
+import { inventoryInsuranceHref } from "@/lib/routes/pharmacy-paths";
 
-import { Suspense } from "react";
-import { DashboardPageShell, DashboardPageLoading } from "@/components/dashboard";
-import { FeatureGate } from "@/components/subscription/feature-gate";
-import { PharmacyInsuranceMedicinesPanel } from "@/components/pharmacy/pharmacy-insurance-medicines-panel";
+type PageProps = {
+  searchParams: Promise<{ import?: string }>;
+};
 
-export default function PharmacyInsuranceMedicinesPage() {
-  return (
-    <Suspense
-      fallback={<DashboardPageLoading label="Loading insurer coverage…" />}
-    >
-      <FeatureGate
-        featureKey="pos.insurance"
-        loadingFallback={
-          <DashboardPageLoading label="Loading insurer coverage…" />
-        }
-      >
-        <DashboardPageShell>
-          <PharmacyInsuranceMedicinesPanel />
-        </DashboardPageShell>
-      </FeatureGate>
-    </Suspense>
+/** Legacy URL → Inventory → Insurance tab. */
+export default async function PharmacyInsuranceMedicinesRedirect({
+  searchParams,
+}: PageProps) {
+  const params = await searchParams;
+  redirect(
+    inventoryInsuranceHref({ import: params.import === "1" }),
   );
 }

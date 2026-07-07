@@ -16,7 +16,7 @@ export const dashboardSidebarTokens = {
   navLocked:
     "h-9 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 dark:text-neutral-400 dark:hover:bg-neutral-800/50",
   upgradeCard:
-    "relative mx-2 mb-1 overflow-hidden rounded-lg border border-neutral-200/80 bg-gradient-to-br from-neutral-50 to-white shadow-sm dark:border-neutral-800 dark:from-neutral-900/80 dark:to-neutral-950",
+    "relative mx-2 mb-1 overflow-hidden rounded-lg shadow-sm",
   footerUser:
     "rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800/60",
   sidebarScroll: "sidebar-scroll",

@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useCallback, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
@@ -24,7 +25,7 @@ import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Package, DollarSign, Users, AlertTriangle, ShoppingCart, Calendar, Clock, Pill, Eye } from 'lucide-react'
+import { Package, DollarSign, Users, AlertTriangle, ShoppingCart, Calendar, Clock, Pill, Eye, BookOpen } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer, Area, AreaChart, BarChart, Bar, XAxis, CartesianGrid, LabelList, YAxis } from 'recharts'
 import { PharmacyRadialChart } from '@/components/pharmacy-radial-chart'
 import { PharmacyBarChart } from '@/components/pharmacy-bar-chart'
@@ -209,6 +210,12 @@ function PharmacyDashboardContent() {
         description="Overview for your pharmacy — scoped by branch when filtered below."
         actions={
           <DashboardToolbar>
+          <DashboardButton tone="outline" asChild>
+            <Link href={PHARMACY_ROUTES.helpGettingStarted}>
+              <BookOpen className="h-4 w-4" />
+              How it works
+            </Link>
+          </DashboardButton>
           <BranchScopeFilter value={branchScope} onChange={setBranchScope} />
           <DashboardButton onClick={() => window.print()}>
             <Calendar className="h-4 w-4" />

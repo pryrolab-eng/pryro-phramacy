@@ -23,9 +23,21 @@ export const PHARMACY_ROUTES = {
   staffSettings: "/pharmacy/staff-settings",
   helpInsurance: "/pharmacy/help/insurance",
   insuranceMedicines: "/pharmacy/insurance/medicines",
+  importData: "/pharmacy/import-data",
+  helpGettingStarted: "/pharmacy/help/getting-started",
 } as const;
 
 export type PharmacyRouteKey = keyof typeof PHARMACY_ROUTES;
+
+/** Insurer coverage lives under Inventory → Insurance tab (not a top-level nav item). */
+export function inventoryInsuranceHref(options?: { import?: boolean }): string {
+  const params = new URLSearchParams({ tab: "insurance" });
+  if (options?.import) params.set("import", "1");
+  return `${PHARMACY_ROUTES.inventory}?${params.toString()}`;
+}
+
+/** @deprecated Use inventoryInsuranceHref — kept for redirects and bookmarks. */
+export const INSURANCE_COVERAGE_LEGACY_PATH = PHARMACY_ROUTES.insuranceMedicines;
 
 /** Routes always reachable when subscription is inactive (homes + billing). */
 export const PHARMACY_GRACE_ROUTES = [
@@ -68,6 +80,16 @@ export const LEGACY_PHARMACY_REDIRECTS: ReadonlyArray<{
   { source: "/settings", destination: PHARMACY_ROUTES.settings, permanent: true },
   { source: "/branches", destination: PHARMACY_ROUTES.branches, permanent: true },
   { source: "/staff", destination: PHARMACY_ROUTES.staff, permanent: true },
+  {
+    source: "/pharmacy/insurance/medicines",
+    destination: "/pharmacy/inventory?tab=insurance",
+    permanent: false,
+  },
+  {
+    source: "/pharmacy/insurance/formulary",
+    destination: "/pharmacy/inventory?tab=insurance&import=1",
+    permanent: false,
+  },
   { source: "/superadmin", destination: "/admin", permanent: true },
   { source: "/superadmin/:path*", destination: "/admin/:path*", permanent: true },
 ];

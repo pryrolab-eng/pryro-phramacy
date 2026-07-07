@@ -81,6 +81,30 @@ export async function createCustomer(body: CreateCustomerInput) {
   });
 }
 
+export type CustomerImportFailure = {
+  rowNumber: number;
+  label: string;
+  error: string;
+};
+
+export type CustomerImportResult = {
+  success: boolean;
+  attempted: number;
+  succeeded: number;
+  failures: CustomerImportFailure[];
+  error?: string;
+};
+
+export async function importCustomers(
+  rows: CreateCustomerInput[],
+): Promise<CustomerImportResult> {
+  return fetchJson<CustomerImportResult>("/api/customers/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rows }),
+  });
+}
+
 export async function getCustomer(id: string): Promise<CustomerDetail> {
   return fetchJson<CustomerDetail>(`/api/customers/${id}`);
 }

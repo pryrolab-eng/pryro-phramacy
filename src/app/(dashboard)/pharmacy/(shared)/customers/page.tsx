@@ -1,12 +1,15 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   useCreateCustomerMutation,
   useCustomers,
   type CustomerRow,
 } from '@/hooks/useCustomers'
+import { useLocalListSearch } from '@/hooks/useLocalListSearch'
+import { filterCustomerListRows } from '@/lib/customers/search-customers'
 import {
   DashboardPageShell,
   DashboardPageHeader,
@@ -25,8 +28,9 @@ import {
   CustomersAddDialog,
   CustomersAddDialogTrigger,
 } from '@/components/customers/customers-add-dialog'
-import { Users, UserCheck, Shield, CalendarDays, RefreshCw } from 'lucide-react'
+import { Users, UserCheck, Shield, CalendarDays, RefreshCw, Upload } from 'lucide-react'
 import { FeatureGate } from '@/components/subscription/feature-gate'
+import { CustomersImportDialog } from '@/components/customers/customers-import-dialog'
 
 function customerStats(customers: CustomerRow[]) {
   const monthStart = new Date()
@@ -52,28 +56,32 @@ function customerStats(customers: CustomerRow[]) {
 }
 
 export default function CustomersPage() {
+  const searchParams = useSearchParams()
   const customersQuery = useCustomers()
   const createCustomerMutation = useCreateCustomerMutation()
-  const customers = customersQuery.data ?? []
   const [searchTerm, setSearchTerm] = useState('')
+  const filterCustomers = useCallback(
+    (rows: CustomerRow[], q: string) => filterCustomerListRows(rows, q),
+    [],
+  )
+  const { filtered } = useLocalListSearch(
+    searchTerm,
+    customersQuery.data,
+    filterCustomers,
+  )
+  const customers = customersQuery.data ?? []
   const [addOpen, setAddOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
 
-  const stats = useMemo(() => customerStats(customers), [customers])
+  useEffect(() => {
+    if (searchParams.get('import') === '1') {
+      setImportOpen(true)
+    }
+  }, [searchParams])
 
-  const filtered = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase()
-    if (!q) return customers
-    return customers.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.phone.toLowerCase().includes(q) ||
-        (c.email ?? '').toLowerCase().includes(q) ||
-        (c.insurance ?? '').toLowerCase().includes(q) ||
-        (c.insurance_number ?? '').toLowerCase().includes(q),
-    )
-  }, [customers, searchTerm])
+  const stats = useMemo(() => customerStats(customers), [customers])
 
   const handleAddCustomer = async (
     input: Parameters<typeof createCustomerMutation.mutateAsync>[0],
@@ -116,6 +124,10 @@ export default function CustomersPage() {
                   className={`mr-1.5 h-4 w-4 ${customersQuery.isFetching ? 'animate-spin' : ''}`}
                 />
                 Refresh
+              </DashboardButton>
+              <DashboardButton onClick={() => setImportOpen(true)}>
+                <Upload className="mr-1.5 h-4 w-4" />
+                Import Excel
               </DashboardButton>
               <CustomersAddDialog
                 open={addOpen}
@@ -211,6 +223,8 @@ export default function CustomersPage() {
           onOpenChange={setSheetOpen}
           onDeleted={() => setSelectedId(null)}
         />
+
+        <CustomersImportDialog open={importOpen} onOpenChange={setImportOpen} />
       </DashboardPageShell>
     </FeatureGate>
   )

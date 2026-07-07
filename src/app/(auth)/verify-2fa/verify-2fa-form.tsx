@@ -148,7 +148,7 @@ export function Verify2FAForm() {
 
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading || code.length !== 6}>
+            <Button type="submit" className="w-full rounded-[10px]" disabled={loading || code.length !== 6}>
 
               {loading ? 'Verifying...' : 'Verify'}
 

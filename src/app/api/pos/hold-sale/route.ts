@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
         : await requireUserBranchId(user.id);
 
     const { pharmacyId } = await guardPharmacyFeatureForUser(user.id, {
-      feature: "pos.access",
+      feature: "pos.hold",
       branchId,
     });
 

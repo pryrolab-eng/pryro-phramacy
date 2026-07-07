@@ -4,6 +4,7 @@ import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { requireUserBranchId } from "@/lib/pharmacy/get-session-branch";
 import { guardPharmacyFeatureForUser } from "@/lib/subscription/api-guard";
 import { fetchDailyCloseSalesFromDb } from "@/lib/db/reports";
+import { prisma } from "@/lib/db/prisma";
 
 export async function POST(request: NextRequest) {
   try {
@@ -77,6 +78,39 @@ export async function POST(request: NextRequest) {
       closedBy: user.id,
       closedAt: new Date().toISOString(),
     };
+
+    await prisma.daily_closes.upsert({
+      where: {
+        branch_id_close_date: {
+          branch_id: branchId,
+          close_date: startOfDay,
+        },
+      },
+      update: {
+        total_sales: totalSales,
+        total_transactions: rows.length,
+        cash_amount: cashAmount,
+        card_amount: cardAmount,
+        mobile_money_amount: mobileMoneyAmount,
+        insurance_amount: insuranceAmount,
+        mixed_amount: mixedAmount,
+        closed_by: user.id,
+        closed_at: new Date(),
+      },
+      create: {
+        pharmacy_id: pharmacyId,
+        branch_id: branchId,
+        close_date: startOfDay,
+        total_sales: totalSales,
+        total_transactions: rows.length,
+        cash_amount: cashAmount,
+        card_amount: cardAmount,
+        mobile_money_amount: mobileMoneyAmount,
+        insurance_amount: insuranceAmount,
+        mixed_amount: mixedAmount,
+        closed_by: user.id,
+      },
+    });
 
     return NextResponse.json({ success: true, dailyClose });
   } catch (error) {

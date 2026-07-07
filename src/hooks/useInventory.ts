@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { SEARCH_LIST_STALE_MS } from "@/lib/search/constants";
 import {
   createPharmacyCategory,
   getPharmacyCategoriesCatalog,
@@ -14,12 +15,14 @@ import {
   getInventoryAnalytics,
   getInventoryList,
   getInventorySuppliers,
+  importInventoryProducts,
   inventoryKeys,
   purchaseInventoryStock,
   transferInventoryStock,
   updateInventoryProduct,
   type AddInventoryProductInput,
   type InventoryAnalytics,
+  type InventoryImportResult,
   type InventoryListRow,
   type InventorySupplier,
   type UpdateInventoryProductInput,
@@ -46,6 +49,7 @@ export function useInventoryList(options?: { enabled?: boolean }) {
     queryKey: inventoryKeys.list(),
     queryFn: getInventoryList,
     enabled: options?.enabled ?? true,
+    staleTime: SEARCH_LIST_STALE_MS,
   });
 }
 
@@ -94,6 +98,14 @@ export function useAddInventoryProductMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: addInventoryProduct,
+    onSuccess: () => invalidateInventory(queryClient),
+  });
+}
+
+export function useImportInventoryMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: importInventoryProducts,
     onSuccess: () => invalidateInventory(queryClient),
   });
 }

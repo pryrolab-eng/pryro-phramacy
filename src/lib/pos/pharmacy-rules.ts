@@ -106,9 +106,12 @@ export function validatePrescriptionForSale(
 ): string | null {
   const rxItems = items.filter((i) => i.requiresPrescription);
   if (rxItems.length === 0) return null;
+  const names = rxItems.map((i) => i.name).filter(Boolean).join(", ");
   if (!confirmation?.confirmed) {
-    const names = rxItems.map((i) => i.name).filter(Boolean).join(", ");
     return `Prescription confirmation required for: ${names || "controlled items"}`;
+  }
+  if (!confirmation.prescriberName?.trim()) {
+    return `Prescriber / doctor name is required for: ${names || "controlled items"}`;
   }
   return null;
 }

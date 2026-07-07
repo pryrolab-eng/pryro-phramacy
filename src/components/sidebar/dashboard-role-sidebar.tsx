@@ -1,6 +1,7 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { Crown, Sparkles } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -27,6 +28,7 @@ import { usePharmacyBrandingOptional } from "@/components/pharmacy/pharmacy-bran
 import type { NavItemConfig } from "@/lib/subscription/nav-config";
 import { dashboardSidebarTokens } from "@/components/sidebar/dashboard-sidebar-tokens";
 import { resolveSidebarBrandTitle } from "@/lib/pharmacy/sidebar-brand-display";
+import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 import { cn } from "@/lib/utils";
 
 export type DashboardRoleSidebarConfig = {
@@ -60,6 +62,7 @@ export function DashboardRoleSidebar({
   } = config;
 
   const pathname = usePathname();
+  const router = useRouter();
   const userName = useSidebarUserName(userNameFallback);
   const { can, entitlements, isHydrating, isEntitlementsReady } =
     usePharmacyEntitlements();
@@ -80,6 +83,25 @@ export function DashboardRoleSidebar({
 
   const showNavSkeleton = isHydrating;
   const { usage, limits } = entitlements;
+  const settingsNavItem = navItems.find((item) => item.featureKey === "settings.access");
+  const settingsHref = settingsNavItem?.url ?? PHARMACY_ROUTES.settings;
+  const canOpenSettings =
+    isEntitlementsReady &&
+    entitlements.isAccessAllowed &&
+    can("settings.access");
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod || e.key !== ",") return;
+      if (!canOpenSettings) return;
+      e.preventDefault();
+      router.push(settingsHref);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [canOpenSettings, router, settingsHref]);
+
   const showPlanFooter = showUpgradeCard || subscriptionInactive;
   const planSummaryProps = {
     planLabel:

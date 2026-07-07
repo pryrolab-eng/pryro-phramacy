@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
+import { inventoryInsuranceHref } from "@/lib/routes/pharmacy-paths";
 
-/** Legacy help URL → insurance medicines. */
+/** Legacy help URL → Inventory → Insurance tab. */
 export default function PharmacyInsuranceHelpRedirect() {
-  redirect(PHARMACY_ROUTES.insuranceMedicines);
+  redirect(inventoryInsuranceHref());
 }

@@ -2,8 +2,12 @@
 
 import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
 
-import { useState, useMemo, type ReactNode } from 'react'
+import { useState, useMemo, useCallback, type ReactNode } from 'react'
 import { useSalesAnalytics, useSalesList } from '@/hooks/useSales'
+import { useLocalListSearch } from '@/hooks/useLocalListSearch'
+import { filterSalesForSearch } from '@/lib/sales/search-sales'
+import { PRYROX_BRAND_BLUE, PRYROX_BRAND_BLUE_LIGHT, PRYROX_CUSTOMER_CHART_COLORS } from '@/lib/brand/colors'
+import { cn } from '@/lib/utils'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,11 +15,8 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Separator } from "@/components/ui/separator"
-import { Progress } from "@/components/ui/progress"
 import { Receipt, DollarSign, TrendingUp, Calendar, Search, Filter, Download, ArrowUpRight, ArrowDownRight, Users, ShoppingCart, CreditCard, Banknote } from 'lucide-react'
-import { LineChart, Line, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, CartesianGrid, LabelList, XAxis, YAxis, BarChart, Bar } from 'recharts'
+import { AreaChart, Area, PieChart, Pie, CartesianGrid, LabelList, XAxis, YAxis, BarChart, Bar } from 'recharts'
 import {
   DashboardPageHeader,
   DashboardPageShell,
@@ -30,16 +31,46 @@ import {
   DashboardSearchInput,
   DashboardListRow,
   DashboardProgressTrack,
+  DashboardPaginatedListCard,
   DashboardPageLoading,
   DashboardPanelEmpty,
 } from '@/components/dashboard'
 import { Spinner } from '@/components/ui/spinner'
 import {
   ChartConfig,
-  ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
+
+const PAYMENT_METHOD_ICONS: Record<string, ReactNode> = {
+  cash: <Banknote className="h-4 w-4 text-green-600" />,
+  mobile_money: <CreditCard className="h-4 w-4 text-blue-600" />,
+  insurance: <Users className="h-4 w-4 text-purple-600" />,
+  card: <CreditCard className="h-4 w-4 text-orange-600" />,
+}
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  cash: 'Cash',
+  mobile_money: 'Mobile Money',
+  insurance: 'Insurance',
+  card: 'Card',
+}
+
+function paymentMethodLabel(method: string) {
+  return PAYMENT_METHOD_LABELS[method] ?? method.replace(/_/g, ' ')
+}
+
+/** Compact peak labels on area charts — avoids rounding 1,600 RWF up to "2k". */
+function formatSalesChartLabel(value: number): string {
+  if (value >= 10_000) {
+    return `${Math.round(value / 1000)}k`
+  }
+  if (value >= 1_000) {
+    const thousands = Math.round((value / 1000) * 10) / 10
+    return Number.isInteger(thousands) ? `${thousands}k` : `${thousands.toFixed(1)}k`
+  }
+  return value.toLocaleString()
+}
 
 interface Sale {
   id: string
@@ -62,6 +93,44 @@ const hourlyChartConfig = {
   sales: {
     label: "Sales (RWF)",
     color: "#10b981",
+  },
+} satisfies ChartConfig
+
+const monthlyComparisonChartConfig = {
+  current: {
+    label: "Current month",
+    color: PRYROX_BRAND_BLUE,
+  },
+  previous: {
+    label: "Previous month",
+    color: PRYROX_BRAND_BLUE_LIGHT,
+  },
+} satisfies ChartConfig
+
+const CUSTOMER_SEGMENT_KEY = {
+  "Walk-in": "walkIn",
+  Regular: "regular",
+  Insurance: "insurance",
+} as const
+
+type CustomerSegmentKey =
+  (typeof CUSTOMER_SEGMENT_KEY)[keyof typeof CUSTOMER_SEGMENT_KEY]
+
+const customerDistributionChartConfig = {
+  share: {
+    label: "Share",
+  },
+  walkIn: {
+    label: "Walk-in payer",
+    color: PRYROX_CUSTOMER_CHART_COLORS.walkIn,
+  },
+  regular: {
+    label: "Registered payer",
+    color: PRYROX_CUSTOMER_CHART_COLORS.regular,
+  },
+  insurance: {
+    label: "Insurance",
+    color: PRYROX_CUSTOMER_CHART_COLORS.insurance,
   },
 } satisfies ChartConfig
 
@@ -92,7 +161,7 @@ function WeeklySalesChart({ data }: { data: Array<{ day?: string; sales: number 
           className="h-full border-0 bg-transparent shadow-none"
         />
       ) : (
-          <LineChart
+          <AreaChart
             accessibilityLayer
             data={data}
             margin={{
@@ -101,7 +170,14 @@ function WeeklySalesChart({ data }: { data: Array<{ day?: string; sales: number 
               right: 12,
             }}
           >
+            <defs>
+              <linearGradient id="fillWeeklySales" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--color-sales)" stopOpacity={0.8} />
+                <stop offset="95%" stopColor="var(--color-sales)" stopOpacity={0.1} />
+              </linearGradient>
+            </defs>
             <CartesianGrid vertical={false} />
+            <YAxis hide domain={[0, "auto"]} />
             <XAxis
               dataKey="day"
               tickLine={false}
@@ -110,13 +186,16 @@ function WeeklySalesChart({ data }: { data: Array<{ day?: string; sales: number 
             />
             <ChartTooltip
               cursor={false}
-              content={<ChartTooltipContent indicator="line" />}
+              content={<ChartTooltipContent indicator="dot" />}
             />
-            <Line
+            <Area
               dataKey="sales"
-              type="natural"
+              type="monotone"
+              fill="url(#fillWeeklySales)"
               stroke="var(--color-sales)"
               strokeWidth={2}
+              baseValue={0}
+              connectNulls
               dot={{
                 fill: "var(--color-sales)",
               }}
@@ -129,10 +208,10 @@ function WeeklySalesChart({ data }: { data: Array<{ day?: string; sales: number 
                 offset={12}
                 className="fill-foreground"
                 fontSize={12}
-                formatter={(value: number) => `${(value / 1000).toFixed(0)}k`}
+                formatter={(value: number) => formatSalesChartLabel(value)}
               />
-            </Line>
-          </LineChart>
+            </Area>
+          </AreaChart>
       )}
     </DashboardChartCard>
   )
@@ -156,7 +235,7 @@ function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number
           className="h-full border-0 bg-transparent shadow-none"
         />
       ) : (
-          <LineChart
+          <AreaChart
             accessibilityLayer
             data={data}
             margin={{
@@ -165,7 +244,14 @@ function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number
               right: 12,
             }}
           >
+            <defs>
+              <linearGradient id="fillHourlySales" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--color-sales)" stopOpacity={0.8} />
+                <stop offset="95%" stopColor="var(--color-sales)" stopOpacity={0.1} />
+              </linearGradient>
+            </defs>
             <CartesianGrid vertical={false} />
+            <YAxis hide domain={[0, "auto"]} />
             <XAxis
               dataKey="hour"
               tickLine={false}
@@ -174,13 +260,16 @@ function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number
             />
             <ChartTooltip
               cursor={false}
-              content={<ChartTooltipContent indicator="line" />}
+              content={<ChartTooltipContent indicator="dot" />}
             />
-            <Line
+            <Area
               dataKey="sales"
-              type="natural"
+              type="monotone"
+              fill="url(#fillHourlySales)"
               stroke="var(--color-sales)"
               strokeWidth={2}
+              baseValue={0}
+              connectNulls
               dot={{
                 fill: "var(--color-sales)",
               }}
@@ -193,11 +282,189 @@ function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number
                 offset={12}
                 className="fill-foreground"
                 fontSize={12}
-                formatter={(value: number) => `${(value / 1000).toFixed(0)}k`}
+                formatter={(value: number) => formatSalesChartLabel(value)}
               />
-            </Line>
-          </LineChart>
+            </Area>
+          </AreaChart>
       )}
+    </DashboardChartCard>
+  )
+}
+
+function MonthlyComparisonChart({
+  data,
+}: {
+  data: Array<{ week?: string; current: number; previous: number }>
+}) {
+  const hasData = data.some((point) => point.current > 0 || point.previous > 0)
+
+  const totals = useMemo(() => {
+    const current = data.reduce((sum, row) => sum + row.current, 0)
+    const previous = data.reduce((sum, row) => sum + row.previous, 0)
+    const changePct =
+      previous > 0 ? ((current - previous) / previous) * 100 : null
+    return { current, previous, changePct }
+  }, [data])
+
+  const footer = hasData ? (
+    <>
+      <div className="flex items-center gap-2 leading-none font-medium">
+        {totals.changePct === null ? (
+          <span>New sales this month — no prior-month baseline</span>
+        ) : totals.changePct >= 0 ? (
+          <>
+            <span>Up {Math.abs(totals.changePct).toFixed(1)}% vs last month</span>
+            <ArrowUpRight className="h-4 w-4 shrink-0" />
+          </>
+        ) : (
+          <>
+            <span>Down {Math.abs(totals.changePct).toFixed(1)}% vs last month</span>
+            <ArrowDownRight className="h-4 w-4 shrink-0" />
+          </>
+        )}
+      </div>
+      <p className="leading-none text-muted-foreground">
+        {totals.current.toLocaleString()} RWF this month ·{" "}
+        {totals.previous.toLocaleString()} RWF last month
+      </p>
+    </>
+  ) : undefined
+
+  return (
+    <DashboardChartCard
+      title="Sales performance"
+      description="Current vs previous month by week"
+      config={monthlyComparisonChartConfig}
+      chartClassName="aspect-auto h-[280px] w-full"
+      footer={footer}
+      empty={
+        !hasData ? (
+          <DashboardPanelEmpty
+            icon={TrendingUp}
+            title="No monthly comparison"
+            description="Current and previous month sales will appear here."
+            className="h-full border-0 bg-transparent shadow-none"
+          />
+        ) : undefined
+      }
+    >
+      <BarChart accessibilityLayer data={data}>
+        <CartesianGrid vertical={false} />
+        <XAxis
+          dataKey="week"
+          tickLine={false}
+          tickMargin={10}
+          axisLine={false}
+          tickFormatter={(value) => String(value).replace("Week ", "W")}
+        />
+        <ChartTooltip
+          cursor={false}
+          content={
+            <ChartTooltipContent
+              indicator="dashed"
+              formatter={(value) => [`${Number(value).toLocaleString()} RWF`]}
+            />
+          }
+        />
+        <Bar dataKey="current" fill="var(--color-current)" radius={4} />
+        <Bar dataKey="previous" fill="var(--color-previous)" radius={4} />
+      </BarChart>
+    </DashboardChartCard>
+  )
+}
+
+function CustomerDistributionChart({
+  data,
+}: {
+  data: Array<{ name: string; value: number; fill?: string }>
+}) {
+  const hasData = data.some((row) => row.value > 0)
+
+  const pieData = useMemo(
+    () =>
+      data
+        .map((row) => {
+          const segment =
+            CUSTOMER_SEGMENT_KEY[row.name as keyof typeof CUSTOMER_SEGMENT_KEY]
+          if (!segment) return null
+          return {
+            segment,
+            share: row.value,
+            fill: `var(--color-${segment})`,
+          }
+        })
+        .filter(
+          (row): row is { segment: CustomerSegmentKey; share: number; fill: string } =>
+            row !== null && row.share > 0,
+        ),
+    [data],
+  )
+
+  const footer = data.length > 0 ? (
+    <div className="grid gap-2">
+      {data.map((row) => {
+        const segment =
+          CUSTOMER_SEGMENT_KEY[row.name as keyof typeof CUSTOMER_SEGMENT_KEY]
+        if (!segment) return null
+        return (
+          <div key={row.name} className="flex items-center gap-2 text-xs">
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+              style={{ backgroundColor: `var(--color-${segment})` }}
+            />
+            <span className="text-muted-foreground">
+              {customerDistributionChartConfig[segment].label} ({row.value}%)
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  ) : undefined
+
+  return (
+    <DashboardChartCard
+      title="Customer distribution"
+      description="Sales by customer type"
+      config={customerDistributionChartConfig}
+      chartClassName="mx-auto aspect-square max-h-[220px] w-full"
+      footer={footer}
+      empty={
+        !hasData ? (
+          <DashboardPanelEmpty
+            icon={Users}
+            title="No customer mix yet"
+            description="Distribution is calculated from real sales."
+            className="min-h-[240px] border-0 bg-transparent shadow-none"
+          />
+        ) : undefined
+      }
+    >
+      <PieChart>
+        <ChartTooltip
+          cursor={false}
+          content={
+            <ChartTooltipContent
+              hideLabel
+              nameKey="segment"
+              formatter={(value, name) => {
+                const segment = String(name) as CustomerSegmentKey
+                const label =
+                  customerDistributionChartConfig[segment]?.label ?? name
+                return [`${value}%`, label]
+              }}
+            />
+          }
+        />
+        <Pie
+          data={pieData}
+          dataKey="share"
+          nameKey="segment"
+          innerRadius={56}
+          outerRadius={80}
+          strokeWidth={4}
+          stroke="hsl(var(--background))"
+        />
+      </PieChart>
     </DashboardChartCard>
   )
 }
@@ -210,10 +477,18 @@ export default function SalesPage() {
 
   const salesQuery = useSalesList({
     period: selectedPeriod,
-    q: searchTerm.trim() || undefined,
     limit: selectedPeriod === 'all' ? 200 : 100,
   })
   const analyticsQuery = useSalesAnalytics()
+  const filterSales = useCallback(
+    (rows: Sale[], q: string) => filterSalesForSearch(rows, q),
+    [],
+  )
+  const { filtered: filteredSales } = useLocalListSearch(
+    searchTerm,
+    salesQuery.data?.sales,
+    filterSales,
+  )
 
   const sales = useMemo(
     () => salesQuery.data?.sales ?? [],
@@ -238,8 +513,6 @@ export default function SalesPage() {
     [analyticsQuery.data],
   )
   const loading = salesQuery.isPending
-
-  const filteredSales = sales
 
   if (loading) return <DashboardPageLoading label="Loading sales…" />
 
@@ -305,89 +578,104 @@ export default function SalesPage() {
             <HourlySalesChart data={analyticsData.hourlySales} />
           </div>
           
-          <div className="grid gap-6 md:grid-cols-3">
-            <DashboardSectionCard
+          <div className="grid gap-6 md:grid-cols-3 md:items-start">
+            <DashboardPaginatedListCard
               title="Payment methods"
               description="Sales breakdown by payment type"
-            >
-                <div className="space-y-3">
-                  {analyticsData.paymentBreakdown.map((payment, index) => {
-                    const icons: Record<string, ReactNode> = {
-                      cash: <Banknote className="h-4 w-4 text-green-600" />,
-                      mobile_money: <CreditCard className="h-4 w-4 text-blue-600" />,
-                      insurance: <Users className="h-4 w-4 text-purple-600" />,
-                      card: <CreditCard className="h-4 w-4 text-orange-600" />
-                    }
-                    const labels: Record<string, string> = {
-                      cash: 'Cash',
-                      mobile_money: 'Mobile Money',
-                      insurance: 'Insurance',
-                      card: 'Card'
-                    }
-                    return (
-                      <div key={index} className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {icons[payment.method] || <CreditCard className="h-4 w-4" />}
-                          <span className="text-sm font-medium">{labels[payment.method] || payment.method}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <DashboardProgressTrack value={payment.percentage} className="w-20" />
-                          <span className="text-sm text-neutral-500">{payment.percentage}%</span>
-                        </div>
-                      </div>
-                    )
-                  })}
+              items={analyticsData.paymentBreakdown}
+              getItemKey={(payment) => payment.method}
+              empty={{
+                icon: CreditCard,
+                title: "No payment data",
+                description: "Complete sales to see payment mix.",
+              }}
+              renderItem={(payment) => (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    {PAYMENT_METHOD_ICONS[payment.method] ?? (
+                      <CreditCard className="h-4 w-4 shrink-0 text-neutral-500" />
+                    )}
+                    <span className="truncate text-sm font-medium">
+                      {paymentMethodLabel(payment.method)}
+                    </span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <DashboardProgressTrack
+                      value={payment.percentage}
+                      className="w-20 shrink-0"
+                    />
+                    <span className="w-10 text-right text-sm tabular-nums text-neutral-500">
+                      {payment.percentage}%
+                    </span>
+                  </div>
                 </div>
-            </DashboardSectionCard>
+              )}
+            />
 
-            <DashboardSectionCard
+            <DashboardPaginatedListCard
               title="Top categories"
               description="Best selling product categories"
-            >
-                <div className="space-y-3">
-                  {analyticsData.topCategories.length === 0 ? (
-                    <DashboardPanelEmpty
-                      icon={ShoppingCart}
-                      title="No category sales"
-                      description="Category percentages are calculated from sold items."
-                      className="min-h-[160px] border-0 bg-transparent shadow-none"
+              items={analyticsData.topCategories}
+              getItemKey={(category) => category.name}
+              empty={{
+                icon: ShoppingCart,
+                title: "No category sales",
+                description: "Category percentages are calculated from sold items.",
+              }}
+              renderItem={(category) => (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div
+                      className={cn("h-3 w-3 shrink-0 rounded-full", category.color)}
                     />
-                  ) : analyticsData.topCategories.map((category, index) => (
-                    <div key={index} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-3 h-3 rounded-full ${category.color}`} />
-                        <span className="text-sm font-medium">{category.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <DashboardProgressTrack value={category.value} className="w-20" />
-                        <span className="text-sm text-neutral-500">{category.value}%</span>
-                      </div>
-                    </div>
-                  ))}
+                    <span className="truncate text-sm font-medium">{category.name}</span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <DashboardProgressTrack
+                      value={category.value}
+                      className="w-20 shrink-0"
+                    />
+                    <span className="w-10 text-right text-sm tabular-nums text-neutral-500">
+                      {category.value}%
+                    </span>
+                  </div>
                 </div>
-            </DashboardSectionCard>
+              )}
+            />
 
-            <DashboardSectionCard
+            <DashboardPaginatedListCard
               title="Recent sales"
               description="Latest transactions"
-            >
-                <ScrollArea className="h-[200px]">
-                  <div className="space-y-3">
-                    {sales.slice(0, 5).map((sale) => (
-                      <DashboardListRow key={sale.id}>
-                        <div>
-                          <p className="text-sm font-medium">{sale.customer}</p>
-                          <p className="text-xs text-neutral-500">{sale.items} items</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-semibold">{sale.amount.toLocaleString()} RWF</p>
-                          <Badge variant="outline" className="text-xs">{sale.paymentMethod}</Badge>
-                        </div>
-                      </DashboardListRow>
-                    ))}
+              items={sales}
+              getItemKey={(sale) => sale.id}
+              pageSize={6}
+              pageSizeOptions={[6, 10, 15]}
+              scrollAfterRows={7}
+              empty={{
+                icon: Receipt,
+                title: "No sales yet",
+                description: "Completed POS sales will appear here.",
+              }}
+              renderItem={(sale) => (
+                <DashboardListRow>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{sale.customer}</p>
+                    <p className="text-xs text-neutral-500">
+                      {sale.items} item{sale.items === 1 ? '' : 's'} ·{' '}
+                      {new Date(sale.date).toLocaleDateString()}
+                    </p>
                   </div>
-                </ScrollArea>
-            </DashboardSectionCard>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-semibold tabular-nums">
+                      {sale.amount.toLocaleString()} RWF
+                    </p>
+                    <Badge variant="outline" className="text-xs">
+                      {sale.paymentMethod}
+                    </Badge>
+                  </div>
+                </DashboardListRow>
+              )}
+            />
           </div>
         </TabsContent>
         
@@ -459,76 +747,8 @@ export default function SalesPage() {
         
         <TabsContent value="analytics" className="space-y-4">
           <div className="grid gap-6 md:grid-cols-2">
-            <DashboardChartCard
-              title="Sales performance"
-              description="Monthly comparison"
-              config={{
-                current: { label: "Current Month", color: "#3b82f6" },
-                previous: { label: "Previous Month", color: "#60a5fa" },
-              }}
-            >
-              {analyticsData.monthlyComparison.every(
-                (point) => point.current === 0 && point.previous === 0,
-              ) ? (
-                <DashboardPanelEmpty
-                  icon={TrendingUp}
-                  title="No monthly comparison"
-                  description="Current and previous month sales will appear here."
-                  className="h-full border-0 bg-transparent shadow-none"
-                />
-              ) : (
-                  <BarChart data={analyticsData.monthlyComparison}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="week" />
-                    <YAxis />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Bar dataKey="current" fill="#3b82f6" radius={4} />
-                    <Bar dataKey="previous" fill="#60a5fa" radius={4} />
-                  </BarChart>
-              )}
-            </DashboardChartCard>
-            
-            <DashboardSectionCard
-              title="Customer distribution"
-              description="Sales by customer type"
-            >
-                {analyticsData.customerDistribution.length === 0 ? (
-                  <DashboardPanelEmpty
-                    icon={Users}
-                    title="No customer mix yet"
-                    description="Distribution is calculated from real sales."
-                    className="min-h-[240px] border-0 bg-transparent shadow-none"
-                  />
-                ) : (
-                <>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={analyticsData.customerDistribution}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={40}
-                        outerRadius={80}
-                        dataKey="value"
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="grid grid-cols-1 gap-2 text-xs mt-4">
-                  {analyticsData.customerDistribution.map((row) => (
-                    <div key={row.name} className="flex items-center gap-2">
-                      <div
-                        className="h-3 w-3 rounded"
-                        style={{ backgroundColor: row.fill ?? '#737373' }}
-                      />
-                      <span>{row.name} Customers ({row.value}%)</span>
-                    </div>
-                  ))}
-                </div>
-                </>
-                )}
-            </DashboardSectionCard>
+            <MonthlyComparisonChart data={analyticsData.monthlyComparison} />
+            <CustomerDistributionChart data={analyticsData.customerDistribution} />
           </div>
         </TabsContent>
       </Tabs>

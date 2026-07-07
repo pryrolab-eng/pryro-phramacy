@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -13,7 +14,9 @@ import {
   DashboardButton,
   DashboardToolbar,
   DashboardSearchInput,
+  DashboardSectionCard,
 } from "@/components/dashboard";
+import { InsurancePriceManager } from "@/components/insurance-price-manager";
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 import {
   Select,
@@ -33,7 +36,20 @@ import {
 } from "@/lib/http/insurance-covered-medications";
 import { pharmacyInsuranceCoverageColumns } from "@/components/pharmacy/pharmacy-insurance-coverage-columns";
 
-export function PharmacyInsuranceMedicinesPanel() {
+type PharmacyInsuranceMedicinesPanelProps = {
+  /** When true, omit page header (used inside Inventory → Insurance tab). */
+  embedded?: boolean;
+  /** Open formulary upload on mount (from ?import=1). */
+  autoOpenImport?: boolean;
+};
+
+export function PharmacyInsuranceMedicinesPanel({
+  embedded = false,
+  autoOpenImport,
+}: PharmacyInsuranceMedicinesPanelProps = {}) {
+  const searchParams = useSearchParams();
+  const queryImport =
+    autoOpenImport ?? searchParams.get("import") === "1";
   const queryClient = useQueryClient();
   const [providerId, setProviderId] = useState("");
   const [tableSearch, setTableSearch] = useState("");
@@ -118,20 +134,27 @@ export function PharmacyInsuranceMedicinesPanel() {
 
   return (
     <>
-      <DashboardPageHeader
-        title="Insurer coverage"
-        description="Choose which products in your catalog each insurer will pay for at POS. Uncovered lines are charged fully to the patient."
-        actions={
-          <DashboardToolbar>
-            <DashboardButton tone="outline" asChild>
-              <Link href={PHARMACY_ROUTES.pos}>
-                <Receipt className="h-4 w-4" />
-                Open POS
-              </Link>
-            </DashboardButton>
-          </DashboardToolbar>
-        }
-      />
+      {embedded ? (
+        <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          Map insurer formularies to your catalog so POS can apply reimbursement. Uncovered
+          products are charged fully to the patient.
+        </p>
+      ) : (
+        <DashboardPageHeader
+          title="Insurer coverage"
+          description="Choose which products in your catalog each insurer will pay for at POS. Uncovered lines are charged fully to the patient."
+          actions={
+            <DashboardToolbar>
+              <DashboardButton tone="outline" asChild>
+                <Link href={PHARMACY_ROUTES.pos}>
+                  <Receipt className="h-4 w-4" />
+                  Open POS
+                </Link>
+              </DashboardButton>
+            </DashboardToolbar>
+          }
+        />
+      )}
 
       {providerId && !medsQuery.isPending ? (
         <DashboardMetricGrid>
@@ -155,6 +178,15 @@ export function PharmacyInsuranceMedicinesPanel() {
           />
         </DashboardMetricGrid>
       ) : null}
+
+      <DashboardSectionCard
+        title="Bulk coverage import"
+        description="Upload the insurer formulary, review suggested matches to your catalog, then confirm before coverage is applied."
+        className="mb-4"
+        contentClassName="p-0"
+      >
+        <InsurancePriceManager autoOpen={queryImport} />
+      </DashboardSectionCard>
 
       <DashboardDataTable
         title="Product coverage"

@@ -28,7 +28,7 @@ export default async function ResetPasswordPage(props: {
         <div className="mx-auto w-full max-w-md">
           <Link
             href="/sign-in"
-            className="mb-8 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+            className="mb-8 inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
           >
             <svg
               width="16"
@@ -77,7 +77,7 @@ export default async function ResetPasswordPage(props: {
               (f) => (
                 <span
                   key={f}
-                  className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white border border-white/20"
+                  className="rounded-[10px] bg-white/10 px-3 py-1 text-xs font-medium text-white border border-white/20"
                 >
                   {f}
                 </span>

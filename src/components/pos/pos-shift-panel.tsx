@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -55,9 +56,10 @@ export function PosShiftPanel({
         openingCash: parseFloat(openingCash) || 0,
       });
       setOpenDialog(false);
+      toast.success("Shift opened");
       void shiftQuery.refetch();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Could not open shift");
+      toast.error(e instanceof Error ? e.message : "Could not open shift");
     }
   };
 
@@ -71,13 +73,14 @@ export function PosShiftPanel({
         closeNotes: closeNotes || undefined,
       });
       const { summary } = result;
-      alert(
-        `Shift closed.\nExpected cash: ${summary.expectedCash.toLocaleString()} RWF\nActual: ${summary.actualCash.toLocaleString()} RWF\nVariance: ${summary.variance.toLocaleString()} RWF`,
-      );
+      toast.success("Shift closed", {
+        description: `Expected ${summary.expectedCash.toLocaleString()} RWF · Actual ${summary.actualCash.toLocaleString()} RWF · Variance ${summary.variance.toLocaleString()} RWF`,
+        duration: 8000,
+      });
       setCloseDialog(false);
       void shiftQuery.refetch();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Could not close shift");
+      toast.error(e instanceof Error ? e.message : "Could not close shift");
     }
   };
 

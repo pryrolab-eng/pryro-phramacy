@@ -56,11 +56,11 @@ export function InsuranceSelector({ value, onValueChange, coveragePercent }: Ins
         </SelectContent>
       </Select>
       
-      {value && coveragePercent && (
+      {value !== 'cash' && coveragePercent != null && coveragePercent > 0 ? (
         <div className="text-xs text-muted-foreground">
           Selected: {value} with {coveragePercent}% coverage
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

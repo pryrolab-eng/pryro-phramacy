@@ -19,6 +19,7 @@ export const FALLBACK_FEATURE_LABELS: Record<string, string> = {
   "staff.invite": "Staff invitations",
   "settings.access": "Settings",
   "billing.self_serve": "Billing & plans",
+  "ai.safety": "AI drug safety",
   customization: "Customization",
   "limit.users": "User limit",
   "limit.branches": "Branch limit",

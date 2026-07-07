@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import {
@@ -8,6 +8,8 @@ import {
   useCustomers,
   type CustomerRow,
 } from '@/hooks/useCustomers'
+import { useLocalListSearch } from '@/hooks/useLocalListSearch'
+import { filterCustomerListRows } from '@/lib/customers/search-customers'
 import {
   DashboardPageShell,
   DashboardPageHeader,
@@ -63,26 +65,22 @@ function patientStats(patients: CustomerRow[]) {
 export default function PatientsPage() {
   const patientsQuery = useCustomers()
   const createPatientMutation = useCreateCustomerMutation()
-  const patients = patientsQuery.data ?? []
   const [searchTerm, setSearchTerm] = useState('')
+  const filterPatients = useCallback(
+    (rows: CustomerRow[], q: string) => filterCustomerListRows(rows, q),
+    [],
+  )
+  const { filtered } = useLocalListSearch(
+    searchTerm,
+    patientsQuery.data,
+    filterPatients,
+  )
+  const patients = patientsQuery.data ?? []
   const [addOpen, setAddOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
 
   const stats = useMemo(() => patientStats(patients), [patients])
-
-  const filtered = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase()
-    if (!q) return patients
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.phone.toLowerCase().includes(q) ||
-        (p.email ?? '').toLowerCase().includes(q) ||
-        (p.allergies ?? '').toLowerCase().includes(q) ||
-        (p.dateOfBirth ?? '').toLowerCase().includes(q),
-    )
-  }, [patients, searchTerm])
 
   const handleAddPatient = async (
     input: Parameters<typeof createPatientMutation.mutateAsync>[0],

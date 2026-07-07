@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
-import { resolveMedicationCategoryEnum } from "@/lib/pharmacy/medication-category";
 import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { requireUserBranchId } from "@/lib/pharmacy/get-session-branch";
-import type { medication_category } from "@prisma/client";
 import { storeQuickAddPosDrug } from "@/lib/db/pos-store";
 
 function readString(body: Record<string, unknown>, ...keys: string[]): string {
@@ -39,14 +37,18 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json()) as Record<string, unknown>;
     const name = readString(body, "productName", "name");
-    const categoryLabel = readString(body, "category");
-    const category = resolveMedicationCategoryEnum(
-      categoryLabel,
-    ) as medication_category;
+    const category = readString(body, "category");
 
     if (!name) {
       return NextResponse.json(
         { success: false, error: "Product name is required" },
+        { status: 400 },
+      );
+    }
+
+    if (!category) {
+      return NextResponse.json(
+        { success: false, error: "Category is required" },
         { status: 400 },
       );
     }

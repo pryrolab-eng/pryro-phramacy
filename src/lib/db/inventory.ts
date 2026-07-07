@@ -1,11 +1,52 @@
 import { Prisma, type medication_category } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
+import {
+  medicationCategoryDisplayName,
+  type MedicationCategoryRef,
+  medicationCategoryWriteData,
+} from "@/lib/db/medication-category-ref";
 
 export type InventoryMedicationSummary = {
   name: string;
   category: string;
   pharmacy_id: string | null;
 };
+
+export const medicationWithCategorySelect = {
+  id: true,
+  name: true,
+  category: true,
+  pharmacy_id: true,
+  categories: { select: { name: true } },
+  global_categories: { select: { name: true } },
+} as const;
+
+export const posMedicationWithCategorySelect = {
+  ...medicationWithCategorySelect,
+  generic_name: true,
+  strength: true,
+  dosage_form: true,
+  barcode: true,
+  requires_prescription: true,
+} as const;
+
+type MedicationWithCategoryRow = {
+  name: string;
+  category: medication_category | null;
+  pharmacy_id: string | null;
+  categories: { name: string } | null;
+  global_categories: { name: string } | null;
+};
+
+function mapMedicationSummary(
+  med: MedicationWithCategoryRow,
+): InventoryMedicationSummary {
+  return {
+    name: med.name,
+    category: medicationCategoryDisplayName(med),
+    pharmacy_id: med.pharmacy_id,
+  };
+}
 
 export type InventoryListRow = {
   id: string;
@@ -52,6 +93,8 @@ function mapInventoryRow(row: {
     name: string;
     category: medication_category | null;
     pharmacy_id: string | null;
+    categories: { name: string } | null;
+    global_categories: { name: string } | null;
   } | null;
   stock_locations: { id: string; name: string } | null;
 }): InventoryListRow {
@@ -67,13 +110,7 @@ function mapInventoryRow(row: {
     minimum_stock_level: row.minimum_stock_level,
     expiry_date: row.expiry_date,
     unit_cost: decimalToNumber(row.unit_cost),
-    medications: row.medications
-      ? {
-          name: row.medications.name,
-          category: row.medications.category ?? "otc",
-          pharmacy_id: row.medications.pharmacy_id,
-        }
-      : null,
+    medications: row.medications ? mapMedicationSummary(row.medications) : null,
     stock_locations: row.stock_locations,
   };
 }
@@ -89,11 +126,7 @@ function mapInventoryRowWithoutStockLocation(row: {
   minimum_stock_level: number | null;
   expiry_date: Date | null;
   unit_cost: Prisma.Decimal | null;
-  medications: {
-    name: string;
-    category: medication_category | null;
-    pharmacy_id: string | null;
-  } | null;
+  medications: MedicationWithCategoryRow | null;
 }): InventoryListRow {
   return mapInventoryRow({
     ...row,
@@ -154,7 +187,7 @@ export async function listInventoryForPharmacy(
         expiry_date: true,
         unit_cost: true,
         medications: {
-          select: { name: true, category: true, pharmacy_id: true },
+          select: medicationWithCategorySelect,
         },
         stock_locations: { select: { id: true, name: true } },
       },
@@ -177,7 +210,7 @@ export async function listInventoryForPharmacy(
         expiry_date: true,
         unit_cost: true,
         medications: {
-          select: { name: true, category: true, pharmacy_id: true },
+          select: medicationWithCategorySelect,
         },
       },
     });
@@ -206,7 +239,7 @@ export async function listInventoryAlertsForPharmacy(
         expiry_date: true,
         unit_cost: true,
         medications: {
-          select: { name: true, category: true, pharmacy_id: true },
+          select: medicationWithCategorySelect,
         },
         stock_locations: { select: { id: true, name: true } },
       },
@@ -229,7 +262,7 @@ export async function listInventoryAlertsForPharmacy(
         expiry_date: true,
         unit_cost: true,
         medications: {
-          select: { name: true, category: true, pharmacy_id: true },
+          select: medicationWithCategorySelect,
         },
       },
     });
@@ -251,15 +284,17 @@ export async function findMedicationByName(
 export async function createMedication(input: {
   pharmacyId: string;
   name: string;
-  category: medication_category;
-  requiresPrescription: boolean;
+  categoryRef: MedicationCategoryRef;
 }): Promise<{ id: string }> {
+  const categoryData = medicationCategoryWriteData(input.categoryRef);
   const row = await prisma.medications.create({
     data: {
       pharmacy_id: input.pharmacyId,
       name: input.name,
-      category: input.category,
-      requires_prescription: input.requiresPrescription,
+      category: categoryData.category,
+      category_id: categoryData.category_id,
+      global_category_id: categoryData.global_category_id,
+      requires_prescription: categoryData.requires_prescription,
       is_active: true,
     },
     select: { id: true },

@@ -59,6 +59,7 @@ export async function storeLookupPosCustomersByPhone(
   phone: string,
 ): Promise<
   Array<{
+    id: string | null;
     name: string;
     phone: string;
     lastPurchase: string | null;
@@ -66,4 +67,54 @@ export async function storeLookupPosCustomersByPhone(
   }>
 > {
   return lookupPosCustomersByPhoneFromDb({ pharmacyId, phone });
+}
+
+export async function storeBatchImportCustomers(input: {
+  pharmacyId: string;
+  rows: Array<{
+    name: string;
+    phone: string;
+    email?: string;
+    dateOfBirth?: string;
+    allergies?: string;
+    insurance?: string;
+  }>;
+}): Promise<{
+  attempted: number;
+  succeeded: number;
+  failures: Array<{ rowNumber: number; label: string; error: string }>;
+}> {
+  const failures: Array<{ rowNumber: number; label: string; error: string }> =
+    [];
+  let succeeded = 0;
+
+  for (let index = 0; index < input.rows.length; index += 1) {
+    const row = input.rows[index]!;
+    try {
+      await storeCreateCustomer({
+        pharmacyId: input.pharmacyId,
+        name: row.name,
+        phone: row.phone,
+        email: row.email,
+        dateOfBirth: row.dateOfBirth || null,
+        allergies: row.allergies
+          ? row.allergies.split(/[,;]/).map((s) => s.trim()).filter(Boolean)
+          : [],
+        insuranceNumber: row.insurance,
+      });
+      succeeded += 1;
+    } catch (error) {
+      failures.push({
+        rowNumber: index + 2,
+        label: row.name || "Unnamed customer",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+
+  return {
+    attempted: input.rows.length,
+    succeeded,
+    failures,
+  };
 }

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import type { CustomerDbRow } from "@/lib/customers/format-customer";
+import { phoneSearchVariants } from "@/lib/customers/search-customers";
 
 export type CustomerCreateInput = {
   pharmacyId: string;
@@ -55,6 +56,31 @@ export async function listCustomersForPharmacy(
   return rows.map(mapCustomerRow);
 }
 
+function buildCustomerSearchConditions(query: string) {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const conditions: Array<{
+    name?: { contains: string; mode: "insensitive" };
+    phone?: { contains: string; mode: "insensitive" };
+    email?: { contains: string; mode: "insensitive" };
+    insurance_number?: { contains: string; mode: "insensitive" };
+  }> = [
+    { name: { contains: trimmed, mode: "insensitive" } },
+    { phone: { contains: trimmed, mode: "insensitive" } },
+    { email: { contains: trimmed, mode: "insensitive" } },
+    { insurance_number: { contains: trimmed, mode: "insensitive" } },
+  ];
+
+  for (const variant of phoneSearchVariants(trimmed)) {
+    if (variant !== trimmed) {
+      conditions.push({ phone: { contains: variant, mode: "insensitive" } });
+    }
+  }
+
+  return conditions;
+}
+
 export async function searchCustomersForPharmacy(input: {
   pharmacyId: string;
   query: string;
@@ -62,15 +88,16 @@ export async function searchCustomersForPharmacy(input: {
 }): Promise<
   Array<{ id: string; name: string; phone: string | null; insurance_number: string | null }>
 > {
+  const conditions = buildCustomerSearchConditions(input.query);
+  if (conditions.length === 0) return [];
+
   const rows = await prisma.customers.findMany({
     where: {
       pharmacy_id: input.pharmacyId,
-      OR: [
-        { name: { contains: input.query, mode: "insensitive" } },
-        { phone: { contains: input.query, mode: "insensitive" } },
-      ],
+      OR: conditions,
     },
     take: input.limit ?? 5,
+    orderBy: { name: "asc" },
     select: {
       id: true,
       name: true,
@@ -175,6 +202,7 @@ export async function lookupPosCustomersByPhoneFromDb(input: {
   limit?: number;
 }): Promise<
   Array<{
+    id: string | null;
     name: string;
     phone: string;
     lastPurchase: string | null;
@@ -191,7 +219,7 @@ export async function lookupPosCustomersByPhoneFromDb(input: {
       is_active: { not: false },
     },
     take: input.limit ?? 5,
-    select: { name: true, phone: true },
+    select: { id: true, name: true, phone: true },
   });
 
   const sales = await prisma.sales.findMany({
@@ -211,13 +239,20 @@ export async function lookupPosCustomersByPhoneFromDb(input: {
 
   const byPhone = new Map<
     string,
-    { name: string; phone: string; lastPurchase: string | null; totalSpent: number }
+    {
+      id: string | null;
+      name: string;
+      phone: string;
+      lastPurchase: string | null;
+      totalSpent: number;
+    }
   >();
 
   for (const customer of customers) {
     const key = (customer.phone ?? "").trim();
     if (!key) continue;
     byPhone.set(key, {
+      id: customer.id,
       name: customer.name,
       phone: key,
       lastPurchase: null,
@@ -229,6 +264,7 @@ export async function lookupPosCustomersByPhoneFromDb(input: {
     const key = (sale.customer_phone ?? "").trim();
     if (!key) continue;
     const existing = byPhone.get(key) ?? {
+      id: null,
       name: sale.customer_name ?? "Walk-in",
       phone: key,
       lastPurchase: null,

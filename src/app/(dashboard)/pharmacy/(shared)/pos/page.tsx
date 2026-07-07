@@ -29,6 +29,8 @@ import {
   type PrescriptionConfirmation,
 } from '@/hooks/usePos'
 import { useCreateInventoryCategoryMutation } from '@/hooks/useInventory'
+import { usePharmacySettingsInfo } from '@/hooks/usePharmacySettingsPage'
+import { useInvoiceTemplate } from '@/hooks/useInvoiceTemplate'
 import {
   cartHasNearExpiry,
   cartRequiresPrescription,
@@ -44,6 +46,7 @@ import {
   type PosCartLine,
 } from '@/lib/pos/pos-cart'
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Plus, CreditCard, AlertTriangle, Brain, RotateCcw } from 'lucide-react'
@@ -72,13 +75,29 @@ import { PosReturnsDialog } from '@/components/pos/pos-returns-dialog'
 import { PosWorkspace } from '@/components/pos/pos-workspace'
 import { PosAddProductForm } from '@/components/pos/pos-add-product-form'
 import { PosInsuranceProcessingDialog } from '@/components/pos/pos-insurance-processing-dialog'
+import { PosReceiptPreviewDialog } from '@/components/pos/pos-receipt-preview-dialog'
 import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
+import {
+  type PosReceiptInput,
+} from '@/lib/pos/print-receipt'
 import type { AiSafetyResult } from '@/lib/http/pos'
+import type { CategoryCatalogItem } from '@/lib/pharmacy/category-catalog'
 
 type Product = PosProduct
 type CartItem = PosCartItem
 type Customer = PosCustomer
 type PosUtilityDialog = 'customer-lookup' | 'price-check' | 'void-sale' | null
+
+function createEmptyPosCustomer(): Customer {
+  return {
+    id: null,
+    name: '',
+    phone: '',
+    insuranceNumber: '',
+    insuranceType: '',
+    coveragePercent: 0,
+  }
+}
 
 export default function POSPage() {
   return (
@@ -95,6 +114,12 @@ function POSPageContent() {
   const { activeBranchId, isHydrating: isContextHydrating, context } =
     useActivePharmacy()
   const shiftQuery = useCashierShift(activeBranchId)
+  const pharmacySettingsQuery = usePharmacySettingsInfo({
+    enabled: Boolean(context.activePharmacyId),
+  })
+  const invoiceTemplateQuery = useInvoiceTemplate({
+    enabled: Boolean(context.activePharmacyId),
+  })
   const hasOpenShift = Boolean(shiftQuery.data)
   const shiftCheckReady =
     !shiftQuery.isLoading && !isContextHydrating && Boolean(activeBranchId)
@@ -104,14 +129,17 @@ function POSPageContent() {
   const categoriesQuery = usePosCategories()
   const products = productsQuery.data ?? []
   const fastMoving = fastMovingQuery.data ?? []
-  const categories = (categoriesQuery.data ?? []) as Array<{ id: string; name: string }>
+  const categories = (categoriesQuery.data ?? []) as CategoryCatalogItem[]
 
   const [cart, setCart] = useState<CartItem[]>([])
-  const [customer, setCustomer] = useState<Customer>({ name: '', phone: '', insuranceNumber: '', insuranceType: '', coveragePercent: 0 })
+  const [customer, setCustomer] = useState<Customer>(createEmptyPosCustomer)
   const [customerSearchQuery, setCustomerSearchQuery] = useState('')
   const customerSearchResult = useCustomerSearch(customerSearchQuery)
   const customerSuggestions = customerSearchResult.data ?? []
-  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false)
+  const [customerSearchFocused, setCustomerSearchFocused] = useState(false)
+  const trimmedCustomerSearchQuery = customerSearchQuery.trim()
+  const showCustomerSuggestions =
+    customerSearchFocused && trimmedCustomerSearchQuery.length >= 2
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [priceAdjustments, setPriceAdjustments] = useState<{[key: string]: number}>({})
@@ -136,6 +164,14 @@ function POSPageContent() {
   const [prescriptionConfirmed, setPrescriptionConfirmed] = useState(false)
   const [nearExpiryAcknowledged, setNearExpiryAcknowledged] = useState(false)
   const [checkoutAfterRx, setCheckoutAfterRx] = useState(false)
+  const [checkoutNearExpiryOpen, setCheckoutNearExpiryOpen] = useState(false)
+  const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false)
+  const [pendingReceipt, setPendingReceipt] = useState<PosReceiptInput | null>(null)
+  const deferredCheckoutRef = useRef<{
+    prescriptionConfirmation?: PrescriptionConfirmation
+    nearExpiryAcknowledged?: boolean
+    paymentTransactionId?: string
+  }>(undefined)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const loading =
     isContextHydrating ||
@@ -178,6 +214,7 @@ function POSPageContent() {
           const found = customers[0]
           setCustomer((current) => ({
             ...current,
+            id: found.id ?? null,
             name: found.name,
             phone: found.phone ?? value,
           }))
@@ -269,7 +306,7 @@ function POSPageContent() {
       }
 
       if (result.error) {
-        alert(result.error)
+        toast.error(result.error)
         return
       }
 
@@ -328,7 +365,7 @@ function POSPageContent() {
       priceAdjustments,
     )
     if (error) {
-      alert(error)
+      toast.error(error)
       return
     }
     applyCart(next)
@@ -370,34 +407,50 @@ function POSPageContent() {
     return getSubtotal();
   };
 
-  const searchCustomers = (query: string) => {
-    setCustomerSearchQuery(query)
-    if (query.length < 2) {
-      setShowCustomerSuggestions(false)
+  const openInsuranceProcessing = useCallback(() => {
+    if (!customer.insuranceType) return
+    if (cart.length === 0) {
+      toast.error('Add products to the cart before processing insurance.')
       return
     }
-    setShowCustomerSuggestions(true)
-  }
+    setInsuranceInterfaceOpen(true)
+  }, [cart.length, customer.insuranceType])
 
   useEffect(() => {
-    if (customerSearchQuery.length < 2) {
-      setShowCustomerSuggestions(false)
-      return
+    if (insuranceInterfaceOpen && cart.length === 0) {
+      setInsuranceInterfaceOpen(false)
     }
-    if (!customerSearchResult.isFetching) {
-      setShowCustomerSuggestions((customerSuggestions.length ?? 0) > 0)
-    }
-  }, [customerSearchQuery, customerSearchResult.isFetching, customerSuggestions.length])
+  }, [insuranceInterfaceOpen, cart.length])
 
-  const selectCustomer = (selectedCustomer: any) => {
+  useEffect(() => {
+    if (!customer.insuranceType || cart.length === 0) return
+    const copay = Math.round(getPatientAmount())
+    if (copay > 0) {
+      setCashAmount(String(copay))
+    }
+  }, [
+    customer.insuranceType,
+    cart.length,
+    coverageTotals?.patientCopay,
+    coverageTotals?.subtotal,
+  ])
+
+  const selectCustomer = (selectedCustomer: {
+    id: string
+    name: string
+    phone: string | null
+    insurance_number?: string | null
+  }) => {
     setCustomer({
+      id: selectedCustomer.id,
       name: selectedCustomer.name,
-      phone: selectedCustomer.phone,
+      phone: selectedCustomer.phone ?? '',
       insuranceNumber: selectedCustomer.insurance_number || '',
       insuranceType: selectedCustomer.insurance_number ? 'RSSB' : '',
       coveragePercent: selectedCustomer.insurance_number ? 90 : 0
     })
-    setShowCustomerSuggestions(false)
+    setCustomerSearchQuery(selectedCustomer.name)
+    setCustomerSearchFocused(false)
   }
 
   useEffect(() => {
@@ -409,14 +462,15 @@ function POSPageContent() {
       .then(({ customer: c }) => {
         const insuranceNumber = c.insurance_number ?? c.insurance ?? ''
         setCustomer({
+          id: c.id,
           name: c.name,
           phone: c.phone,
           insuranceNumber,
           insuranceType: insuranceNumber ? 'RSSB' : '',
           coveragePercent: insuranceNumber ? 90 : 0,
         })
-        setCustomerSearchQuery(c.phone)
-        setShowCustomerSuggestions(false)
+        setCustomerSearchQuery(c.name)
+        setCustomerSearchFocused(false)
       })
       .catch(() => {
         preloadedCustomerIdRef.current = null
@@ -426,7 +480,20 @@ function POSPageContent() {
   const { addSale, updateStock } = usePharmacyStore()
 
   // ── Subscription / transaction gate ──────────────────────
-  const [txBlocked, setTxBlocked] = useState<{ reason: string; message: string } | null>(null)
+  const [txBlocked, setTxBlocked] = useState<{
+    reason: string
+    message: string
+    tx_count?: number
+    tx_limit?: number
+  } | null>(null)
+
+  const activePharmacyName =
+    context.memberships.find((m) => m.pharmacyId === context.activePharmacyId)
+      ?.pharmacyName ?? 'Pharmacy'
+  const cashierName =
+    context.user.fullName?.trim() ||
+    context.user.email?.trim() ||
+    'Cashier'
 
   const completeSale = async (opts?: {
     prescriptionConfirmation?: PrescriptionConfirmation
@@ -434,17 +501,17 @@ function POSPageContent() {
     paymentTransactionId?: string
   }) => {
     if (cart.length === 0) {
-      alert('Cart is empty. Add items to process sale.')
+      toast.error('Cart is empty. Add items to process sale.')
       return
     }
 
     if (!paymentMethod) {
-      alert('Please select a payment method.')
+      toast.error('Please select a payment method.')
       return
     }
 
     if (!activeBranchId) {
-      alert('Select a branch before processing a sale.')
+      toast.error('Select a branch before processing a sale.')
       return
     }
 
@@ -454,16 +521,20 @@ function POSPageContent() {
     }
 
     if (cartRequiresPrescription(cart) && !opts?.prescriptionConfirmation?.confirmed) {
+      setRxForm({
+        patientName: customer.name.trim(),
+        prescriberName: '',
+        notes: '',
+      })
       setCheckoutAfterRx(true)
       setRxDialogOpen(true)
       return
     }
 
-    if (cartHasNearExpiry(cart) && !opts?.nearExpiryAcknowledged) {
-      const ok = window.confirm(
-        'One or more items are near expiry (within 30 days). Continue with this sale?',
-      )
-      if (!ok) return
+    if (cartHasNearExpiry(cart) && !opts?.nearExpiryAcknowledged && !nearExpiryAcknowledged) {
+      deferredCheckoutRef.current = opts
+      setCheckoutNearExpiryOpen(true)
+      return
     }
 
     const gate = await checkPosTransactionAllowed(activeBranchId)
@@ -471,6 +542,8 @@ function POSPageContent() {
       setTxBlocked({
         reason: gate.reason ?? 'limit_reached',
         message: gate.message ?? 'Transaction limit reached for this branch.',
+        tx_count: gate.tx_count,
+        tx_limit: gate.tx_limit,
       })
       return
     }
@@ -509,26 +582,47 @@ function POSPageContent() {
       console.log('Sale API response:', result)
 
       const receiptNumber = result.receiptNumber || `RCP-${Date.now()}`
-      
-      // Print invoice
-      printInvoice({
+      const saleSubtotal = getSubtotal()
+      const saleInsuranceCoverage = getInsuranceCoverage()
+      const salePatientAmount = getPatientAmount()
+
+      const pharmacySettings = pharmacySettingsQuery.data
+      const invoiceTemplate = invoiceTemplateQuery.data
+
+      const receiptInput: PosReceiptInput = {
         receiptNumber,
-        customer,
-        items: cart,
-        subtotal: getSubtotal(),
-        insuranceCoverage: getInsuranceCoverage(),
-        patientAmount: getPatientAmount(),
-        paymentMethod
+        pharmacyName: pharmacySettings?.name || activePharmacyName,
+        address: pharmacySettings?.location,
+        phone: pharmacySettings?.phone,
+        email: pharmacySettings?.email,
+        licenseNumber: pharmacySettings?.license,
+        footerText:
+          invoiceTemplate?.footerText?.trim() || 'Thank you for your business',
+        cashierName,
+        customer: { ...customer },
+        patientName: prescriptionConfirmation?.patientName?.trim() || undefined,
+        items: cart.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        subtotal: saleSubtotal,
+        insuranceCoverage: saleInsuranceCoverage,
+        patientAmount: salePatientAmount,
+        paymentMethod,
+      }
+
+      setPendingReceipt(receiptInput)
+      setReceiptPreviewOpen(true)
+
+      toast.success('Sale completed', {
+        description: `Receipt ${receiptNumber} · ${saleSubtotal.toLocaleString()} RWF · review receipt to print`,
+        duration: 6000,
       })
-      
-      // Show success message
-      const message = `Sale Processed Successfully!\n\nReceipt: ${receiptNumber}\nCustomer: ${customer.name || 'Walk-in Customer'}\nItems: ${cart.length}\nTotal: ${getSubtotal().toLocaleString()} RWF\nPayment: ${paymentMethod.toUpperCase()}${customer.insuranceType ? `\nInsurance: ${customer.insuranceType}` : ''}\n\nInvoice has been printed!`
-      
-      alert(message)
       
       // Clear form
       setCart([])
-      setCustomer({ name: '', phone: '', insuranceNumber: '', insuranceType: '', coveragePercent: 0 })
+      setCustomer(createEmptyPosCustomer())
       setCashAmount('')
       setInsuranceAmount('')
       setPaymentMethod('')
@@ -539,7 +633,12 @@ function POSPageContent() {
       
     } catch (error) {
       console.error('Sale processing error:', error)
-      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}\n\nSale may not have been saved to database.`)
+      toast.error(
+        error instanceof Error ? error.message : 'Sale could not be completed',
+        {
+          description: 'The sale may not have been saved. Check Sales or try again.',
+        },
+      )
     }
   }
 
@@ -548,13 +647,18 @@ function POSPageContent() {
   }
 
   const confirmPrescriptionAndCheckout = () => {
+    const prescriberName = rxForm.prescriberName.trim()
+    if (!prescriberName) {
+      toast.error('Enter the prescriber / doctor name before continuing.')
+      return
+    }
     setPrescriptionConfirmed(true)
     setRxDialogOpen(false)
     const confirmation: PrescriptionConfirmation = {
       confirmed: true,
-      patientName: rxForm.patientName || customer.name,
-      prescriberName: rxForm.prescriberName,
-      notes: rxForm.notes,
+      patientName: rxForm.patientName.trim() || customer.name.trim(),
+      prescriberName,
+      notes: rxForm.notes.trim() || undefined,
     }
     if (checkoutAfterRx) {
       setCheckoutAfterRx(false)
@@ -562,107 +666,6 @@ function POSPageContent() {
         prescriptionConfirmation: confirmation,
         nearExpiryAcknowledged,
       })
-    }
-  }
-
-  const printInvoice = (invoiceData: any) => {
-    const { receiptNumber, customer, items, subtotal, insuranceCoverage, patientAmount, paymentMethod } = invoiceData
-    
-    const invoiceContent = `
-      <div style="font-family: monospace; max-width: 300px; margin: 0 auto; padding: 20px;">
-        <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 15px;">
-          <h2 style="margin: 0;">PRYROX PHARMACY</h2>
-          <p style="margin: 5px 0;">Advanced Pharmacy POS System</p>
-          <p style="margin: 5px 0;">Tel: +250 788 123 456</p>
-        </div>
-        
-        <div style="margin-bottom: 15px;">
-          <p><strong>Receipt #:</strong> ${receiptNumber}</p>
-          <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-          <p><strong>Time:</strong> ${new Date().toLocaleTimeString()}</p>
-          <p><strong>Cashier:</strong> muzungu</p>
-        </div>
-        
-        <div style="margin-bottom: 15px;">
-          <p><strong>Customer:</strong> ${customer.name || 'Walk-in Customer'}</p>
-          ${customer.phone ? `<p><strong>Phone:</strong> ${customer.phone}</p>` : ''}
-          ${customer.insuranceType ? `<p><strong>Insurance:</strong> ${customer.insuranceType}</p>` : ''}
-          ${customer.insuranceNumber ? `<p><strong>Insurance #:</strong> ${customer.insuranceNumber}</p>` : ''}
-        </div>
-        
-        <div style="border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 10px 0; margin-bottom: 15px;">
-          <div style="display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 5px;">
-            <span>ITEM</span>
-            <span>QTY</span>
-            <span>PRICE</span>
-            <span>TOTAL</span>
-          </div>
-          ${items.map((item: { name: string; quantity: number; price: number }) => `
-            <div style="display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 12px;">
-              <span style="flex: 2;">${item.name}</span>
-              <span style="width: 30px; text-align: center;">${item.quantity}</span>
-              <span style="width: 50px; text-align: right;">${item.price}</span>
-              <span style="width: 60px; text-align: right;">${(item.price * item.quantity).toLocaleString()}</span>
-            </div>
-          `).join('')}
-        </div>
-        
-        <div style="margin-bottom: 15px;">
-          <div style="display: flex; justify-content: space-between;">
-            <span>Subtotal:</span>
-            <span><strong>${subtotal.toLocaleString()} RWF</strong></span>
-          </div>
-          ${insuranceCoverage > 0 ? `
-            <div style="display: flex; justify-content: space-between; color: green;">
-              <span>Insurance Covers:</span>
-              <span><strong>${insuranceCoverage.toLocaleString()} RWF</strong></span>
-            </div>
-            <div style="display: flex; justify-content: space-between; color: blue;">
-              <span>Patient Pays:</span>
-              <span><strong>${patientAmount.toLocaleString()} RWF</strong></span>
-            </div>
-          ` : ''}
-          <div style="display: flex; justify-content: space-between; border-top: 2px solid #000; padding-top: 5px; font-size: 18px;">
-            <span><strong>TOTAL:</strong></span>
-            <span><strong>${patientAmount.toLocaleString()} RWF</strong></span>
-          </div>
-        </div>
-        
-        <div style="margin-bottom: 15px;">
-          <p><strong>Payment Method:</strong> ${paymentMethod.toUpperCase()}</p>
-          <p><strong>Status:</strong> PAID</p>
-        </div>
-        
-        <div style="text-align: center; border-top: 1px solid #000; padding-top: 10px; font-size: 12px;">
-          <p>Thank you for your business!</p>
-          <p>Keep this receipt for your records</p>
-          <p style="margin-top: 10px;">Powered by Pryrox POS</p>
-        </div>
-      </div>
-    `
-    
-    // Create print window
-    const printWindow = window.open('', '_blank', 'width=400,height=600')
-    if (printWindow) {
-      printWindow.document.write(`
-        <html>
-          <head>
-            <title>Invoice - ${receiptNumber}</title>
-            <style>
-              body { margin: 0; padding: 0; }
-              @media print {
-                body { margin: 0; }
-              }
-            </style>
-          </head>
-          <body>
-            ${invoiceContent}
-          </body>
-        </html>
-      `)
-      printWindow.document.close()
-      printWindow.print()
-      printWindow.close()
     }
   }
 
@@ -768,17 +771,18 @@ function POSPageContent() {
         customer={customer}
         onCustomerChange={setCustomer}
         onCustomerNameChange={(name) => {
-          setCustomer({ ...customer, name })
-          searchCustomers(name)
+          setCustomer((prev) => ({ ...prev, id: null, name }))
+          setCustomerSearchQuery(name)
         }}
         customerSuggestions={customerSuggestions}
         showCustomerSuggestions={showCustomerSuggestions}
-        onSelectCustomer={selectCustomer}
-        onCustomerFocus={() =>
-          customer.name.length >= 2 && setShowCustomerSuggestions(true)
+        customerSearchFetching={
+          customerSearchResult.isFetching || customerSearchResult.isDebouncing
         }
+        onSelectCustomer={selectCustomer}
+        onCustomerFocus={() => setCustomerSearchFocused(true)}
         onCustomerBlur={() =>
-          setTimeout(() => setShowCustomerSuggestions(false), 200)
+          setTimeout(() => setCustomerSearchFocused(false), 200)
         }
         onQuickAddPatient={() => setQuickAddDialog('patient')}
         onQuickAddInsurance={() => setQuickAddDialog('insurance')}
@@ -795,9 +799,18 @@ function POSPageContent() {
             coveragePercent: coverage,
           })
           if (finalInsuranceType) {
-            setInsuranceInterfaceOpen(true)
+            if (cart.length === 0) {
+              toast.error(
+                'Add products to the cart first. Insurance amounts are calculated from cart items.',
+              )
+            } else {
+              setInsuranceInterfaceOpen(true)
+            }
+          } else {
+            setInsuranceInterfaceOpen(false)
           }
         }}
+        onOpenInsuranceProcessing={openInsuranceProcessing}
         updateQuantity={updateQuantity}
         subtotal={getSubtotal()}
         insuranceCoverage={getInsuranceCoverage()}
@@ -813,7 +826,11 @@ function POSPageContent() {
         onClearCart={() => setCart([])}
         onHoldSale={async () => {
           const data = await holdSaleMutation.mutateAsync({ cart, customer })
-          alert(data.success ? 'Sale held successfully!' : 'Failed to hold sale')
+          if (data.success) {
+            toast.success('Sale held successfully')
+          } else {
+            toast.error('Failed to hold sale')
+          }
         }}
         onLookupCustomer={() => openUtilityDialog('customer-lookup')}
         onPriceCheck={() => openUtilityDialog('price-check')}
@@ -828,7 +845,7 @@ function POSPageContent() {
               priceAdjustments,
             }),
           )
-          alert('Cart backup saved locally.')
+          toast.success('Cart backup saved locally')
         }}
         saleDisabled={
           cart.length === 0 ||
@@ -838,6 +855,8 @@ function POSPageContent() {
         hasOpenShift={hasOpenShift}
         shiftCheckReady={shiftCheckReady}
         showTeamShifts={isPharmacyOwner}
+        canHold={can('pos.hold')}
+        canVoid={can('pos.void')}
       />
 
       <FeatureGate featureKey="pos.insurance" hideWhenLocked>
@@ -849,6 +868,9 @@ function POSPageContent() {
           subtotal={getSubtotal()}
           insuranceCoverage={getInsuranceCoverage()}
           patientCopay={getPatientAmount()}
+          cartItemCount={cart.length}
+          coverageLines={coverageTotals?.lines}
+          coverageLoading={coveragePreviewQuery.isFetching}
           onOpenRamaBeneficiary={() => setRamaBeneficiaryOpen(true)}
           lookupPending={insuranceLookupMutation.isPending}
           processPending={insuranceProcessMutation.isPending}
@@ -1041,7 +1063,7 @@ function POSPageContent() {
             <h2 className="font-medium text-sm">Alerts</h2>
             <div className="flex gap-1">
               <DashboardButton size="sm" className="h-7 text-xs" onClick={() => {
-                alert('Export feature temporarily disabled for security reasons')
+                toast.info('Export is temporarily disabled for security reasons')
               }}>
                 Excel
               </DashboardButton>
@@ -1124,7 +1146,14 @@ function POSPageContent() {
                 category={quickAddProductCategory}
                 onCategoryChange={setQuickAddProductCategory}
                 categories={categories}
-                onCreateCategory={(name) => createCategoryMutation.mutateAsync(name)}
+                onCreateCategory={async (name) => {
+                  const result = await createCategoryMutation.mutateAsync(name)
+                  return {
+                    success: result.success,
+                    categoryId: result.categoryId,
+                    error: result.error,
+                  }
+                }}
               />
             )}
             {quickAddDialog === 'patient' && (
@@ -1258,6 +1287,7 @@ function POSPageContent() {
                     form?.reset()
 
                     setCustomer({
+                      id: result.customer.id ?? null,
                       name: result.customer.name,
                       phone: result.customer.phone,
                       insuranceNumber: result.customer.insurance_number || '',
@@ -1346,41 +1376,67 @@ function POSPageContent() {
         />
       </FeatureGate>
 
+      <PosReceiptPreviewDialog
+        open={receiptPreviewOpen}
+        onOpenChange={setReceiptPreviewOpen}
+        receipt={pendingReceipt}
+      />
+
       {/* Transaction Blocked Overlay */}
-      {txBlocked && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6 space-y-4">
-            <div className="flex flex-col items-center text-center gap-3">
-              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                <AlertTriangle className="h-8 w-8 text-red-600" />
+      <Dialog open={Boolean(txBlocked)} onOpenChange={(open) => !open && setTxBlocked(null)}>
+        <DashboardDialogContent className="sm:max-w-md">
+          <DashboardDialogHeader>
+            <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-full bg-red-100 dark:bg-red-950/50">
+              <AlertTriangle className="h-7 w-7 text-red-600 dark:text-red-400" />
+            </div>
+            <DashboardDialogTitle className="text-center">
+              {txBlocked?.reason === 'no_subscription'
+                ? 'No Active Subscription'
+                : txBlocked?.reason === 'check_failed'
+                  ? 'Usage Check Failed'
+                  : txBlocked?.reason === 'no_branch'
+                    ? 'Branch Required'
+                    : 'Transaction Limit Reached'}
+            </DashboardDialogTitle>
+            <DashboardDialogDescription className="text-center">
+              {txBlocked?.message}
+            </DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogBody className="space-y-3">
+            {txBlocked?.tx_count != null && txBlocked?.tx_limit != null ? (
+              <div className="rounded-lg border border-red-200/80 bg-red-50/80 px-3 py-2.5 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
+                <p className="font-medium tabular-nums">
+                  {txBlocked.tx_count.toLocaleString()} /{' '}
+                  {txBlocked.tx_limit.toLocaleString()} transactions used this month
+                </p>
               </div>
-              <div>
-                <h2 className="text-xl font-bold text-red-700">
-                  {txBlocked.reason === 'no_subscription' ? 'No Active Subscription' : 'Transaction Limit Reached'}
-                </h2>
-                <p className="text-sm text-muted-foreground mt-1">{txBlocked.message}</p>
+            ) : (
+              <div className="rounded-lg border border-red-200/80 bg-red-50/80 px-3 py-2.5 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
+                {txBlocked?.reason === 'no_subscription'
+                  ? 'This branch has no active subscription. Contact your pharmacy owner to subscribe.'
+                  : txBlocked?.reason === 'check_failed'
+                    ? 'The usage check could not complete. Refresh the page and try again. Your plan limit may still be available.'
+                    : 'This branch has reached its monthly transaction limit. Sales are blocked until the billing cycle resets or the plan is upgraded.'}
               </div>
-            </div>
-            <div className="bg-red-50 rounded-lg p-4 text-sm text-red-700">
-              {txBlocked.reason === 'no_subscription'
-                ? 'This branch has no active subscription. Please contact your pharmacy owner to subscribe.'
-                : 'This branch has reached its monthly transaction limit. Sales are blocked until the billing cycle resets or the plan is upgraded.'}
-            </div>
-            <div className="flex gap-2">
-              <DashboardButton className="flex-1" onClick={() => setTxBlocked(null)}>
-                Dismiss
-              </DashboardButton>
-              <DashboardButton
-                tone="destructive"
-                className="flex-1"
-                onClick={() => { window.location.href = PHARMACY_ROUTES.billing }}
-              >
-                View plans
-              </DashboardButton>
-            </div>
-          </div>
-        </div>
-      )}
+            )}
+          </DashboardDialogBody>
+          <DashboardDialogActions
+            cancelLabel="Dismiss"
+            confirmLabel={
+              txBlocked?.reason === 'check_failed' ? 'Retry' : 'View billing'
+            }
+            onCancel={() => setTxBlocked(null)}
+            onConfirm={() => {
+              if (txBlocked?.reason === 'check_failed') {
+                setTxBlocked(null)
+                return
+              }
+              window.location.href = PHARMACY_ROUTES.billing
+            }}
+            confirmTone={txBlocked?.reason === 'check_failed' ? 'primary' : 'destructive'}
+          />
+        </DashboardDialogContent>
+      </Dialog>
 
       {/* Rule-based Safety Check Dialog */}
       {aiSafetyOpen && (
@@ -1445,10 +1501,10 @@ function POSPageContent() {
                       if (data.success && data.result) {
                         setAiSafetyResult(data.result)
                       } else {
-                        alert('Analysis failed')
+                        toast.error('Analysis failed')
                       }
                     } catch {
-                      alert('Analysis failed')
+                      toast.error('Analysis failed')
                     }
                     setAiSafetyLoading(false)
                   }}
@@ -1458,10 +1514,19 @@ function POSPageContent() {
                 </DashboardButton>
                 <DashboardButton size="sm" className="rounded-xl" onClick={() => {
                   if (aiSafetyResult) {
-                    const advice = `Rule-based Safety Check:\n\nInteractions: ${aiSafetyResult.interactions.length}\nWarnings: ${aiSafetyResult.warnings.length}\nSeverity: ${aiSafetyResult.severity.toUpperCase()}\n\nRecommendations:\n${aiSafetyResult.recommendations.join('\n')}`
-                    alert(advice)
+                    toast.message('Rule-based safety check', {
+                      description: [
+                        `Interactions: ${aiSafetyResult.interactions.length}`,
+                        `Warnings: ${aiSafetyResult.warnings.length}`,
+                        `Severity: ${aiSafetyResult.severity.toUpperCase()}`,
+                        aiSafetyResult.recommendations.length
+                          ? aiSafetyResult.recommendations.join(' · ')
+                          : 'No recommendations',
+                      ].join(' · '),
+                      duration: 10000,
+                    })
                   } else {
-                    alert('Run analysis first')
+                    toast.info('Run analysis first')
                   }
                 }}>
                   Get Advice
@@ -1513,6 +1578,35 @@ function POSPageContent() {
         </div>
       )}
 
+      <Dialog open={checkoutNearExpiryOpen} onOpenChange={setCheckoutNearExpiryOpen}>
+        <DashboardDialogContent className="sm:max-w-md">
+          <DashboardDialogHeader>
+            <DashboardDialogTitle>Near-expiry items in cart</DashboardDialogTitle>
+            <DashboardDialogDescription>
+              One or more items expire within 30 days. Continue with this sale?
+            </DashboardDialogDescription>
+          </DashboardDialogHeader>
+          <DashboardDialogActions
+            cancelLabel="Cancel"
+            confirmLabel="Continue sale"
+            onCancel={() => {
+              setCheckoutNearExpiryOpen(false)
+              deferredCheckoutRef.current = undefined
+            }}
+            onConfirm={() => {
+              setCheckoutNearExpiryOpen(false)
+              setNearExpiryAcknowledged(true)
+              const deferred = deferredCheckoutRef.current
+              deferredCheckoutRef.current = undefined
+              void completeSale({
+                ...deferred,
+                nearExpiryAcknowledged: true,
+              })
+            }}
+          />
+        </DashboardDialogContent>
+      </Dialog>
+
       <Dialog open={Boolean(pendingNearExpiry)} onOpenChange={(open) => !open && setPendingNearExpiry(null)}>
         <DashboardDialogContent className="sm:max-w-md">
           <DashboardDialogHeader>
@@ -1544,29 +1638,45 @@ function POSPageContent() {
           <DashboardDialogHeader>
             <DashboardDialogTitle>Prescription confirmation</DashboardDialogTitle>
             <DashboardDialogDescription>
-              This sale includes prescription-only medicines. Confirm details before completing.
+              This sale includes prescription-only medicines. Confirm who receives
+              the medication (patient) and the prescriber — the payer at the till
+              may be someone else.
             </DashboardDialogDescription>
           </DashboardDialogHeader>
           <DashboardDialogBody className="space-y-3">
-            <Input
-              placeholder="Patient name"
-              value={rxForm.patientName}
-              onChange={(e) => setRxForm({ ...rxForm, patientName: e.target.value })}
-            />
-            <Input
-              placeholder="Prescriber / doctor name"
-              value={rxForm.prescriberName}
-              onChange={(e) => setRxForm({ ...rxForm, prescriberName: e.target.value })}
-            />
-            <Input
-              placeholder="Notes (optional)"
-              value={rxForm.notes}
-              onChange={(e) => setRxForm({ ...rxForm, notes: e.target.value })}
-            />
+            <div className="space-y-1.5">
+              <Label htmlFor="rx-patient-name">Patient (receives medication)</Label>
+              <Input
+                id="rx-patient-name"
+                placeholder="Person the prescription is for"
+                value={rxForm.patientName}
+                onChange={(e) => setRxForm({ ...rxForm, patientName: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="rx-prescriber-name">Prescriber / doctor name</Label>
+              <Input
+                id="rx-prescriber-name"
+                placeholder="e.g. Dr. Marie Uwase"
+                value={rxForm.prescriberName}
+                onChange={(e) => setRxForm({ ...rxForm, prescriberName: e.target.value })}
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="rx-notes">Notes (optional)</Label>
+              <Input
+                id="rx-notes"
+                placeholder="Prescription number, clinic, etc."
+                value={rxForm.notes}
+                onChange={(e) => setRxForm({ ...rxForm, notes: e.target.value })}
+              />
+            </div>
           </DashboardDialogBody>
           <DashboardDialogActions
             cancelLabel="Cancel"
             confirmLabel="Confirm & continue"
+            confirmDisabled={!rxForm.prescriberName.trim()}
             onCancel={() => {
               setRxDialogOpen(false)
               setCheckoutAfterRx(false)

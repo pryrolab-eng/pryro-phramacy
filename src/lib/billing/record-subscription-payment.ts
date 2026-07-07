@@ -1,6 +1,9 @@
 import { storeRecordSubscriptionPayment } from "@/lib/db/billing-store";
 import { isSmtpConfigured, sendMail } from "@/lib/email/mailer";
-import { paymentReceiptEmailHtml } from "@/lib/email/payment-receipt";
+import {
+  paymentReceiptEmailHtml,
+  paymentReceiptEmailText,
+} from "@/lib/email/payment-receipt";
 import { resolveEmailTemplate } from "@/lib/email/template-overrides";
 
 /** Idempotent: invoice + payments row + receipt email after subscription payment completes. */
@@ -41,7 +44,15 @@ export async function recordSubscriptionPayment(
         paymentMethod: result.paymentMethodLabel,
         paidAt: formattedPaidAt,
       });
-      const defaultText = `Payment received for ${result.planName}: ${result.amount} ${result.currency}. Invoice ${result.invoiceNumber}.`;
+      const defaultText = paymentReceiptEmailText({
+        pharmacyName: result.pharmacyName ?? "Your pharmacy",
+        planName: result.planName,
+        amount: result.amount,
+        currency: result.currency,
+        invoiceNumber: result.invoiceNumber,
+        paymentMethod: result.paymentMethodLabel,
+        paidAt: formattedPaidAt,
+      });
 
       const template = await resolveEmailTemplate({
         templateKey: "billing.payment_receipt",

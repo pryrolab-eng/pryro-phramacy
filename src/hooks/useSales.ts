@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { SEARCH_LIST_STALE_MS } from "@/lib/search/constants";
 import {
   getSalesAnalytics,
   getSalesList,
@@ -27,6 +28,7 @@ export function useSalesList(
     queryKey: salesKeys.list(params),
     queryFn: () => getSalesList(params),
     enabled: options?.enabled ?? true,
+    staleTime: SEARCH_LIST_STALE_MS,
   });
 }
 

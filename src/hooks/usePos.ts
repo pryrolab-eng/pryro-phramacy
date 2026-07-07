@@ -3,7 +3,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { pharmacyCategoriesCatalogQueryKey } from "@/lib/http/catalog";
 import { getPharmacyCategoriesCatalog } from "@/lib/http/catalog";
-import { customersKeys, searchCustomers } from "@/lib/http/customers";
 import {
   lookupInsurance,
   processInsuranceClaim,
@@ -47,6 +46,8 @@ import {
   saasBranchesKeys,
 } from "@/lib/http/saas-branches";
 
+export { useCustomerSearch } from "./useCustomers";
+
 export {
   posKeys,
   type PosCartItem,
@@ -85,14 +86,6 @@ export function usePosCategories(options?: { enabled?: boolean }) {
     queryKey: pharmacyCategoriesCatalogQueryKey,
     queryFn: getPharmacyCategoriesCatalog,
     enabled: options?.enabled ?? true,
-  });
-}
-
-export function useCustomerSearch(query: string) {
-  return useQuery({
-    queryKey: customersKeys.search(query),
-    queryFn: () => searchCustomers(query),
-    enabled: query.trim().length >= 2,
   });
 }
 
@@ -302,10 +295,17 @@ export function useInsuranceCoveragePreview(
 
 export type { InsuranceCoveragePreviewResult };
 
-/** Imperative usage gate before sale (fail-closed on errors). */
+/** Imperative usage gate before sale (fail-closed on limit; surfaces check errors clearly). */
 export async function checkPosTransactionAllowed(
   branchId: string | null,
-): Promise<{ allowed: boolean; reason?: string; message?: string }> {
+): Promise<{
+  allowed: boolean;
+  reason?: string;
+  message?: string;
+  tx_count?: number;
+  tx_limit?: number;
+  remaining?: number;
+}> {
   if (!branchId) {
     return {
       allowed: false,
@@ -321,14 +321,23 @@ export async function checkPosTransactionAllowed(
         reason: data.reason ?? "limit_reached",
         message:
           data.message ?? "Transaction limit reached for this branch.",
+        tx_count: data.tx_count,
+        tx_limit: data.tx_limit,
+        remaining: data.remaining,
       };
     }
-    return { allowed: true };
+    return {
+      allowed: true,
+      tx_count: data.tx_count,
+      tx_limit: data.tx_limit,
+      remaining: data.remaining,
+    };
   } catch {
     return {
       allowed: false,
       reason: "check_failed",
-      message: "Could not verify branch transaction allowance.",
+      message:
+        "Could not verify branch transaction allowance. Try again or contact support.",
     };
   }
 }

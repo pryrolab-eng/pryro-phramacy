@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { prisma } from "@/lib/db/prisma";
 import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { generateAnalyticsInsights, type AnalyticsData } from "@/lib/ai/analytics";
 
 function decimalToNumber(value: unknown): number {
   if (value == null) return 0;
@@ -160,6 +161,24 @@ export async function GET() {
       take: 3,
     });
 
+    const analyticsData: AnalyticsData = {
+      daily,
+      weekly,
+      monthly,
+      topProducts,
+      customerInsights: {
+        totalCustomers: customerCount,
+        newCustomers,
+        returningCustomers: Math.max(customerCount - newCustomers, 0),
+        averageOrderValue: Math.round(totalRevenue30 / orderCount30),
+      },
+      revenueLast30: last30Revenue,
+      revenuePrev30: prev30Revenue,
+      growthFactor,
+    };
+
+    const insights = await generateAnalyticsInsights(analyticsData, pharmacyId);
+
     return NextResponse.json({
       salesTrends: { daily, weekly, monthly },
       topProducts,
@@ -170,11 +189,21 @@ export async function GET() {
         averageOrderValue: Math.round(totalRevenue30 / orderCount30),
       },
       predictions: {
-        nextMonthSales: Math.round(last30Revenue * growthFactor),
+        nextMonthSales: insights.predictions.nextMonthSales,
+        confidence: insights.predictions.confidence,
+        reasoning: insights.predictions.reasoning,
         stockNeeded: stockNeeded.map((row) => ({
           product: nameByInventory.get(row.inventory_id ?? "") ?? "Unknown",
-          predicted: Math.ceil(Number(row._sum.quantity ?? 0) * growthFactor),
+          predicted: insights.stockAlerts.find(
+            (a) => a.product === (nameByInventory.get(row.inventory_id ?? "") ?? "Unknown"),
+          )?.predicted ?? Math.ceil(Number(row._sum.quantity ?? 0) * growthFactor),
         })),
+      },
+      insights: {
+        summary: insights.summary,
+        trends: insights.trends,
+        recommendations: insights.recommendations,
+        aiPowered: insights.aiPowered,
       },
     });
   } catch (error) {

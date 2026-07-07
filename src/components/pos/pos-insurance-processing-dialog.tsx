@@ -24,6 +24,13 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { PosCustomer } from "@/hooks/usePos";
+import type { CoverageLineResult } from "@/lib/insurance/types";
+
+function coverageReasonLabel(reason?: CoverageLineResult["reason"]): string {
+  if (reason === "not_listed") return "Not on formulary";
+  if (reason === "not_covered") return "Not covered";
+  return "Covered";
+}
 
 function FormSection({
   title,
@@ -71,6 +78,9 @@ export type PosInsuranceProcessingDialogProps = {
   subtotal: number;
   insuranceCoverage: number;
   patientCopay: number;
+  cartItemCount: number;
+  coverageLines?: CoverageLineResult[];
+  coverageLoading?: boolean;
   onOpenRamaBeneficiary?: () => void;
   onLookup: (insuranceNumber: string) => Promise<{
     success?: boolean;
@@ -110,6 +120,9 @@ export function PosInsuranceProcessingDialog({
   subtotal,
   insuranceCoverage,
   patientCopay,
+  cartItemCount,
+  coverageLines = [],
+  coverageLoading = false,
   onOpenRamaBeneficiary,
   onLookup,
   onProcess,
@@ -123,20 +136,18 @@ export function PosInsuranceProcessingDialog({
   const [hsp, setHsp] = useState("");
   const [physicianOrderNumber, setPhysicianOrderNumber] = useState("");
   const [tinPatient, setTinPatient] = useState("");
-  const [amountPaid, setAmountPaid] = useState("");
   const [paymentType, setPaymentType] = useState("BANQUEBKRWF");
   const [transactionId, setTransactionId] = useState("");
   const [printReceipt, setPrintReceipt] = useState(true);
   const [verifyCheck, setVerifyCheck] = useState(false);
-  const [validityRate, setValidityRate] = useState("");
+
+  const calculatedCopay = Math.round(patientCopay);
+  const canProcess = cartItemCount > 0 && subtotal > 0 && !coverageLoading;
 
   useEffect(() => {
     if (!open) return;
     setPatientId(customer.insuranceNumber || "");
-    setAmountPaid(
-      patientCopay > 0 ? String(Math.round(patientCopay)) : "",
-    );
-  }, [open, customer.insuranceNumber, patientCopay]);
+  }, [open, customer.insuranceNumber]);
 
   const handleSaveDraft = () => {
     const draft = {
@@ -147,10 +158,10 @@ export function PosInsuranceProcessingDialog({
       hsp,
       physicianOrderNumber,
       tinPatient,
-      amountPaid,
+      amountPaid: calculatedCopay,
       paymentType,
       transactionId,
-      validityRate,
+      validityRate: customer.coveragePercent,
       customer,
       subtotal,
       savedAt: new Date().toISOString(),
@@ -182,6 +193,14 @@ export function PosInsuranceProcessingDialog({
   };
 
   const handleFinish = async () => {
+    if (cartItemCount === 0 || subtotal <= 0) {
+      toast.error("Add products to the cart before processing insurance");
+      return;
+    }
+    if (coverageLoading) {
+      toast.error("Coverage is still calculating — try again in a moment");
+      return;
+    }
     if (!customer.insuranceType) {
       toast.error("Select an insurance type on the order first");
       return;
@@ -206,10 +225,10 @@ export function PosInsuranceProcessingDialog({
           hsp,
           physicianOrderNumber,
           tinPatient,
-          amountPaid,
+          amountPaid: calculatedCopay,
           paymentType,
           transactionId,
-          validityRate,
+          validityRate: customer.coveragePercent,
           printReceipt,
           verifyCheck,
         },
@@ -241,12 +260,25 @@ export function PosInsuranceProcessingDialog({
         <DashboardDialogHeader>
           <DashboardDialogTitle>Insurance processing</DashboardDialogTitle>
           <DashboardDialogDescription>
-            Verify coverage, enter claim details, then finish to record the
-            insurance portion of this sale.
+            Add items to the cart first. Copay is calculated per product from
+            your insurance formulary — confirm claim details, then finish.
           </DashboardDialogDescription>
         </DashboardDialogHeader>
 
         <DashboardDialogBody>
+          {!canProcess ? (
+            <div
+              className="mb-4 rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100"
+              role="status"
+            >
+              {cartItemCount === 0
+                ? "Your cart is empty. Add covered products, then open this form again."
+                : coverageLoading
+                  ? "Calculating coverage from cart items…"
+                  : "Cart total is zero — check product prices and quantities."}
+            </div>
+          ) : null}
+
           <div
             className="mb-6 grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-neutral-200/80 bg-neutral-200/80 text-center text-sm dark:border-neutral-800 dark:bg-neutral-800"
             role="group"
@@ -291,6 +323,42 @@ export function PosInsuranceProcessingDialog({
               </p>
             </div>
           </div>
+
+          {coverageLines.length > 0 ? (
+            <div className="mb-6 overflow-hidden rounded-lg border border-neutral-200/80 dark:border-neutral-800">
+              <div className="border-b border-neutral-200/80 bg-neutral-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground dark:border-neutral-800 dark:bg-neutral-900/50">
+                Coverage by product
+              </div>
+              <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                {coverageLines.map((line) => (
+                  <li
+                    key={`${line.medicationId}-${line.inventoryId ?? "x"}`}
+                    className="flex flex-wrap items-start justify-between gap-2 px-3 py-2 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground">
+                        {line.medicationName ?? "Product"} × {line.quantity}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {coverageReasonLabel(line.reason)}
+                        {line.isCovered && line.coveragePercent > 0
+                          ? ` · ${line.coveragePercent}%`
+                          : ""}
+                      </p>
+                    </div>
+                    <div className="text-right text-xs tabular-nums">
+                      <p className="text-muted-foreground">
+                        Insurer {line.insurerPays.toLocaleString()} RWF
+                      </p>
+                      <p className="font-medium text-foreground">
+                        Patient {line.patientPays.toLocaleString()} RWF
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div className="space-y-6">
             <FormSection title="Insurer & patient">
@@ -392,19 +460,17 @@ export function PosInsuranceProcessingDialog({
                   />
                 </Field>
               </div>
-              <Field label="Amount paid (copay)" htmlFor="amount-paid">
+              <Field label="Patient copay (calculated)" htmlFor="amount-paid">
                 <Input
                   id="amount-paid"
-                  type="number"
-                  min={0}
-                  placeholder={
-                    patientCopay > 0
-                      ? `e.g. ${Math.round(patientCopay)}`
-                      : "e.g. 500"
-                  }
-                  value={amountPaid}
-                  onChange={(e) => setAmountPaid(e.target.value)}
+                  readOnly
+                  value={`${calculatedCopay.toLocaleString()} RWF`}
+                  className="bg-muted/50 font-semibold tabular-nums"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Sum of patient portions from covered and uncovered lines above.
+                  Collect this amount at payment — do not edit manually.
+                </p>
               </Field>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Payment type">
@@ -428,21 +494,6 @@ export function PosInsuranceProcessingDialog({
                   />
                 </Field>
               </div>
-              <Field label="Validity rate (%)" htmlFor="validity-rate">
-                <Input
-                  id="validity-rate"
-                  type="number"
-                  min={0}
-                  max={100}
-                  placeholder={
-                    customer.coveragePercent
-                      ? `e.g. ${customer.coveragePercent}`
-                      : "e.g. 90"
-                  }
-                  value={validityRate}
-                  onChange={(e) => setValidityRate(e.target.value)}
-                />
-              </Field>
               <div className="flex flex-wrap gap-4 rounded-lg border border-neutral-200/80 bg-neutral-50/80 px-3 py-2.5 dark:border-neutral-800 dark:bg-neutral-900/50">
                 <label className="flex cursor-pointer items-center gap-2 text-sm">
                   <input
@@ -485,7 +536,7 @@ export function PosInsuranceProcessingDialog({
             type="button"
             tone="primary"
             onClick={() => void handleFinish()}
-            disabled={processPending}
+            disabled={processPending || !canProcess}
           >
             {processPending ? "Processing…" : "Finish & close"}
           </DashboardButton>

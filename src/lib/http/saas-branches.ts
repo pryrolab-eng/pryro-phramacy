@@ -18,6 +18,9 @@ export type UsageCheckResponse = {
   allowed: boolean;
   reason?: string;
   message?: string;
+  tx_count?: number;
+  tx_limit?: number;
+  remaining?: number;
 };
 
 export const saasBranchesKeys = {

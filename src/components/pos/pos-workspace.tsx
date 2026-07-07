@@ -83,6 +83,7 @@ export type PosWorkspaceProps = {
   onCustomerNameChange: (name: string) => void;
   customerSuggestions: CustomerSuggestion[];
   showCustomerSuggestions: boolean;
+  customerSearchFetching?: boolean;
   onSelectCustomer: (s: CustomerSuggestion) => void;
   onCustomerFocus: () => void;
   onCustomerBlur: () => void;
@@ -90,6 +91,7 @@ export type PosWorkspaceProps = {
   onQuickAddInsurance: () => void;
   canInsurance: boolean;
   onInsuranceTypeChange: (type: string) => void;
+  onOpenInsuranceProcessing?: () => void;
   updateQuantity: (id: string, qty: number) => void;
   subtotal: number;
   insuranceCoverage: number;
@@ -112,6 +114,8 @@ export type PosWorkspaceProps = {
   hasOpenShift?: boolean;
   shiftCheckReady?: boolean;
   showTeamShifts?: boolean;
+  canHold?: boolean;
+  canVoid?: boolean;
 };
 
 function PaymentMethodButton({
@@ -161,6 +165,7 @@ export function PosWorkspace(props: PosWorkspaceProps) {
     onCustomerNameChange,
     customerSuggestions,
     showCustomerSuggestions,
+    customerSearchFetching = false,
     onSelectCustomer,
     onCustomerFocus,
     onCustomerBlur,
@@ -168,6 +173,7 @@ export function PosWorkspace(props: PosWorkspaceProps) {
     onQuickAddInsurance,
     canInsurance,
     onInsuranceTypeChange,
+    onOpenInsuranceProcessing,
     updateQuantity,
     subtotal,
     insuranceCoverage,
@@ -190,6 +196,8 @@ export function PosWorkspace(props: PosWorkspaceProps) {
     hasOpenShift = true,
     shiftCheckReady = true,
     showTeamShifts = false,
+    canHold = true,
+    canVoid = true,
   } = props;
 
   const shiftBlocksSale = shiftCheckReady && !hasOpenShift;
@@ -257,10 +265,10 @@ export function PosWorkspace(props: PosWorkspaceProps) {
           hint="Products match filter"
         />
         <DashboardStatCard
-          label="Customer"
+          label="Payer"
           icon={User}
           value={customer.name.trim() || "Walk-in"}
-          hint={customer.phone || "No phone"}
+          hint={customer.id ? "Registered customer" : customer.phone || "Walk-in — not in registry"}
         />
       </DashboardMetricGrid>
 
@@ -504,16 +512,17 @@ export function PosWorkspace(props: PosWorkspaceProps) {
               </Badge>
             </div>
 
-            <div className="space-y-2 rounded-xl border border-neutral-200/80 bg-neutral-50/50 p-3 dark:border-neutral-800 dark:bg-neutral-900/40">
-              <Label className="text-xs text-neutral-500">Customer</Label>
+            <div className="relative space-y-2 overflow-visible rounded-xl border border-neutral-200/80 bg-neutral-50/50 p-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+              <Label className="text-xs text-neutral-500">Payer</Label>
               <div className="relative flex gap-2">
                 <Input
-                  placeholder="Name or search…"
+                  placeholder="Name, phone, or insurance #…"
                   value={customer.name}
                   onChange={(e) => onCustomerNameChange(e.target.value)}
                   onFocus={onCustomerFocus}
                   onBlur={onCustomerBlur}
                   className="h-9"
+                  autoComplete="off"
                 />
                 <DashboardButton
                   size="icon"
@@ -522,21 +531,33 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                 >
                   <Plus className="h-4 w-4" />
                 </DashboardButton>
-                {showCustomerSuggestions && customerSuggestions.length > 0 && (
-                  <div className="absolute top-full z-50 mt-1 max-h-40 w-full overflow-y-auto rounded-lg border border-neutral-200/80 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
-                    {customerSuggestions.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        className="w-full border-b border-neutral-100 px-3 py-2 text-left last:border-0 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-800"
-                        onMouseDown={() => onSelectCustomer(s)}
-                      >
-                        <p className="text-sm font-medium">{s.name}</p>
-                        <p className="text-xs text-neutral-500">{s.phone}</p>
-                      </button>
-                    ))}
+                {showCustomerSuggestions ? (
+                  <div className="absolute left-0 top-full z-50 mt-1 max-h-40 w-[calc(100%-2.75rem)] overflow-y-auto rounded-lg border border-neutral-200/80 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+                    {customerSearchFetching ? (
+                      <p className="px-3 py-2 text-sm text-neutral-500">
+                        Searching…
+                      </p>
+                    ) : customerSuggestions.length === 0 ? (
+                      <p className="px-3 py-2 text-sm text-neutral-500">
+                        No customers found
+                      </p>
+                    ) : (
+                      customerSuggestions.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          className="w-full border-b border-neutral-100 px-3 py-2 text-left last:border-0 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-800"
+                          onMouseDown={() => onSelectCustomer(s)}
+                        >
+                          <p className="text-sm font-medium">{s.name}</p>
+                          <p className="text-xs text-neutral-500">
+                            {s.phone || "No phone"}
+                          </p>
+                        </button>
+                      ))
+                    )}
                   </div>
-                )}
+                ) : null}
               </div>
               <FeatureGate featureKey="pos.insurance" compact>
                 <div className="flex gap-2 pt-1">
@@ -556,17 +577,29 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                   </DashboardButton>
                 </div>
                 {customer.insuranceType ? (
-                  <Input
-                    placeholder="Insurance number"
-                    value={customer.insuranceNumber}
-                    onChange={(e) =>
-                      onCustomerChange({
-                        ...customer,
-                        insuranceNumber: e.target.value,
-                      })
-                    }
-                    className="mt-2 h-9"
-                  />
+                  <>
+                    <Input
+                      placeholder="Insurance number"
+                      value={customer.insuranceNumber}
+                      onChange={(e) =>
+                        onCustomerChange({
+                          ...customer,
+                          insuranceNumber: e.target.value,
+                        })
+                      }
+                      className="mt-2 h-9"
+                    />
+                    {cart.length > 0 && onOpenInsuranceProcessing ? (
+                      <DashboardButton
+                        type="button"
+                        size="sm"
+                        className="mt-2 h-8 w-full text-xs"
+                        onClick={onOpenInsuranceProcessing}
+                      >
+                        Insurance claim details
+                      </DashboardButton>
+                    ) : null}
+                  </>
                 ) : null}
               </FeatureGate>
             </div>
@@ -758,7 +791,9 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                   <DashboardButton className="flex-1">More</DashboardButton>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={onHoldSale}>Hold sale</DropdownMenuItem>
+                  {canHold && (
+                    <DropdownMenuItem onClick={onHoldSale}>Hold sale</DropdownMenuItem>
+                  )}
                   <DropdownMenuItem onClick={onLookupCustomer}>
                     Find customer
                   </DropdownMenuItem>
@@ -770,12 +805,14 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                       Backup cart
                     </DropdownMenuItem>
                   ) : null}
-                  <DropdownMenuItem
-                    className="text-red-600"
-                    onClick={onVoidSale}
-                  >
-                    Void sale
-                  </DropdownMenuItem>
+                  {canVoid && (
+                    <DropdownMenuItem
+                      className="text-red-600"
+                      onClick={onVoidSale}
+                    >
+                      Void sale
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

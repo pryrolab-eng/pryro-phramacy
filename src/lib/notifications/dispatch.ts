@@ -16,6 +16,7 @@ import {
 } from "@/lib/db/future-feature-settings";
 import { isSmtpConfigured, sendMail } from "@/lib/email/mailer";
 import { getNotificationChannelPrefs } from "./preferences";
+import { adminNoticeEmailHtml, adminNoticeEmailText } from "@/lib/email/admin-notice-email";
 import { resolveEmailTemplate } from "@/lib/email/template-overrides";
 import { prisma } from "@/lib/db/prisma";
 
@@ -130,16 +131,14 @@ async function processOutboxRow(row: OutboxRow): Promise<void> {
         const email = await resolveUserEmail(row.user_id);
         if (email) {
           try {
-            const templateKey =
-              row.event_type === "sale.completed"
-                ? "billing.payment_receipt"
-                : "platform.admin_notice";
+            const defaultHtml = adminNoticeEmailHtml({ title, message });
+            const defaultText = adminNoticeEmailText({ title, message });
 
             const template = await resolveEmailTemplate({
-              templateKey,
+              templateKey: "platform.admin_notice",
               subject: title,
-              html: `<p>${message}</p>`,
-              text: message,
+              html: defaultHtml,
+              text: defaultText,
               variables: {
                 title,
                 message,
@@ -178,11 +177,14 @@ async function processOutboxRow(row: OutboxRow): Promise<void> {
       const email = await getPlatformAdminEmail();
       if (email) {
         try {
+          const defaultHtml = adminNoticeEmailHtml({ title, message });
+          const defaultText = adminNoticeEmailText({ title, message });
+
           const template = await resolveEmailTemplate({
             templateKey: "platform.admin_notice",
             subject: title,
-            html: `<p>${message}</p>`,
-            text: message,
+            html: defaultHtml,
+            text: defaultText,
             variables: {
               title,
               message,

@@ -17,6 +17,7 @@ import {
   storeUpdateStaffMember,
 } from "@/lib/db/staff-store";
 import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
+import { prisma } from "@/lib/db/prisma";
 
 export async function PUT(
   request: NextRequest,
@@ -133,6 +134,20 @@ export async function DELETE(
     }
 
     await storeDeletePharmacyUser(pharmacyUserId);
+
+    if (member.user_id) {
+      try {
+        await prisma.public_users.delete({ where: { user_id: member.user_id } });
+      } catch (err) {
+        console.error("Failed to delete public_users record:", err);
+      }
+      try {
+        await prisma.auth_users.delete({ where: { id: member.user_id } });
+      } catch (err) {
+        console.error("Failed to delete auth_users record:", err);
+      }
+    }
+
     await writeAuditLog({
       pharmacyId,
       userId: user.id,

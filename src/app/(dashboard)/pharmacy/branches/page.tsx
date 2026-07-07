@@ -2,7 +2,7 @@
 
 import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import {
   Building2,
@@ -39,6 +39,8 @@ import { BranchAddDialog } from '@/components/branches/branch-add-dialog'
 import { BranchAddonCheckoutDialog } from '@/components/subscription/branch-addon-checkout-dialog'
 import { FeatureGate } from '@/components/subscription/feature-gate'
 import { useSaasBranches, useCreateBranch, useSaasSubscription, useSaasPlans } from '@/hooks/useSaasSubscription'
+import { useLocalListSearch } from '@/hooks/useLocalListSearch'
+import { filterBranchesForSearch } from '@/lib/branches/search-branches'
 import type { SaasBranchWithUsage } from '@/lib/http/saas-branches'
 import { branchStats } from '@/lib/branches/branch-usage'
 import type { CreateSaasBranchInput } from '@/lib/http/saas-branches'
@@ -50,6 +52,16 @@ export default function BranchesPage() {
   const createBranch = useCreateBranch()
 
   const [searchTerm, setSearchTerm] = useState('')
+  const filterBranches = useCallback(
+    (rows: SaasBranchWithUsage[], q: string) =>
+      filterBranchesForSearch(rows, q),
+    [],
+  )
+  const { filtered } = useLocalListSearch(
+    searchTerm,
+    branchesQuery.data,
+    filterBranches,
+  )
   const [addOpen, setAddOpen] = useState(false)
   const [addonCheckoutOpen, setAddonCheckoutOpen] = useState(false)
   const [limitWarningOpen, setLimitWarningOpen] = useState(false)
@@ -72,18 +84,6 @@ export default function BranchesPage() {
   )
 
   const overPlanCount = branches.filter((b) => b.over_plan_limit).length
-
-  const filtered = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase()
-    if (!q) return branches
-    return branches.filter(
-      (b) =>
-        b.name.toLowerCase().includes(q) ||
-        (b.address ?? '').toLowerCase().includes(q) ||
-        (b.phone ?? '').toLowerCase().includes(q) ||
-        (b.email ?? '').toLowerCase().includes(q),
-    )
-  }, [branches, searchTerm])
 
   const handleAddBranch = async (input: CreateSaasBranchInput) => {
     if (!input.name.trim()) {

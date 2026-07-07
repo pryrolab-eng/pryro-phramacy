@@ -9,6 +9,7 @@ import {
   type StaffUpdatePayload,
 } from "@/lib/http/staff";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { SEARCH_LIST_STALE_MS } from "@/lib/search/constants";
 
 export type { StaffUser, StaffUpdatePayload } from "@/lib/http/staff";
 export { staffUsersQueryKey } from "@/lib/http/staff";
@@ -22,6 +23,7 @@ export function useUsers(options?: { enabled?: boolean }) {
     queryKey: staffUsersQueryKey,
     queryFn: getStaffUsers,
     enabled: options?.enabled ?? true,
+    staleTime: SEARCH_LIST_STALE_MS,
   });
 }
 

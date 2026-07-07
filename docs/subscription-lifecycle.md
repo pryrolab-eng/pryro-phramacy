@@ -106,7 +106,7 @@ sequenceDiagram
 
 ## Cron
 
-`GET /api/cron/subscription-transitions` (Vercel cron, `CRON_SECRET`):
+`GET /api/cron/subscription-transitions` (external cron e.g. cron-job.org, `CRON_SECRET`):
 
 1. `applyDueScheduledChanges` — rows with `pending_change_status=scheduled` and `change_scheduled_at <= now`
 2. `processExpiredSubscriptions` — `active` / `scheduled_change` past `expires_at`

@@ -83,6 +83,7 @@ const NAV_CATALOG: Record<
     url: PHARMACY_ROUTES.staffSettings,
     icon: Settings,
     featureKey: "settings.access",
+    shortcutKeys: ["⌘", ","],
   },
 };
 

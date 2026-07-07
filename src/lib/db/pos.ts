@@ -7,8 +7,14 @@ import type {
 import { prisma } from "@/lib/db/prisma";
 import {
   isMissingStockLocationColumn,
+  posMedicationWithCategorySelect,
   resolveStockLocationId,
 } from "@/lib/db/inventory";
+import {
+  medicationCategoryDisplayName,
+  medicationCategoryWriteData,
+  resolveMedicationCategoryRef,
+} from "@/lib/db/medication-category-ref";
 
 export type PosProductRow = {
   id: string;
@@ -64,6 +70,8 @@ function mapPosProduct(row: {
     dosage_form: string | null;
     barcode: string | null;
     requires_prescription: boolean | null;
+    categories: { name: string } | null;
+    global_categories: { name: string } | null;
   } | null;
 }): PosProductRow {
   return {
@@ -73,7 +81,18 @@ function mapPosProduct(row: {
     quantity_in_stock: row.quantity_in_stock,
     selling_price: decimalToNumber(row.selling_price),
     expiry_date: row.expiry_date,
-    medications: row.medications,
+    medications: row.medications
+      ? {
+          id: row.medications.id,
+          name: row.medications.name,
+          category: medicationCategoryDisplayName(row.medications),
+          generic_name: row.medications.generic_name,
+          strength: row.medications.strength,
+          dosage_form: row.medications.dosage_form,
+          barcode: row.medications.barcode,
+          requires_prescription: row.medications.requires_prescription,
+        }
+      : null,
   };
 }
 
@@ -99,16 +118,7 @@ export async function listPosSellableProducts(
       selling_price: true,
       expiry_date: true,
       medications: {
-        select: {
-          id: true,
-          name: true,
-          category: true,
-          generic_name: true,
-          strength: true,
-          dosage_form: true,
-          barcode: true,
-          requires_prescription: true,
-        },
+        select: posMedicationWithCategorySelect,
       },
     },
   });
@@ -150,8 +160,10 @@ export type CreatePosSaleInput = {
   branchId: string;
   cashierId: string;
   shiftId: string;
+  customerId?: string | null;
   customerName: string;
   customerPhone: string | null;
+  patientName?: string | null;
   insuranceProviderId: string | null;
   subtotal: number;
   insuranceAmount: number;
@@ -188,8 +200,10 @@ export async function createPosSale(
         branch_id: input.branchId,
         cashier_id: input.cashierId,
         shift_id: input.shiftId,
+        customer_id: input.customerId ?? null,
         customer_name: input.customerName,
         customer_phone: input.customerPhone,
+        patient_name: input.patientName ?? null,
         insurance_provider_id: input.insuranceProviderId,
         subtotal: input.subtotal,
         insurance_amount: input.insuranceAmount,
@@ -274,7 +288,7 @@ export async function quickAddPosDrug(input: {
   pharmacyId: string;
   branchId: string;
   name: string;
-  category: import("@prisma/client").medication_category;
+  category: string;
   manufacturer: string | null;
   barcode: string | null;
   batchNumber: string;
@@ -290,14 +304,21 @@ export async function quickAddPosDrug(input: {
     value: input.stockLocation,
   });
 
+  const categoryRef = await resolveMedicationCategoryRef(input.pharmacyId, input.category, {
+    createIfMissing: true,
+  });
+  const categoryData = medicationCategoryWriteData(categoryRef);
+
   const medication = await prisma.medications.create({
     data: {
       pharmacy_id: input.pharmacyId,
       name: input.name,
-      category: input.category,
+      category: categoryData.category,
+      category_id: categoryData.category_id,
+      global_category_id: categoryData.global_category_id,
       manufacturer: input.manufacturer,
       barcode: input.barcode,
-      requires_prescription: input.category === "prescription",
+      requires_prescription: categoryData.requires_prescription,
       is_active: true,
     },
   });

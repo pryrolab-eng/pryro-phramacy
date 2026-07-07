@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
-import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
+import { inventoryInsuranceHref } from "@/lib/routes/pharmacy-paths";
 import { useInsuranceProviders } from "@/hooks/useInsuranceProviders";
 import {
   emptyInsuranceCoverageDraft,
@@ -131,10 +131,10 @@ export function InventoryInlineInsuranceCoverage({
           </div>
         </div>
         <Link
-          href={PHARMACY_ROUTES.insuranceMedicines}
+          href={inventoryInsuranceHref()}
           className="shrink-0 text-xs text-primary hover:underline"
         >
-          Manage all
+          Bulk manage
         </Link>
       </div>
       <Separator />

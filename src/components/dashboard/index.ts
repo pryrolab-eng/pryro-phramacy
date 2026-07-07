@@ -42,6 +42,8 @@ export {
   withDataTableIndexColumn,
   DATA_TABLE_INDEX_COLUMN_ID,
 } from "../ui/data-table-index-column";
+export { DashboardListFooterPagination } from "./dashboard-list-footer-pagination";
+export { DashboardPaginatedListCard } from "./dashboard-paginated-list-card";
 export { DashboardListRow } from "./dashboard-list-row";
 export { DashboardProgressTrack } from "./dashboard-progress-track";
 export { DashboardStaffCard } from "./dashboard-staff-card";

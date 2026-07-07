@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { PRYROX_BRAND_BLUE } from "@/lib/brand/colors";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -110,8 +111,11 @@ export function inventoryColumns(
       ),
       cell: ({ row }) => (
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100">
-            <Package className="h-4 w-4 text-blue-600" />
+          <div
+            className="flex h-8 w-8 items-center justify-center rounded-lg"
+            style={{ backgroundColor: PRYROX_BRAND_BLUE }}
+          >
+            <Package className="h-4 w-4 text-white" />
           </div>
           <div>
             <div className="font-medium">{row.original.name}</div>
@@ -128,7 +132,7 @@ export function inventoryColumns(
         <DataTableColumnHeader column={column} title="Category" />
       ),
       cell: ({ row }) => (
-        <Badge variant="outline" className="capitalize">
+        <Badge variant="outline">
           {row.original.category}
         </Badge>
       ),

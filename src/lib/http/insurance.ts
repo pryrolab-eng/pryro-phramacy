@@ -111,6 +111,34 @@ export async function uploadInsurancePricing(
   });
 }
 
+export type ApplyFormularyCoverageInput = {
+  insurance: string;
+  items: Array<{
+    medicationId: string;
+    externalCode?: string;
+  }>;
+};
+
+export type ApplyFormularyCoverageResult = {
+  success: boolean;
+  applied: number;
+  failures?: Array<{ medicationId: string; error: string }>;
+  error?: string;
+};
+
+export async function applyFormularyCoverage(
+  body: ApplyFormularyCoverageInput,
+): Promise<ApplyFormularyCoverageResult> {
+  return fetchJson<ApplyFormularyCoverageResult>(
+    "/api/insurance/formulary/apply",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
 export type InsuranceLookupResult = {
   success: boolean;
   insuranceType?: string;

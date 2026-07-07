@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -14,14 +13,12 @@ import {
 } from "@/components/ui/select";
 import {
   Dialog,
-  DialogTrigger,
   DashboardDialogContent,
   DashboardDialogHeader,
   DashboardDialogTitle,
   DashboardDialogDescription,
   DashboardDialogBody,
   DashboardDialogActions,
-  DashboardButton,
 } from "@/components/dashboard";
 
 export type StaffInviteInput = {
@@ -45,7 +42,6 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   onSubmit: (input: StaffInviteInput) => Promise<void>;
   isPending?: boolean;
-  trigger?: React.ReactNode;
 };
 
 export function StaffAddDialog({
@@ -53,16 +49,19 @@ export function StaffAddDialog({
   onOpenChange,
   onSubmit,
   isPending,
-  trigger,
 }: Props) {
   const [form, setForm] = useState<StaffInviteInput>(emptyForm);
 
   const reset = () => setForm(emptyForm);
 
   const handleSubmit = async () => {
-    await onSubmit(form);
-    reset();
-    onOpenChange(false);
+    try {
+      await onSubmit(form);
+      reset();
+      onOpenChange(false);
+    } catch {
+      // Parent shows toast; keep dialog open so the user can fix input.
+    }
   };
 
   return (
@@ -73,7 +72,6 @@ export function StaffAddDialog({
         if (!next) reset();
       }}
     >
-      {trigger ? <DialogTrigger asChild>{trigger}</DialogTrigger> : null}
       <DashboardDialogContent className="sm:max-w-md">
         <DashboardDialogHeader>
           <DashboardDialogTitle>Invite staff member</DashboardDialogTitle>
@@ -144,14 +142,5 @@ export function StaffAddDialog({
         />
       </DashboardDialogContent>
     </Dialog>
-  );
-}
-
-export function StaffAddDialogTrigger() {
-  return (
-    <DashboardButton tone="primary">
-      <Plus className="mr-1.5 h-4 w-4" />
-      Invite staff
-    </DashboardButton>
   );
 }

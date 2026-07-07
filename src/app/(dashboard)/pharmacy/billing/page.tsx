@@ -159,6 +159,16 @@ function PharmacyBillingPageContent() {
       ? Math.min(100, (summary.branch_count / summary.branch_limit) * 100)
       : 0
 
+  const primaryBranch =
+    summary?.branches.find((b) => b.is_headquarters) ?? summary?.branches[0]
+  const txUsage = primaryBranch?.usage
+  const planTxLimit = summary?.main_subscription?.plan?.monthly_tx_limit ?? 0
+  const txUsed = txUsage?.tx_count ?? 0
+  const txLimit = txUsage?.tx_limit ?? planTxLimit
+  const txPct =
+    txLimit > 0 ? Math.min(100, Math.round((txUsed / txLimit) * 100)) : 0
+  const txAtLimit = txUsage?.is_blocked ?? (txLimit > 0 && txUsed >= txLimit)
+
   return (
       <DashboardPageShell>
         <DashboardPageHeader
@@ -300,9 +310,18 @@ function PharmacyBillingPageContent() {
                   <PlanLimitBlock
                     icon={<Activity className="size-4 text-violet-500" />}
                     label="Tx / branch / mo"
-                    value={(
-                      summary.main_subscription.plan?.monthly_tx_limit ?? 0
-                    ).toLocaleString()}
+                    value={
+                      txUsage
+                        ? `${txUsed.toLocaleString()} / ${txLimit.toLocaleString()}`
+                        : planTxLimit.toLocaleString()
+                    }
+                    progress={txUsage ? txPct : undefined}
+                    atLimit={txAtLimit}
+                    hint={
+                      txUsage
+                        ? `${primaryBranch?.name ?? 'Branch'} this cycle`
+                        : 'Per branch — see usage below'
+                    }
                   />
                 </div>
 
@@ -551,12 +570,14 @@ function PlanLimitBlock({
   value,
   progress,
   atLimit,
+  hint,
 }: {
   icon: React.ReactNode
   label: string
   value: string
   progress?: number
   atLimit?: boolean
+  hint?: string
 }) {
   return (
     <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/50 p-3 dark:border-neutral-700 dark:bg-neutral-800/30">
@@ -572,6 +593,9 @@ function PlanLimitBlock({
       >
         {value}
       </p>
+      {hint ? (
+        <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
+      ) : null}
       {progress !== undefined ? (
         <DashboardProgressTrack
           value={progress}

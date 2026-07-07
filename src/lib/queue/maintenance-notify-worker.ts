@@ -1,31 +1,12 @@
 import { Worker, Job } from "bullmq";
 import { getRedisConnection, isRedisConfigured } from "./redis";
 import { sendMail, isSmtpConfigured } from "@/lib/email/mailer";
-import { authEmailLayout } from "@/lib/email/templates";
+import {
+  maintenanceNoticeEmailHtml,
+  maintenanceNoticeEmailText,
+} from "@/lib/email/maintenance-email";
 import { prisma } from "@/lib/db/prisma";
 import type { MaintenanceNotifyJobData, MaintenanceNotifyJobResult } from "./maintenance-notify";
-
-function maintenanceNotificationHtml(message: string, scheduledAt: string): string {
-  const date = new Date(scheduledAt);
-  const formatted = date.toLocaleString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
-
-  return authEmailLayout(
-    "Scheduled Maintenance Notice",
-    `<p>We wanted to let you know that Pryrox will undergo scheduled maintenance.</p>
-     <p><strong>When:</strong> ${formatted}</p>
-     <p><strong>What to expect:</strong> ${message}</p>
-     <p>During this time, you may experience limited access to the platform. We recommend saving your work before the maintenance window begins.</p>
-     <p>We apologize for any inconvenience and will work to complete the maintenance as quickly as possible.</p>`
-  );
-}
 
 async function processEmailJob(job: Job): Promise<MaintenanceNotifyJobResult> {
   const { email, message, scheduledAt } = job.data as MaintenanceNotifyJobData;
@@ -35,11 +16,13 @@ async function processEmailJob(job: Job): Promise<MaintenanceNotifyJobResult> {
   }
 
   try {
-    const html = maintenanceNotificationHtml(message, scheduledAt);
+    const html = maintenanceNoticeEmailHtml({ message, scheduledAt });
+    const text = maintenanceNoticeEmailText({ message, scheduledAt });
     await sendMail({
       to: email,
-      subject: "Pryrox Scheduled Maintenance Notice",
+      subject: "Pryrox scheduled maintenance notice",
       html,
+      text,
     });
     return { email, sent: true };
   } catch (error) {

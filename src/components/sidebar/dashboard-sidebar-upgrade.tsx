@@ -17,6 +17,7 @@ import {
 import type { TooltipContent } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { dashboardSidebarTokens } from "@/components/sidebar/dashboard-sidebar-tokens";
+import { PRYROX_BRAND_BLUE } from "@/lib/brand/colors";
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 import { useAccessBlockMessaging } from "@/hooks/useAccessBlockMessaging";
 import { usePlatformSupport } from "@/hooks/usePlatformSupport";
@@ -119,7 +120,10 @@ function PlanPopoverBody({
       </p>
       <div className="mx-0.5 rounded-lg bg-muted/50 px-2.5 py-2">
         <div className="flex items-center gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <span
+            className="flex size-9 shrink-0 items-center justify-center rounded-full text-white"
+            style={{ backgroundColor: PRYROX_BRAND_BLUE }}
+          >
             <Sparkles className="size-4" strokeWidth={1.75} />
           </span>
           <div className="min-w-0 flex-1">
@@ -205,10 +209,12 @@ function UsagePill({
   label,
   current,
   max,
+  onAccent = false,
 }: {
   label: string;
   current: number;
   max: number;
+  onAccent?: boolean;
 }) {
   const atLimit = max > 0 && current >= max;
 
@@ -217,8 +223,10 @@ function UsagePill({
       className={cn(
         "tabular-nums",
         atLimit
-          ? "font-semibold text-red-600 dark:text-red-400"
-          : "text-muted-foreground",
+          ? "font-semibold text-red-200"
+          : onAccent
+            ? "text-white/85"
+            : "text-muted-foreground",
       )}
     >
       {label} {current}/{max}
@@ -253,7 +261,11 @@ export function DashboardSidebarPlanCollapsed(props: SidebarPlanSummaryProps) {
           )}
         >
           <Link href={footerHref}>
-            <Sparkles className="size-4 shrink-0" strokeWidth={1.75} />
+            <Sparkles
+              className="size-4 shrink-0"
+              style={{ color: PRYROX_BRAND_BLUE }}
+              strokeWidth={1.75}
+            />
             <span className="sr-only">Current plan: {displayName}</span>
           </Link>
         </SidebarMenuButton>
@@ -285,7 +297,15 @@ export function DashboardSidebarUpgrade({
   const blockIsDestructive = messaging.badgeVariant === "destructive";
 
   return (
-    <div className={cn(dashboardSidebarTokens.upgradeCard, "space-y-1.5 p-2")}>
+    <div
+      className={cn(dashboardSidebarTokens.upgradeCard, "space-y-1.5 p-2")}
+      style={{
+        backgroundColor: PRYROX_BRAND_BLUE,
+        borderColor: PRYROX_BRAND_BLUE,
+        borderWidth: 1,
+        borderStyle: "solid",
+      }}
+    >
       {isExpired ? (
         <div
           className={cn(
@@ -318,33 +338,39 @@ export function DashboardSidebarUpgrade({
 
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <p className="text-[9px] font-semibold uppercase tracking-wider text-white/75">
             Current plan
           </p>
           <div className="mt-0.5 flex min-w-0 items-baseline gap-1.5">
-            <p className="truncate text-xs font-semibold text-foreground">
+            <p className="truncate text-xs font-semibold text-white">
               {displayName}
             </p>
             {showDays && daysLeft !== null ? (
-              <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+              <span className="shrink-0 text-[10px] tabular-nums text-white/75">
                 · {daysLeft}d left
               </span>
             ) : null}
           </div>
         </div>
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-white/20 text-white">
           <Sparkles className="size-3" />
         </span>
       </div>
 
       {showUsage ? (
         <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] leading-none">
-          <UsagePill label="Staff" current={staffUsed} max={staffLimit} />
-          <span className="text-neutral-300 dark:text-neutral-700">·</span>
+          <UsagePill
+            label="Staff"
+            current={staffUsed}
+            max={staffLimit}
+            onAccent
+          />
+          <span className="text-white/40">·</span>
           <UsagePill
             label="Branches"
             current={branchesUsed}
             max={branchesLimit}
+            onAccent
           />
         </p>
       ) : null}
@@ -360,12 +386,8 @@ export function DashboardSidebarUpgrade({
       ) : (
         <Link
           href={billingHref}
-          className={cn(
-            "inline-flex w-full items-center justify-center gap-1 rounded-md py-1 text-[10px] font-semibold transition-colors",
-            isExpired
-              ? "bg-primary text-primary-foreground hover:bg-primary/90"
-              : "text-foreground hover:bg-muted/80",
-          )}
+          className="inline-flex w-full items-center justify-center gap-1 rounded-md bg-white py-1.5 text-[10px] font-semibold transition-colors hover:bg-white/90"
+          style={{ color: PRYROX_BRAND_BLUE }}
         >
           {isExpired ? messaging.billingCta : "Manage plan"}
           <ArrowUpRight className="size-3 opacity-60" />

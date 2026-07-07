@@ -75,9 +75,4 @@ export function PosCatalogPagination({
   );
 }
 
-export function paginateList<T>(items: T[], page: number, pageSize: number): T[] {
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize) || 1);
-  const safePage = Math.min(Math.max(1, page), totalPages);
-  const start = (safePage - 1) * pageSize;
-  return items.slice(start, start + pageSize);
-}
+export { paginateList } from "@/lib/ui/paginate-list";

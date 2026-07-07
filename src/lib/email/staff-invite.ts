@@ -1,6 +1,30 @@
 import { isSmtpConfigured, sendMail } from "./mailer";
 import { getAppUrl } from "@/lib/app-url";
 import { resolveEmailTemplate } from "@/lib/email/template-overrides";
+import { escapeHtml } from "@/lib/email/layout";
+import {
+  invitationCredentialsBlock,
+  invitationEmailHtml,
+} from "@/lib/email/invitation-email";
+import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
+import {
+  DEFAULT_PLATFORM_SUPPORT_EMAIL,
+  buildSupportMailto,
+} from "@/lib/platform/support-email";
+
+function roleLabel(role: string): string {
+  if (role === "pharmacist") return "Pharmacist";
+  if (role === "cashier") return "Cashier";
+  if (role === "owner") return "Owner";
+  if (role === "manager") return "Manager";
+  return "Staff member";
+}
+
+function firstName(fullName: string): string {
+  const trimmed = fullName.trim();
+  if (!trimmed) return "there";
+  return trimmed.split(/\s+/)[0] ?? trimmed;
+}
 
 export function staffInviteEmailHtml(options: {
   fullName: string;
@@ -11,27 +35,24 @@ export function staffInviteEmailHtml(options: {
 }): string {
   const { fullName, pharmacyName, role, signInUrl, temporaryPassword } =
     options;
-  const roleLabel = role === "pharmacist" ? "Pharmacist" : "Staff";
+  const label = roleLabel(role);
+  const name = escapeHtml(firstName(fullName));
+  const org = escapeHtml(pharmacyName);
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>You're invited to Pryrox</title></head>
-<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#111;max-width:520px;margin:0 auto;padding:24px;">
-  <h1 style="font-size:20px;margin:0 0 16px;">You're invited to ${pharmacyName}</h1>
-  <p>Hi ${fullName},</p>
-  <p>You've been added to <strong>${pharmacyName}</strong> on Pryrox as <strong>${roleLabel}</strong>.</p>
-  <p>Sign in with the credentials below, then change your password from your account settings after your first login.</p>
-  <div style="margin:20px 0;padding:16px;border:1px solid #e5e5e5;border-radius:8px;background:#fafafa;">
-    <p style="margin:0 0 8px;font-size:13px;color:#525252;">Sign-in URL</p>
-    <p style="margin:0 0 16px;font-size:14px;word-break:break-all;"><a href="${signInUrl}" style="color:#111;">${signInUrl}</a></p>
-    <p style="margin:0 0 8px;font-size:13px;color:#525252;">Temporary password</p>
-    <p style="margin:0;font-size:16px;font-weight:600;font-family:ui-monospace,monospace;">${temporaryPassword}</p>
-  </div>
-  <p><a href="${signInUrl}" style="display:inline-block;background:#171717;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:500;">Sign in to Pryrox</a></p>
-  <p style="margin-top:32px;font-size:12px;color:#666;">If you weren't expecting this invitation, you can ignore this email.</p>
-  <p style="font-size:12px;color:#666;">— Pryrox</p>
-</body>
-</html>`;
+  return invitationEmailHtml({
+    preheader: `${pharmacyName} invited you to join their team on Pryrox as ${label}.`,
+    greeting: `Hi, ${name}!`,
+    introHtml: `<p style="margin:0 0 16px;">
+        <strong style="color:#111827;">${org}</strong> has invited you to use
+        <strong style="color:#111827;">Pryrox</strong> to work with their pharmacy team as a
+        <strong style="color:#111827;">${escapeHtml(label)}</strong>.
+        Click the button below to sign in and set up your account.
+      </p>`,
+    ctaLabel: "Set up your account",
+    ctaUrl: signInUrl,
+    extraBodyHtml: invitationCredentialsBlock({ signInUrl, temporaryPassword }),
+    fallbackUrl: signInUrl,
+  });
 }
 
 export function staffInviteEmailText(options: {
@@ -41,18 +62,37 @@ export function staffInviteEmailText(options: {
   signInUrl: string;
   temporaryPassword: string;
 }): string {
-  const roleLabel = options.role === "pharmacist" ? "Pharmacist" : "Staff";
+  const label = roleLabel(options.role);
+  const name = firstName(options.fullName);
+  const helpUrl = `${getAppUrl()}${PHARMACY_ROUTES.helpGettingStarted}`;
+  const supportMailto = buildSupportMailto(
+    DEFAULT_PLATFORM_SUPPORT_EMAIL,
+    "Pryrox support",
+  );
+
   return [
-    `Hi ${options.fullName},`,
+    `Hi, ${name}!`,
     ``,
-    `You've been invited to ${options.pharmacyName} on Pryrox as ${roleLabel}.`,
+    `${options.pharmacyName} has invited you to use Pryrox to work with their pharmacy team as a ${label}.`,
     ``,
-    `Sign in: ${options.signInUrl}`,
+    `Set up your account: ${options.signInUrl}`,
+    ``,
+    `Sign-in URL: ${options.signInUrl}`,
     `Temporary password: ${options.temporaryPassword}`,
     ``,
-    `Change your password after your first login.`,
+    `Change your password after your first sign-in.`,
     ``,
-    `— Pryrox`,
+    `If you have questions, contact your pharmacy manager or ${supportMailto}.`,
+    ``,
+    `Welcome aboard,`,
+    `The Pryrox Team`,
+    ``,
+    `P.S. Need help getting started? ${helpUrl}`,
+    ``,
+    `If the link above doesn't work, copy and paste this URL into your browser:`,
+    options.signInUrl,
+    ``,
+    `© ${new Date().getFullYear()} Pryrox. All rights reserved.`,
   ].join("\n");
 }
 
@@ -77,7 +117,7 @@ export async function sendStaffInviteEmail(options: {
   }
 
   const signInUrl = `${getAppUrl()}/sign-in`;
-  const subject = `You're invited to ${options.pharmacyName} on Pryrox`;
+  const subject = `You're invited to join ${options.pharmacyName} on Pryrox`;
 
   const defaultHtml = staffInviteEmailHtml({
     fullName: options.fullName,
@@ -105,7 +145,7 @@ export async function sendStaffInviteEmail(options: {
         fullName: options.fullName,
         pharmacyName: options.pharmacyName,
         role: options.role === "pharmacist" ? "Pharmacist" : "Staff",
-        roleLabel: options.role === "pharmacist" ? "Pharmacist" : "Staff",
+        roleLabel: roleLabel(options.role),
         signInUrl,
         temporaryPassword: options.temporaryPassword,
       },

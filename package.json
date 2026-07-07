@@ -28,6 +28,8 @@
     "db:reset": "npm run db:sql:reset",
     "db:introspect": "npm run db:pull",
     "db:prisma:studio": "npm run db:studio",
+    "db:seed:demo": "npx tsx scripts/seed-pharmacy-demo.ts",
+    "demo:import-files": "npx tsx scripts/generate-demo-import-files.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

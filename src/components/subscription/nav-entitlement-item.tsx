@@ -15,6 +15,7 @@ import { getNavEntitlementDisplayMode } from "@/lib/subscription/nav-entitlement
 import { UpgradePlanDialog } from "@/components/subscription/upgrade-plan-dialog";
 import { usePharmacyEntitlements } from "@/hooks/usePharmacyEntitlements";
 
+import { NavMenuShortcut } from "@/components/sidebar/nav-menu-shortcut";
 import { canAccessBillingWhenBlocked } from "@/lib/subscription/access-block";
 import { BILLING_ROUTE } from "@/lib/subscription/subscription-grace-routes";
 
@@ -56,9 +57,18 @@ export function NavEntitlementItem({
             dashboardSidebarTokens.navActive,
           )}
         >
-          <Link href={item.url}>
-            <item.icon className="size-4" strokeWidth={1.75} />
-            <span>{item.title}</span>
+          <Link
+            href={item.url}
+            className="flex w-full min-w-0 items-center gap-2 data-[active=true]:[&_[data-shortcut-kbd]]:border-white/25 data-[active=true]:[&_[data-shortcut-kbd]]:bg-white/15 data-[active=true]:[&_[data-shortcut-kbd]]:text-white/80 data-[active=true]:[&_[data-shortcut-kbd]]:shadow-none"
+          >
+            <item.icon className="size-4 shrink-0" strokeWidth={1.75} />
+            <span className="min-w-0 flex-1 truncate">{item.title}</span>
+            {item.shortcutKeys?.length ? (
+              <NavMenuShortcut
+                keys={item.shortcutKeys}
+                className={dashboardSidebarTokens.collapsedHidden}
+              />
+            ) : null}
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>

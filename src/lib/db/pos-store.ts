@@ -1,5 +1,4 @@
 import type {
-  medication_category,
   payment_method,
   return_type,
 } from "@prisma/client";
@@ -83,7 +82,7 @@ export async function storeQuickAddPosDrug(input: {
   pharmacyId: string;
   branchId: string;
   name: string;
-  category: medication_category;
+  category: string;
   manufacturer: string | null;
   barcode: string | null;
   batchNumber: string;

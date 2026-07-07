@@ -142,6 +142,11 @@ export async function updateAuthUserMetadataFromDb(
       updated_at: new Date(),
     },
   });
+
+  const { invalidateNativeAuthUserCache } = await import(
+    "@/lib/auth/native/session-cache"
+  );
+  invalidateNativeAuthUserCache(userId);
 }
 
 export async function deleteAuthUserFromDb(userId: string): Promise<void> {

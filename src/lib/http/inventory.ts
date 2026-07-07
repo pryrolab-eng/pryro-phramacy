@@ -119,6 +119,30 @@ export async function addInventoryProduct(
   return data;
 }
 
+export type InventoryImportFailure = {
+  rowNumber: number;
+  label: string;
+  error: string;
+};
+
+export type InventoryImportResult = {
+  success: boolean;
+  attempted: number;
+  succeeded: number;
+  failures: InventoryImportFailure[];
+  error?: string;
+};
+
+export async function importInventoryProducts(
+  rows: AddInventoryProductInput[],
+): Promise<InventoryImportResult> {
+  return fetchJson<InventoryImportResult>("/api/inventory/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rows }),
+  });
+}
+
 export async function adjustInventoryStock(body: {
   productId: string;
   quantity: number;

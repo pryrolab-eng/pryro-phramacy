@@ -1,12 +1,15 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, Suspense } from 'react'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
 import { isHeadquartersBranch } from '@/lib/pharmacy/branch-hq'
 import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
 import { CategorySelect } from '@/components/catalog/category-select'
+import type { CategoryCatalogItem } from '@/lib/pharmacy/category-catalog'
 import {
   useAddInventoryProductMutation,
+  useImportInventoryMutation,
   useAdjustInventoryMutation,
   useCreateInventoryCategoryMutation,
   useCreateInventorySupplierMutation,
@@ -67,7 +70,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
-import { Package, Plus, AlertTriangle, Calendar, Upload, Download, QrCode, Scan, Search, Filter, TrendingUp, TrendingDown } from 'lucide-react'
+import { Package, Plus, AlertTriangle, Calendar, Upload, Download, QrCode, TrendingUp } from 'lucide-react'
 import {
   inventoryColumns,
   type InventoryTableRow,
@@ -85,6 +88,14 @@ import { useActivePharmacy } from '@/components/providers/active-pharmacy-provid
 import { useSaasBranches } from '@/hooks/useSaasSubscription'
 import { shouldHideLockedFeature } from '@/lib/subscription/nav-entitlement-display'
 import * as XLSX from 'xlsx'
+import {
+  inventoryPreviewToApiRow,
+  validateInventoryImportRows,
+  type InventoryImportPreviewRow,
+} from '@/lib/import/inventory-rows'
+import { parseExcelFile } from '@/lib/import/parse-excel'
+import { downloadImportTemplate } from '@/lib/import/templates'
+import { PharmacyInsuranceMedicinesPanel } from '@/components/pharmacy/pharmacy-insurance-medicines-panel'
 import JsBarcode from 'jsbarcode'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar } from 'recharts'
 
@@ -146,6 +157,9 @@ function toInventoryItem(row: InventoryListRow): InventoryItem {
 }
 
 export default function InventoryPage() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
   const { can } = usePharmacyEntitlements()
   const { activeBranchId } = useActivePharmacy()
   const branchesQuery = useSaasBranches()
@@ -161,6 +175,13 @@ export default function InventoryPage() {
     can('inventory.analytics') ||
     !shouldHideLockedFeature('inventory.analytics', can)
   const canInsurance = can('pos.insurance')
+  const resolvedTab = useMemo(() => {
+    const tab = searchParams.get('tab')
+    if (tab === 'insurance' && canInsurance) return 'insurance'
+    if (tab === 'alerts' || tab === 'analytics' || tab === 'actions') return tab
+    return 'inventory'
+  }, [searchParams, canInsurance])
+  const [activeTab, setActiveTab] = useState(resolvedTab)
   const { inventory, setInventory } = usePharmacyStore()
   const inventoryQuery = useInventoryList()
   const analyticsQuery = useInventoryAnalytics()
@@ -169,6 +190,7 @@ export default function InventoryPage() {
   const invalidateInventory = useInvalidateInventory()
 
   const addProductMutation = useAddInventoryProductMutation()
+  const importInventoryMutation = useImportInventoryMutation()
   const addSupplierMutation = useCreateInventorySupplierMutation()
   const adjustMutation = useAdjustInventoryMutation()
   const purchaseMutation = usePurchaseInventoryMutation()
@@ -186,7 +208,7 @@ export default function InventoryPage() {
     analyticsQuery.isPending ||
     suppliersQuery.isPending ||
     categoriesQuery.isPending
-  const categories = (categoriesQuery.data ?? []) as Array<{ id: string; name: string }>
+  const categories = (categoriesQuery.data ?? []) as CategoryCatalogItem[]
   const suppliers = (suppliersQuery.data ?? []).map((s) => ({
     id: s.id,
     name: s.name,
@@ -197,7 +219,7 @@ export default function InventoryPage() {
   }
   const [isAddingProduct, setIsAddingProduct] = useState(false)
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
-  const [previewData, setPreviewData] = useState<any[]>([])
+  const [previewData, setPreviewData] = useState<InventoryImportPreviewRow[]>([])
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [importSummary, setImportSummary] = useState<ImportSummary>(null)
   const [isImporting, setIsImporting] = useState(false)
@@ -258,6 +280,26 @@ export default function InventoryPage() {
       setInventory(localInventory)
     }
   }, [localInventory, setInventory])
+
+  useEffect(() => {
+    setActiveTab(resolvedTab)
+  }, [resolvedTab])
+
+  useEffect(() => {
+    if (searchParams.get('import') !== '1') return
+    if (searchParams.get('tab') === 'insurance') return
+    setIsImportDialogOpen(true)
+  }, [searchParams])
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value)
+    const params = new URLSearchParams(searchParams.toString())
+    if (value === 'inventory') params.delete('tab')
+    else params.set('tab', value)
+    if (value !== 'insurance') params.delete('import')
+    const qs = params.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }
 
   useRealtimeUpdates((update) => {
     if (update.type === 'inventory_update') {
@@ -422,163 +464,76 @@ export default function InventoryPage() {
     XLSX.writeFile(workbook, `inventory-${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
-  const handleExcelImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleExcelImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer)
-        const workbook = XLSX.read(data, { type: 'array' })
-        const worksheet = workbook.Sheets[workbook.SheetNames[0]]
-        const jsonData = XLSX.utils.sheet_to_json(worksheet)
-        
-        validateAndPreview(jsonData)
-      } catch (error) {
-        alert('Error reading Excel file. Please check the format.')
-      }
-    }
-    reader.readAsArrayBuffer(file)
-    event.target.value = ''
-  }
-
-  const validateAndPreview = (data: any[]) => {
-    const errors: string[] = []
-    setImportSummary(null)
-    const validatedData = data.map((row: any, index) => {
-      const rowNum = index + 2 // Excel row number (header is row 1)
-      
-      if (!row['Product Name']) errors.push(`Row ${rowNum}: Product Name is required`)
-      if (!row['Category']) errors.push(`Row ${rowNum}: Category is required`)
-      if (!row['Stock'] || isNaN(parseInt(row['Stock']))) errors.push(`Row ${rowNum}: Valid Stock number required`)
-      if (!row['Min Stock'] || isNaN(parseInt(row['Min Stock']))) errors.push(`Row ${rowNum}: Valid Min Stock number required`)
-      if (!row['Price (RWF)'] || isNaN(parseFloat(row['Price (RWF)']))) errors.push(`Row ${rowNum}: Valid Price required`)
-      if (!row['Expiry Date']) errors.push(`Row ${rowNum}: Expiry Date is required`)
-      if (!row['Batch Number']) errors.push(`Row ${rowNum}: Batch Number is required`)
-      
-      return {
-        'Product Name': row['Product Name'] || '',
-        'Category': row['Category'] || '',
-        'Stock': parseInt(row['Stock']) || 0,
-        'Min Stock': parseInt(row['Min Stock']) || 0,
-        'Price (RWF)': parseFloat(row['Price (RWF)']) || 0,
-        'Expiry Date': row['Expiry Date'] || '',
-        'Batch Number': row['Batch Number'] || ''
-      }
-    })
-    
-    setPreviewData(validatedData)
-    setValidationErrors(errors)
-  }
-
-  const confirmImport = async () => {
-    const importCount = previewData.length
     try {
-      for (const row of previewData) {
-        await addProductMutation.mutateAsync({
-          name: row['Product Name'],
-          category: row['Category'],
-          batch_number: row['Batch Number'],
-          quantity: row['Stock'],
-          unit_cost: 0,
-          selling_price: row['Price (RWF)'],
-          minimum_stock_level: row['Min Stock'],
-          expiry_date: row['Expiry Date'],
-        })
-      }
-
-      setPreviewData([])
-      setValidationErrors([])
-      setIsImportDialogOpen(false)
-      alert(`✅ Successfully imported ${importCount} products to database!`)
-    } catch (error) {
-      console.error('Import error:', error)
-      alert('❌ Failed to import products')
+      const jsonData = await parseExcelFile(file)
+      const { rows, errors } = validateInventoryImportRows(jsonData)
+      setPreviewData(rows)
+      setValidationErrors(errors)
+      setImportSummary(null)
+    } catch {
+      toast({
+        title: 'Could not read Excel file',
+        description: 'Check the format and try again.',
+        variant: 'destructive',
+      })
     }
+
+    event.target.value = ''
   }
 
   const confirmImportWithReport = async () => {
     const importCount = previewData.length
-    const failures: ImportFailure[] = []
-    let succeeded = 0
-
     setIsImporting(true)
     setImportSummary(null)
 
-    for (let index = 0; index < previewData.length; index += 1) {
-      const row = previewData[index]
-      try {
-        const result = await addProductMutation.mutateAsync({
-          name: row['Product Name'],
-          category: row['Category'],
-          batch_number: row['Batch Number'],
-          quantity: row['Stock'],
-          unit_cost: 0,
-          selling_price: row['Price (RWF)'],
-          minimum_stock_level: row['Min Stock'],
-          expiry_date: row['Expiry Date'],
-        })
-        if (!result.success) {
-          throw new Error(result.error ?? 'Import failed')
-        }
-        succeeded += 1
-      } catch (error) {
-        failures.push({
-          rowNumber: index + 2,
-          productName: String(row['Product Name'] || 'Unnamed product'),
-          error: error instanceof Error ? error.message : 'Unknown error',
-        })
-      }
-    }
+    try {
+      const result = await importInventoryMutation.mutateAsync(
+        previewData.map(inventoryPreviewToApiRow),
+      )
 
-    setIsImporting(false)
-    setImportSummary({ attempted: importCount, succeeded, failures })
-
-    if (failures.length === 0) {
-      setPreviewData([])
-      setValidationErrors([])
-      setIsImportDialogOpen(false)
-      toast({
-        title: 'Import complete',
-        description: `Imported ${succeeded} product${succeeded === 1 ? '' : 's'}.`,
+      setImportSummary({
+        attempted: result.attempted,
+        succeeded: result.succeeded,
+        failures: result.failures.map((failure) => ({
+          rowNumber: failure.rowNumber,
+          productName: failure.label,
+          error: failure.error,
+        })),
       })
-      return
-    }
 
-    toast({
-      title: succeeded > 0 ? 'Import partially completed' : 'Import failed',
-      description: `${succeeded} of ${importCount} products imported. Review failed rows in the dialog.`,
-      variant: 'destructive',
-    })
+      if (result.failures.length === 0) {
+        setPreviewData([])
+        setValidationErrors([])
+        setIsImportDialogOpen(false)
+        toast({
+          title: 'Import complete',
+          description: `Imported ${result.succeeded} product${result.succeeded === 1 ? '' : 's'}.`,
+        })
+        return
+      }
+
+      toast({
+        title: result.succeeded > 0 ? 'Import partially completed' : 'Import failed',
+        description: `${result.succeeded} of ${importCount} products imported. Review failed rows in the dialog.`,
+        variant: 'destructive',
+      })
+    } catch (error) {
+      toast({
+        title: 'Import failed',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsImporting(false)
+    }
   }
 
-  const downloadSample = () => {
-    const sampleData = [
-      {
-        'Product Name': 'Paracetamol 500mg',
-        'Category': 'Pain Relief',
-        'Stock': 100,
-        'Min Stock': 20,
-        'Price (RWF)': 500,
-        'Expiry Date': '2025-12-31',
-        'Batch Number': 'PAR001'
-      },
-      {
-        'Product Name': 'Amoxicillin 250mg',
-        'Category': 'Antibiotics',
-        'Stock': 50,
-        'Min Stock': 15,
-        'Price (RWF)': 1200,
-        'Expiry Date': '2025-06-30',
-        'Batch Number': 'AMX001'
-      }
-    ]
-    
-    const worksheet = XLSX.utils.json_to_sheet(sampleData)
-    const workbook = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sample')
-    XLSX.writeFile(workbook, 'inventory-sample.xlsx')
+  const downloadSample = async () => {
+    await downloadImportTemplate('inventory')
   }
 
   const generateBarcode = () => {
@@ -1087,7 +1042,14 @@ export default function InventoryPage() {
                       setNewProduct({ ...newProduct, category: value })
                     }
                     categories={categories}
-                    onCreateCategory={(name) => createCategoryMutation.mutateAsync(name)}
+                    onCreateCategory={async (name) => {
+                      const result = await createCategoryMutation.mutateAsync(name)
+                      return {
+                        success: result.success,
+                        categoryId: result.categoryId,
+                        error: result.error,
+                      }
+                    }}
                     placeholder="Select category"
                   />
                 </div>
@@ -1247,7 +1209,7 @@ export default function InventoryPage() {
         }
       />
 
-      <DashboardMetricGrid columns={5}>
+      <DashboardMetricGrid>
         <DashboardStatCard
           label="Total products"
           icon={Package}
@@ -1274,9 +1236,12 @@ export default function InventoryPage() {
         />
       </DashboardMetricGrid>
 
-      <Tabs defaultValue="inventory" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <DashboardTabsList>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
+          {canInsurance ? (
+            <TabsTrigger value="insurance">Insurance</TabsTrigger>
+          ) : null}
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
           {showAnalyticsTab ? (
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
@@ -1323,6 +1288,16 @@ export default function InventoryPage() {
             isLoading={inventoryQuery.isPending && localInventory.length === 0}
           />
         </TabsContent>
+
+        {canInsurance ? (
+          <TabsContent value="insurance" className="space-y-4">
+            <FeatureGate featureKey="pos.insurance">
+              <Suspense fallback={<DashboardPageLoading label="Loading insurance coverage…" />}>
+                <PharmacyInsuranceMedicinesPanel embedded />
+              </Suspense>
+            </FeatureGate>
+          </TabsContent>
+        ) : null}
         
         <TabsContent value="alerts" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">

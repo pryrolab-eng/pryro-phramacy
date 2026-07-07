@@ -19,8 +19,7 @@ import { adminUpdateAuthUserPassword } from "@/lib/auth/admin-users";
 
 import { findAuthUserByIdFromDb } from "@/lib/db/auth-credentials";
 
-import { verifyPassword } from "@/lib/auth/native/password";
-import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
+import { invalidateNativeAuthUserCache } from "@/lib/auth/native/session-cache";
 
 
 
@@ -145,6 +144,7 @@ export async function POST(request: NextRequest) {
     await adminUpdateAuthUserPassword(user.id, newPassword.trim());
 
     await clearMustChangePasswordFlag(user.id, user.user_metadata);
+    invalidateNativeAuthUserCache(user.id);
     await writeAuditLog({
       pharmacyId: null,
       userId: user.id,

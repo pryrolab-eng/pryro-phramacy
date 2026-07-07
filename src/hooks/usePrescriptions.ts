@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { SEARCH_LIST_STALE_MS } from "@/lib/search/constants";
 import {
   createPrescription,
   getPrescriptions,
@@ -21,6 +22,7 @@ export function usePrescriptions(options?: { enabled?: boolean }) {
     queryKey: prescriptionsKeys.list(),
     queryFn: getPrescriptions,
     enabled: options?.enabled ?? true,
+    staleTime: SEARCH_LIST_STALE_MS,
   });
 }
 

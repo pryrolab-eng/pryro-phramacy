@@ -8,7 +8,7 @@ import { getStaffAllowedBranchIds } from "@/lib/pharmacy/staff-branch-access";
 
 import { loadRolePermissions } from "@/lib/rbac/permissions";
 
-import { userMustChangePassword } from "@/lib/auth/must-change-password";
+import { readMustChangePasswordFromDb } from "@/lib/auth/must-change-password";
 
 import { storeGetPublicUserProfile } from "@/lib/db/public-users-store";
 
@@ -84,11 +84,7 @@ export async function GET() {
 
       permissions,
 
-      mustChangePassword: userMustChangePassword({
-
-        user_metadata: user.user_metadata ?? {},
-
-      }),
+      mustChangePassword: await readMustChangePasswordFromDb(user.id),
 
       memberships: ctx.memberships.map((m) => ({
 

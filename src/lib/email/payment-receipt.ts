@@ -1,25 +1,72 @@
-import { authEmailLayout } from "./templates";
+import {
+  emailDetailTable,
+  emailParagraph,
+  escapeHtml,
+  pryroxEmailLayout,
+} from "./layout";
 
 export function paymentReceiptEmailHtml(params: {
   pharmacyName: string;
   planName: string;
-  amount: number;
+  amount: number | string;
   currency: string;
   invoiceNumber: string;
   paymentMethod: string;
   paidAt: string;
 }): string {
-  const amountLabel = `${params.amount.toLocaleString()} ${params.currency}`;
-  return authEmailLayout(
+  const amountLabel =
+    typeof params.amount === "number"
+      ? `${params.amount.toLocaleString()} ${params.currency}`
+      : `${params.amount} ${params.currency}`;
+
+  return pryroxEmailLayout({
+    title: "Payment received",
+    preheader: `Receipt for ${params.planName} — ${amountLabel}`,
+    footerNote:
+      "This is an automated receipt for your Pryrox subscription payment.",
+    bodyHtml: [
+      emailParagraph(
+        `Thank you — your subscription payment for <strong style="color:#0f172a;">${escapeHtml(params.pharmacyName)}</strong> was successful.`,
+      ),
+      emailDetailTable([
+        { label: "Plan", value: params.planName, emphasize: true },
+        { label: "Amount", value: amountLabel, emphasize: true },
+        { label: "Payment method", value: params.paymentMethod },
+        { label: "Invoice number", value: params.invoiceNumber },
+        { label: "Date paid", value: params.paidAt },
+      ]),
+      emailParagraph(
+        'You can view billing history anytime in <strong style="color:#0f172a;">Settings → Billing</strong> inside Pryrox.',
+      ),
+    ].join(""),
+  });
+}
+
+export function paymentReceiptEmailText(params: {
+  pharmacyName: string;
+  planName: string;
+  amount: number | string;
+  currency: string;
+  invoiceNumber: string;
+  paymentMethod: string;
+  paidAt: string;
+}): string {
+  const amountLabel =
+    typeof params.amount === "number"
+      ? `${params.amount.toLocaleString()} ${params.currency}`
+      : `${params.amount} ${params.currency}`;
+  return [
     "Payment received",
-    `<p>Thank you — your subscription payment for <strong>${params.pharmacyName}</strong> was successful.</p>
-     <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px;">
-       <tr><td style="padding:6px 0;color:#666;">Plan</td><td style="padding:6px 0;text-align:right;"><strong>${params.planName}</strong></td></tr>
-       <tr><td style="padding:6px 0;color:#666;">Amount</td><td style="padding:6px 0;text-align:right;"><strong>${amountLabel}</strong></td></tr>
-       <tr><td style="padding:6px 0;color:#666;">Method</td><td style="padding:6px 0;text-align:right;">${params.paymentMethod}</td></tr>
-       <tr><td style="padding:6px 0;color:#666;">Invoice</td><td style="padding:6px 0;text-align:right;">${params.invoiceNumber}</td></tr>
-       <tr><td style="padding:6px 0;color:#666;">Date</td><td style="padding:6px 0;text-align:right;">${params.paidAt}</td></tr>
-     </table>
-     <p>You can view billing history anytime in <strong>Settings → Billing</strong>.</p>`
-  );
+    "",
+    `Pharmacy: ${params.pharmacyName}`,
+    `Plan: ${params.planName}`,
+    `Amount: ${amountLabel}`,
+    `Payment method: ${params.paymentMethod}`,
+    `Invoice: ${params.invoiceNumber}`,
+    `Date: ${params.paidAt}`,
+    "",
+    "View billing history in Settings → Billing.",
+    "",
+    "— Pryrox",
+  ].join("\n");
 }

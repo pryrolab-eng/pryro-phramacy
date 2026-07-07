@@ -1,28 +1,22 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
-import { sendStaffInviteEmail } from "@/lib/email/staff-invite";
 import {
   entitlementErrorResponse,
   requirePharmacyEntitlement,
 } from "@/lib/subscription/assert-entitlement";
-import { generateTemporaryPassword } from "@/lib/staff/temporary-password";
-import { buildStaffInviteApiPayload } from "@/lib/staff/staff-invite-response";
-import {
-  assertStaffInviteEmailAllowed,
-  mapCreateUserErrorForStaffInvite,
-  StaffInviteEmailRejectedError,
-  STAFF_INVITE_EMAIL_REJECTED_CODE,
-  STAFF_INVITE_EMAIL_REJECTED_MESSAGE,
-} from "@/lib/staff/staff-invite-email";
 import {
   permissionErrorResponse,
   requirePharmacyPermission,
 } from "@/lib/rbac/require-pharmacy-permission";
 import { PHARMACY_PERMISSIONS } from "@/lib/rbac/permissions";
-import { staffInviteUserMetadata } from "@/lib/auth/must-change-password";
-import { adminCreateAuthUser } from "@/lib/auth/admin-users";
-import { storeCreatePharmacyMembership } from "@/lib/db/pharmacy-users-store";
-import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
+import {
+  invitePharmacyStaffMember,
+  StaffInviteEmailRejectedError,
+} from "@/lib/staff/invite-pharmacy-staff";
+import {
+  STAFF_INVITE_EMAIL_REJECTED_CODE,
+  STAFF_INVITE_EMAIL_REJECTED_MESSAGE,
+} from "@/lib/staff/staff-invite-email";
 
 export async function POST(request: Request) {
   try {
@@ -52,85 +46,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "email is required" }, { status: 400 });
     }
 
-    const password =
-      typeof body.password === "string" && body.password.trim().length >= 6
-        ? body.password.trim()
-        : generateTemporaryPassword();
-
-    const fullName =
-      String(body.full_name ?? "").trim() ||
-      email.split("@")[0]?.replace(/[._]/g, " ") ||
-      "Team member";
-
-    const pharmacyName =
-      String(body.pharmacy_name ?? "").trim() || "your pharmacy";
-
-    const role = String(body.role ?? "pharmacist").trim() || "pharmacist";
-
-    await assertStaffInviteEmailAllowed(body.pharmacy_id, email);
-
-    let authUser: { user: { id: string } };
-    try {
-      authUser = await adminCreateAuthUser({
-        email,
-        password,
-        fullName,
-        userMetadata: staffInviteUserMetadata({
-          full_name: fullName,
-          phone: body.phone,
-        }),
-      });
-    } catch (createUserError) {
-      mapCreateUserErrorForStaffInvite(createUserError as never);
-    }
-
-    if (!authUser?.user) {
-      return NextResponse.json(
-        { success: false, error: "Failed to create team member" },
-        { status: 500 },
-      );
-    }
-
-    await storeCreatePharmacyMembership({
+    const result = await invitePharmacyStaffMember({
       pharmacyId: body.pharmacy_id,
-      userId: authUser.user.id,
-      role,
+      pharmacyName: String(body.pharmacy_name ?? "").trim(),
+      email,
+      fullName: String(body.full_name ?? "").trim(),
+      phone: body.phone,
+      role: body.role,
+      password: body.password,
+      invitedByUserId: sessionUser.id,
+      request,
     });
 
-    await writeAuditLog({
-      pharmacyId: body.pharmacy_id,
-      userId: sessionUser.id,
-      action: "INSERT",
-      tableName: "pharmacy_users",
-      recordId: authUser.user.id,
-      newValues: {
-        invitedUserId: authUser.user.id,
-        email,
-        fullName,
-        role,
-      },
-      ...auditRequestMetadata(request),
-    });
-
-    const emailResult = await sendStaffInviteEmail({
-      to: email,
-      fullName,
-      pharmacyName,
-      role,
-      temporaryPassword: password,
-    });
-
-    return NextResponse.json(
-      buildStaffInviteApiPayload({
-        email,
-        temporaryPassword: password,
-        emailResult,
-        userId: authUser.user.id,
-        messageWhenEmailOk: "Team member created and invitation email sent",
-        messageWhenEmailFailed:
-          "Team member created; invitation email could not be sent",
-      }),
-    );
+    return NextResponse.json(result);
   } catch (error) {
     const forbidden = permissionErrorResponse(error);
     if (forbidden) {

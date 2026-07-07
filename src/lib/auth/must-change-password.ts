@@ -1,4 +1,5 @@
 import { adminUpdateAuthUserMetadata } from "@/lib/auth/admin-users";
+import { findAuthUserByIdFromDb } from "@/lib/db/auth-credentials";
 
 export const MUST_CHANGE_PASSWORD_METADATA_KEY = "must_change_password";
 
@@ -58,4 +59,14 @@ export async function clearMustChangePasswordFlag(
   existingMetadata: Record<string, unknown> | undefined,
 ) {
   await setMustChangePasswordFlag(userId, existingMetadata, false);
+}
+
+/** Read the flag from DB — avoids stale in-memory session user metadata. */
+export async function readMustChangePasswordFromDb(
+  userId: string,
+): Promise<boolean> {
+  const row = await findAuthUserByIdFromDb(userId);
+  return userMustChangePassword({
+    user_metadata: row?.raw_user_meta_data ?? {},
+  });
 }

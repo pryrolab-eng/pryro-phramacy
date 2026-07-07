@@ -5,15 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Building2,
+  BookOpen,
   CreditCard,
   LogOut,
   MoreVertical,
-  Settings,
   User,
-  KeyRound,
 } from "lucide-react";
-import { ChangePasswordDialog } from "@/components/auth/change-password-dialog";
 import { SignOutConfirmDialog } from "@/components/auth/sign-out-confirm-dialog";
+import { NavMenuShortcut } from "@/components/sidebar/nav-menu-shortcut";
 import { isStaffWorkspaceRole } from "@/lib/rbac/pharmacy-roles";
 import { cn } from "@/lib/utils";
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
@@ -38,27 +37,8 @@ type Props = {
   avatarClassName?: string;
 };
 
-function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <kbd
-      className={cn(
-        "inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded border border-border/70 bg-muted/60 px-1 font-mono text-[10px] font-medium text-muted-foreground",
-        className,
-      )}
-    >
-      {children}
-    </kbd>
-  );
-}
-
 function MenuShortcut({ keys }: { keys: string[] }) {
-  return (
-    <span className="ml-auto flex items-center gap-0.5">
-      {keys.map((key) => (
-        <Kbd key={key}>{key}</Kbd>
-      ))}
-    </span>
-  );
+  return <NavMenuShortcut keys={keys} />;
 }
 
 function MenuActionLink({
@@ -167,7 +147,6 @@ export function SidebarUserAccountMenu({
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
 
@@ -176,7 +155,7 @@ export function SidebarUserAccountMenu({
     setSignOutOpen(true);
   };
   const { context, switchPharmacy, isPending: contextLoading } = useActivePharmacy();
-  const { canReachHref, canChangePassword, lockedHint } = useDashboardGraceNav();
+  const { canReachHref, lockedHint } = useDashboardGraceNav();
 
   const email = context.user.email ?? "";
   const memberships = context.memberships;
@@ -210,13 +189,6 @@ export function SidebarUserAccountMenu({
         e.preventDefault();
         setOpen(false);
         router.push(settingsHref);
-        return;
-      }
-      if (mod && e.key === ",") {
-        if (!canReachHref(`${PHARMACY_ROUTES.settings}?tab=general`)) return;
-        e.preventDefault();
-        setOpen(false);
-        router.push(`${PHARMACY_ROUTES.settings}?tab=general`);
         return;
       }
       if (e.altKey && e.shiftKey && e.key.toLowerCase() === "q") {
@@ -281,24 +253,14 @@ export function SidebarUserAccountMenu({
         className="w-[min(100vw-2rem,20rem)] rounded-xl border border-border/80 bg-popover p-1.5 shadow-lg"
       >
         <div className="py-0.5">
-          {canChangePassword ? (
-            <DropdownMenuItem
-              className="flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 focus:bg-accent"
-              onSelect={() => {
-                setOpen(false);
-                setChangePasswordOpen(true);
-              }}
-            >
-              <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="flex-1 text-sm font-medium">Change password</span>
-            </DropdownMenuItem>
-          ) : (
-            <MenuActionLocked
-              icon={KeyRound}
-              label="Change password"
-              lockedHint={lockedHint}
-            />
-          )}
+          <MenuNavAction
+            href={PHARMACY_ROUTES.helpGettingStarted}
+            icon={BookOpen}
+            label="Help"
+            enabled={canReachHref(PHARMACY_ROUTES.helpGettingStarted)}
+            lockedHint={lockedHint}
+            onNavigate={() => setOpen(false)}
+          />
           <MenuNavAction
             href={settingsHref}
             icon={User}
@@ -309,25 +271,14 @@ export function SidebarUserAccountMenu({
             onNavigate={() => setOpen(false)}
           />
           {!isStaffWorkspaceRole(context.role) ? (
-            <>
-              <MenuNavAction
-                href={`${PHARMACY_ROUTES.settings}?tab=general`}
-                icon={Settings}
-                label="Pharmacy settings"
-                shortcut={["⌘", ","]}
-                enabled={canReachHref(`${PHARMACY_ROUTES.settings}?tab=general`)}
-                lockedHint={lockedHint}
-                onNavigate={() => setOpen(false)}
-              />
-              <MenuNavAction
-                href={PHARMACY_ROUTES.billing}
-                icon={CreditCard}
-                label="Billing & plans"
-                enabled={canReachHref(PHARMACY_ROUTES.billing)}
-                lockedHint={lockedHint}
-                onNavigate={() => setOpen(false)}
-              />
-            </>
+            <MenuNavAction
+              href={PHARMACY_ROUTES.billing}
+              icon={CreditCard}
+              label="Billing & plans"
+              enabled={canReachHref(PHARMACY_ROUTES.billing)}
+              lockedHint={lockedHint}
+              onNavigate={() => setOpen(false)}
+            />
           ) : null}
         </div>
 
@@ -425,10 +376,6 @@ export function SidebarUserAccountMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-    <ChangePasswordDialog
-      open={changePasswordOpen}
-      onOpenChange={setChangePasswordOpen}
-    />
     <SignOutConfirmDialog open={signOutOpen} onOpenChange={setSignOutOpen} />
     </>
   );

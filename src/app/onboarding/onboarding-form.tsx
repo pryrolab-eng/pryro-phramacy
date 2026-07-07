@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import {
   Check,
+  FileSpreadsheet,
   Loader2,
   Lock,
   Mail,
@@ -32,6 +33,7 @@ import {
 import { PharmacyBrandPreview } from "@/components/onboarding/pharmacy-brand-preview";
 import { PlanFeatureList } from "@/components/subscription/plan-feature-list";
 import type { OnboardingStepId } from "@/components/onboarding/onboarding-stepper";
+import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 import { createPharmacist } from "@/lib/http/pharmacist";
 import {
   useOnboardingPlans,
@@ -860,6 +862,31 @@ export default function OnboardingForm() {
               </li>
             ))}
           </ul>
+
+          <div className="mt-8 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-left">
+            <p className="text-sm font-medium text-neutral-900">
+              Bring your existing data
+            </p>
+            <p className="mt-1 text-sm text-neutral-500">
+              Download Pryrox Excel templates and import products, customers,
+              insurance coverage, and staff in bulk.
+            </p>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <Link
+                href={PHARMACY_ROUTES.importData}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-[10px] bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                Open import center
+              </Link>
+              <Link
+                href={`${PHARMACY_ROUTES.inventory}?import=1`}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-[10px] border border-neutral-300 bg-white px-4 py-2.5 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-100"
+              >
+                Import inventory now
+              </Link>
+            </div>
+          </div>
           <OnboardingStepNav
             onBack={() => goToStep(3)}
             primaryLabel="Invite team"

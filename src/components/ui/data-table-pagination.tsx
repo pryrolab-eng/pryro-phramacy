@@ -31,7 +31,9 @@ export function DataTablePagination<TData>({
   const pageIndex = table.getState().pagination.pageIndex;
   const pageSize = table.getState().pagination.pageSize;
   const pageCount = table.getPageCount();
-  const rowCount = table.getFilteredRowModel().rows.length;
+  const rowCount = table.options.manualPagination
+    ? table.getRowCount()
+    : table.getFilteredRowModel().rows.length;
 
   return (
     <div className="flex flex-col gap-3 px-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:py-4">

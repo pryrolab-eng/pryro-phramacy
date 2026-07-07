@@ -105,8 +105,10 @@ export function AppEntryGate() {
   }, [redirectTo, router]);
 
   const handlePasswordSet = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: meContextKeys.all });
+    setPhase("redirecting");
     void resolveAndRedirect();
-  }, [resolveAndRedirect]);
+  }, [queryClient, resolveAndRedirect]);
 
   useEffect(() => {
     void resolveAndRedirect();

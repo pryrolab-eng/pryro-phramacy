@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { requirePlatformAdminApi } from "@/lib/admin/require-platform-admin";
 import { prisma } from "@/lib/db";
 
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
     const from = searchParams.get("from") ?? undefined;
     const to = searchParams.get("to") ?? undefined;
 
-    type AiTraceWhere = Parameters<typeof prisma.ai_trace_events.findMany>[0]["where"];
+    type AiTraceWhere = Prisma.ai_trace_eventsWhereInput;
     const where: AiTraceWhere = {};
     if (pharmacyId) where.tenant_id = pharmacyId;
     if (feature && (feature === "drug_safety" || feature === "analytics")) where.feature = feature;

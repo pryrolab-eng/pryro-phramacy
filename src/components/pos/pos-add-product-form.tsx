@@ -56,7 +56,9 @@ export type PosAddProductFormProps = {
   category: string;
   onCategoryChange: (value: string) => void;
   categories: CategorySelectOption[];
-  onCreateCategory: (name: string) => Promise<{ success: boolean; error?: string }>;
+  onCreateCategory: (
+    name: string,
+  ) => Promise<{ success: boolean; categoryId?: string; error?: string }>;
 };
 
 export function PosAddProductForm({

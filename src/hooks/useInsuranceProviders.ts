@@ -4,7 +4,9 @@ import {
   getInsuranceProviders,
   insuranceProvidersQueryKey,
   updateClaimStatus,
+  applyFormularyCoverage,
   uploadInsurancePricing,
+  type ApplyFormularyCoverageInput,
   type UpdateClaimStatusInput,
   type UploadInsurancePricingInput,
 } from "@/lib/http/insurance";
@@ -30,6 +32,16 @@ export function useUploadInsurancePricingMutation() {
   });
 }
 
+export function useApplyFormularyCoverageMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ApplyFormularyCoverageInput) => applyFormularyCoverage(body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["insurance"] });
+    },
+  });
+}
+
 export function useUpdateClaimStatusMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -40,4 +52,4 @@ export function useUpdateClaimStatusMutation() {
   });
 }
 
-export type { UploadInsurancePricingInput, UpdateClaimStatusInput };
+export type { UploadInsurancePricingInput, ApplyFormularyCoverageInput, UpdateClaimStatusInput };

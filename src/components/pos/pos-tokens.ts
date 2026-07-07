@@ -20,7 +20,7 @@ export const posSurfaces = {  workspace:
     "shrink-0 flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 bg-neutral-50/50 px-4 py-2.5 dark:border-neutral-800 dark:bg-neutral-900/50",
   sidebar:
     "flex w-full flex-col rounded-xl border border-neutral-200/80 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900/60 lg:h-full lg:min-h-0 lg:overflow-hidden lg:rounded-l-none",
-  sidebarTop: "shrink-0 space-y-4 px-4 pb-2 pt-4",
+  sidebarTop: "shrink-0 space-y-4 overflow-visible px-4 pb-2 pt-4",
   sidebarCart:
     "shrink-0 overflow-y-auto overscroll-contain border-y border-neutral-100/80 px-4 py-3 dark:border-neutral-800",
   /** ~5 line items tall (card + gap); apply when cart.length > POS_CART_SCROLL_AFTER_LINES */

@@ -12,6 +12,8 @@ export async function changePassword(
   return fetchJson("/api/auth/change-password", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    cache: "no-store",
     body: JSON.stringify(input),
   });
 }

@@ -28,7 +28,12 @@ export async function GET(request: NextRequest) {
 
     if (query.length > 0) {
       const customers = await storeSearchCustomers({ pharmacyId, query, limit: 5 });
-      return NextResponse.json(customers);
+      return NextResponse.json(
+        customers.map((c) => ({
+          ...c,
+          phone: c.phone ?? "",
+        })),
+      );
     }
 
     const customers = await storeListCustomers(pharmacyId);

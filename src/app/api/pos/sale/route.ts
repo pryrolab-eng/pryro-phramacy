@@ -32,6 +32,11 @@ import { computeInsuranceCoverage } from "@/lib/insurance/coverage-engine";
 import { resolveInsuranceProvider } from "@/lib/insurance/resolve-provider";
 import { insertInsuranceClaimLines } from "@/lib/insurance/claim-lines";
 import { awardLoyaltyForSale } from "@/lib/loyalty/award-on-sale";
+import {
+  resolveInsuranceClaimPatientName,
+  resolvePayerDisplayName,
+  resolveSalePatientName,
+} from "@/lib/sales/resolve-sale-parties";
 import { submitPharmacySaleToEbm } from "@/lib/ebm/submit-sale";
 import { dispatchIntegrationWebhookEvent } from "@/lib/integrations/v1/webhook-deliver";
 import { prisma } from "@/lib/db/prisma";
@@ -300,13 +305,37 @@ export async function POST(request: NextRequest) {
       parseFloat(String(subtotal)) ||
       0;
 
+    let customerId: string | null = null;
+    let payerName =
+      typeof customer?.name === "string" ? customer.name.trim() : "";
+    let payerPhone =
+      typeof customer?.phone === "string" ? customer.phone.trim() : null;
+
+    const rawCustomerId = customer?.id;
+    if (typeof rawCustomerId === "string" && rawCustomerId.trim()) {
+      const registered = await prisma.customers.findFirst({
+        where: { id: rawCustomerId.trim(), pharmacy_id: pharmacy_id },
+        select: { id: true, name: true, phone: true },
+      });
+      if (registered) {
+        customerId = registered.id;
+        payerName = registered.name;
+        payerPhone = registered.phone ?? payerPhone;
+      }
+    }
+
+    const patientName = resolveSalePatientName({ prescriptionConfirmation });
+    const payerDisplayName = resolvePayerDisplayName(payerName);
+
     const { sale, saleItemIdByInventoryId } = await storeCreatePosSale({
       pharmacyId: pharmacy_id,
       branchId,
       cashierId: user.id,
       shiftId: openShift.id,
-      customerName: (customer?.name as string) || "Walk-in Customer",
-      customerPhone: (customer?.phone as string) || null,
+      customerId,
+      customerName: payerDisplayName,
+      customerPhone: payerPhone || null,
+      patientName,
       insuranceProviderId,
       subtotal: resolvedSubtotal,
       insuranceAmount: resolvedInsuranceCoverage,
@@ -347,7 +376,10 @@ export async function POST(request: NextRequest) {
           pharmacyId: pharmacy_id,
           saleId: String(sale.id),
           providerId: insuranceProviderId,
-          patientName: (customer?.name as string) || "Unknown",
+          patientName: resolveInsuranceClaimPatientName({
+            prescriptionConfirmation,
+            customerName: payerName,
+          }),
           patientIdNumber: (customer?.insuranceNumber as string) || null,
           claimAmount: resolvedInsuranceCoverage,
           coveredAmount: resolvedInsuranceCoverage,
@@ -391,8 +423,9 @@ export async function POST(request: NextRequest) {
     try {
       await awardLoyaltyForSale({
         pharmacyId: pharmacy_id,
-        customerPhone: (customer?.phone as string) || null,
-        customerName: (customer?.name as string) || null,
+        customerId,
+        customerPhone: payerPhone,
+        customerName: payerDisplayName,
         saleTotal,
       });
     } catch (loyaltyError) {

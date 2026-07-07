@@ -41,13 +41,15 @@ export function DashboardPageHeader({
           opacity: isPinned ? 0 : 1,
         }}
         transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-        className={cn(
-          "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between md:items-center",
-          isPinned && "pointer-events-none select-none",
-        )}
+        className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between md:items-center"
         aria-hidden={isPinned}
       >
-        <div className="flex min-w-0 items-center gap-3">
+        <div
+          className={cn(
+            "flex min-w-0 items-center gap-3",
+            isPinned && "pointer-events-none select-none",
+          )}
+        >
           <div className="min-w-0 space-y-0.5">
             <h1 className={dashboardText.title}>{title}</h1>
             {description ? (
@@ -56,7 +58,12 @@ export function DashboardPageHeader({
           </div>
         </div>
         {actions ? (
-          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+          <div
+            className={cn(
+              "flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end",
+              isPinned && "pointer-events-none invisible",
+            )}
+          >
             {actions}
           </div>
         ) : null}

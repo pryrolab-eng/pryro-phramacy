@@ -1,15 +1,25 @@
 "use client";
 
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { filterCustomersForSearch } from "@/lib/customers/search-customers";
+import {
+  MIN_SEARCH_LENGTH,
+  SEARCH_DEBOUNCE_MS,
+  SEARCH_LIST_STALE_MS,
+} from "@/lib/search/constants";
 import {
   createCustomer,
   customersKeys,
   deleteCustomer,
   getCustomer,
   getCustomers,
+  importCustomers,
   searchCustomers,
   updateCustomer,
   type CreateCustomerInput,
+  type CustomerImportResult,
   type CustomerRow,
   type CustomerSearchRow,
   type UpdateCustomerInput,
@@ -28,21 +38,73 @@ export function useCustomers(options?: { enabled?: boolean }) {
     queryKey: customersKeys.list(),
     queryFn: getCustomers,
     enabled: options?.enabled ?? true,
+    staleTime: SEARCH_LIST_STALE_MS,
   });
 }
 
-export function useCustomerSearch(query: string) {
-  return useQuery({
-    queryKey: customersKeys.search(query),
-    queryFn: () => searchCustomers(query),
-    enabled: query.trim().length >= 2,
+export type CustomerSearchResult = {
+  data: CustomerSearchRow[];
+  isFetching: boolean;
+  isDebouncing: boolean;
+  /** True when results come from the local list cache (no per-search API call). */
+  isFromCache: boolean;
+};
+
+export function useCustomerSearch(query: string): CustomerSearchResult {
+  const trimmed = query.trim();
+  const debouncedQuery = useDebouncedValue(trimmed, SEARCH_DEBOUNCE_MS);
+  const isDebouncing =
+    trimmed.length >= MIN_SEARCH_LENGTH &&
+    trimmed !== debouncedQuery;
+
+  const listQuery = useCustomers();
+  const hasCachedList = listQuery.data !== undefined;
+
+  const localResults = useMemo(() => {
+    if (!hasCachedList || debouncedQuery.length < MIN_SEARCH_LENGTH) {
+      return [];
+    }
+    return filterCustomersForSearch(listQuery.data!, debouncedQuery, 5);
+  }, [hasCachedList, listQuery.data, debouncedQuery]);
+
+  const serverQuery = useQuery({
+    queryKey: customersKeys.search(debouncedQuery),
+    queryFn: () => searchCustomers(debouncedQuery),
+    enabled:
+      debouncedQuery.length >= MIN_SEARCH_LENGTH &&
+      !hasCachedList &&
+      !listQuery.isPending &&
+      listQuery.isError,
+    staleTime: 20_000,
   });
+
+  const data = hasCachedList ? localResults : (serverQuery.data ?? []);
+  const isFetching =
+    isDebouncing ||
+    listQuery.isPending ||
+    (!hasCachedList && serverQuery.isFetching);
+
+  return {
+    data,
+    isFetching,
+    isDebouncing,
+    isFromCache: hasCachedList,
+  };
 }
 
 export function useCreateCustomerMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createCustomer,
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: customersKeys.all }),
+  });
+}
+
+export function useImportCustomersMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: importCustomers,
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: customersKeys.all }),
   });

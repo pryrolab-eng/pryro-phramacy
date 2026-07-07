@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type LucideIcon, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
+import { Inbox } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { paginateList } from "@/lib/ui/paginate-list";
@@ -102,9 +104,9 @@ export function DashboardPaginatedListCard<T>({
     >
       {totalItems === 0 && empty ? (
         <DashboardPanelEmpty
-          icon={empty.icon}
+          icon={empty.icon ?? Inbox}
           title={empty.title}
-          description={empty.description}
+          description={empty.description ?? ""}
           className="min-h-[120px] border-0 bg-transparent py-6 shadow-none"
         />
       ) : useScroll ? (

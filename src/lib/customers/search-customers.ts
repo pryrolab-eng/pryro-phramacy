@@ -31,7 +31,7 @@ export function phoneSearchVariants(query: string): string[] {
     variants.add(`0${digits}`);
   }
 
-  return [...variants].filter(Boolean);
+  return Array.from(variants).filter(Boolean);
 }
 
 export function customerMatchesSearchQuery(

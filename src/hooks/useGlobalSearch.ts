@@ -48,7 +48,15 @@ const EMPTY_ADMIN: AdminGlobalSearchResult = {
   branches: [],
 };
 
-type GlobalSearchQuery<T> = UseQueryResult<T> & {
+type GlobalSearchQuery<T> = Omit<
+  UseQueryResult<T>,
+  "data" | "isFetching" | "isPending" | "isSuccess" | "status"
+> & {
+  data: T;
+  isFetching: boolean;
+  isPending: boolean;
+  isSuccess: boolean;
+  status: UseQueryResult<T>["status"];
   isDebouncing: boolean;
   isFromCache: boolean;
 };

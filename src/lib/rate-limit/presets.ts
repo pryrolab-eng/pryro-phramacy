@@ -10,6 +10,8 @@ export const RATE_LIMIT_PRESETS = {
   complete2fa: { max: 10, windowMs: 15 * 60 * 1000 },
   /** Resend confirmation email per email + IP. */
   resendConfirmation: { max: 3, windowMs: 15 * 60 * 1000 },
+  /** Email change requests per user per hour. */
+  changeEmail: { max: 3, windowMs: 60 * 60 * 1000 },
   /** Platform-wide API cap per IP (max filled from system_settings). */
   platformApi: { windowMs: 60 * 60 * 1000 },
 } as const;
@@ -23,6 +25,8 @@ export const RATE_LIMIT_MESSAGES = {
     "Too many attempts to complete sign-in. Please start over from sign-in.",
   resendConfirmation:
     "Too many resend attempts. Please wait about 15 minutes and try again.",
+  changeEmail:
+    "Too many email change requests. Please wait about an hour and try again.",
   platformApi:
     "API rate limit exceeded for this IP. Try again in a few minutes.",
 } as const;

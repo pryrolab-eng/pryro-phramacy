@@ -3,6 +3,7 @@ import { SignJWT, jwtVerify } from "jose";
 const PURPOSES = {
   passwordReset: "password_reset",
   emailConfirm: "email_confirm",
+  emailChange: "email_change",
 } as const;
 
 type TokenPurpose = (typeof PURPOSES)[keyof typeof PURPOSES];
@@ -74,4 +75,21 @@ export async function verifyEmailConfirmToken(
   token: string,
 ): Promise<{ userId: string; email?: string } | null> {
   return verifyPurposeToken(token, PURPOSES.emailConfirm);
+}
+
+export async function signEmailChangeToken(
+  userId: string,
+  newEmail: string,
+): Promise<string> {
+  return signPurposeToken(PURPOSES.emailChange, userId, HOUR_MS, {
+    email: newEmail,
+  });
+}
+
+export async function verifyEmailChangeToken(
+  token: string,
+): Promise<{ userId: string; newEmail: string } | null> {
+  const result = await verifyPurposeToken(token, PURPOSES.emailChange);
+  if (!result?.email) return null;
+  return { userId: result.userId, newEmail: result.email };
 }

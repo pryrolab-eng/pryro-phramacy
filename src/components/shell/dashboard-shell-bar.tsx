@@ -7,6 +7,7 @@ import { dashboardText, dashboardChrome } from "@/components/dashboard/dashboard
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { AnimatePresence, motion } from "motion/react";
 import { cn } from "@/lib/utils";
+import { useBranchScope } from "@/hooks/useBranchScope";
 
 type DashboardShellBarProps = {
   /** Pharmacy routes show branch switcher; platform admin does not. */
@@ -18,6 +19,7 @@ export function DashboardShellBar({
   showBranchSwitcher = true,
 }: DashboardShellBarProps) {
   const { isPinned, config } = useDashboardScrollHeader();
+  const { branchScope, setBranchScope } = useBranchScope();
 
   return (
     <div
@@ -47,7 +49,7 @@ export function DashboardShellBar({
       {showBranchSwitcher ? (
         <div className="flex w-full min-w-0 items-center justify-end gap-1 md:w-auto">
           <NotificationBell />
-          <BranchSwitcher className="max-w-full" />
+          <BranchSwitcher showAllOption scope={branchScope} onScopeChange={setBranchScope} className="max-w-full" />
         </div>
       ) : null}
     </div>

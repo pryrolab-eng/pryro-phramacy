@@ -33,6 +33,10 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@a2ui/react": "^0.10.1",
+    "@a2ui/web_core": "^0.10.4",
+    "@assistant-ui/react": "^0.14.26",
+    "@assistant-ui/react-markdown": "^0.14.5",
     "@bull-board/api": "^8.0.1",
     "@bull-board/express": "^8.0.1",
     "@hookform/resolvers": "^3.3.4",
@@ -101,6 +105,7 @@
     "otplib": "^12.0.1",
     "postcss": "^8",
     "qrcode": "^1.5.4",
+    "radix-ui": "^1.6.2",
     "react": "^19.2.6",
     "react-day-picker": "^10.0.1",
     "react-dom": "^19.2.6",
@@ -110,13 +115,16 @@
     "react-resizable-panels": "^4.11.2",
     "recharts": "^2.15.4",
     "redis": "^6.0.0",
+    "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.2.1",
     "tailwindcss": "^3.3.0",
     "tailwindcss-animate": "^1.0.7",
+    "tw-shimmer": "^0.4.11",
     "typescript": "^5",
     "vaul": "^1.1.2",
     "xlsx": "^0.18.5",
+    "zod-to-json-schema": "^3.25.2",
     "zustand": "^4.5.7"
   },
   "devDependencies": {

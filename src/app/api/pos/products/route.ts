@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { requireUserBranchId } from "@/lib/pharmacy/get-session-branch";
+import { parseBranchScopeFromRequest } from "@/lib/pharmacy/branch-scope";
 import { storeListPosProducts } from "@/lib/db/pos-store";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser();
     if (!user) {
@@ -12,7 +13,16 @@ export async function GET() {
     }
 
     const pharmacyId = await requireUserPharmacyId(user.id);
-    const branchId = await requireUserBranchId(user.id);
+    const scope = parseBranchScopeFromRequest(request);
+    
+    // Use client-passed branchId if provided, otherwise fall back to session branch
+    let branchId: string;
+    if (scope.branchId) {
+      branchId = scope.branchId;
+    } else {
+      branchId = await requireUserBranchId(user.id);
+    }
+    
     const products = await storeListPosProducts(pharmacyId, branchId);
 
     return NextResponse.json(products);

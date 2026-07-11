@@ -31,7 +31,7 @@ export function useDashboard(pharmacyId?: string) {
 
   const alertsQuery = useQuery({
     queryKey: pharmacyDashboardKeys.stockAlerts(),
-    queryFn: getStockAlerts,
+    queryFn: () => getStockAlerts(),
     enabled,
   });
 

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 export type AiTraceEvent = {
   traceId: string;
   tenantId: string | null;
-  feature: "drug_safety" | "analytics";
+  feature: "drug_safety" | "analytics" | "ai_chat" | "ai_admin_chat";
   model: string;
   inputTokens: number;
   outputTokens: number;

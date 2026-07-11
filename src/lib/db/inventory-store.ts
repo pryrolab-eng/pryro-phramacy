@@ -131,12 +131,12 @@ export async function storeListExpiryAlerts(
     .sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry);
 }
 
-export async function storeStockAlerts(pharmacyId: string): Promise<{
+export async function storeStockAlerts(pharmacyId: string, branchId?: string | null): Promise<{
   all: StockAlertItem[];
   lowStock: StockAlertItem[];
   expiring: StockAlertItem[];
 }> {
-  const rows = await listInventoryAlertsForPharmacy(pharmacyId);
+  const rows = await listInventoryAlertsForPharmacy(pharmacyId, branchId);
 
   const lowStock = rows.filter(
     (item) =>

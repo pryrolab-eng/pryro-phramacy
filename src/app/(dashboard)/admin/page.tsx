@@ -39,6 +39,8 @@ import {
   resolvePharmacyPlanLabel,
   type CatalogPlanLike,
 } from '@/lib/admin/plan-stats';
+import { useAiPageContext } from '@/components/ai-panel';
+import { createAdminPageContext } from '@/lib/ai/page-context';
 
 interface AdminStats {
   totalShops: number
@@ -221,6 +223,37 @@ export default function AdminPage() {
 
   const activePharmacies = reports?.activePharmacies ?? stats.totalShops
   const totalUsers = reports?.totalUsers ?? 0
+
+  const getPageContext = useMemo(
+    () => () =>
+      createAdminPageContext({
+        route: "/admin",
+        summary: {
+          totalShops: stats.totalShops,
+          activePharmacies,
+          expiredBusinesses: stats.expiredBusinesses,
+          subscriptionRevenue: stats.subscriptionRevenue,
+          totalUsers,
+          totalCategories: categoriesCount,
+          totalPlans: stats.totalPlans,
+          // Chart data — last 6 months of revenue and pharmacy growth
+          ...Object.fromEntries(
+            chartData.slice(-6).map((d) => [
+              `chart_${d.axisLabel}_revenue`,
+              d.revenue,
+            ]),
+          ),
+          ...Object.fromEntries(
+            chartData.slice(-6).map((d) => [
+              `chart_${d.axisLabel}_pharmacies`,
+              d.pharmacies,
+            ]),
+          ),
+        },
+      }),
+    [stats, activePharmacies, totalUsers, categoriesCount, chartData],
+  )
+  useAiPageContext("admin_dashboard", getPageContext)
 
   if (loading) {
     return <DashboardPageLoading label="Loading platform dashboard…" />

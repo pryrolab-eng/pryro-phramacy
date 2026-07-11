@@ -56,8 +56,8 @@ export type UpdateInventoryProductInput = {
 
 export const inventoryKeys = {
   all: ["inventory"] as const,
-  list: () => [...inventoryKeys.all, "list"] as const,
-  analytics: () => [...inventoryKeys.all, "analytics"] as const,
+  list: (branchId?: string | null) => [...inventoryKeys.all, "list", branchId ?? "all"] as const,
+  analytics: (branchId?: string | null) => [...inventoryKeys.all, "analytics", branchId ?? "all"] as const,
   suppliers: () => [...inventoryKeys.all, "suppliers"] as const,
 };
 
@@ -66,9 +66,14 @@ const EMPTY_ANALYTICS: InventoryAnalytics = {
   inventoryTrend: [],
 };
 
-export async function getInventoryList(): Promise<InventoryListRow[]> {
+export async function getInventoryList(branchId?: string | null): Promise<InventoryListRow[]> {
   try {
-    const data = await fetchJson<InventoryListRow[]>("/api/inventory");
+    const params = new URLSearchParams();
+    if (branchId && branchId !== "all") {
+      params.set("branchId", branchId);
+    }
+    const url = params.toString() ? `/api/inventory?${params}` : "/api/inventory";
+    const data = await fetchJson<InventoryListRow[]>(url);
     return Array.isArray(data) ? data : [];
   } catch {
     return [];

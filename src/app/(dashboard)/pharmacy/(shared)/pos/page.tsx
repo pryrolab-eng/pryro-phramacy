@@ -70,6 +70,8 @@ import {
 import { cn } from '@/lib/utils'
 import { FeatureGate } from '@/components/subscription/feature-gate'
 import { usePharmacyEntitlements } from '@/hooks/usePharmacyEntitlements'
+import { useAiPageContext } from '@/components/ai-panel'
+import { createPosPageContext } from '@/lib/ai/page-context'
 import { useActivePharmacy } from '@/components/providers/active-pharmacy-provider'
 import { PosReturnsDialog } from '@/components/pos/pos-returns-dialog'
 import { PosWorkspace } from '@/components/pos/pos-workspace'
@@ -178,6 +180,17 @@ function POSPageContent() {
     productsQuery.isLoading ||
     fastMovingQuery.isLoading ||
     categoriesQuery.isLoading
+
+  useAiPageContext('pos', createPosPageContext({
+    route: '/pharmacy/pos',
+    summary: {
+      cartItemCount: cart.length,
+      cartTotal: cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
+      productCount: products.length,
+      lowStockCount: products.filter(p => p.daysToExpiry <= 30).length,
+      expiringSoonCount: products.filter(p => p.daysToExpiry <= 60).length,
+    },
+  }))
 
   const saleMutation = useProcessPosSaleMutation()
   const holdSaleMutation = useHoldPosSaleMutation()
@@ -1438,7 +1451,7 @@ function POSPageContent() {
         </DashboardDialogContent>
       </Dialog>
 
-      {/* Rule-based Safety Check Dialog */}
+      {/* Drug Safety Check Dialog */}
       {aiSafetyOpen && (
         <div 
           className="fixed bottom-8 right-8 w-96 bg-blue-50 shadow-lg border z-50 rounded-2xl"
@@ -1470,7 +1483,7 @@ function POSPageContent() {
             <div className="flex items-center justify-between mb-3 cursor-move">
               <h3 className="font-medium flex items-center gap-2">
                 <Brain className="h-4 w-4 text-purple-600" />
-                Rule-based safety check
+                Drug safety check
               </h3>
               <DashboardButton tone="ghost" size="sm" onClick={() => setAiSafetyOpen(false)}>×</DashboardButton>
             </div>
@@ -1510,11 +1523,11 @@ function POSPageContent() {
                   }}
                   disabled={aiSafetyLoading || cart.length === 0}
                 >
-                  {aiSafetyLoading ? 'Checking...' : 'Run rules'}
+                  {aiSafetyLoading ? 'Checking...' : 'Run check'}
                 </DashboardButton>
                 <DashboardButton size="sm" className="rounded-xl" onClick={() => {
                   if (aiSafetyResult) {
-                    toast.message('Rule-based safety check', {
+                    toast.message('Drug safety check', {
                       description: [
                         `Interactions: ${aiSafetyResult.interactions.length}`,
                         `Warnings: ${aiSafetyResult.warnings.length}`,
@@ -1538,7 +1551,7 @@ function POSPageContent() {
                 aiSafetyResult?.severity === 'caution' ? 'bg-yellow-50' :
                 'bg-blue-50'
               }`}>
-                <h4 className="font-medium mb-1">Rule-based recommendations</h4>
+                <h4 className="font-medium mb-1">Safety recommendations</h4>
                 {aiSafetyResult ? (
                   <div className="space-y-2">
                     {aiSafetyResult.source ? (
@@ -1570,7 +1583,7 @@ function POSPageContent() {
                     </div>
                   </div>
                 ) : (
-                  <div className="text-gray-600">Run rules to check safety</div>
+                  <div className="text-gray-600">Run check to analyze safety</div>
                 )}
               </div>
             </div>

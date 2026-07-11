@@ -1,3 +1,4 @@
+@import "tw-shimmer";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -93,16 +94,16 @@ html{
   @page {
     margin: 1cm;
   }
-  
+
   body {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
-  
+
   .no-print {
     display: none !important;
   }
-  
+
   .print-break {
     page-break-after: always;
   }

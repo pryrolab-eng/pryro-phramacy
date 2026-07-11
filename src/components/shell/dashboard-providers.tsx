@@ -8,6 +8,7 @@ import {
 } from "@/components/shell/dashboard-scroll-header-context";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { PharmacyProvider } from "@/hooks/usePharmacyStore";
+import { AiPanelProvider, AiFloatingTrigger } from "@/components/ai-panel";
 import { dashboardSurfaces } from "@/components/dashboard/dashboard-tokens";
 import { cn } from "@/lib/utils";
 import { useEffect, useRef, type ReactNode } from "react";
@@ -64,7 +65,10 @@ export function DashboardProviders({
   return (
     <PharmacyProvider>
       <SidebarProvider>
-        <DashboardScrollHeaderProvider>{body}</DashboardScrollHeaderProvider>
+        <AiPanelProvider>
+          <DashboardScrollHeaderProvider>{body}</DashboardScrollHeaderProvider>
+          <AiFloatingTrigger />
+        </AiPanelProvider>
       </SidebarProvider>
     </PharmacyProvider>
   );

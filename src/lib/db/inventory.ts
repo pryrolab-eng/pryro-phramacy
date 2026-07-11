@@ -220,8 +220,12 @@ export async function listInventoryForPharmacy(
 
 export async function listInventoryAlertsForPharmacy(
   pharmacyId: string,
+  branchId?: string | null,
 ): Promise<InventoryListRow[]> {
-  const where = { pharmacy_id: pharmacyId };
+  const where = {
+    pharmacy_id: pharmacyId,
+    ...(branchId ? { branch_id: branchId } : {}),
+  };
 
   try {
     const rows = await prisma.inventory.findMany({

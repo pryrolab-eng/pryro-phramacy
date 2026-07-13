@@ -1,6 +1,6 @@
 "use client";
 
-import { GitBranch, Lock } from "lucide-react";
+import { GitBranch, Lock, Layers } from "lucide-react";
 import { useActivePharmacy } from "@/components/providers/active-pharmacy-provider";
 import { useEntitledBranches } from "@/hooks/useEntitledBranches";
 import {
@@ -14,11 +14,19 @@ import { isHeadquartersBranch } from "@/lib/pharmacy/branch-hq";
 import { cn } from "@/lib/utils";
 import { dashboardSurfaces } from "@/components/dashboard/dashboard-tokens";
 
+export type BranchScopeValue = "all" | string;
+
 type Props = {
   className?: string;
+  /** When true, shows "All branches" option for report scoping */
+  showAllOption?: boolean;
+  /** Current scope value ("all" or branch ID) */
+  scope?: string;
+  /** Called when scope changes */
+  onScopeChange?: (value: string) => void;
 };
 
-export function BranchSwitcher({ className }: Props) {
+export function BranchSwitcher({ className, showAllOption, scope, onScopeChange }: Props) {
   const { activeBranchId } = useActivePharmacy();
   const {
     branches,
@@ -64,6 +72,20 @@ export function BranchSwitcher({ className }: Props) {
   const activeBranch =
     branches.find((b) => b.id === activeBranchId) ?? branches[0];
 
+  // Show "All branches" mode for report scoping
+  if (showAllOption && !canSwitchBranch) {
+    return (
+      <BranchSwitcherSelect
+        branches={branches}
+        activeBranchId={activeBranchId}
+        showAllOption
+        scope={scope}
+        onScopeChange={onScopeChange}
+        className={className}
+      />
+    );
+  }
+
   if (!canSwitchBranch) {
     return (
       <div
@@ -84,26 +106,53 @@ export function BranchSwitcher({ className }: Props) {
   }
 
   return (
-    <BranchSwitcherSelect branches={branches} activeBranchId={activeBranchId} className={className} />
+    <BranchSwitcherSelect
+      branches={branches}
+      activeBranchId={activeBranchId}
+      showAllOption={showAllOption}
+      scope={scope}
+      onScopeChange={onScopeChange}
+      className={className}
+    />
   );
 }
 
 function BranchSwitcherSelect({
   branches,
   activeBranchId,
+  showAllOption,
+  scope,
+  onScopeChange,
   className,
 }: {
   branches: { id: string; name: string; is_headquarters?: boolean }[];
   activeBranchId: string | null;
+  showAllOption?: boolean;
+  scope?: string;
+  onScopeChange?: (value: string) => void;
   className?: string;
 }) {
   const { switchBranch } = useActivePharmacy();
 
+  // Determine current value: "all" for all branches, or branch ID
+  const currentValue = showAllOption
+    ? (scope ?? "all")
+    : (activeBranchId ?? branches[0]?.id ?? "");
+
+  const handleValueChange = (value: string) => {
+    if (showAllOption && onScopeChange) {
+      onScopeChange(value);
+      // Also switch the server-side active branch when selecting a specific branch
+      if (value !== "all") {
+        void switchBranch(value);
+      }
+    } else {
+      void switchBranch(value);
+    }
+  };
+
   return (
-    <Select
-      value={activeBranchId ?? branches[0]?.id ?? ""}
-      onValueChange={(id) => void switchBranch(id)}
-    >
+    <Select value={currentValue} onValueChange={handleValueChange}>
       <SelectTrigger
         className={cn(
           dashboardSurfaces.pill,
@@ -111,10 +160,17 @@ function BranchSwitcherSelect({
           className,
         )}
       >
-        <GitBranch className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
         <SelectValue placeholder="Select branch" />
       </SelectTrigger>
       <SelectContent>
+        {showAllOption && (
+          <SelectItem value="all">
+            <div className="flex items-center gap-1.5">
+              <Layers className="h-3.5 w-3.5 text-neutral-500" />
+              All branches
+            </div>
+          </SelectItem>
+        )}
         {branches.map((b) => (
           <SelectItem key={b.id} value={b.id}>
             {b.name}

@@ -2,7 +2,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   BarChart3,
-  Bot,
   Building2,
   CreditCard,
   FileText,

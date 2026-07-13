@@ -4,18 +4,38 @@ import { type ColumnDef } from "@tanstack/react-table";
 import { CheckCircle2, XCircle, AlertTriangle, Bot, BarChart3 } from "lucide-react";
 
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { AiTraceEventRow } from "@/lib/http/admin/ai-trace-events";
+
+function SimpleTooltip({ children, content }: { children: React.ReactNode; content?: string }) {
+  if (!content) return <>{children}</>;
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent side="top">
+          <p className="max-w-[300px] text-xs">{content}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 function FeatureChip({ feature }: { feature: string }) {
   const isDrugSafety = feature === "drug_safety";
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-sm font-medium",
         isDrugSafety
-          ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
-          : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+          ? "bg-violet-500 text-violet-50 dark:bg-violet-400 dark:text-violet-950"
+          : "bg-blue-500 text-blue-50 dark:bg-blue-400 dark:text-blue-950",
       )}
     >
       {isDrugSafety ? (
@@ -37,7 +57,7 @@ function StatusChip({
 }) {
   if (!success) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-300">
+      <span className="inline-flex items-center gap-1 rounded-md bg-red-500 px-2 py-0.5 text-sm font-medium text-red-100 dark:bg-red-400 dark:text-red-950">
         <XCircle className="h-3 w-3" />
         Failed
       </span>
@@ -45,14 +65,14 @@ function StatusChip({
   }
   if (fallback) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+      <span className="inline-flex items-center gap-1 rounded-md bg-amber-500 px-2 py-0.5 text-sm font-medium text-amber-100 dark:bg-amber-400 dark:text-amber-950">
         <AlertTriangle className="h-3 w-3" />
         Local rules
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+    <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500 px-2 py-0.5 text-sm font-medium text-emerald-100 dark:bg-emerald-400 dark:text-emerald-950 whitespace-nowrap">
       <CheckCircle2 className="h-3 w-3" />
       AI success
     </span>
@@ -62,13 +82,19 @@ function StatusChip({
 function TokenDisplay({ input, output }: { input: number; output: number }) {
   const total = input + output;
   return (
-    <span className="font-mono text-xs">
-      <span className="text-muted-foreground">{input.toLocaleString()}</span>
-      {" / "}
-      <span className="text-muted-foreground">{output.toLocaleString()}</span>
-      {" = "}
-      <span className="font-medium">{total.toLocaleString()}</span>
-    </span>
+    <div className="flex items-center gap-1.5 font-mono text-sm whitespace-nowrap">
+      <SimpleTooltip content="Input Tokens">
+        <span className="cursor-help text-muted-foreground">{input.toLocaleString()}</span>
+      </SimpleTooltip>
+      <span className="text-muted-foreground/40">/</span>
+      <SimpleTooltip content="Output Tokens">
+        <span className="cursor-help text-muted-foreground">{output.toLocaleString()}</span>
+      </SimpleTooltip>
+      <span className="text-muted-foreground/40">=</span>
+      <SimpleTooltip content="Total Tokens">
+        <span className="cursor-help font-medium text-foreground">{total.toLocaleString()}</span>
+      </SimpleTooltip>
+    </div>
   );
 }
 
@@ -80,9 +106,15 @@ export function createAdminAiTraceEventsColumns(): ColumnDef<AiTraceEventRow>[] 
         <DataTableColumnHeader column={column} title="Time" />
       ),
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
-          {new Date(row.original.created_at).toLocaleString()}
-        </span>
+        <div className="font-mono text-sm text-muted-foreground whitespace-nowrap">
+          {new Date(row.original.created_at).toLocaleString(undefined, {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            second: "2-digit",
+          })}
+        </div>
       ),
       enableSorting: true,
     },
@@ -92,9 +124,11 @@ export function createAdminAiTraceEventsColumns(): ColumnDef<AiTraceEventRow>[] 
         <DataTableColumnHeader column={column} title="Trace ID" />
       ),
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
-          {row.original.trace_id.slice(0, 8)}…
-        </span>
+        <SimpleTooltip content={row.original.trace_id}>
+          <div className="cursor-help font-mono text-sm text-muted-foreground">
+            {row.original.trace_id.slice(0, 8)}…
+          </div>
+        </SimpleTooltip>
       ),
       enableSorting: false,
     },
@@ -112,9 +146,11 @@ export function createAdminAiTraceEventsColumns(): ColumnDef<AiTraceEventRow>[] 
         <DataTableColumnHeader column={column} title="Model" />
       ),
       cell: ({ row }) => (
-        <span className="max-w-[200px] truncate font-mono text-xs">
-          {row.original.model}
-        </span>
+        <SimpleTooltip content={row.original.model}>
+          <div className="cursor-help max-w-[140px] truncate font-mono text-sm text-muted-foreground">
+            {row.original.model.replace("nvidia/", "")}
+          </div>
+        </SimpleTooltip>
       ),
       enableSorting: false,
     },
@@ -137,11 +173,11 @@ export function createAdminAiTraceEventsColumns(): ColumnDef<AiTraceEventRow>[] 
         <DataTableColumnHeader column={column} title="Latency" />
       ),
       cell: ({ row }) => (
-        <span className="font-mono text-xs">
+        <div className="font-mono text-sm whitespace-nowrap">
           {row.original.latency_ms > 0
-            ? `${row.original.latency_ms}ms`
+            ? `${(row.original.latency_ms / 1000).toFixed(2)}s`
             : "—"}
-        </span>
+        </div>
       ),
       enableSorting: true,
     },
@@ -165,12 +201,11 @@ export function createAdminAiTraceEventsColumns(): ColumnDef<AiTraceEventRow>[] 
       ),
       cell: ({ row }) =>
         row.original.error ? (
-          <span
-            className="max-w-[200px] truncate text-xs text-red-600 dark:text-red-400"
-            title={row.original.error ?? undefined}
-          >
-            {row.original.error}
-          </span>
+          <SimpleTooltip content={row.original.error}>
+            <div className="cursor-help max-w-[150px] truncate text-sm text-red-600 dark:text-red-400">
+              {row.original.error}
+            </div>
+          </SimpleTooltip>
         ) : (
           <span className="text-muted-foreground">—</span>
         ),

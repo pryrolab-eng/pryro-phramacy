@@ -44,7 +44,6 @@ import {
   useReportsInventory,
   useReportsSales,
 } from "@/hooks/useReports"
-import { BranchScopeFilter } from "@/components/shell/branch-scope-filter"
 import { useBranchReportScope } from "@/hooks/useBranchReportScope"
 import type { BranchScopeQuery } from "@/lib/pharmacy/branch-scope"
 import {
@@ -259,9 +258,6 @@ function ReportsPageInner() {
       />
 
       <DashboardFilterBar description="Scope metrics and charts by branch and date range">
-        <DashboardFilterField label="Branch">
-          <BranchScopeFilter value={branchScope} onChange={setBranchScope} />
-        </DashboardFilterField>
         <DashboardFilterField label="Report type">
           <Select value={reportType} onValueChange={setReportType}>
             <SelectTrigger className="h-8 rounded-lg">

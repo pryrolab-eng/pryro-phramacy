@@ -25,6 +25,7 @@ export const PHARMACY_ROUTES = {
   insuranceMedicines: "/pharmacy/insurance/medicines",
   importData: "/pharmacy/import-data",
   helpGettingStarted: "/pharmacy/help/getting-started",
+  ai: "/pharmacy/ai",
 } as const;
 
 export type PharmacyRouteKey = keyof typeof PHARMACY_ROUTES;

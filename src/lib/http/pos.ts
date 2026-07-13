@@ -124,10 +124,15 @@ export type TeamOpenCashierShift = {
 };
 
 export async function getPosProducts(
-  _branchId?: string | null,
+  branchId?: string | null,
 ): Promise<PosProduct[]> {
   try {
-    const data = await fetchJson<PosProduct[]>("/api/pos/products");
+    const params = new URLSearchParams();
+    if (branchId && branchId !== "all") {
+      params.set("branchId", branchId);
+    }
+    const url = params.toString() ? `/api/pos/products?${params}` : "/api/pos/products";
+    const data = await fetchJson<PosProduct[]>(url);
     return Array.isArray(data) ? data : [];
   } catch {
     return [];
@@ -135,10 +140,15 @@ export async function getPosProducts(
 }
 
 export async function getPosFastMovingProducts(
-  _branchId?: string | null,
+  branchId?: string | null,
 ): Promise<PosProduct[]> {
   try {
-    const data = await fetchJson<PosProduct[]>("/api/pos/products");
+    const params = new URLSearchParams();
+    if (branchId && branchId !== "all") {
+      params.set("branchId", branchId);
+    }
+    const url = params.toString() ? `/api/pos/products?${params}` : "/api/pos/products";
+    const data = await fetchJson<PosProduct[]>(url);
     return Array.isArray(data) ? data : [];
   } catch {
     return [];

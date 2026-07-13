@@ -2348,3 +2348,35 @@ model maintenance_notification_log {
   @@map("maintenance_notification_log")
   @@schema("public")
 }
+
+model ai_threads {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id     String    @db.Uuid
+  pharmacy_id String?   @db.Uuid
+  branch_id   String?   @db.Uuid
+  scope       String    @default("pharmacy")
+  title       String?
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime  @updatedAt @db.Timestamptz(6)
+  messages    ai_messages[]
+
+  @@index([user_id], map: "idx_ai_threads_user_id")
+  @@index([pharmacy_id], map: "idx_ai_threads_pharmacy_id")
+  @@index([scope], map: "idx_ai_threads_scope")
+  @@schema("public")
+}
+
+model ai_messages {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  thread_id  String     @db.Uuid
+  role       String
+  content    String
+  tool_calls Json?
+  a2ui_data  Json?
+  tokens     Int?
+  created_at DateTime   @default(now()) @db.Timestamptz(6)
+  thread     ai_threads @relation(fields: [thread_id], references: [id], onDelete: Cascade)
+
+  @@index([thread_id], map: "idx_ai_messages_thread_id")
+  @@schema("public")
+}

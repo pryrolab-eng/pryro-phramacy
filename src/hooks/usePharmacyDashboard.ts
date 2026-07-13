@@ -61,10 +61,11 @@ export function useRecentPosSales(options?: {
   });
 }
 
-export function useStockAlerts(options?: { enabled?: boolean }) {
+export function useStockAlerts(options?: { enabled?: boolean; branchId?: string | null }) {
+  const branchId = options?.branchId;
   return useQuery({
-    queryKey: pharmacyDashboardKeys.stockAlerts(),
-    queryFn: getStockAlerts,
+    queryKey: pharmacyDashboardKeys.stockAlerts(branchId),
+    queryFn: () => getStockAlerts(branchId),
     enabled: options?.enabled ?? true,
     staleTime: DASHBOARD_STALE_MS,
   });

@@ -37,17 +37,18 @@ export {
   type UpdateInventoryProductInput,
 } from "@/lib/http/inventory";
 
-function invalidateInventory(queryClient: ReturnType<typeof useQueryClient>) {
+function invalidateInventory(queryClient: ReturnType<typeof useQueryClient>, branchId?: string | null) {
   return Promise.all([
-    queryClient.invalidateQueries({ queryKey: inventoryKeys.list() }),
-    queryClient.invalidateQueries({ queryKey: inventoryKeys.analytics() }),
+    queryClient.invalidateQueries({ queryKey: inventoryKeys.list(branchId) }),
+    queryClient.invalidateQueries({ queryKey: inventoryKeys.analytics(branchId) }),
   ]);
 }
 
-export function useInventoryList(options?: { enabled?: boolean }) {
+export function useInventoryList(options?: { enabled?: boolean; branchId?: string | null }) {
+  const branchId = options?.branchId;
   return useQuery({
-    queryKey: inventoryKeys.list(),
-    queryFn: getInventoryList,
+    queryKey: inventoryKeys.list(branchId),
+    queryFn: () => getInventoryList(branchId),
     enabled: options?.enabled ?? true,
     staleTime: SEARCH_LIST_STALE_MS,
   });
@@ -80,11 +81,11 @@ export function useInventoryCategories(options?: { enabled?: boolean }) {
 export function useInvalidateInventory() {
   const queryClient = useQueryClient();
   return {
-    invalidateAll: () => invalidateInventory(queryClient),
-    invalidateList: () =>
-      queryClient.invalidateQueries({ queryKey: inventoryKeys.list() }),
-    invalidateAnalytics: () =>
-      queryClient.invalidateQueries({ queryKey: inventoryKeys.analytics() }),
+    invalidateAll: (branchId?: string | null) => invalidateInventory(queryClient, branchId),
+    invalidateList: (branchId?: string | null) =>
+      queryClient.invalidateQueries({ queryKey: inventoryKeys.list(branchId) }),
+    invalidateAnalytics: (branchId?: string | null) =>
+      queryClient.invalidateQueries({ queryKey: inventoryKeys.analytics(branchId) }),
     invalidateSuppliers: () =>
       queryClient.invalidateQueries({ queryKey: inventoryKeys.suppliers() }),
     invalidateCategories: () =>

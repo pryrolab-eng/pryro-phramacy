@@ -46,7 +46,7 @@ export type SalesChartPoint = {
 };
 
 export type WeeklySalesChartPoint = {
-  date: string;
+  day: string;
   prescription: number;
   otc: number;
 };
@@ -77,7 +77,7 @@ export const pharmacyDashboardKeys = {
       "recent-sales",
       ...branchScopeCacheKey(branchId, days),
     ] as const,
-  stockAlerts: () => [...pharmacyDashboardKeys.all, "stock-alerts"] as const,
+  stockAlerts: (branchId?: string | null) => [...pharmacyDashboardKeys.all, "stock-alerts", branchId ?? "all"] as const,
   salesChart: () => [...pharmacyDashboardKeys.all, "sales-chart"] as const,
   weeklySales: () => [...pharmacyDashboardKeys.all, "weekly-sales"] as const,
   categorySales: () => [...pharmacyDashboardKeys.all, "category-sales"] as const,
@@ -125,9 +125,14 @@ export async function getRecentPosSales(
   }
 }
 
-export async function getStockAlerts(): Promise<StockAlertsResponse> {
+export async function getStockAlerts(branchId?: string | null): Promise<StockAlertsResponse> {
   try {
-    return await fetchJson<StockAlertsResponse>("/api/stock-alerts");
+    const params = new URLSearchParams();
+    if (branchId && branchId !== "all") {
+      params.set("branchId", branchId);
+    }
+    const url = params.toString() ? `/api/stock-alerts?${params}` : "/api/stock-alerts";
+    return await fetchJson<StockAlertsResponse>(url);
   } catch {
     return EMPTY_STOCK_ALERTS;
   }
@@ -142,8 +147,8 @@ export async function getPharmacySalesChart(): Promise<SalesChartPoint[]> {
 }
 
 const FALLBACK_WEEKLY_SALES: WeeklySalesChartPoint[] = [
-  { date: "Mon", prescription: 450, otc: 300 },
-  { date: "Tue", prescription: 380, otc: 420 },
+  { day: "Mon", prescription: 450, otc: 300 },
+  { day: "Tue", prescription: 380, otc: 420 },
 ];
 
 const FALLBACK_CATEGORY_SALES: CategorySalesChartPoint[] = [

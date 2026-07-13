@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
 import {
@@ -26,16 +26,16 @@ import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Package, DollarSign, Users, AlertTriangle, ShoppingCart, Calendar, Clock, Pill, Eye, BookOpen } from 'lucide-react'
-import { LineChart, Line, ResponsiveContainer, Area, AreaChart, BarChart, Bar, XAxis, CartesianGrid, LabelList, YAxis } from 'recharts'
+import { LineChart, Line, ResponsiveContainer, Area, AreaChart, BarChart, Bar, XAxis, CartesianGrid, YAxis } from 'recharts'
 import { PharmacyRadialChart } from '@/components/pharmacy-radial-chart'
 import { PharmacyBarChart } from '@/components/pharmacy-bar-chart'
 import { PharmacyInventoryChart } from '@/components/pharmacy-inventory-chart'
 import { ChartConfig, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
-import { BranchUsageWidget } from '@/components/branch-usage-widget'
-import { BranchScopeFilter } from '@/components/shell/branch-scope-filter'
 import { useBranchReportScope } from '@/hooks/useBranchReportScope'
 import { SubscriptionWelcomeGate } from '@/components/dashboard'
 import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
+import { useAiPageContext } from '@/components/ai-panel'
+import { createPharmacyDashboardPageContext } from '@/lib/ai/page-context'
 import {
   DashboardPageShell,
   DashboardPageHeader,
@@ -80,7 +80,7 @@ function PharmacyDashboardContent() {
   const { branchScope, setBranchScope, scopeQuery, days } = useBranchReportScope()
   const statsQuery = usePharmacyDashboardStats({ scope: scopeQuery, scopeDays: days })
   const recentSalesQuery = useRecentPosSales({ scope: scopeQuery, scopeDays: days })
-  const stockAlertsQuery = useStockAlerts()
+  const stockAlertsQuery = useStockAlerts({ branchId: branchScope === 'all' ? null : branchScope })
   const salesChartQuery = usePharmacySalesChart()
   const { invalidateStats, invalidateRecentSales, invalidateStockAlerts } =
     useInvalidatePharmacyDashboard()
@@ -90,6 +90,23 @@ function PharmacyDashboardContent() {
   const lowStockItems = stockAlertsQuery.data?.lowStock ?? []
   const expiringItems = stockAlertsQuery.data?.expiring ?? []
   const salesChartData = salesChartQuery.data ?? []
+
+  // AI page context for suggestions
+  const pageContext = useMemo(
+    () =>
+      createPharmacyDashboardPageContext({
+        route: '/pharmacy/dashboard',
+        summary: {
+          todaySales: localStats.todaySales,
+          totalProducts: localStats.totalProducts,
+          lowStockItems: localStats.lowStockItems,
+          totalCustomers: localStats.totalCustomers,
+          expiringProducts: localStats.expiringProducts,
+        },
+      }),
+    [localStats],
+  )
+  useAiPageContext('pharmacy_dashboard', pageContext)
 
   const overviewLoading =
     statsQuery.isPending ||
@@ -216,7 +233,6 @@ function PharmacyDashboardContent() {
               How it works
             </Link>
           </DashboardButton>
-          <BranchScopeFilter value={branchScope} onChange={setBranchScope} />
           <DashboardButton onClick={() => window.print()}>
             <Calendar className="h-4 w-4" />
             Export
@@ -348,9 +364,6 @@ function PharmacyDashboardContent() {
         </DashboardTabsList>
         
         <TabsContent value="overview" className="space-y-4">
-          {/* Subscription & branch usage widget */}
-          <BranchUsageWidget />
-
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <DashboardSectionCard
               title="Recent sales"
@@ -518,40 +531,15 @@ function PharmacyDashboardContent() {
             description="Revenue trends from your sales data"
             config={salesChartConfig}
             loading={salesChartQuery.isPending}
+            chartClassName="aspect-auto h-[280px]"
           >
-                <BarChart
-                  data={salesChartData.map(item => ({ month: item.month, revenue: item.revenue }))}
-                  layout="vertical"
-                  margin={{ right: 16 }}
-                >
-                  <CartesianGrid horizontal={false} />
-                  <YAxis
-                    dataKey="month"
-                    type="category"
-                    tickLine={false}
-                    tickMargin={10}
-                    axisLine={false}
-                    hide
-                  />
-                  <XAxis dataKey="revenue" type="number" hide />
-                  <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
-                  <Bar dataKey="revenue" layout="vertical" fill="hsl(var(--chart-1))" radius={4}>
-                    <LabelList
-                      dataKey="month"
-                      position="insideLeft"
-                      offset={8}
-                      className="fill-white"
-                      fontSize={12}
-                    />
-                    <LabelList
-                      dataKey="revenue"
-                      position="right"
-                      offset={8}
-                      className="fill-foreground"
-                      fontSize={12}
-                    />
-                  </Bar>
-                </BarChart>
+            <BarChart data={salesChartData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" />
+              <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+              <YAxis tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+              <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
+              <Bar dataKey="revenue" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} />
+            </BarChart>
           </DashboardChartCard>
         </TabsContent>
       </Tabs>

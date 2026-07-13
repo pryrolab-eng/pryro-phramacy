@@ -98,6 +98,8 @@ import { downloadImportTemplate } from '@/lib/import/templates'
 import { PharmacyInsuranceMedicinesPanel } from '@/components/pharmacy/pharmacy-insurance-medicines-panel'
 import JsBarcode from 'jsbarcode'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar } from 'recharts'
+import { useAiPageContext } from '@/components/ai-panel'
+import { createInventoryPageContext } from '@/lib/ai/page-context'
 
 interface InventoryItem {
   id: string
@@ -183,7 +185,7 @@ export default function InventoryPage() {
   }, [searchParams, canInsurance])
   const [activeTab, setActiveTab] = useState(resolvedTab)
   const { inventory, setInventory } = usePharmacyStore()
-  const inventoryQuery = useInventoryList()
+  const inventoryQuery = useInventoryList({ branchId: activeBranchId })
   const analyticsQuery = useInventoryAnalytics()
   const suppliersQuery = useInventorySuppliers()
   const categoriesQuery = useInventoryCategories()
@@ -836,6 +838,18 @@ export default function InventoryPage() {
     (sum, item) => sum + item.stock * item.price,
     0,
   )
+
+  useAiPageContext('inventory', createInventoryPageContext({
+    route: '/pharmacy/inventory',
+    summary: {
+      totalProducts: localInventory.length,
+      lowStockCount,
+      outOfStockCount: localInventory.filter(i => i.stock === 0).length,
+      expiringSoonCount: expiringCount,
+      categoriesCount: new Set(localInventory.map(i => i.category)).size,
+      inventoryValue,
+    },
+  }))
 
   if (loading) return <DashboardPageLoading label="Loading inventory…" />
 

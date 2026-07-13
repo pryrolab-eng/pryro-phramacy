@@ -1,6 +1,6 @@
 "use client"
 
-import { Bar, BarChart, XAxis } from "recharts"
+import { Bar, BarChart, XAxis, YAxis } from "recharts"
 
 import { DashboardChartCard } from "@/components/dashboard"
 import {
@@ -25,13 +25,19 @@ export function PharmacyBarChart() {
       description="Prescription vs OTC sales comparison"
       config={chartConfig}
       loading={chartQuery.isPending}
+      chartClassName="aspect-auto h-[280px]"
     >
       <BarChart accessibilityLayer data={chartData}>
         <XAxis
-          dataKey="date"
+          dataKey="day"
           tickLine={false}
           tickMargin={10}
           axisLine={false}
+        />
+        <YAxis
+          tickLine={false}
+          axisLine={false}
+          tickMargin={8}
         />
         <Bar
           dataKey="prescription"

@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { parseBranchScopeFromRequest } from "@/lib/pharmacy/branch-scope";
 import { storeStockAlerts } from "@/lib/db/inventory-store";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser();
     if (!user) {
@@ -11,7 +12,8 @@ export async function GET() {
     }
 
     const pharmacyId = await requireUserPharmacyId(user.id);
-    const alerts = await storeStockAlerts(pharmacyId);
+    const scope = parseBranchScopeFromRequest(request);
+    const alerts = await storeStockAlerts(pharmacyId, scope.branchId);
 
     return NextResponse.json(alerts);
   } catch (error) {

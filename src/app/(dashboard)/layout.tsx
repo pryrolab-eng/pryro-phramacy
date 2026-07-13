@@ -18,6 +18,8 @@ import {
 import { DashboardCommandPalette, AdminCommandPalette } from '@/components/dashboard'
 import { storeListActiveMembershipsForUser } from '@/lib/db/pharmacy-users-store'
 import { storeGetIsPlatformAdmin } from '@/lib/db/public-users-store'
+import { AiSlideOverPanel } from '@/components/ai-panel'
+import { BranchScopeProvider } from '@/hooks/useBranchScope'
 
 export default async function DashboardLayout({
   children,
@@ -61,22 +63,27 @@ export default async function DashboardLayout({
         <SubscriptionBlocker userRole={userRole} />
         <DashboardShellBar showBranchSwitcher={!isPlatformAdmin} />
         {!isPlatformAdmin ? <DashboardCommandPalette /> : <AdminCommandPalette />}
-        <DashboardMainScroll>
-          {!isPlatformAdmin ? (
-            <FeatureRouteGuard>
-              <StaffRoleRouteGuard>{children}</StaffRoleRouteGuard>
-            </FeatureRouteGuard>
-          ) : (
-            children
-          )}
-        </DashboardMainScroll>
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <DashboardMainScroll className="min-w-0 flex-1">
+            {!isPlatformAdmin ? (
+              <FeatureRouteGuard>
+                <StaffRoleRouteGuard>{children}</StaffRoleRouteGuard>
+              </FeatureRouteGuard>
+            ) : (
+              children
+            )}
+          </DashboardMainScroll>
+          <AiSlideOverPanel />
+        </div>
       </SidebarInset>
     </>
   )
 
   return (
-    <DashboardProviders withPharmacyContext={!isPlatformAdmin}>
-      {dashboardBody}
-    </DashboardProviders>
+    <BranchScopeProvider>
+      <DashboardProviders withPharmacyContext={!isPlatformAdmin}>
+        {dashboardBody}
+      </DashboardProviders>
+    </BranchScopeProvider>
   )
 }

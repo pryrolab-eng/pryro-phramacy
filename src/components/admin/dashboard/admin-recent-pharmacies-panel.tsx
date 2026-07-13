@@ -53,7 +53,7 @@ export function AdminRecentPharmaciesPanel({ totalCount, preview }: Props) {
       contentClassName="pt-0"
     >
       {preview.length > 0 ? (
-        <ScrollArea className="h-[228px]">
+        <ScrollArea className="max-h-[300px]">
           <AdminDividedList className="pr-3">
             {preview.map((pharmacy) => {
               const location =

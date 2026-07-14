@@ -1,6 +1,5 @@
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import "dotenv/config";
+import { prisma } from "@/lib/db/prisma";
 
 async function main() {
   const messages = await prisma.ai_messages.findMany({

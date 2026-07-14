@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { signEmailChangeToken } from "@/lib/auth/native/auth-tokens";
@@ -14,8 +14,16 @@ const bodySchema = z.object({
   newEmail: z.string().email("Invalid email format"),
 });
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const requestToken = request.headers.get("x-csrf-token");
+    const cookieStore = await import("next/headers").then((m) => m.cookies());
+    const cookieToken = cookieStore.get("csrf_token")?.value;
+
+    if (!requestToken || !cookieToken || requestToken !== cookieToken) {
+      return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+    }
+
     const user = await getAuthUser();
     if (!user?.id || !user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

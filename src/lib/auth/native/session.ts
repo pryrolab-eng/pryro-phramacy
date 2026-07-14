@@ -205,7 +205,7 @@ export async function resolveNativeAuthUserFromRefreshToken(
 /** Issue a new access cookie from a valid refresh token. */
 export async function refreshNativeAccessFromRefreshToken(
   refreshJwt: string | null | undefined,
-  options?: { response?: NextResponse },
+  options?: { response?: NextResponse; rotateRefresh?: boolean },
 ): Promise<boolean> {
   if (!refreshJwt) return false;
   const payload = await verifyRefreshJwt(refreshJwt);
@@ -214,6 +214,44 @@ export async function refreshNativeAccessFromRefreshToken(
 
   const accessExpiresAt = new Date(Date.now() + ACCESS_SESSION_TTL_MS);
   const accessJwt = await signSessionJwt(payload, accessExpiresAt);
+
+  if (options?.rotateRefresh) {
+    // Refresh token rotation: create new session, invalidate old
+    const rawToken = generateSessionToken();
+    const refreshExpiresAt = defaultSessionExpiry();
+
+    const newSession = await createAppSessionFromDb({
+      userId: payload.sub,
+      tokenHash: hashSessionToken(rawToken),
+      expiresAt: refreshExpiresAt,
+    });
+
+    await deleteAppSessionFromDb(payload.sid);
+    markNativeSessionRevoked(payload.sid);
+    invalidateNativeAuthUserCache(payload.sub);
+
+    const newPayload = { sub: payload.sub, sid: newSession.id };
+    const [newAccessJwt, newRefreshJwt] = await Promise.all([
+      signSessionJwt(newPayload, accessExpiresAt),
+      signRefreshJwt(newPayload, refreshExpiresAt),
+    ]);
+
+    if (options?.response) {
+      setNativeSessionCookieOnResponse(options.response, newAccessJwt, accessExpiresAt);
+      options.response.cookies.set(REFRESH_COOKIE_NAME, newRefreshJwt, {
+        ...COOKIE_OPTIONS,
+        expires: refreshExpiresAt,
+      });
+    } else {
+      await setNativeSessionCookie(newAccessJwt, accessExpiresAt);
+      const store = await cookies();
+      store.set(REFRESH_COOKIE_NAME, newRefreshJwt, {
+        ...COOKIE_OPTIONS,
+        expires: refreshExpiresAt,
+      });
+    }
+    return true;
+  }
 
   if (options?.response) {
     setNativeSessionCookieOnResponse(options.response, accessJwt, accessExpiresAt);

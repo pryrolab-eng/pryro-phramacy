@@ -5,9 +5,13 @@ import { refreshNativeAccessFromRefreshToken } from "@/lib/auth/native/session";
 export async function POST(request: NextRequest) {
   const refreshJwt =
     request.cookies.get(REFRESH_COOKIE_NAME)?.value ?? null;
-  const ok = await refreshNativeAccessFromRefreshToken(refreshJwt);
+  const response = NextResponse.json({ ok: true });
+  const ok = await refreshNativeAccessFromRefreshToken(refreshJwt, {
+    response,
+    rotateRefresh: true,
+  });
   if (!ok) {
     return NextResponse.json({ error: "Invalid session" }, { status: 401 });
   }
-  return NextResponse.json({ ok: true });
+  return response;
 }

@@ -9,12 +9,13 @@ function resolveDatasourceUrl(): string | undefined {
   try {
     const url = new URL(raw);
     if (!url.searchParams.has("connection_limit")) {
-      // Serverless: one connection per isolate. Session poolers (e.g. Supabase :5432)
-      // have a small max pool — many lambdas × N connections exhaust it quickly.
+      // Session pooler (Supabase :5432) supports ~100 connections.
+      // In serverless (Vercel), limit to 1 per function instance.
+      // In dev with hot-reload, use a small pool to avoid exhausting the project limit.
       const isServerless = Boolean(process.env.VERCEL);
       url.searchParams.set(
         "connection_limit",
-        isServerless ? "1" : process.env.NODE_ENV === "development" ? "5" : "3",
+        isServerless ? "1" : process.env.NODE_ENV === "development" ? "5" : "10",
       );
     }
     if (!url.searchParams.has("pool_timeout")) {

@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyEmailConfirmToken } from "@/lib/auth/native/auth-tokens";
 import { confirmAuthUserEmailFromDb } from "@/lib/db/auth-credentials";
+import { sanitizeRedirectPath } from "@/lib/auth/trusted-origins";
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token");
-  const next = request.nextUrl.searchParams.get("next") ?? "/onboarding";
+  const next = sanitizeRedirectPath(
+    request.nextUrl.searchParams.get("next") ?? "/onboarding",
+    "/onboarding"
+  );
 
   if (!token) {
     return NextResponse.redirect(
@@ -25,7 +29,7 @@ export async function GET(request: NextRequest) {
 
   await confirmAuthUserEmailFromDb(payload.userId);
 
-  const destination = new URL(next.startsWith("/") ? next : "/onboarding", request.url);
+  const destination = new URL(next, request.url);
   destination.searchParams.set(
     "success",
     "Email confirmed. You can sign in to continue.",

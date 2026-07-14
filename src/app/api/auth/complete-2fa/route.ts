@@ -11,6 +11,14 @@ import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
 
 export async function POST(request: NextRequest) {
   try {
+    const requestToken = request.headers.get("x-csrf-token");
+    const cookieStore = await import("next/headers").then((m) => m.cookies());
+    const cookieToken = cookieStore.get("csrf_token")?.value;
+
+    if (!requestToken || !cookieToken || requestToken !== cookieToken) {
+      return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+    }
+
     const { sessionToken } = await request.json();
 
     if (!sessionToken || typeof sessionToken !== "string") {

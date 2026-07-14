@@ -9,6 +9,14 @@ import {
 import { RATE_LIMIT_MESSAGES } from "@/lib/rate-limit/presets";
 
 export async function POST(request: NextRequest) {
+  const requestToken = request.headers.get("x-csrf-token");
+  const cookieStore = await import("next/headers").then((m) => m.cookies());
+  const cookieToken = cookieStore.get("csrf_token")?.value;
+
+  if (!requestToken || !cookieToken || requestToken !== cookieToken) {
+    return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
+  }
+
   try {
     const { sessionToken, token } = await request.json();
 

@@ -31,15 +31,15 @@ function MarketingPanel({ showLogo = false }: { showLogo?: boolean }) {
         </div>
       ) : null}
 
-      <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/5" />
-      <div className="pointer-events-none absolute -left-16 bottom-10 h-40 w-40 rounded-full bg-white/5" />
+      <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/20" />
+      <div className="pointer-events-none absolute -left-16 bottom-10 h-40 w-40 rounded-full bg-white/15" />
 
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-5 px-8 py-10 xl:px-10">
         <div className="max-w-md text-center">
           <h2 className="text-balance text-2xl font-bold leading-snug text-white">
             Pharmacy Management Made Simple
           </h2>
-          <p className="mt-2 text-sm text-gray-400">
+          <p className="mt-2 text-sm text-white/80">
             Pryrox helps pharmacies manage inventory, sales, prescriptions, and
             staff — all in one place.
           </p>
@@ -49,7 +49,7 @@ function MarketingPanel({ showLogo = false }: { showLogo?: boolean }) {
           {FEATURES.map((f) => (
             <span
               key={f}
-              className="rounded-[10px] border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-white"
+              className="rounded-[10px] border border-white/25 bg-white/15 px-3 py-1 text-xs font-medium text-white"
             >
               {f}
             </span>

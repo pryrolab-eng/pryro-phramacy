@@ -32,10 +32,8 @@ import {
   DashboardListRow,
   DashboardProgressTrack,
   DashboardPaginatedListCard,
-  DashboardPageLoading,
   DashboardPanelEmpty,
 } from '@/components/dashboard'
-import { Spinner } from '@/components/ui/spinner'
 import {
   ChartConfig,
   ChartTooltip,
@@ -143,7 +141,7 @@ interface AnalyticsData {
   topCategories: Array<{ name: string; value: number; color: string }>
 }
 
-function WeeklySalesChart({ data }: { data: Array<{ day?: string; sales: number }> }) {
+function WeeklySalesChart({ data, loading }: { data: Array<{ day?: string; sales: number }>; loading?: boolean }) {
   const hasSales = data.some((point) => point.sales > 0)
 
   return (
@@ -152,6 +150,7 @@ function WeeklySalesChart({ data }: { data: Array<{ day?: string; sales: number 
       description="Daily sales performance over the past week"
       config={weeklyChartConfig}
       chartClassName="h-64"
+      loading={loading}
     >
       {!hasSales ? (
         <DashboardPanelEmpty
@@ -217,7 +216,7 @@ function WeeklySalesChart({ data }: { data: Array<{ day?: string; sales: number 
   )
 }
 
-function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number }> }) {
+function HourlySalesChart({ data, loading }: { data: Array<{ hour?: string; sales: number }>; loading?: boolean }) {
   const hasSales = data.some((point) => point.sales > 0)
 
   return (
@@ -226,6 +225,7 @@ function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number
       description="Sales performance throughout the day"
       config={hourlyChartConfig}
       chartClassName="h-64"
+      loading={loading}
     >
       {!hasSales ? (
         <DashboardPanelEmpty
@@ -293,8 +293,10 @@ function HourlySalesChart({ data }: { data: Array<{ hour?: string; sales: number
 
 function MonthlyComparisonChart({
   data,
+  loading,
 }: {
   data: Array<{ week?: string; current: number; previous: number }>
+  loading?: boolean
 }) {
   const hasData = data.some((point) => point.current > 0 || point.previous > 0)
 
@@ -337,6 +339,7 @@ function MonthlyComparisonChart({
       config={monthlyComparisonChartConfig}
       chartClassName="aspect-auto h-[280px] w-full"
       footer={footer}
+      loading={loading}
       empty={
         !hasData ? (
           <DashboardPanelEmpty
@@ -375,8 +378,10 @@ function MonthlyComparisonChart({
 
 function CustomerDistributionChart({
   data,
+  loading,
 }: {
   data: Array<{ name: string; value: number; fill?: string }>
+  loading?: boolean
 }) {
   const hasData = data.some((row) => row.value > 0)
 
@@ -428,6 +433,7 @@ function CustomerDistributionChart({
       config={customerDistributionChartConfig}
       chartClassName="mx-auto aspect-square max-h-[220px] w-full"
       footer={footer}
+      loading={loading}
       empty={
         !hasData ? (
           <DashboardPanelEmpty
@@ -514,8 +520,6 @@ export default function SalesPage() {
   )
   const loading = salesQuery.isPending
 
-  if (loading) return <DashboardPageLoading label="Loading sales…" />
-
   return (
     <DashboardPageShell>
       <DashboardPageHeader
@@ -544,24 +548,28 @@ export default function SalesPage() {
           icon={DollarSign}
           value={`${stats.todayTotal.toLocaleString()} RWF`}
           hint="Revenue today"
+          loading={salesQuery.isPending}
         />
         <DashboardStatCard
           label="This week"
           icon={TrendingUp}
           value={`${stats.weekTotal.toLocaleString()} RWF`}
           hint="Last 7 days"
+          loading={salesQuery.isPending}
         />
         <DashboardStatCard
           label="This month"
           icon={Calendar}
           value={`${stats.monthTotal.toLocaleString()} RWF`}
           hint="Calendar month"
+          loading={salesQuery.isPending}
         />
         <DashboardStatCard
           label="Transactions"
           icon={Receipt}
           value={stats.totalSales}
           hint="All time count"
+          loading={salesQuery.isPending}
         />
       </DashboardMetricGrid>
 
@@ -574,8 +582,8 @@ export default function SalesPage() {
         
         <TabsContent value="overview" className="space-y-4">
           <div className="grid gap-6 md:grid-cols-2">
-            <WeeklySalesChart data={analyticsData.weeklySales} />
-            <HourlySalesChart data={analyticsData.hourlySales} />
+            <WeeklySalesChart data={analyticsData.weeklySales} loading={analyticsQuery.isPending} />
+            <HourlySalesChart data={analyticsData.hourlySales} loading={analyticsQuery.isPending} />
           </div>
           
           <div className="grid gap-6 md:grid-cols-3 md:items-start">
@@ -747,8 +755,8 @@ export default function SalesPage() {
         
         <TabsContent value="analytics" className="space-y-4">
           <div className="grid gap-6 md:grid-cols-2">
-            <MonthlyComparisonChart data={analyticsData.monthlyComparison} />
-            <CustomerDistributionChart data={analyticsData.customerDistribution} />
+            <MonthlyComparisonChart data={analyticsData.monthlyComparison} loading={analyticsQuery.isPending} />
+            <CustomerDistributionChart data={analyticsData.customerDistribution} loading={analyticsQuery.isPending} />
           </div>
         </TabsContent>
       </Tabs>

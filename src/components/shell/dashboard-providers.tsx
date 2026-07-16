@@ -12,6 +12,7 @@ import { AiPanelProvider, AiFloatingTrigger } from "@/components/ai-panel";
 import { dashboardSurfaces } from "@/components/dashboard/dashboard-tokens";
 import { cn } from "@/lib/utils";
 import { useEffect, useRef, type ReactNode } from "react";
+import { GlobalPrefetchProvider } from "@/components/global-prefetch-provider";
 
 type Props = {
   children: ReactNode;
@@ -54,19 +55,21 @@ export function DashboardProviders({
   children,
   withPharmacyContext = true,
 }: Props) {
-  const body = withPharmacyContext ? (
-    <ActivePharmacyProvider>
-      <PharmacyBrandingProvider>{children}</PharmacyBrandingProvider>
-    </ActivePharmacyProvider>
-  ) : (
-    children
-  );
-
   return (
     <PharmacyProvider>
       <SidebarProvider>
         <AiPanelProvider>
-          <DashboardScrollHeaderProvider>{body}</DashboardScrollHeaderProvider>
+          <DashboardScrollHeaderProvider>
+            {withPharmacyContext ? (
+              <ActivePharmacyProvider>
+                <PharmacyBrandingProvider>
+                  <GlobalPrefetchProvider>{children}</GlobalPrefetchProvider>
+                </PharmacyBrandingProvider>
+              </ActivePharmacyProvider>
+            ) : (
+              <GlobalPrefetchProvider>{children}</GlobalPrefetchProvider>
+            )}
+          </DashboardScrollHeaderProvider>
           <AiFloatingTrigger />
         </AiPanelProvider>
       </SidebarProvider>

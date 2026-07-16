@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { prisma } from "@/lib/db/prisma";
 import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { cacheGet, cacheSet } from "@/lib/cache/redis-cache";
+
+const CACHE_TTL_S = 10;
 
 let lastUpdateTime = new Date();
 
@@ -13,6 +16,14 @@ export async function GET() {
     }
 
     const pharmacyId = await requireSessionPharmacyId(user.id);
+
+    // Fast path: Redis cache hit avoids 5-11s DB query
+    const cacheKey = `realtime:updates:${pharmacyId}`;
+    const cached = await cacheGet<{ updates: unknown[]; ts: string }>(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached.updates);
+    }
+
     const since = lastUpdateTime;
     const updates: Array<{ type: string; data: unknown }> = [];
 
@@ -56,6 +67,10 @@ export async function GET() {
     }
 
     lastUpdateTime = new Date();
+
+    // Short TTL so the next poll doesn't hammer the DB
+    cacheSet(cacheKey, { updates, ts: new Date().toISOString() }, CACHE_TTL_S);
+
     return NextResponse.json(updates);
   } catch (error) {
     return NextResponse.json([]);

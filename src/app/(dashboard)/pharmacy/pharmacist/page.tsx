@@ -25,7 +25,6 @@ import { Separator } from "@/components/ui/separator"
 import { Pill, Users, Clock, CheckCircle, AlertCircle, Search, UserCheck, ShoppingCart, Plus, Package, AlertTriangle, Activity } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
 import { useRouter } from 'next/navigation'
-import { Spinner } from '@/components/ui/spinner'
 import type { StockAlertRow } from '@/lib/http/pharmacy-dashboard'
 import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
 import { ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
@@ -134,13 +133,6 @@ function PharmacistDashboardContent() {
     charts: chartQuery.isPending,
   }
 
-  const isLoading =
-    statsQuery.isPending ||
-    prescriptionsQuery.isPending ||
-    stockAlertsQuery.isPending ||
-    activitiesQuery.isPending ||
-    chartQuery.isPending
-
   useRealtimeUpdates((update) => {
     if (update.type === 'inventory_update') {
       void invalidate.invalidateStockAlerts()
@@ -196,12 +188,6 @@ function PharmacistDashboardContent() {
       default: return <Clock className="h-4 w-4" />
     }
   }
-
-  if (isLoading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Spinner className="size-6" />
-    </div>
-  )
 
   return (
     <DashboardPageShell>

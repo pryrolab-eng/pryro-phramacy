@@ -30,6 +30,7 @@ import {
   DashboardSectionCard,
   DashboardTableCard,
   DashboardPanelEmpty,
+  DashboardPanelSkeleton,
   DashboardTabsList,
   DashboardProgressTrack,
 } from '@/components/dashboard'
@@ -520,7 +521,7 @@ function PharmacyBillingPageContent() {
               }
             >
               {invoicesQuery.isPending ? (
-                <p className="p-6 text-center text-sm text-neutral-500">Loading…</p>
+                <DashboardPanelSkeleton rows={4} />
               ) : invoices.length === 0 ? (
                 <div className="p-6">
                   <DashboardPanelEmpty

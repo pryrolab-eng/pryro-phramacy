@@ -17,7 +17,19 @@ export const salesKeys = {
   list: (params?: SalesListParams) =>
     [...salesKeys.all, "list", params ?? {}] as const,
   analytics: () => [...salesKeys.all, "analytics"] as const,
+  combined: () => [...salesKeys.all, "combined"] as const,
 };
+
+export type CombinedSalesData = {
+  salesReport: { totalSales: number; totalRevenue: number; topProducts: unknown[] };
+  salesChart: unknown[];
+  weeklySales: unknown[];
+  categorySales: unknown[];
+};
+
+export async function getCombinedSalesData(): Promise<CombinedSalesData> {
+  return fetchJson<CombinedSalesData>("/api/sales/combined");
+}
 
 export type SaleRow = {
   id: string;

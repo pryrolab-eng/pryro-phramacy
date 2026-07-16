@@ -7,6 +7,7 @@ import {
 import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { storeAdjustInventoryQuantity } from "@/lib/db/inventory-store";
 import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
+import { cacheDelByPrefix } from "@/lib/cache/redis-cache";
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,6 +47,8 @@ export async function POST(request: NextRequest) {
       ...auditRequestMetadata(request),
     });
 
+    void invalidateInventoryCache(pharmacyId);
+
     return NextResponse.json({ success: true, newStock });
   } catch (error) {
     console.error("POST /api/inventory/adjustment", error);
@@ -53,4 +56,12 @@ export async function POST(request: NextRequest) {
     const status = message.includes("not found") ? 404 : 500;
     return NextResponse.json({ success: false, error: message }, { status });
   }
+}
+
+async function invalidateInventoryCache(pharmacyId: string) {
+  await Promise.all([
+    cacheDelByPrefix(`inventory:${pharmacyId}`),
+    cacheDelByPrefix(`dashboard:${pharmacyId}`),
+    cacheDelByPrefix(`reports:${pharmacyId}`),
+  ]);
 }

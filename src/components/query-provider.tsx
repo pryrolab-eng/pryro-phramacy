@@ -1,6 +1,10 @@
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import {
+  PersistQueryClientProvider,
+  type Persister,
+} from "@tanstack/react-query-persist-client";
 import dynamic from "next/dynamic";
 import { useState } from "react";
 
@@ -14,6 +18,35 @@ const ReactQueryDevtools =
         { ssr: false },
       )
     : () => null;
+
+const CACHE_KEY = "rq:persist";
+
+function createLocalStoragePersister(): Persister {
+  return {
+    persistClient: async (client) => {
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(client));
+      } catch {
+        // storage full or unavailable
+      }
+    },
+    restoreClient: async () => {
+      try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        return raw ? (JSON.parse(raw) as any) : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+    removeClient: async () => {
+      try {
+        localStorage.removeItem(CACHE_KEY);
+      } catch {
+        // ignore
+      }
+    },
+  };
+}
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -29,11 +62,27 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{
+        persister: createLocalStoragePersister(),
+        maxAge: 1000 * 60 * 30,
+        dehydrateOptions: {
+          shouldDehydrateQuery: (q) => {
+            const key = q.queryKey[0];
+            return (
+              typeof key === "string" &&
+              !key.startsWith("admin") &&
+              q.state.status === "success"
+            );
+          },
+        },
+      }}
+    >
       {children}
       {process.env.NODE_ENV === "development" && (
         <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
       )}
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   );
 }

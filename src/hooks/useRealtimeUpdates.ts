@@ -18,8 +18,8 @@ export function useRealtimeUpdates(onUpdate: (update: RealtimeUpdate) => void) {
   const query = useQuery({
     queryKey: realtimeKeys.updates(),
     queryFn: getRealtimeUpdates,
-    refetchInterval: 5000,
-    refetchIntervalInBackground: true,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 
   useEffect(() => {

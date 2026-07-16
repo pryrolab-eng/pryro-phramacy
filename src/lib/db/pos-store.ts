@@ -51,6 +51,7 @@ export async function storeListPosProducts(
     return formatInventoryRowForPos(
       {
         id: item.id,
+        medication_id: item.medication_id,
         batch_number: item.batch_number,
         quantity_in_stock: item.quantity_in_stock ?? 0,
         selling_price: item.selling_price,

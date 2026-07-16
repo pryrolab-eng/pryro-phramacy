@@ -49,7 +49,18 @@ export const customersKeys = {
   list: () => [...customersKeys.all, "list"] as const,
   detail: (id: string) => [...customersKeys.all, "detail", id] as const,
   search: (q: string) => [...customersKeys.all, "search", q] as const,
+  combined: () => [...customersKeys.all, "combined"] as const,
 };
+
+export type CombinedCustomersData = {
+  customers: CustomerRow[];
+  stats: { total: number; active: number; withInsurance: number; newThisMonth: number };
+  recent: CustomerRow[];
+};
+
+export async function getCombinedCustomersData(): Promise<CombinedCustomersData> {
+  return fetchJson<CombinedCustomersData>("/api/customers/combined");
+}
 
 export async function getCustomers(): Promise<CustomerRow[]> {
   try {

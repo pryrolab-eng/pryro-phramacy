@@ -8,6 +8,8 @@ import {
   storeAdjustInventoryQuantity,
   storeUpdateInventory,
 } from "@/lib/db/inventory-store";
+import { cacheDelByPrefix } from "@/lib/cache/redis-cache";
+import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,6 +26,7 @@ export async function POST(request: NextRequest) {
       throw entErr;
     }
 
+    const pharmacyId = await requireUserPharmacyId(user.id);
     const { productId, quantity, costPrice } = await request.json();
     const newStock = await storeAdjustInventoryQuantity(
       productId,
@@ -34,6 +37,9 @@ export async function POST(request: NextRequest) {
     if (costPrice != null) {
       await storeUpdateInventory(productId, { unit_cost: costPrice });
     }
+
+    void cacheDelByPrefix(`inventory:${pharmacyId}`);
+    void cacheDelByPrefix(`dashboard:${pharmacyId}`);
 
     return NextResponse.json({ success: true, newStock });
   } catch (error) {

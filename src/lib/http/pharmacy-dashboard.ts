@@ -192,3 +192,33 @@ export async function getPharmacyInventoryChart(): Promise<InventoryChartPoint[]
     return [];
   }
 }
+
+export type CombinedDashboardData = {
+  stats: PharmacyDashboardStats;
+  recentSales: RecentSaleRow[];
+  stockAlerts: StockAlertsResponse;
+  salesChart: SalesChartPoint[];
+  weeklySales: WeeklySalesChartPoint[];
+  categorySales: CategorySalesChartPoint[];
+  inventoryChart: InventoryChartPoint[];
+};
+
+export async function getCombinedDashboardData(
+  scope?: BranchScopeQuery,
+): Promise<CombinedDashboardData> {
+  try {
+    return await fetchJson<CombinedDashboardData>(
+      `/api/pharmacy/dashboard/combined${buildBranchScopeQueryString(scope ?? {})}`,
+    );
+  } catch {
+    return {
+      stats: EMPTY_STATS,
+      recentSales: [],
+      stockAlerts: EMPTY_STOCK_ALERTS,
+      salesChart: [],
+      weeklySales: FALLBACK_WEEKLY_SALES,
+      categorySales: FALLBACK_CATEGORY_SALES,
+      inventoryChart: [],
+    };
+  }
+}

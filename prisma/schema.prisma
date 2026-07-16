@@ -5,6 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
   schemas  = ["auth", "public"]
 }
 
@@ -1009,6 +1010,7 @@ model inventory {
   @@index([medication_id], map: "idx_inventory_medication_id")
   @@index([pharmacy_id, branch_id], map: "idx_inventory_pharmacy_branch")
   @@index([pharmacy_id], map: "idx_inventory_pharmacy_id")
+  @@index([pharmacy_id, updated_at], map: "idx_inventory_pharmacy_updated_at")
   @@index([stock_location_id], map: "idx_inventory_stock_location_id")
   @@schema("public")
 }
@@ -1756,6 +1758,7 @@ model sales {
   @@index([customer_id], map: "idx_sales_customer_id")
   @@index([pharmacy_id, branch_id], map: "idx_sales_pharmacy_branch")
   @@index([pharmacy_id], map: "idx_sales_pharmacy_id")
+  @@index([pharmacy_id, created_at], map: "idx_sales_pharmacy_created_at")
   @@index([shift_id], map: "idx_sales_shift_id")
   @@schema("public")
 }

@@ -124,7 +124,7 @@ function POSPageContent() {
   })
   const hasOpenShift = Boolean(shiftQuery.data)
   const shiftCheckReady =
-    !shiftQuery.isLoading && !isContextHydrating && Boolean(activeBranchId)
+    !shiftQuery.isPending && !isContextHydrating && Boolean(activeBranchId)
   const isPharmacyOwner = context.role === 'pharmacy_owner'
   const productsQuery = usePosProducts({ branchId: activeBranchId })
   const fastMovingQuery = usePosFastMoving({ branchId: activeBranchId })
@@ -177,9 +177,9 @@ function POSPageContent() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const loading =
     isContextHydrating ||
-    productsQuery.isLoading ||
-    fastMovingQuery.isLoading ||
-    categoriesQuery.isLoading
+    productsQuery.isPending ||
+    fastMovingQuery.isPending ||
+    categoriesQuery.isPending
 
   useAiPageContext('pos', createPosPageContext({
     route: '/pharmacy/pos',
@@ -1076,7 +1076,33 @@ function POSPageContent() {
             <h2 className="font-medium text-sm">Alerts</h2>
             <div className="flex gap-1">
               <DashboardButton size="sm" className="h-7 text-xs" onClick={() => {
-                toast.info('Export is temporarily disabled for security reasons')
+                const alerts = products.filter(p => p.stock <= 20 || p.daysToExpiry <= 90)
+                const headers = ['Name', 'Category', 'Generic Name', 'Strength', 'Dosage Form', 'Batch', 'Barcode', 'Stock', 'Price', 'Expiry Date', 'Days Left', 'Requires Prescription', 'Status']
+                const rows = alerts.map(p => [
+                  p.name,
+                  p.category ?? '',
+                  p.genericName ?? '',
+                  p.strength ?? '',
+                  p.dosageForm ?? '',
+                  p.batch,
+                  p.barcode ?? '',
+                  p.stock,
+                  p.price,
+                  p.expiryDate ?? '',
+                  p.daysToExpiry >= 9999 ? 'N/A' : p.daysToExpiry,
+                  p.requiresPrescription ? 'Yes' : 'No',
+                  p.stock <= 20 && p.daysToExpiry <= 90 ? 'Low Stock & Expiring' :
+                  p.stock <= 20 ? 'Low Stock' : 'Expiring',
+                ])
+                const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n')
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `product-alerts-${new Date().toISOString().slice(0, 10)}.csv`
+                a.click()
+                URL.revokeObjectURL(url)
+                toast.success(`Exported ${alerts.length} product(s)`)
               }}>
                 Excel
               </DashboardButton>

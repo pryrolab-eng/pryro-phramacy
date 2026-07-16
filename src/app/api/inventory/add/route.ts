@@ -7,6 +7,7 @@ import {
   guardInventoryAccessForUser,
 } from "@/lib/subscription/route-guards";
 import { storeAddMedicationInventory } from "@/lib/db/inventory-store";
+import { cacheDelByPrefix } from "@/lib/cache/redis-cache";
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,6 +33,11 @@ export async function POST(request: NextRequest) {
       pharmacyId,
       branchId,
     });
+
+    if (result.success) {
+      void cacheDelByPrefix(`inventory:${pharmacyId}`);
+      void cacheDelByPrefix(`dashboard:${pharmacyId}`);
+    }
 
     return NextResponse.json(result);
   } catch (error) {

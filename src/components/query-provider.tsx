@@ -1,11 +1,11 @@
 "use client";
 
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   PersistQueryClientProvider,
   type Persister,
 } from "@tanstack/react-query-persist-client";
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 
 // Devtools - only in development, rendered inside QueryClientProvider
 const ReactQueryDevtools = process.env.NODE_ENV === "development"
@@ -62,27 +62,29 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <PersistQueryClientProvider
-      client={queryClient}
-      persistOptions={{
-        persister: createLocalStoragePersister(),
-        maxAge: 1000 * 60 * 30,
-        dehydrateOptions: {
-          shouldDehydrateQuery: (q) => {
-            const key = q.queryKey[0];
-            return (
-              typeof key === "string" &&
-              !key.startsWith("admin") &&
-              q.state.status === "success"
-            );
+    <QueryClientProvider client={queryClient}>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{
+          persister: createLocalStoragePersister(),
+          maxAge: 1000 * 60 * 30,
+          dehydrateOptions: {
+            shouldDehydrateQuery: (q) => {
+              const key = q.queryKey[0];
+              return (
+                typeof key === "string" &&
+                !key.startsWith("admin") &&
+                q.state.status === "success"
+              );
+            },
           },
-        },
-      }}
-    >
-      {children}
-      {process.env.NODE_ENV === "development" && (
-        <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
-      )}
-    </PersistQueryClientProvider>
+        }}
+      >
+        {children}
+        {process.env.NODE_ENV === "development" && (
+          <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
+        )}
+      </PersistQueryClientProvider>
+    </QueryClientProvider>
   );
 }

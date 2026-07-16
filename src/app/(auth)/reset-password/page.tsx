@@ -58,16 +58,16 @@ export default async function ResetPasswordPage(props: {
       </div>
 
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-primary">
-        <div className="absolute -top-20 -right-20 h-72 w-72 rounded-full bg-white/5" />
-        <div className="absolute bottom-10 -left-16 h-56 w-56 rounded-full bg-white/5" />
-        <div className="absolute top-1/2 right-0 h-40 w-40 rounded-full bg-white/5" />
+        <div className="absolute -top-20 -right-20 h-72 w-72 rounded-full bg-white/20" />
+        <div className="absolute bottom-10 -left-16 h-56 w-56 rounded-full bg-white/15" />
+        <div className="absolute top-1/2 right-0 h-40 w-40 rounded-full bg-white/10" />
 
         <div className="relative z-10 flex w-full flex-col items-center justify-center gap-6 px-12">
           <div className="w-64 text-center">
             <h2 className="text-2xl font-bold text-white leading-snug">
               Secure Account Recovery
             </h2>
-            <p className="mt-2 text-sm text-gray-400">
+              <p className="mt-2 text-sm text-white/80">
               Set a strong new password to keep your pharmacy account safe.
             </p>
           </div>
@@ -77,7 +77,7 @@ export default async function ResetPasswordPage(props: {
               (f) => (
                 <span
                   key={f}
-                  className="rounded-[10px] bg-white/10 px-3 py-1 text-xs font-medium text-white border border-white/20"
+                  className="rounded-[10px] bg-white/15 px-3 py-1 text-xs font-medium text-white border border-white/25"
                 >
                   {f}
                 </span>

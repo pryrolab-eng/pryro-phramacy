@@ -79,13 +79,13 @@ export default function PolarPricing() {
                 <div className="inline-flex items-center rounded-xl border border-gray-200/80 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/50 p-1 shadow-sm">
                     <button 
                         onClick={() => setBilling('monthly')}
-                        className={`rounded-lg px-8 py-2 text-sm font-medium shadow-sm transition-all ${billing === 'monthly' ? 'bg-gray-950 text-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}
+                        className={`rounded-lg px-8 py-2 text-sm font-medium shadow-sm transition-all ${billing === 'monthly' ? 'bg-primary text-primary-foreground' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}
                     >
                         Monthly
                     </button>
                     <button 
                         onClick={() => setBilling('annually')}
-                        className={`rounded-lg px-8 py-2 text-sm font-medium transition-all flex items-center gap-2 ${billing === 'annually' ? 'bg-gray-950 text-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}
+                        className={`rounded-lg px-8 py-2 text-sm font-medium transition-all flex items-center gap-2 ${billing === 'annually' ? 'bg-primary text-primary-foreground' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}
                     >
                         Annually
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${billing === 'annually' ? 'bg-white/20 text-white' : 'bg-green-100 text-green-700'}`}>-20%</span>
@@ -169,7 +169,7 @@ export default function PolarPricing() {
                                 })}
                                 className={`mb-6 block w-full rounded-lg py-2.5 text-center text-sm font-semibold transition-all shadow-sm ${
                                     plan.is_popular
-                                        ? 'bg-[#0f1115] text-white hover:bg-black shadow-[0_8px_20px_rgba(0,0,0,0.12)]'
+                                        ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_8px_20px_rgba(0,0,0,0.12)]'
                                         : 'bg-gray-100/80 text-gray-900 hover:bg-gray-200 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700'
                                 }`}
                             >

@@ -124,7 +124,7 @@ export default async function Signup() {
                   <SubmitButton
                     formAction={signUpAction}
                     pendingText="Signing up..."
-                    className="flex items-center gap-2 rounded-[10px] bg-gray-950 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+                    className="flex items-center gap-2 rounded-[10px] bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                   >
                     Sign Up
                     <svg
@@ -165,7 +165,7 @@ export default async function Signup() {
       </div>
 
       {/* Right — black panel */}
-      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gray-950">
+      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-primary">
         <div className="absolute -top-20 -right-20 h-72 w-72 rounded-full bg-white/5" />
         <div className="absolute bottom-10 -left-16 h-56 w-56 rounded-full bg-white/5" />
         <div className="absolute top-1/2 right-0 h-40 w-40 rounded-full bg-white/5" />
@@ -192,3 +192,4 @@ export default async function Signup() {
     </div>
   );
 }
+

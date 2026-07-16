@@ -61,7 +61,7 @@ export function ForgotPasswordForm() {
       <button
         type="submit"
         disabled={loading}
-        className="flex items-center gap-2 rounded-[10px] bg-gray-950 px-6 py-2.5 text-sm font-medium text-white hover:bg-gray-800 transition-colors disabled:opacity-60 w-fit"
+        className="flex items-center gap-2 rounded-[10px] bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60 w-fit"
       >
         {loading ? (
           <>

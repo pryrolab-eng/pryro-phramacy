@@ -22,7 +22,7 @@ type AuthPageShellProps = {
 
 function MarketingPanel({ showLogo = false }: { showLogo?: boolean }) {
   return (
-    <div className="relative hidden min-h-0 w-1/2 flex-1 flex-col overflow-hidden bg-gray-950 lg:flex">
+    <div className="relative hidden min-h-0 w-1/2 flex-1 flex-col overflow-hidden bg-primary lg:flex">
       {showLogo ? (
         <div className="absolute left-6 top-6 z-20 sm:left-8 sm:top-8 [&_span]:text-white">
           <Link href="/">
@@ -167,3 +167,4 @@ export function AuthPageShell({
     </div>
   )
 }
+

@@ -15,7 +15,7 @@ function PaymentFallback() {
           <p className="text-sm text-gray-500">Loading payment status...</p>
         </div>
       </div>
-      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gray-950">
+      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-primary">
         <div className="absolute -top-20 -right-20 h-72 w-72 rounded-full bg-white/5" />
         <div className="absolute bottom-10 -left-16 h-56 w-56 rounded-full bg-white/5" />
       </div>
@@ -30,3 +30,4 @@ export default function PaymentSuccessPage() {
     </Suspense>
   );
 }
+

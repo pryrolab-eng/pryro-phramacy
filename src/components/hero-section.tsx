@@ -114,7 +114,7 @@ export default function HeroSection() {
                                 {/* Sidebar — desktop only */}
                                 <div className="hidden w-44 shrink-0 flex-col gap-1 border-r border-zinc-200 bg-white py-4 px-3 md:flex lg:w-48 xl:w-52 xl:px-4">
                                     <div className="mb-4 flex items-center gap-2 px-2">
-                                        <div className="flex size-6 items-center justify-center rounded-md bg-zinc-900">
+                                        <div className="flex size-6 items-center justify-center rounded-md bg-primary">
                                             <svg className="size-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                                             </svg>
@@ -132,7 +132,7 @@ export default function HeroSection() {
                                             key={item.label}
                                             className={`flex cursor-default items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium ${
                                                 item.active
-                                                    ? 'bg-zinc-900 text-white'
+                                                    ? 'bg-primary text-primary-foreground'
                                                     : 'text-zinc-500 hover:text-zinc-800'
                                             }`}
                                         >
@@ -154,8 +154,8 @@ export default function HeroSection() {
                                                 key={label}
                                                 className={`shrink-0 rounded-lg px-2.5 py-1.5 text-[10px] font-medium ${
                                                     i === 0
-                                                        ? 'bg-zinc-900 text-white'
-                                                        : 'bg-white text-zinc-500 ring-1 ring-zinc-200'
+                                                ? 'bg-primary text-primary-foreground'
+                                                : 'bg-white text-zinc-500 ring-1 ring-zinc-200'
                                                 }`}
                                             >
                                                 {label}
@@ -222,7 +222,7 @@ export default function HeroSection() {
                                                     <div key={d.day} className="flex flex-1 flex-col items-center gap-1">
                                                         <span className="text-[8px] text-zinc-500">{d.val}</span>
                                                         <div
-                                                            className="w-full rounded-t-md bg-zinc-900"
+                                                            className="w-full rounded-t-md bg-primary"
                                                             style={{ height: `${d.pct * 0.6}px` }}
                                                         />
                                                         <span className="text-[8px] text-zinc-500">{d.day}</span>
@@ -237,7 +237,7 @@ export default function HeroSection() {
                                             </p>
                                             <div className="space-y-2.5">
                                                 {[
-                                                    { initials: 'NK', name: 'Nurse Kamau', action: 'Dispensed Amoxicillin', time: '2m ago', color: 'bg-zinc-900 text-white' },
+                                                     { initials: 'NK', name: 'Nurse Kamau', action: 'Dispensed Amoxicillin', time: '2m ago', color: 'bg-primary text-primary-foreground' },
                                                     { initials: 'JO', name: 'James Otieno', action: 'Prescription uploaded', time: '5m ago', color: 'bg-zinc-700 text-white' },
                                                     { initials: 'AM', name: 'Aisha Mwangi', action: 'Stock alert: Metformin', time: '11m ago', color: 'bg-zinc-500 text-white' },
                                                     { initials: 'PK', name: 'Dr. P. Kimani', action: 'Approved refill request', time: '18m ago', color: 'bg-zinc-300 text-zinc-900' },

@@ -148,7 +148,7 @@ export function SignInForm({ initialEmail = "" }: SignInFormProps) {
 
         <div className="pt-2">
           <SubmitButton
-            className="flex items-center gap-2 rounded-[10px] bg-gray-950 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+            className="flex items-center gap-2 rounded-[10px] bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             pendingText="Signing in..."
           >
             Sign In

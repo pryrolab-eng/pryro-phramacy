@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { prisma } from "@/lib/db/prisma";
-import { requireSessionPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { requireSessionPharmacyId, resolveUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { cacheGet, cacheSet } from "@/lib/cache/redis-cache";
+import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
 
 const CACHE_TTL_S = 10;
 
@@ -15,7 +16,16 @@ export async function GET() {
       return NextResponse.json([]);
     }
 
-    const pharmacyId = await requireSessionPharmacyId(user.id);
+    // Platform admins don't have a pharmacy — skip realtime updates
+    const isPlatformAdmin = await resolveIsAppPlatformAdmin(user.id);
+    if (isPlatformAdmin) {
+      return NextResponse.json([]);
+    }
+
+    const pharmacyId = await resolveUserPharmacyId(user.id);
+    if (!pharmacyId) {
+      return NextResponse.json([]);
+    }
 
     // Fast path: Redis cache hit avoids 5-11s DB query
     const cacheKey = `realtime:updates:${pharmacyId}`;

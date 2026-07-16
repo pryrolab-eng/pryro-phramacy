@@ -7,16 +7,9 @@ import {
 } from "@tanstack/react-query-persist-client";
 import { useMemo } from "react";
 
-// Devtools - only in development, rendered inside QueryClientProvider
-const ReactQueryDevtools = process.env.NODE_ENV === "development"
-  ? (() => {
-      try {
-        return require("@tanstack/react-query-devtools").ReactQueryDevtools;
-      } catch {
-        return () => null;
-      }
-    })()
-  : () => null;
+// Static import so the devtools share the same @tanstack/react-query
+// module instance (require() created a duplicate context -> "No QueryClient set").
+import { ReactQueryDevtools as ReactQueryDevtoolsBase } from "@tanstack/react-query-devtools";
 
 const CACHE_KEY = "rq:persist";
 
@@ -82,7 +75,10 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
       >
         {children}
         {process.env.NODE_ENV === "development" && (
-          <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
+          <ReactQueryDevtoolsBase
+            buttonPosition="bottom-left"
+            initialIsOpen={false}
+          />
         )}
       </PersistQueryClientProvider>
     </QueryClientProvider>

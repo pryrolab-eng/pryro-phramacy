@@ -5,19 +5,18 @@ import {
   PersistQueryClientProvider,
   type Persister,
 } from "@tanstack/react-query-persist-client";
-import dynamic from "next/dynamic";
 import { useState } from "react";
 
-const ReactQueryDevtools =
-  process.env.NODE_ENV === "development"
-    ? dynamic(
-        () =>
-          import("@tanstack/react-query-devtools").then((mod) => ({
-            default: mod.ReactQueryDevtools,
-          })),
-        { ssr: false },
-      )
-    : () => null;
+// Devtools - use static import with ssr: false wrapper to avoid Turbopack chunk issues
+const ReactQueryDevtools = process.env.NODE_ENV === "development"
+  ? (() => {
+      try {
+        return require("@tanstack/react-query-devtools").ReactQueryDevtools;
+      } catch {
+        return () => null;
+      }
+    })()
+  : () => null;
 
 const CACHE_KEY = "rq:persist";
 

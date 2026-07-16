@@ -5,9 +5,9 @@ import {
   PersistQueryClientProvider,
   type Persister,
 } from "@tanstack/react-query-persist-client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
-// Devtools - use static import with ssr: false wrapper to avoid Turbopack chunk issues
+// Devtools - only in development, rendered inside QueryClientProvider
 const ReactQueryDevtools = process.env.NODE_ENV === "development"
   ? (() => {
       try {
@@ -48,7 +48,7 @@ function createLocalStoragePersister(): Persister {
 }
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(
+  const queryClient = useMemo(
     () =>
       new QueryClient({
         defaultOptions: {
@@ -58,6 +58,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
           },
         },
       }),
+    [],
   );
 
   return (

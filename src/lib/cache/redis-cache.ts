@@ -3,13 +3,23 @@ import { createClient, RedisClientType } from "redis";
 let redisClient: RedisClientType | null = null;
 let connectPromise: Promise<RedisClientType> | null = null;
 
+function normalizeRedisUrl(url: string): string {
+  // Upstash requires TLS (rediss://). Auto-convert if host looks like Upstash.
+  if (url.startsWith("redis://") && url.includes("upstash.io")) {
+    return url.replace("redis://", "rediss://");
+  }
+  return url;
+}
+
 export async function getRedis(): Promise<RedisClientType | null> {
   if (redisClient?.isOpen) return redisClient;
 
   if (!connectPromise) {
     connectPromise = (async () => {
-      const url = process.env.REDIS_URL;
-      if (!url) return null as any;
+      const rawUrl = process.env.REDIS_URL;
+      if (!rawUrl) return null as any;
+
+      const url = normalizeRedisUrl(rawUrl.trim());
 
       const client = createClient({ url });
       client.on("error", (err) => console.error("Redis error:", err));
@@ -22,6 +32,7 @@ export async function getRedis(): Promise<RedisClientType | null> {
     redisClient = await connectPromise;
     return redisClient;
   } catch {
+    connectPromise = null;
     return null;
   }
 }

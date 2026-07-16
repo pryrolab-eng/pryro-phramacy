@@ -27,14 +27,27 @@ export default async function DashboardLayout({
   children: React.ReactNode
 }) {
   const user = await getAuthUser();
-    if (!user) {
+  if (!user) {
     redirect('/sign-in')
   }
 
-  const [isPlatformAdminFlag, membershipRows] = await Promise.all([
-    storeGetIsPlatformAdmin(user.id),
-    storeListActiveMembershipsForUser(user.id),
-  ])
+  let isPlatformAdminFlag = false
+  let membershipRows: Awaited<ReturnType<typeof storeListActiveMembershipsForUser>> = []
+
+  try {
+    const [flag, rows] = await Promise.all([
+      storeGetIsPlatformAdmin(user.id),
+      storeListActiveMembershipsForUser(user.id),
+    ])
+    isPlatformAdminFlag = flag
+    membershipRows = rows
+  } catch (err) {
+    console.error('[DashboardLayout] Failed to load user roles:', err)
+    // Fail open: treat as non-platform-admin so user sees pharmacy dashboard
+    // (or redirect to error page if you prefer strictness)
+    isPlatformAdminFlag = false
+    membershipRows = []
+  }
 
   const userProfile = selectPrimaryMembership(membershipRows)
 
@@ -46,7 +59,12 @@ export default async function DashboardLayout({
   let userRole = userProfile?.role || 'pharmacy_owner'
 
   if (!isPlatformAdmin && user) {
-    const activeCtx = await resolveActivePharmacyContext(user.id)
+    let activeCtx: Awaited<ReturnType<typeof resolveActivePharmacyContext>> = { activePharmacyId: null, activeBranchId: null, role: null, memberships: [] }
+    try {
+      activeCtx = await resolveActivePharmacyContext(user.id)
+    } catch (err) {
+      console.error('[DashboardLayout] Failed to resolve active pharmacy context:', err)
+    }
     userRole = activeCtx.role ?? userRole
   }
 

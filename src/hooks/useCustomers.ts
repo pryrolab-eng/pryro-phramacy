@@ -13,11 +13,13 @@ import {
   createCustomer,
   customersKeys,
   deleteCustomer,
+  getCombinedCustomersData,
   getCustomer,
   getCustomers,
   importCustomers,
   searchCustomers,
   updateCustomer,
+  type CombinedCustomersData,
   type CreateCustomerInput,
   type CustomerImportResult,
   type CustomerRow,
@@ -136,5 +138,22 @@ export function useDeleteCustomerMutation() {
     mutationFn: deleteCustomer,
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: customersKeys.all }),
+  });
+}
+
+export type { CombinedCustomersData } from "@/lib/http/customers";
+
+const COMBINED_STALE_MS = 10 * 60 * 1000;
+const COMBINED_GC_MS = 30 * 60 * 1000;
+
+export function useCombinedCustomers(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: customersKeys.combined(),
+    queryFn: getCombinedCustomersData,
+    enabled: options?.enabled ?? true,
+    staleTime: COMBINED_STALE_MS,
+    gcTime: COMBINED_GC_MS,
+    refetchOnWindowFocus: false,
+    retry: 1,
   });
 }

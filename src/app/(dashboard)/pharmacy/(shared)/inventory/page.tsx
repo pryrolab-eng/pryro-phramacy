@@ -14,9 +14,9 @@ import {
   useCreateInventoryCategoryMutation,
   useCreateInventorySupplierMutation,
   useDeleteInventoryProductMutation,
+  useCombinedInventory,
   useInventoryAnalytics,
   useInventoryCategories,
-  useInventoryList,
   useInventorySuppliers,
   useInvalidateInventory,
   usePurchaseInventoryMutation,
@@ -66,7 +66,6 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
@@ -75,7 +74,6 @@ import {
   inventoryColumns,
   type InventoryTableRow,
 } from '@/components/inventory/inventory-columns'
-import { Spinner } from '@/components/ui/spinner'
 import { FeatureGate } from '@/components/subscription/feature-gate'
 import { InventoryInlineInsuranceCoverage } from '@/components/inventory/inventory-inline-insurance-coverage'
 import { usePharmacyEntitlements } from '@/hooks/usePharmacyEntitlements'
@@ -185,7 +183,8 @@ export default function InventoryPage() {
   }, [searchParams, canInsurance])
   const [activeTab, setActiveTab] = useState(resolvedTab)
   const { inventory, setInventory } = usePharmacyStore()
-  const inventoryQuery = useInventoryList({ branchId: activeBranchId })
+  const combinedQuery = useCombinedInventory({ branchId: activeBranchId })
+  const inventoryQuery = { data: combinedQuery.data?.inventory, isPending: combinedQuery.isPending }
   const analyticsQuery = useInventoryAnalytics()
   const suppliersQuery = useInventorySuppliers()
   const categoriesQuery = useInventoryCategories()
@@ -202,14 +201,9 @@ export default function InventoryPage() {
   const createCategoryMutation = useCreateInventoryCategoryMutation()
 
   const localInventory = useMemo(
-    () => (inventoryQuery.data ?? []).map(toInventoryItem),
-    [inventoryQuery.data],
+    () => (combinedQuery.data?.inventory ?? []).map(toInventoryItem),
+    [combinedQuery.data?.inventory],
   )
-  const loading =
-    inventoryQuery.isPending ||
-    analyticsQuery.isPending ||
-    suppliersQuery.isPending ||
-    categoriesQuery.isPending
   const categories = (categoriesQuery.data ?? []) as CategoryCatalogItem[]
   const suppliers = (suppliersQuery.data ?? []).map((s) => ({
     id: s.id,
@@ -851,8 +845,6 @@ export default function InventoryPage() {
     },
   }))
 
-  if (loading) return <DashboardPageLoading label="Loading inventory…" />
-
   return (
     <DashboardPageShell>
       <DashboardPageHeader
@@ -1229,24 +1221,28 @@ export default function InventoryPage() {
           icon={Package}
           value={localInventory.length}
           hint="Active inventory items"
+          loading={combinedQuery.isPending}
         />
         <DashboardStatCard
           label="Low stock"
           icon={AlertTriangle}
           value={lowStockCount}
           hint="Below minimum"
+          loading={combinedQuery.isPending}
         />
         <DashboardStatCard
           label="Expiring soon"
           icon={Calendar}
           value={expiringCount}
           hint="Within 60 days"
+          loading={combinedQuery.isPending}
         />
         <DashboardStatCard
           label="Total value"
           icon={TrendingUp}
           value={`${inventoryValue.toLocaleString()} RWF`}
           hint="Stock on hand"
+          loading={combinedQuery.isPending}
         />
       </DashboardMetricGrid>
 
@@ -1299,7 +1295,7 @@ export default function InventoryPage() {
             stickyHeader
             initialSorting={[{ id: "name", desc: false }]}
             emptyMessage="No products match your search or filters."
-            isLoading={inventoryQuery.isPending && localInventory.length === 0}
+            isLoading={combinedQuery.isPending && localInventory.length === 0}
           />
         </TabsContent>
 
@@ -1423,6 +1419,7 @@ export default function InventoryPage() {
               description="Inventory distribution"
               config={{ stock: { label: "Stock", color: "#3b82f6" } }}
               chartClassName="h-64 w-full"
+              loading={analyticsQuery.isPending}
             >
               <BarChart data={analyticsData.stockByCategory}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -1438,6 +1435,7 @@ export default function InventoryPage() {
               description="Monthly inventory worth"
               config={{ value: { label: "Value", color: "#10b981" } }}
               chartClassName="h-64 w-full"
+              loading={analyticsQuery.isPending}
             >
               <LineChart data={analyticsData.inventoryTrend}>
                 <CartesianGrid strokeDasharray="3 3" />

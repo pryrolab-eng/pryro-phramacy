@@ -42,6 +42,7 @@ export type SaleInventoryRow = {
   batch_number: string;
   quantity_in_stock: number | null;
   expiry_date: Date | null;
+  medication_id: string | null;
   medications: {
     id: string;
     name: string;
@@ -138,6 +139,7 @@ export async function getInventoryRowsForSale(
       batch_number: true,
       quantity_in_stock: true,
       expiry_date: true,
+      medication_id: true,
       medications: {
         select: { id: true, name: true, requires_prescription: true },
       },
@@ -151,6 +153,7 @@ export async function getInventoryRowsForSale(
     batch_number: row.batch_number,
     quantity_in_stock: row.quantity_in_stock,
     expiry_date: row.expiry_date,
+    medication_id: row.medication_id,
     medications: row.medications,
   }));
 }

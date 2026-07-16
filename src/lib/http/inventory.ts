@@ -59,7 +59,25 @@ export const inventoryKeys = {
   list: (branchId?: string | null) => [...inventoryKeys.all, "list", branchId ?? "all"] as const,
   analytics: (branchId?: string | null) => [...inventoryKeys.all, "analytics", branchId ?? "all"] as const,
   suppliers: () => [...inventoryKeys.all, "suppliers"] as const,
+  combined: (branchId?: string | null) => [...inventoryKeys.all, "combined", branchId ?? "all"] as const,
 };
+
+export type CombinedInventoryData = {
+  inventory: InventoryListRow[];
+  stockAlerts: { all: unknown[]; lowStock: unknown[]; expiring: unknown[] };
+  expiryAlerts: unknown[];
+};
+
+export async function getCombinedInventoryData(
+  branchId?: string | null,
+): Promise<CombinedInventoryData> {
+  const params = new URLSearchParams();
+  if (branchId && branchId !== "all") params.set("branchId", branchId);
+  const query = params.toString();
+  return fetchJson<CombinedInventoryData>(
+    `/api/inventory/combined${query ? `?${query}` : ""}`,
+  );
+}
 
 const EMPTY_ANALYTICS: InventoryAnalytics = {
   stockByCategory: [],

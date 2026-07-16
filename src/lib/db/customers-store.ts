@@ -69,6 +69,39 @@ export async function storeLookupPosCustomersByPhone(
   return lookupPosCustomersByPhoneFromDb({ pharmacyId, phone });
 }
 
+export async function storeGetCustomerStats(
+  pharmacyId: string,
+  branchId: string | null,
+): Promise<{ total: number; active: number; withInsurance: number; newThisMonth: number }> {
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+
+  const all = await listCustomersForPharmacy(pharmacyId);
+
+  const total = all.length;
+  const active = all.filter((c) => c.is_active !== false).length;
+  const withInsurance = all.filter(
+    (c) => (c.insurance_number ?? "").trim().length > 0,
+  ).length;
+  const newThisMonth = all.filter((c) => {
+    if (!c.created_at) return false;
+    const d = new Date(c.created_at);
+    return !Number.isNaN(d.getTime()) && d >= monthStart;
+  }).length;
+
+  return { total, active, withInsurance, newThisMonth };
+}
+
+export async function storeGetRecentCustomers(
+  pharmacyId: string,
+  branchId: string | null,
+  limit: number = 10,
+) {
+  const all = await listCustomersForPharmacy(pharmacyId);
+  return all.slice(0, limit);
+}
+
 export async function storeBatchImportCustomers(input: {
   pharmacyId: string;
   rows: Array<{

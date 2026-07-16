@@ -2,6 +2,7 @@ import { computeDaysToExpiry, type PosBatchLine } from "./pharmacy-rules";
 
 type RawInventoryRow = {
   id: string;
+  medication_id?: string | null;
   batch_number: string | null;
   quantity_in_stock: number;
   selling_price: number | string | null;
@@ -29,7 +30,7 @@ export function formatInventoryRowForPos(
 
   return {
     id: item.id,
-    medicationId: medication?.id ?? item.id,
+    medicationId: medication?.id ?? item.medication_id ?? item.id,
     name: medication?.name ?? "Unknown Product",
     price,
     stock: item.quantity_in_stock ?? 0,

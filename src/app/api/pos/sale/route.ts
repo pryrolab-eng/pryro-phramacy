@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { cacheDelByPrefix } from "@/lib/cache/redis-cache";
 import {
   guardPharmacyFeatureForUser,
   handleEntitlementRouteError,
@@ -243,9 +244,10 @@ export async function POST(request: NextRequest) {
       const engineLines = saleItems
         .map((item) => {
           const inv = inventoryById.get(item.id);
+          const medicationId = inv?.medications?.id ?? inv?.medication_id ?? "";
           return {
             inventoryId: item.id,
-            medicationId: inv?.medications?.id ?? "",
+            medicationId,
             medicationName: item.name,
             quantity: item.quantity,
             shelfUnitPrice: item.price ?? 0,
@@ -495,6 +497,8 @@ export async function POST(request: NextRequest) {
       ...auditRequestMetadata(request),
     });
 
+    void invalidateSalesCache(pharmacy_id);
+
     return NextResponse.json({
       success: true,
       sale,
@@ -515,4 +519,13 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+async function invalidateSalesCache(pharmacyId: string) {
+  await Promise.all([
+    cacheDelByPrefix(`dashboard:${pharmacyId}`),
+    cacheDelByPrefix(`sales:${pharmacyId}`),
+    cacheDelByPrefix(`inventory:${pharmacyId}`),
+    cacheDelByPrefix(`reports:${pharmacyId}`),
+  ]);
 }

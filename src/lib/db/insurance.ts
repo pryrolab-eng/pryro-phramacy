@@ -110,13 +110,27 @@ export async function resolveInsuranceProviderFromDb(
   const key = providerIdOrName.trim();
   if (!key) return null;
 
-  const rows = await prisma.insurance_providers.findMany({
+  // First try exact ID match
+  if (isUuid(key)) {
+    const row = await prisma.insurance_providers.findUnique({
+      where: { id: key, is_active: true },
+      select: {
+        id: true,
+        name: true,
+        coverage_percentage: true,
+        default_coverage_percent: true,
+        integration_type: true,
+      },
+    });
+    return row ? mapResolvedProvider(row) : null;
+  }
+
+  // For name lookup, prefer pharmacy-scoped over global
+  const pharmacyScoped = await prisma.insurance_providers.findFirst({
     where: {
       is_active: true,
-      OR: [{ pharmacy_id: pharmacyId }, { pharmacy_id: null }],
-      ...(isUuid(key)
-        ? { id: key }
-        : { name: { equals: key, mode: "insensitive" } }),
+      pharmacy_id: pharmacyId,
+      name: { equals: key, mode: "insensitive" },
     },
     select: {
       id: true,
@@ -125,11 +139,27 @@ export async function resolveInsuranceProviderFromDb(
       default_coverage_percent: true,
       integration_type: true,
     },
-    take: 5,
   });
 
-  const row = rows[0];
-  return row ? mapResolvedProvider(row) : null;
+  if (pharmacyScoped) return mapResolvedProvider(pharmacyScoped);
+
+  // Fallback to global provider
+  const global = await prisma.insurance_providers.findFirst({
+    where: {
+      is_active: true,
+      pharmacy_id: null,
+      name: { equals: key, mode: "insensitive" },
+    },
+    select: {
+      id: true,
+      name: true,
+      coverage_percentage: true,
+      default_coverage_percent: true,
+      integration_type: true,
+    },
+  });
+
+  return global ? mapResolvedProvider(global) : null;
 }
 
 export async function resolveGlobalInsuranceProviderFromDb(

@@ -12,6 +12,7 @@ import {
   adjustInventoryStock,
   createInventorySupplier,
   deleteInventoryProduct,
+  getCombinedInventoryData,
   getInventoryAnalytics,
   getInventoryList,
   getInventorySuppliers,
@@ -21,6 +22,7 @@ import {
   transferInventoryStock,
   updateInventoryProduct,
   type AddInventoryProductInput,
+  type CombinedInventoryData,
   type InventoryAnalytics,
   type InventoryImportResult,
   type InventoryListRow,
@@ -174,5 +176,25 @@ export function useCreateInventoryCategoryMutation() {
       queryClient.invalidateQueries({
         queryKey: pharmacyCategoriesCatalogQueryKey,
       }),
+  });
+}
+
+export type { CombinedInventoryData } from "@/lib/http/inventory";
+
+const COMBINED_STALE_MS = 10 * 60 * 1000;
+const COMBINED_GC_MS = 30 * 60 * 1000;
+
+export function useCombinedInventory(options?: {
+  enabled?: boolean;
+  branchId?: string | null;
+}) {
+  return useQuery({
+    queryKey: inventoryKeys.combined(options?.branchId),
+    queryFn: () => getCombinedInventoryData(options?.branchId),
+    enabled: options?.enabled ?? true,
+    staleTime: COMBINED_STALE_MS,
+    gcTime: COMBINED_GC_MS,
+    refetchOnWindowFocus: false,
+    retry: 1,
   });
 }

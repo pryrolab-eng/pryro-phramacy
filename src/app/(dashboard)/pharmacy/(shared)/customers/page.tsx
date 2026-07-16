@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   useCreateCustomerMutation,
-  useCustomers,
+  useCombinedCustomers,
   type CustomerRow,
 } from '@/hooks/useCustomers'
 import { useLocalListSearch } from '@/hooks/useLocalListSearch'
@@ -57,7 +57,7 @@ function customerStats(customers: CustomerRow[]) {
 
 export default function CustomersPage() {
   const searchParams = useSearchParams()
-  const customersQuery = useCustomers()
+  const customersQuery = useCombinedCustomers()
   const createCustomerMutation = useCreateCustomerMutation()
   const [searchTerm, setSearchTerm] = useState('')
   const filterCustomers = useCallback(
@@ -66,10 +66,10 @@ export default function CustomersPage() {
   )
   const { filtered } = useLocalListSearch(
     searchTerm,
-    customersQuery.data,
+    customersQuery.data?.customers,
     filterCustomers,
   )
-  const customers = customersQuery.data ?? []
+  const customers = customersQuery.data?.customers ?? []
   const [addOpen, setAddOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -81,7 +81,12 @@ export default function CustomersPage() {
     }
   }, [searchParams])
 
-  const stats = useMemo(() => customerStats(customers), [customers])
+  const stats = useMemo(() => {
+    if (customersQuery.data?.stats) {
+      return customersQuery.data.stats
+    }
+    return customerStats(customers)
+  }, [customersQuery.data?.stats, customers])
 
   const handleAddCustomer = async (
     input: Parameters<typeof createCustomerMutation.mutateAsync>[0],

@@ -4,6 +4,7 @@
 
 export {
   pharmacyDashboardKeys,
+  useCombinedPharmacyDashboard,
   useInvalidatePharmacyDashboard,
   usePharmacyCategorySalesChart,
   usePharmacyDashboardOverviewLoading,
@@ -14,6 +15,7 @@ export {
   useRecentPosSales,
   useStockAlerts,
   type CategorySalesChartPoint,
+  type CombinedDashboardData,
   type InventoryChartPoint,
   type PharmacyDashboardStats,
   type RecentSaleRow,

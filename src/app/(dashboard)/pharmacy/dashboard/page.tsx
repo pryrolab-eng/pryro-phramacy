@@ -1,17 +1,18 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useMemo, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useCallback, useMemo, useState, useEffect } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
 import {
+  useCombinedPharmacyDashboard,
   useInvalidatePharmacyDashboard,
-  usePharmacyDashboardStats,
   usePharmacySalesChart,
-  useRecentPosSales,
-  useStockAlerts,
   useCreatePharmacistMutation,
   type PharmacyDashboardStats,
+  type RecentSaleRow,
+  type StockAlertsResponse,
+  type SalesChartPoint,
 } from '@/hooks'
 import { toast } from 'sonner'
 import { Button } from "@/components/ui/button"
@@ -78,17 +79,16 @@ export default function PharmacyDashboard() {
 
 function PharmacyDashboardContent() {
   const { branchScope, setBranchScope, scopeQuery, days } = useBranchReportScope()
-  const statsQuery = usePharmacyDashboardStats({ scope: scopeQuery, scopeDays: days })
-  const recentSalesQuery = useRecentPosSales({ scope: scopeQuery, scopeDays: days })
-  const stockAlertsQuery = useStockAlerts({ branchId: branchScope === 'all' ? null : branchScope })
+
+  const combinedQuery = useCombinedPharmacyDashboard({ scope: scopeQuery })
   const salesChartQuery = usePharmacySalesChart()
   const { invalidateStats, invalidateRecentSales, invalidateStockAlerts } =
     useInvalidatePharmacyDashboard()
 
-  const localStats = statsQuery.data ?? EMPTY_STATS
-  const recentSales = recentSalesQuery.data ?? []
-  const lowStockItems = stockAlertsQuery.data?.lowStock ?? []
-  const expiringItems = stockAlertsQuery.data?.expiring ?? []
+  const localStats = combinedQuery.data?.stats ?? EMPTY_STATS
+  const recentSales = combinedQuery.data?.recentSales ?? []
+  const lowStockItems = combinedQuery.data?.stockAlerts?.lowStock ?? []
+  const expiringItems = combinedQuery.data?.stockAlerts?.expiring ?? []
   const salesChartData = salesChartQuery.data ?? []
 
   // AI page context for suggestions
@@ -108,11 +108,7 @@ function PharmacyDashboardContent() {
   )
   useAiPageContext('pharmacy_dashboard', pageContext)
 
-  const overviewLoading =
-    statsQuery.isPending ||
-    recentSalesQuery.isPending ||
-    stockAlertsQuery.isPending ||
-    salesChartQuery.isPending
+  const overviewLoading = combinedQuery.isPending || salesChartQuery.isPending
 
   useRealtimeUpdates(
     useCallback(

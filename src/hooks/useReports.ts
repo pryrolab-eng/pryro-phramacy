@@ -2,9 +2,11 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  getCombinedReportsData,
   getReportsInventory,
   getReportsSales,
   reportsKeys,
+  type CombinedReportsData,
   type ReportsInventoryData,
   type ReportsSalesData,
 } from "@/lib/http/reports";
@@ -46,4 +48,24 @@ export function useInvalidateReports() {
         queryKey: [...reportsKeys.all, "insurance-claims"],
       }),
     ]);
+}
+
+export type { CombinedReportsData } from "@/lib/http/reports";
+
+const COMBINED_STALE_MS = 10 * 60 * 1000;
+const COMBINED_GC_MS = 30 * 60 * 1000;
+
+export function useCombinedReports(options?: {
+  enabled?: boolean;
+  scope?: BranchScopeQuery;
+}) {
+  return useQuery({
+    queryKey: reportsKeys.combined(options?.scope),
+    queryFn: () => getCombinedReportsData(options?.scope),
+    enabled: options?.enabled ?? true,
+    staleTime: COMBINED_STALE_MS,
+    gcTime: COMBINED_GC_MS,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
 }

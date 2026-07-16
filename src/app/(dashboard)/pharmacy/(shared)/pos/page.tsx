@@ -589,10 +589,7 @@ function POSPageContent() {
     }
     
     try {
-      console.log('Processing sale...', saleData)
-
       const result = await saleMutation.mutateAsync(saleData)
-      console.log('Sale API response:', result)
 
       const receiptNumber = result.receiptNumber || `RCP-${Date.now()}`
       const saleSubtotal = getSubtotal()

@@ -305,8 +305,6 @@ export default function InventoryPage() {
 
   const handleAddProduct = async () => {
     try {
-      console.log('Adding product:', newProduct)
-      
       // Validate required fields
       if (!newProduct.name || !newProduct.category || !newProduct.stock || !newProduct.minStock) {
         toast({
@@ -1197,13 +1195,6 @@ export default function InventoryPage() {
             </DashboardDialogBody>
             <DashboardDialogFooter>
               <DashboardButton tone="primary" onClick={() => {
-                console.log('Form validation:', {
-                  name: newProduct.name,
-                  category: newProduct.category,
-                  stock: newProduct.stock,
-                  minStock: newProduct.minStock,
-                  valid: !!(newProduct.name && newProduct.category && newProduct.stock && newProduct.minStock)
-                })
                 handleAddProduct()
               }} disabled={!newProduct.name || !newProduct.category || !newProduct.stock || !newProduct.minStock}>
                 Add Product

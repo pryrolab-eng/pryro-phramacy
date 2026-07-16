@@ -5,9 +5,17 @@ type RedisClient = import("redis").RedisClientType;
 let client: RedisClient | null = null;
 let connectPromise: Promise<RedisClient | null> | null = null;
 
+function normalizeRedisUrl(url: string): string {
+  if (url.startsWith("redis://") && url.includes("upstash.io")) {
+    return url.replace("redis://", "rediss://");
+  }
+  return url;
+}
+
 async function getRedisClient(): Promise<RedisClient | null> {
-  const url = process.env.REDIS_URL?.trim();
-  if (!url) return null;
+  const rawUrl = process.env.REDIS_URL?.trim();
+  if (!rawUrl) return null;
+  const url = normalizeRedisUrl(rawUrl);
 
   if (client?.isOpen) return client;
 

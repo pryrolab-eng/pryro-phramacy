@@ -1,4 +1,12 @@
 import type { CanvasElement } from "@/lib/admin/insurance-template-canvas";
+import {
+  PLACEHOLDER_SEAL,
+  PLACEHOLDER_INSURANCE,
+  PLACEHOLDER_RW,
+  PLACEHOLDER_SIGNATURE,
+  PLACEHOLDER_MOH,
+  PLACEHOLDER_STAMP,
+} from "@/lib/admin/insurance-template-placeholders";
 
 export type InsuranceTemplatePresetId = "basic" | "professional" | "detailed";
 
@@ -16,7 +24,7 @@ export function loadInsuranceTemplatePreset(
 ): CanvasElement[] {
   if (templateType === "basic") {
     return [
-      { id: 1, type: "image", src: "https://via.placeholder.com/80x80/10b981/ffffff?text=SEAL", x: 50, y: 20, width: 80, height: 80 },
+      { id: 1, type: "image", src: PLACEHOLDER_SEAL, x: 50, y: 20, width: 80, height: 80 },
       { id: 2, type: "title", text: "{{insurance_name}} MEDICAL CLAIM", x: 150, y: 30, fontSize: 22, fontWeight: "bold", width: 300, height: 35 },
       { id: 3, type: "text", text: "REPUBLIC OF RWANDA", x: 150, y: 65, fontSize: 14, width: 200, height: 25 },
       { id: 4, type: "line", x: 50, y: 120, width: 450, height: 3, backgroundColor: "#10b981" },
@@ -32,8 +40,8 @@ export function loadInsuranceTemplatePreset(
   }
   if (templateType === "professional") {
     return [
-      { id: 1, type: "image", src: "https://via.placeholder.com/150x60/1e40af/ffffff?text=INSURANCE", x: 50, y: 20, width: 150, height: 60 },
-      { id: 2, type: "image", src: "https://via.placeholder.com/60x60/dc2626/ffffff?text=RW", x: 420, y: 20, width: 60, height: 60 },
+      { id: 1, type: "image", src: PLACEHOLDER_INSURANCE, x: 50, y: 20, width: 150, height: 60 },
+      { id: 2, type: "image", src: PLACEHOLDER_RW, x: 420, y: 20, width: 60, height: 60 },
       { id: 3, type: "title", text: "OFFICIAL INSURANCE CERTIFICATE", x: 120, y: 100, fontSize: 20, fontWeight: "bold", width: 350, height: 35 },
       { id: 4, type: "line", x: 50, y: 150, width: 450, height: 2, backgroundColor: "#1e40af" },
       { id: 5, type: "line", x: 50, y: 155, width: 450, height: 1, backgroundColor: "#dc2626" },
@@ -47,11 +55,11 @@ export function loadInsuranceTemplatePreset(
       { id: 13, type: "variable", variable: "amount", label: "Approved Amount", x: 50, y: 310, fontSize: 16, fontWeight: "bold", width: 200, height: 30, suffix: " RWF" },
       { id: 14, type: "line", x: 50, y: 360, width: 450, height: 1, backgroundColor: "#6b7280" },
       { id: 15, type: "text", text: "This certificate is valid and authorized by {{insurance_name}}", x: 50, y: 375, fontSize: 11, width: 400, height: 20 },
-      { id: 16, type: "image", src: "https://via.placeholder.com/100x40/059669/ffffff?text=SIGNATURE", x: 350, y: 400, width: 100, height: 40 },
+      { id: 16, type: "image", src: PLACEHOLDER_SIGNATURE, x: 350, y: 400, width: 100, height: 40 },
     ];
   }
   return [
-    { id: 1, type: "image", src: "https://via.placeholder.com/100x100/7c3aed/ffffff?text=MOH", x: 50, y: 20, width: 100, height: 100 },
+    { id: 1, type: "image", src: PLACEHOLDER_MOH, x: 50, y: 20, width: 100, height: 100 },
     { id: 2, type: "title", text: "MINISTRY OF HEALTH", x: 170, y: 30, fontSize: 18, fontWeight: "bold", width: 250, height: 25 },
     { id: 3, type: "text", text: "REPUBLIC OF RWANDA", x: 170, y: 55, fontSize: 16, width: 200, height: 25 },
     { id: 4, type: "title", text: "MEDICAL INSURANCE CLAIM REPORT", x: 170, y: 80, fontSize: 16, fontWeight: "bold", width: 300, height: 25 },
@@ -72,7 +80,7 @@ export function loadInsuranceTemplatePreset(
     { id: 19, type: "text", text: "AUTHORIZATION", x: 50, y: 430, fontSize: 14, fontWeight: "bold", width: 200, height: 25 },
     { id: 20, type: "text", text: "Approved by: ________________", x: 50, y: 455, fontSize: 12, width: 200, height: 20 },
     { id: 21, type: "text", text: "Date: ________________", x: 270, y: 455, fontSize: 12, width: 150, height: 20 },
-    { id: 22, type: "image", src: "https://via.placeholder.com/80x40/dc2626/ffffff?text=OFFICIAL+STAMP", x: 400, y: 450, width: 80, height: 40 },
+      { id: 22, type: "image", src: PLACEHOLDER_STAMP, x: 400, y: 450, width: 80, height: 40 },
     { id: 23, type: "text", text: "This document is official and legally binding under Rwanda Insurance Law", x: 50, y: 510, fontSize: 10, width: 450, height: 20 },
   ];
 }

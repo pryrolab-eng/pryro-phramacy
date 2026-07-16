@@ -15,6 +15,7 @@ import {
 
 import { AnimatedGroup } from "@/components/ui/animated-group";
 import type { CanvasElement } from "@/lib/admin/insurance-template-canvas";
+import { PLACEHOLDER_LOGO } from "@/lib/admin/insurance-template-placeholders";
 import { cn } from "@/lib/utils";
 
 export const CANVAS_WIDTH = 595;
@@ -34,7 +35,7 @@ export const INSURANCE_CANVAS_COMPONENTS: CanvasComponentDef[] = [
   { type: "date", label: "Date", icon: Calendar, defaultProps: { variable: "date", label: "Date", width: 180, height: 28 } },
   { type: "amount", label: "Amount", icon: DollarSign, defaultProps: { variable: "amount", label: "Amount", suffix: " RWF", width: 180, height: 30 } },
   { type: "patient", label: "Patient", icon: User, defaultProps: { variable: "patient_name", label: "Patient Name", width: 200, height: 30 } },
-  { type: "image", label: "Image", icon: Image, defaultProps: { src: "https://via.placeholder.com/100x100/3b82f6/ffffff?text=Logo", alt: "Logo", width: 100, height: 100 } },
+  { type: "image", label: "Image", icon: Image, defaultProps: { src: PLACEHOLDER_LOGO, alt: "Logo", width: 100, height: 100 } },
   { type: "line", label: "Line", icon: Minus, defaultProps: { width: 300, height: 2, backgroundColor: "#000" } },
 ];
 

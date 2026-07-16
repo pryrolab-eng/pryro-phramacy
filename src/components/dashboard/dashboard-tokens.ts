@@ -67,7 +67,7 @@ export const dashboardButtonClass = {
 
 /** Default chart palette aligned with dashboard neutrals + blue accent */
 export const dashboardChartColors = {
-  primary: "hsl(220 70% 50%)",
+  primary: "hsl(var(--primary))",
   secondary: "hsl(220 60% 65%)",
   muted: "hsl(220 20% 75%)",
 } as const;

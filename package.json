@@ -30,6 +30,11 @@
     "db:prisma:studio": "npm run db:studio",
     "db:seed:demo": "npx tsx scripts/seed-pharmacy-demo.ts",
     "demo:import-files": "npx tsx scripts/generate-demo-import-files.ts",
+    "clickhouse:up": "docker compose up -d clickhouse",
+    "clickhouse:down": "docker compose stop clickhouse",
+    "clickhouse:ping": "npx tsx scripts/clickhouse-ping.ts",
+    "clickhouse:migrate": "npx tsx scripts/clickhouse-migrate.ts",
+    "clickhouse:sync": "npx tsx scripts/sync-clickhouse-sales.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -39,6 +44,7 @@
     "@assistant-ui/react-markdown": "^0.14.5",
     "@bull-board/api": "^8.0.1",
     "@bull-board/express": "^8.0.1",
+    "@clickhouse/client": "^1.23.1",
     "@hookform/resolvers": "^3.3.4",
     "@next/bundle-analyzer": "^16.2.6",
     "@polar-sh/sdk": "^0.47.1",

@@ -42,6 +42,7 @@ import { submitPharmacySaleToEbm } from "@/lib/ebm/submit-sale";
 import { dispatchIntegrationWebhookEvent } from "@/lib/integrations/v1/webhook-deliver";
 import { prisma } from "@/lib/db/prisma";
 import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
+import { scheduleSaleClickHouseSync } from "@/lib/clickhouse/sync-sales";
 
 type SaleLine = {
   id: string;
@@ -498,6 +499,7 @@ export async function POST(request: NextRequest) {
     });
 
     void invalidateSalesCache(pharmacy_id);
+    scheduleSaleClickHouseSync(String(sale.id));
 
     return NextResponse.json({
       success: true,

@@ -10,6 +10,14 @@ import {
   setActivePharmacy,
   type MeContextResponse,
 } from "@/lib/http/me-context";
+import { pharmacyDashboardKeys } from "@/lib/http/pharmacy-dashboard";
+import { inventoryKeys } from "@/lib/http/inventory";
+import { salesKeys } from "@/lib/http/sales";
+import { reportsKeys } from "@/lib/http/reports";
+import { posKeys } from "@/lib/http/pos";
+import { customersKeys } from "@/lib/http/customers";
+import { pharmacistDashboardKeys } from "@/lib/http/pharmacist-dashboard";
+import { realtimeKeys } from "@/lib/http/realtime";
 import { ApiError } from "@/lib/http/client";
 
 const EMPTY: MeContextResponse = {
@@ -22,6 +30,18 @@ const EMPTY: MeContextResponse = {
   mustChangePassword: false,
   memberships: [],
 };
+
+/** Branch-scoped operational/analytics caches — not entitlements, auth, plans, etc. */
+const BRANCH_SCOPED_QUERY_ROOTS = [
+  pharmacyDashboardKeys.all,
+  inventoryKeys.all,
+  salesKeys.all,
+  reportsKeys.all,
+  posKeys.all,
+  customersKeys.all,
+  pharmacistDashboardKeys.all,
+  realtimeKeys.all,
+] as const;
 
 export function useActivePharmacyContext(options?: { enabled?: boolean }) {
   const router = useRouter();
@@ -58,19 +78,41 @@ export function useActivePharmacyContext(options?: { enabled?: boolean }) {
     }
   }, [data.activePharmacyId, data.activeBranchId, isHydrating, query.refetch]);
 
-  const invalidateTenantQueries = async () => {
-    await queryClient.invalidateQueries();
-    router.refresh();
+  const invalidateBranchScopedQueries = async () => {
+    await Promise.all(
+      BRANCH_SCOPED_QUERY_ROOTS.map((queryKey) =>
+        queryClient.invalidateQueries({ queryKey }),
+      ),
+    );
   };
 
   const switchPharmacy = async (pharmacyId: string) => {
     await setActivePharmacy(pharmacyId);
-    await invalidateTenantQueries();
+    // Pharmacy change affects almost everything — full reset is appropriate.
+    await queryClient.invalidateQueries();
+    router.refresh();
   };
 
   const switchBranch = async (branchId: string) => {
-    await setActiveBranch(branchId);
-    await invalidateTenantQueries();
+    if (branchId === data.activeBranchId) return;
+
+    const result = await setActiveBranch(branchId);
+    const nextBranchId = result.activeBranchId ?? branchId;
+
+    // Keep shell/session responsive while branch data reloads.
+    queryClient.setQueryData<MeContextResponse>(meContextKeys.all, (prev) =>
+      prev
+        ? {
+            ...prev,
+            activeBranchId: nextBranchId,
+            activePharmacyId:
+              result.activePharmacyId ?? prev.activePharmacyId,
+          }
+        : prev,
+    );
+
+    await invalidateBranchScopedQueries();
+    // Intentionally no router.refresh() — client queries own branch data.
   };
 
   return {

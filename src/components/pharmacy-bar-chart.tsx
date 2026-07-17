@@ -9,22 +9,31 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import { usePharmacyWeeklySalesChart } from "@/hooks/usePharmacyDashboard"
+import type { WeeklySalesChartPoint } from "@/lib/http/pharmacy-dashboard"
 
 const chartConfig = {
   prescription: { label: "Prescription", color: "#3b82f6" },
   otc: { label: "OTC Drugs", color: "#60a5fa" },
 } satisfies ChartConfig
 
-export function PharmacyBarChart() {
-  const chartQuery = usePharmacyWeeklySalesChart()
-  const chartData = chartQuery.data ?? []
+type Props = {
+  data?: WeeklySalesChartPoint[]
+  loading?: boolean
+}
+
+export function PharmacyBarChart({ data, loading }: Props = {}) {
+  const chartQuery = usePharmacyWeeklySalesChart({
+    enabled: data === undefined,
+  })
+  const chartData = data ?? chartQuery.data ?? []
+  const isLoading = data !== undefined ? Boolean(loading) : chartQuery.isPending
 
   return (
     <DashboardChartCard
       title="Weekly sales"
       description="Prescription vs OTC sales comparison"
       config={chartConfig}
-      loading={chartQuery.isPending}
+      loading={isLoading}
       chartClassName="aspect-auto h-[280px]"
     >
       <BarChart accessibilityLayer data={chartData}>

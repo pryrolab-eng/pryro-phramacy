@@ -30,6 +30,7 @@ import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 
 import { ADMIN_SIDEBAR_NAV } from '@/lib/admin/navigation'
 import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
+import { statusToneBadgeClass } from '@/lib/ui/status-tone'
 
 const superAdminNavigation = ADMIN_SIDEBAR_NAV.map((item) => ({
   name: item.title,
@@ -90,10 +91,12 @@ function SubscriptionPlanCard() {
   }, [])
 
   const getStatusColor = () => {
-    if (planData.status === 'expired') return 'text-red-600 bg-red-50'
-    if (planData.daysRemaining != null && planData.daysRemaining <= 7) return 'text-red-600 bg-red-50'
-    if (planData.daysRemaining != null && planData.daysRemaining <= 15) return 'text-orange-600 bg-orange-50'
-    return 'text-green-600 bg-green-50'
+    if (planData.status === 'expired') return statusToneBadgeClass.danger
+    if (planData.daysRemaining != null && planData.daysRemaining <= 7)
+      return statusToneBadgeClass.danger
+    if (planData.daysRemaining != null && planData.daysRemaining <= 15)
+      return statusToneBadgeClass.caution
+    return statusToneBadgeClass.success
   }
 
   return (

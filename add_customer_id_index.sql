@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_sales_customer_id ON public.sales(customer_id);

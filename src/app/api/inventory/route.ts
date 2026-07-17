@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
-import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
-import { requireUserBranchId } from "@/lib/pharmacy/get-session-branch";
+import { requireUserBranchId, resolveRequestBranchScope } from "@/lib/pharmacy/get-session-branch";
 import { parseBranchScopeFromRequest } from "@/lib/pharmacy/branch-scope";
 import {
   guardPharmacyFeatureForUser,
@@ -20,9 +19,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json([]);
     }
 
-    const pharmacyId = await requireUserPharmacyId(user.id);
     const scope = parseBranchScopeFromRequest(request);
-    const items = await storeListInventory(pharmacyId, scope.branchId);
+    const { pharmacyId, branchId } = await resolveRequestBranchScope(
+      user.id,
+      scope.branchId,
+    );
+    const items = await storeListInventory(pharmacyId, branchId);
     return NextResponse.json(items);
   } catch (error) {
     console.error("GET /api/inventory", error);

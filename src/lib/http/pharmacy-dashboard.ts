@@ -82,6 +82,12 @@ export const pharmacyDashboardKeys = {
   weeklySales: () => [...pharmacyDashboardKeys.all, "weekly-sales"] as const,
   categorySales: () => [...pharmacyDashboardKeys.all, "category-sales"] as const,
   inventoryChart: () => [...pharmacyDashboardKeys.all, "inventory-chart"] as const,
+  combined: (branchId?: string, days = 30) =>
+    [
+      ...pharmacyDashboardKeys.all,
+      "combined",
+      ...branchScopeCacheKey(branchId, days),
+    ] as const,
 };
 
 const EMPTY_STATS: PharmacyDashboardStats = {

@@ -15,18 +15,47 @@ export type AiTraceEvent = {
   timestamp: string;
 };
 
+export type TokenUsage = { inputTokens: number; outputTokens: number };
+
 export function createTraceId(): string {
   return randomUUID();
 }
 
+type UsageLike = {
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  total_tokens?: number | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+} | null | undefined;
+
+/** Read token counts from OpenAI-compatible completion or stream usage payloads. */
 export function extractTokenUsage(completion: {
-  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null;
-}): { inputTokens: number; outputTokens: number } {
+  usage?: UsageLike;
+}): TokenUsage {
+  const usage = completion.usage;
   return {
-    inputTokens: completion.usage?.prompt_tokens ?? 0,
-    outputTokens: completion.usage?.completion_tokens ?? 0,
+    inputTokens: Number(usage?.prompt_tokens ?? usage?.input_tokens ?? 0) || 0,
+    outputTokens:
+      Number(usage?.completion_tokens ?? usage?.output_tokens ?? 0) || 0,
   };
 }
+
+export function addTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+  };
+}
+
+/**
+ * Ask streaming providers to include usage on the final chunk.
+ * OpenAI / NVIDIA NIM honor this; ignored by providers that don't.
+ */
+export const AI_STREAM_USAGE_OPTIONS = {
+  stream: true as const,
+  stream_options: { include_usage: true },
+};
 
 export function recordAiTrace(event: AiTraceEvent): void {
   prisma.ai_trace_events

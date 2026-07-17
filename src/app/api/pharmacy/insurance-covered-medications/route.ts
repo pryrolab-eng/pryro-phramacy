@@ -10,6 +10,7 @@ import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import {
   storeGetMedicationCoverageDetail,
   storeListMedicationsForProviderCoverage,
+  storeResolveInsuranceProvider,
   storeUpdateMedicationProviderCoverage,
 } from "@/lib/db/insurance-covered-store";
 import { findMedicationForCoverageFromDb } from "@/lib/db/insurance";
@@ -98,17 +99,14 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Medication not found" }, { status: 404 });
     }
 
-    const listResult = await storeListMedicationsForProviderCoverage(
-      pharmacyId,
-      providerId,
-    );
-    if (!listResult) {
+    const provider = await storeResolveInsuranceProvider(pharmacyId, providerId);
+    if (!provider) {
       return NextResponse.json({ error: "Provider not found" }, { status: 404 });
     }
 
     const covered = Boolean(body.covered);
     const coverage = parseMedicationInsuranceCoverage(med.insurance_coverage);
-    const merged = mergeProviderCoverage(coverage, listResult.provider.id, {
+    const merged = mergeProviderCoverage(coverage, provider.id, {
       covered,
       externalCode:
         body.externalCode === undefined || body.externalCode === null
@@ -133,15 +131,15 @@ export async function PATCH(request: NextRequest) {
     await storeUpdateMedicationProviderCoverage({
       pharmacyId,
       medicationId,
-      providerId: listResult.provider.id,
+      providerId: provider.id,
       coverage: merged,
     });
 
-    const entry = merged[listResult.provider.id];
+    const entry = merged[provider.id];
     return NextResponse.json({
       success: true,
       medicationId,
-      providerId: listResult.provider.id,
+      providerId: provider.id,
       covered: entry?.covered === true,
       externalCode: entry?.externalCode ?? null,
       notes: entry?.notes ?? null,

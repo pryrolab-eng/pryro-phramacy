@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { fetchSalesReportRows } from "@/lib/db/reports";
-import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import {
   defaultReportRange,
   parseBranchScopeFromRequest,
 } from "@/lib/pharmacy/branch-scope";
+import { resolveRequestBranchScope } from "@/lib/pharmacy/get-session-branch";
 import {
   entitlementRouteResponse,
   guardReportsAccessForUser,
@@ -30,15 +30,18 @@ export async function GET(request: NextRequest) {
       throw entErr;
     }
 
-    const pharmacyId = await requireUserPharmacyId(user.id);
     const scope = parseBranchScopeFromRequest(request);
+    const { pharmacyId, branchId } = await resolveRequestBranchScope(
+      user.id,
+      scope.branchId,
+    );
     const range =
       scope.from && scope.to
         ? { from: scope.from, to: scope.to }
         : defaultReportRange(30);
 
     const sales = await fetchSalesReportRows(
-      { pharmacyId, branchId: scope.branchId },
+      { pharmacyId, branchId: branchId ?? undefined },
       range,
     );
 

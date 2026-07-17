@@ -14,6 +14,10 @@ import {
   storeUpsertOwnerPublicUser,
 } from "@/lib/db/admin-store";
 import { auditRequestMetadata, writeAuditLog } from "@/lib/db/audit-logs";
+import {
+  emitPlatformAdminNotification,
+  PLATFORM_ADMIN_EVENT,
+} from "@/lib/notifications/platform-admin";
 
 export async function GET() {
   try {
@@ -157,6 +161,19 @@ export async function POST(request: NextRequest) {
         ownerEmail,
       },
       ...auditRequestMetadata(request),
+    });
+
+    void emitPlatformAdminNotification({
+      eventType: PLATFORM_ADMIN_EVENT.pharmacyRegistered,
+      title: "New pharmacy registered",
+      message: `${pharmacy.name as string} was created by an admin.`,
+      type: "success",
+      actionUrl: `/admin/tenants`,
+      payload: {
+        pharmacyId: pharmacy.id,
+        pharmacyName: pharmacy.name,
+        createdByAdmin: true,
+      },
     });
 
     return NextResponse.json({

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { GitBranch } from "lucide-react";
+import { toast } from "sonner";
 import { useSaasBranches } from "@/hooks/useSaasSubscription";
 import {
   getStaffBranchAccess,
@@ -21,6 +22,7 @@ export function StaffBranchAccessEditor({ pharmacyUserId, disabled }: Props) {
   const branchesQuery = useSaasBranches();
   const branches = branchesQuery.data ?? [];
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [unrestricted, setUnrestricted] = useState(true);
   const [selected, setSelected] = useState<string[]>([]);
 
@@ -38,6 +40,7 @@ export function StaffBranchAccessEditor({ pharmacyUserId, disabled }: Props) {
         if (!cancelled) {
           setUnrestricted(true);
           setSelected([]);
+          toast.error("Could not load branch access");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -50,10 +53,20 @@ export function StaffBranchAccessEditor({ pharmacyUserId, disabled }: Props) {
 
   const persist = async (nextUnrestricted: boolean, nextSelected: string[]) => {
     if (!pharmacyUserId) return;
-    await updateStaffBranchAccess(
-      pharmacyUserId,
-      nextUnrestricted ? [] : nextSelected,
-    );
+    if (!nextUnrestricted && nextSelected.length === 0) {
+      throw new Error("Select at least one branch");
+    }
+    setSaving(true);
+    try {
+      const result = await updateStaffBranchAccess(
+        pharmacyUserId,
+        nextUnrestricted ? [] : nextSelected,
+      );
+      setUnrestricted(result.unrestricted);
+      setSelected(result.branchIds);
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!pharmacyUserId) return null;
@@ -82,20 +95,53 @@ export function StaffBranchAccessEditor({ pharmacyUserId, disabled }: Props) {
         <div className="space-y-0.5">
           <Label className="text-sm font-medium">Branch access</Label>
           <p className="text-xs text-neutral-500">
-            Restrict which branches this person can switch to in the app.
+            Assigned locations only — they see stock, sales, and POS for those
+            branches. Turn off “All branches” and pick one or more shops.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span className="text-xs text-neutral-500">All branches</span>
           <Switch
             checked={unrestricted}
-            disabled={disabled}
+            disabled={disabled || saving}
             onCheckedChange={async (checked) => {
-              setUnrestricted(checked);
+              if (checked) {
+                // Unrestricted = clear assignments
+                const prevSelected = selected;
+                setUnrestricted(true);
+                try {
+                  await persist(true, []);
+                  toast.success("Can access all branches");
+                } catch {
+                  setUnrestricted(false);
+                  setSelected(prevSelected);
+                  toast.error("Could not update branch access");
+                }
+                return;
+              }
+
+              // Restrict: need at least one branch — default to first if none picked yet
+              const nextSelected =
+                selected.length > 0
+                  ? selected
+                  : branches[0]
+                    ? [branches[0].id]
+                    : [];
+
+              if (nextSelected.length === 0) {
+                toast.error("No branches available to assign");
+                return;
+              }
+
+              setUnrestricted(false);
+              setSelected(nextSelected);
               try {
-                await persist(checked, selected);
+                await persist(false, nextSelected);
+                toast.success("Limited to selected branches");
               } catch {
-                setUnrestricted(!checked);
+                setUnrestricted(true);
+                setSelected([]);
+                toast.error("Could not update branch access");
               }
             }}
           />
@@ -113,16 +159,24 @@ export function StaffBranchAccessEditor({ pharmacyUserId, disabled }: Props) {
               >
                 <Checkbox
                   checked={checked}
-                  disabled={disabled}
+                  disabled={disabled || saving}
                   onCheckedChange={async (isChecked) => {
                     const next = isChecked
                       ? [...selected, b.id]
                       : selected.filter((id) => id !== b.id);
+
+                    if (next.length === 0) {
+                      toast.error("Keep at least one branch, or turn on All branches");
+                      return;
+                    }
+
+                    const prev = selected;
                     setSelected(next);
                     try {
                       await persist(false, next);
                     } catch {
-                      setSelected(selected);
+                      setSelected(prev);
+                      toast.error("Could not update branch access");
                     }
                   }}
                 />

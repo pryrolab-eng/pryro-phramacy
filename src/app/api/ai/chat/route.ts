@@ -12,7 +12,7 @@ import { pharmacyTools } from "@/lib/ai/pharmacy-tools";
 import { adminTools } from "@/lib/ai/admin-tools";
 import { settingsTools, type SettingsToolContext } from "@/lib/ai/settings-tools";
 import { prisma } from "@/lib/db/prisma";
-import { createTraceId, recordAiTrace } from "@/lib/ai/observability";
+import { createTraceId, recordAiTrace, extractTokenUsage, addTokenUsage, AI_STREAM_USAGE_OPTIONS, type TokenUsage } from "@/lib/ai/observability";
 
 export const maxDuration = 60;
 
@@ -204,16 +204,21 @@ export async function POST(req: Request) {
           temperature: AI_DEFAULTS.temperature,
           top_p: AI_DEFAULTS.top_p,
           max_tokens: AI_DEFAULTS.max_tokens,
-          stream: true,
+          ...AI_STREAM_USAGE_OPTIONS,
         });
 
         let fullContent = "";
+        let tokenUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
         const toolCallMap = new Map<
           number,
           { id: string; name: string; arguments: string }
         >();
 
         for await (const chunk of response) {
+          if (chunk.usage) {
+            tokenUsage = addTokenUsage(tokenUsage, extractTokenUsage(chunk));
+          }
+
           const delta = chunk.choices[0]?.delta;
           if (!delta) continue;
 
@@ -317,11 +322,14 @@ export async function POST(req: Request) {
               top_p: AI_DEFAULTS.top_p,
               max_tokens: AI_DEFAULTS.max_tokens,
               tools: toolDefinitions,
-              stream: true,
+              ...AI_STREAM_USAGE_OPTIONS,
             });
 
             let followUpContent = "";
             for await (const chunk of followUp) {
+              if (chunk.usage) {
+                tokenUsage = addTokenUsage(tokenUsage, extractTokenUsage(chunk));
+              }
               const delta = chunk.choices[0]?.delta;
               if (delta?.content) {
                 followUpContent += delta.content;
@@ -367,8 +375,8 @@ export async function POST(req: Request) {
           tenantId: pharmacyId,
           feature: scope === "pharmacy" ? "ai_chat" : "ai_admin_chat",
           model: AI_MODEL,
-          inputTokens: 0,
-          outputTokens: 0,
+          inputTokens: tokenUsage.inputTokens,
+          outputTokens: tokenUsage.outputTokens,
           latencyMs: Date.now() - startTime,
           success: true,
           fallback: false,

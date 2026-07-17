@@ -167,3 +167,13 @@ html{
 .sidebar-scroll:hover::-webkit-scrollbar-thumb {
   background: hsl(var(--border) / 0.85);
 }
+
+/* POS full-window sits at z-100; raise portaled menus above it */
+body[data-pos-fullscreen] [data-radix-popper-content-wrapper] {
+  z-index: 110 !important;
+}
+
+body[data-pos-fullscreen] [role="listbox"],
+body[data-pos-fullscreen] [role="menu"] {
+  z-index: 110 !important;
+}

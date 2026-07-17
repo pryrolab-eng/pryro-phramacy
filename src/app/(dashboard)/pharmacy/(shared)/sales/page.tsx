@@ -742,7 +742,16 @@ export default function SalesPage() {
                       </TableCell>
                       <TableCell>{new Date(sale.date).toLocaleDateString()}</TableCell>
                       <TableCell>
-                        <Badge variant={sale.status === 'completed' ? 'default' : 'secondary'}>
+                        <Badge
+                          variant={
+                            sale.status === 'completed'
+                              ? 'success'
+                              : sale.status === 'failed' || sale.status === 'cancelled'
+                                ? 'danger'
+                                : 'warning'
+                          }
+                          className="capitalize"
+                        >
                           {sale.status}
                         </Badge>
                       </TableCell>

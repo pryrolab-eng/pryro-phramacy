@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DashboardDialogContent,
@@ -13,7 +13,6 @@ import {
   DashboardDialogDescription,
   DashboardDialogBody,
   DashboardDialogActions,
-  DashboardButton,
 } from "@/components/dashboard";
 import {
   useCashierShift,
@@ -21,6 +20,7 @@ import {
   useOpenCashierShiftMutation,
   useTeamOpenCashierShifts,
 } from "@/hooks/usePos";
+import { cn } from "@/lib/utils";
 
 type Props = {
   branchId: string | null;
@@ -47,6 +47,8 @@ export function PosShiftPanel({
   const [closeNotes, setCloseNotes] = useState("");
 
   const shift = shiftQuery.data;
+  const shiftOpen = Boolean(shift);
+  const busy = openMutation.isPending || closeMutation.isPending;
 
   const openShift = async () => {
     if (!branchId) return;
@@ -84,51 +86,69 @@ export function PosShiftPanel({
     }
   };
 
+  const onToggle = (checked: boolean) => {
+    if (busy) return;
+    if (checked) {
+      setOpeningCash("0");
+      setOpenDialog(true);
+      return;
+    }
+    if (!shift) return;
+    setActualCash(
+      String(
+        shift.expected_cash ??
+          Number(shift.opening_cash) + Number(shift.liveCashSales ?? 0),
+      ),
+    );
+    setCloseNotes("");
+    setCloseDialog(true);
+  };
+
   if (!branchId) {
     return (
       <p className="text-xs text-neutral-500">Select a branch to manage shifts.</p>
     );
   }
 
-  const teamOnDuty = (teamQuery.data ?? []).filter((s) => !s.isCurrentUser);
-
   return (
     <div
-      className={
+      className={cn(
+        "rounded-md px-2 py-1.5",
         shiftRequired && !shift
-          ? "space-y-2 rounded-lg border border-amber-300/80 bg-amber-50/90 p-3 dark:border-amber-800 dark:bg-amber-950/30"
-          : "space-y-2 rounded-lg border border-neutral-200/80 bg-neutral-50/80 p-3 dark:border-neutral-800 dark:bg-neutral-900/40"
-      }
+          ? "border border-amber-300/80 bg-amber-50/90 dark:border-amber-800 dark:bg-amber-950/30"
+          : "border border-neutral-200/80 bg-neutral-50/80 dark:border-neutral-800 dark:bg-neutral-900/40",
+      )}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+      <div className="flex items-center gap-2">
+        <Label
+          htmlFor="pos-cashier-shift"
+          className="min-w-0 flex-1 cursor-pointer text-xs font-medium text-neutral-700 dark:text-neutral-200"
+        >
           Cashier shift
-        </span>
-        {shift ? (
-          <Badge className="bg-emerald-600 hover:bg-emerald-600">Open</Badge>
-        ) : (
-          <Badge variant="secondary">Closed</Badge>
-        )}
+          <span className="ml-1.5 font-normal text-neutral-500">
+            {shiftOpen ? "Open" : "Closed"}
+          </span>
+        </Label>
+        <Switch
+          id="pos-cashier-shift"
+          checked={shiftOpen}
+          disabled={busy || shiftQuery.isLoading}
+          onCheckedChange={onToggle}
+          aria-label={shiftOpen ? "Close cashier shift" : "Open cashier shift"}
+        />
       </div>
 
-      {shiftRequired && !shift ? (
-        <p className="text-xs font-medium text-amber-900 dark:text-amber-200">
-          Open your shift before any sale or return. This records when you started
-          and ties transactions to your drawer.
-        </p>
-      ) : null}
-
       {shift ? (
-        <div className="space-y-1 text-xs text-neutral-600 dark:text-neutral-400">
+        <div className="mt-1.5 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] leading-snug text-neutral-600 dark:text-neutral-400">
           <p>Opened: {new Date(shift.opened_at).toLocaleTimeString()}</p>
           <p>Float: {Number(shift.opening_cash).toLocaleString()} RWF</p>
           <p>
-            Sales (live):{" "}
+            Sales:{" "}
             {Number(shift.liveTotalSales ?? shift.total_sales ?? 0).toLocaleString()}{" "}
             RWF
           </p>
           <p>
-            Expected cash:{" "}
+            Cash:{" "}
             {Number(
               shift.expected_cash ??
                 Number(shift.opening_cash) + Number(shift.liveCashSales ?? 0),
@@ -136,90 +156,43 @@ export function PosShiftPanel({
             RWF
           </p>
         </div>
-      ) : (
-        <p className="text-xs text-neutral-500">
-          Count your drawer float, then open a shift to start selling.
-        </p>
-      )}
-
-      {showTeamShifts ? (
-        <div className="rounded-md border border-neutral-200/60 bg-white/60 px-2.5 py-2 dark:border-neutral-700 dark:bg-neutral-900/50">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
-            On duty at this branch
-          </p>
-          {teamQuery.isLoading ? (
-            <p className="mt-1 text-xs text-neutral-500">Loading…</p>
-          ) : (teamQuery.data ?? []).length === 0 ? (
-            <p className="mt-1 text-xs text-neutral-500">
-              No one has an open shift yet.
-            </p>
-          ) : (
-            <ul className="mt-1 space-y-1">
-              {(teamQuery.data ?? []).map((member) => (
-                <li
-                  key={member.id}
-                  className="text-xs text-neutral-700 dark:text-neutral-300"
-                >
-                  <span className="font-medium">{member.cashierName}</span>
-                  {member.isCurrentUser ? " (you)" : ""}
-                  <span className="text-neutral-500">
-                    {" "}
-                    · since{" "}
-                    {new Date(member.openedAt).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {teamOnDuty.length === 0 && shift ? (
-            <p className="mt-1 text-[11px] text-neutral-500">
-              Only you are on shift right now.
-            </p>
-          ) : null}
-        </div>
       ) : null}
 
-      <div className="flex gap-2">
-        {!shift ? (
-          <DashboardButton
-            tone="primary"
-            className="h-8 flex-1"
-            onClick={() => setOpenDialog(true)}
-          >
-            Open shift
-          </DashboardButton>
-        ) : (
-          <DashboardButton
-            className="h-8 flex-1"
-            onClick={() => {
-              setActualCash(
-                String(
-                  shift.expected_cash ??
-                    Number(shift.opening_cash) + Number(shift.liveCashSales ?? 0),
-                ),
-              );
-              setCloseDialog(true);
-            }}
-          >
-            Close shift
-          </DashboardButton>
-        )}
-      </div>
+      {showTeamShifts && (teamQuery.data ?? []).length > 0 ? (
+        <div className="mt-1.5 rounded-md border border-neutral-200/60 bg-white/60 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900/50">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+            On duty
+          </p>
+          <ul className="mt-0.5 space-y-0.5">
+            {(teamQuery.data ?? []).map((member) => (
+              <li
+                key={member.id}
+                className="text-xs text-neutral-700 dark:text-neutral-300"
+              >
+                <span className="font-medium">{member.cashierName}</span>
+                {member.isCurrentUser ? " (you)" : ""}
+                <span className="text-neutral-500">
+                  {" "}
+                  ·{" "}
+                  {new Date(member.openedAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <Dialog open={openDialog} onOpenChange={setOpenDialog}>
         <DashboardDialogContent className="sm:max-w-sm">
           <DashboardDialogHeader>
-            <DashboardDialogTitle>Open cashier shift</DashboardDialogTitle>
-            <DashboardDialogDescription>
-              Count the cash in your drawer before the first sale.
-            </DashboardDialogDescription>
+            <DashboardDialogTitle>Open shift</DashboardDialogTitle>
           </DashboardDialogHeader>
           <DashboardDialogBody className="space-y-3">
             <div className="space-y-1">
-              <Label>Opening cash in drawer (RWF)</Label>
+              <Label>Opening cash (RWF)</Label>
               <Input
                 type="number"
                 value={openingCash}
@@ -240,19 +213,20 @@ export function PosShiftPanel({
       <Dialog open={closeDialog} onOpenChange={setCloseDialog}>
         <DashboardDialogContent className="sm:max-w-sm">
           <DashboardDialogHeader>
-            <DashboardDialogTitle>Close cashier shift</DashboardDialogTitle>
+            <DashboardDialogTitle>Close shift</DashboardDialogTitle>
             <DashboardDialogDescription>
-              Expected cash:{" "}
+              Expected:{" "}
               {Number(
                 shift?.expected_cash ??
-                  Number(shift?.opening_cash ?? 0) + Number(shift?.liveCashSales ?? 0),
+                  Number(shift?.opening_cash ?? 0) +
+                    Number(shift?.liveCashSales ?? 0),
               ).toLocaleString()}{" "}
               RWF
             </DashboardDialogDescription>
           </DashboardDialogHeader>
           <DashboardDialogBody className="space-y-3">
             <div className="space-y-1">
-              <Label>Actual cash counted (RWF)</Label>
+              <Label>Actual cash (RWF)</Label>
               <Input
                 type="number"
                 value={actualCash}

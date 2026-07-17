@@ -1,0 +1,1 @@
+ALTER TABLE public.sales ADD COLUMN customer_id UUID;

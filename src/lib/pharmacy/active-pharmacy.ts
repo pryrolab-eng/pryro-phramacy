@@ -13,6 +13,7 @@ import {
 import {
   assertBranchAllowedForUser,
   getStaffAllowedBranchIds,
+  pickStaffScopedBranchId,
 } from "@/lib/pharmacy/staff-branch-access";
 import { resolveSwitcherBranches } from "@/lib/branches/entitled-branches";
 import { getBranchCapacity } from "@/lib/subscription/branch-addon-capacity";
@@ -43,6 +44,16 @@ async function persistActiveContext(
   branchId: string | null,
 ) {
   await storeUpdateUserActiveContext(userId, pharmacyId, branchId);
+}
+
+async function resolveScopedBranchForPharmacy(
+  userId: string,
+  pharmacyId: string,
+  role: string | null,
+  preferredBranchId: string | null,
+): Promise<string | null> {
+  const allowed = await getStaffAllowedBranchIds(userId, pharmacyId, role);
+  return pickStaffScopedBranchId(pharmacyId, allowed, preferredBranchId);
 }
 
 export async function resolveActivePharmacyId(
@@ -76,31 +87,37 @@ export async function resolveActivePharmacyContext(
 
   if (!activePharmacyId || !memberPharmacyIds.has(activePharmacyId)) {
     const primary = selectPrimaryMembership(memberships);
-    activePharmacyId = primary?.pharmacy_id ?? memberships[0].pharmacy_id ?? null;
-    activeBranchId = activePharmacyId
-      ? await ensureHeadquartersBranch(activePharmacyId)
-      : null;
-    if (activePharmacyId) {
-      await persistActiveContext(userId, activePharmacyId, activeBranchId);
-    }
+    activePharmacyId =
+      primary?.pharmacy_id ?? memberships[0].pharmacy_id ?? null;
+    activeBranchId = null;
   } else if (activeBranchId) {
     const branch = await prisma.branches.findUnique({
       where: { id: activeBranchId },
       select: { pharmacy_id: true },
     });
     if (branch?.pharmacy_id !== activePharmacyId) {
-      activeBranchId = await ensureHeadquartersBranch(activePharmacyId);
-      await persistActiveContext(userId, activePharmacyId, activeBranchId);
-    }
-  } else {
-    activeBranchId = await ensureHeadquartersBranch(activePharmacyId);
-    if (activeBranchId) {
-      await persistActiveContext(userId, activePharmacyId, activeBranchId);
+      activeBranchId = null;
     }
   }
 
   const role =
     memberships.find((m) => m.pharmacy_id === activePharmacyId)?.role ?? null;
+
+  if (activePharmacyId) {
+    const scopedBranchId = await resolveScopedBranchForPharmacy(
+      userId,
+      activePharmacyId,
+      role,
+      activeBranchId,
+    );
+
+    if (scopedBranchId !== activeBranchId) {
+      activeBranchId = scopedBranchId;
+      await persistActiveContext(userId, activePharmacyId, activeBranchId);
+    } else if (!userRow?.active_pharmacy_id || !userRow?.active_branch_id) {
+      await persistActiveContext(userId, activePharmacyId, activeBranchId);
+    }
+  }
 
   return {
     activePharmacyId,
@@ -120,7 +137,15 @@ export async function setActivePharmacyId(
     throw new Error("You do not have access to this pharmacy");
   }
 
-  const branchId = await ensureHeadquartersBranch(pharmacyId);
+  const role =
+    memberships.find((m) => m.pharmacy_id === pharmacyId)?.role ?? null;
+  const hqId = await ensureHeadquartersBranch(pharmacyId);
+  const branchId = await resolveScopedBranchForPharmacy(
+    userId,
+    pharmacyId,
+    role,
+    hqId,
+  );
   await persistActiveContext(userId, pharmacyId, branchId);
 
   return resolveActivePharmacyContext(userId);

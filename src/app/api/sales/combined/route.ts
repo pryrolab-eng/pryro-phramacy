@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
-import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { parseBranchScopeFromRequest } from "@/lib/pharmacy/branch-scope";
 import { defaultReportRange } from "@/lib/pharmacy/branch-scope";
+import { resolveRequestBranchScope } from "@/lib/pharmacy/get-session-branch";
 import {
   storeGetSalesReport,
   storeGetSalesChart,
@@ -27,12 +27,13 @@ async function getCachedSalesData(
   const range = defaultReportRange(30);
   const branchScope = branchId ?? undefined;
 
-  const [salesReport, salesChart, weeklySales, categorySales] = await Promise.all([
-    storeGetSalesReport({ pharmacyId, branchId: branchScope }, range),
-    storeGetSalesChart({ pharmacyId, branchId: branchScope }),
-    storeGetWeeklySales({ pharmacyId, branchId: branchScope }),
-    storeGetCategorySales({ pharmacyId, branchId: branchScope }),
-  ]);
+  const [salesReport, salesChart, weeklySales, categorySales] =
+    await Promise.all([
+      storeGetSalesReport({ pharmacyId, branchId: branchScope }, range),
+      storeGetSalesChart({ pharmacyId, branchId: branchScope }),
+      storeGetWeeklySales({ pharmacyId, branchId: branchScope }),
+      storeGetCategorySales({ pharmacyId, branchId: branchScope }),
+    ]);
 
   const data = { salesReport, salesChart, weeklySales, categorySales };
   await cacheSet(cacheKey, data, REDIS_TTL);
@@ -53,10 +54,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const pharmacyId = await requireUserPharmacyId(user.id);
     const scope = parseBranchScopeFromRequest(request);
+    const { pharmacyId, branchId } = await resolveRequestBranchScope(
+      user.id,
+      scope.branchId,
+    );
 
-    const data = await getCachedSalesDataCached(user.id, pharmacyId, scope.branchId ?? null);
+    const data = await getCachedSalesDataCached(user.id, pharmacyId, branchId);
 
     return NextResponse.json(data);
   } catch (error) {

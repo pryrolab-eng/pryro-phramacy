@@ -33,10 +33,9 @@ export function useSaasPlans() {
   return useQuery<SubscriptionPlan[]>({
     queryKey: saasKeys.plans(),
     queryFn: getSaasPlans,
-    staleTime: 30 * 1000,
-    refetchOnWindowFocus: true,
-    refetchInterval: 60 * 1000,
-    refetchIntervalInBackground: false,
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    placeholderData: (previousData) => previousData,
   })
 }
 
@@ -44,10 +43,9 @@ export function useSaasSubscription() {
   return useQuery<PharmacySubscriptionSummary>({
     queryKey: saasKeys.subscription(),
     queryFn: getSaasSubscriptionSummary,
-    staleTime: 30 * 1000,
-    refetchOnWindowFocus: true,
-    refetchInterval: 60 * 1000,
-    refetchIntervalInBackground: false,
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    placeholderData: (previousData) => previousData,
   })
 }
 

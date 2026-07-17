@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
-import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
-import { parseBranchScopeFromRequest } from "@/lib/pharmacy/branch-scope";
-import { defaultReportRange } from "@/lib/pharmacy/branch-scope";
+import {
+  parseBranchScopeFromRequest,
+  defaultReportRange,
+} from "@/lib/pharmacy/branch-scope";
+import { resolveRequestBranchScope } from "@/lib/pharmacy/get-session-branch";
 import {
   storeGetSalesReport,
   storeGetInventoryReport,
@@ -28,12 +30,17 @@ async function getCachedReportsData(
   const today = new Date().toISOString().split("T")[0];
   const branchScope = branchId ?? undefined;
 
-  const [salesReport, inventoryReport, categorySales, dashboardStats] = await Promise.all([
-    storeGetSalesReport({ pharmacyId, branchId: branchScope }, range),
-    storeGetInventoryReport(pharmacyId),
-    storeGetCategorySales({ pharmacyId, branchId: branchScope }),
-    storeGetPharmacyDashboardStats({ pharmacyId, branchId: branchScope }, range, today),
-  ]);
+  const [salesReport, inventoryReport, categorySales, dashboardStats] =
+    await Promise.all([
+      storeGetSalesReport({ pharmacyId, branchId: branchScope }, range),
+      storeGetInventoryReport(pharmacyId),
+      storeGetCategorySales({ pharmacyId, branchId: branchScope }),
+      storeGetPharmacyDashboardStats(
+        { pharmacyId, branchId: branchScope },
+        range,
+        today,
+      ),
+    ]);
 
   const data = { salesReport, inventoryReport, categorySales, dashboardStats };
   await cacheSet(cacheKey, data, REDIS_TTL);
@@ -54,10 +61,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const pharmacyId = await requireUserPharmacyId(user.id);
     const scope = parseBranchScopeFromRequest(request);
+    const { pharmacyId, branchId } = await resolveRequestBranchScope(
+      user.id,
+      scope.branchId,
+    );
 
-    const data = await getCachedReportsDataCached(user.id, pharmacyId, scope.branchId ?? null);
+    const data = await getCachedReportsDataCached(
+      user.id,
+      pharmacyId,
+      branchId,
+    );
 
     return NextResponse.json(data);
   } catch (error) {
@@ -68,8 +82,14 @@ export async function GET(request: NextRequest) {
         inventoryReport: { inventoryAlerts: [] },
         categorySales: [],
         dashboardStats: {
-          totalProducts: 0, lowStockItems: 0, todaySales: 0, monthlyRevenue: 0,
-          totalCustomers: 0, activeStaff: 0, pendingOrders: 0, expiringProducts: 0
+          totalProducts: 0,
+          lowStockItems: 0,
+          todaySales: 0,
+          monthlyRevenue: 0,
+          totalCustomers: 0,
+          activeStaff: 0,
+          pendingOrders: 0,
+          expiringProducts: 0,
         },
       },
       { status: 200 },

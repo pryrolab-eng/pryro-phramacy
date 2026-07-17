@@ -1,6 +1,6 @@
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import {
   PersistQueryClientProvider,
   type Persister,
@@ -47,7 +47,9 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
         defaultOptions: {
           queries: {
             staleTime: 60 * 1000,
+            gcTime: 30 * 60 * 1000,
             refetchOnWindowFocus: false,
+            placeholderData: (previousData) => previousData,
           },
         },
       }),
@@ -55,32 +57,30 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <PersistQueryClientProvider
-        client={queryClient}
-        persistOptions={{
-          persister: createLocalStoragePersister(),
-          maxAge: 1000 * 60 * 30,
-          dehydrateOptions: {
-            shouldDehydrateQuery: (q) => {
-              const key = q.queryKey[0];
-              return (
-                typeof key === "string" &&
-                !key.startsWith("admin") &&
-                q.state.status === "success"
-              );
-            },
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{
+        persister: createLocalStoragePersister(),
+        maxAge: 1000 * 60 * 30,
+        dehydrateOptions: {
+          shouldDehydrateQuery: (q) => {
+            const key = q.queryKey[0];
+            return (
+              typeof key === "string" &&
+              !key.startsWith("admin") &&
+              q.state.status === "success"
+            );
           },
-        }}
-      >
-        {children}
-        {process.env.NODE_ENV === "development" && (
-          <ReactQueryDevtoolsBase
-            buttonPosition="bottom-left"
-            initialIsOpen={false}
-          />
-        )}
-      </PersistQueryClientProvider>
-    </QueryClientProvider>
+        },
+      }}
+    >
+      {children}
+      {process.env.NODE_ENV === "development" && (
+        <ReactQueryDevtoolsBase
+          buttonPosition="bottom-left"
+          initialIsOpen={false}
+        />
+      )}
+    </PersistQueryClientProvider>
   );
 }

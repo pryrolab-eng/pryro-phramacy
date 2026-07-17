@@ -5,6 +5,10 @@ import { writeAuditLog } from "@/lib/db/audit-logs";
 import { prisma } from "@/lib/db/prisma";
 import { getMaintenanceNotifyQueue } from "@/lib/queue/maintenance-notify";
 import { isRedisConfigured } from "@/lib/queue/redis";
+import {
+  emitPlatformAdminNotification,
+  PLATFORM_ADMIN_EVENT,
+} from "@/lib/notifications/platform-admin";
 
 export async function POST(request: NextRequest) {
   const auth = await requirePlatformAdminApi();
@@ -70,6 +74,22 @@ export async function POST(request: NextRequest) {
       },
       ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
       userAgent: request.headers.get("user-agent") ?? undefined,
+    });
+
+    void emitPlatformAdminNotification({
+      eventType: PLATFORM_ADMIN_EVENT.maintenanceQueued,
+      title: "Maintenance notice queued",
+      message:
+        typeof message === "string" && message.trim()
+          ? message.trim().slice(0, 200)
+          : `Maintenance emails queued for ${jobs.length} recipients.`,
+      type: "warning",
+      actionUrl: `/admin/settings`,
+      payload: {
+        batchId,
+        queued: jobs.length,
+        scheduledAt,
+      },
     });
 
     return NextResponse.json({

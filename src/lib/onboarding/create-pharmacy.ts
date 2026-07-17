@@ -9,6 +9,10 @@ import {
 import { storeUpsertPublicUser } from "@/lib/db/public-users-store";
 import { prisma } from "@/lib/db/prisma";
 import { getStockLocationTemplates } from "@/lib/stock-location-templates";
+import {
+  emitPlatformAdminNotification,
+  PLATFORM_ADMIN_EVENT,
+} from "@/lib/notifications/platform-admin";
 
 export type CreateOnboardingPharmacyInput = {
   userId: string;
@@ -86,6 +90,19 @@ export async function createOnboardingPharmacy(
     await deleteOnboardingPharmacyFromDb(pharmacy.id);
     throw error;
   }
+
+  void emitPlatformAdminNotification({
+    eventType: PLATFORM_ADMIN_EVENT.pharmacyRegistered,
+    title: "New pharmacy registered",
+    message: `${input.name} joined the platform.`,
+    type: "success",
+    actionUrl: `/admin/tenants`,
+    payload: {
+      pharmacyId: pharmacy.id,
+      pharmacyName: input.name,
+      city: input.city,
+    },
+  });
 
   return { success: true, pharmacyId: pharmacy.id };
 }

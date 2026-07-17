@@ -12,14 +12,29 @@ import { useBranchScope } from "@/hooks/useBranchScope";
 type DashboardShellBarProps = {
   /** Pharmacy routes show branch switcher; platform admin does not. */
   showBranchSwitcher?: boolean;
+  /** Show notification bell (default true for pharmacy + admin). */
+  showNotifications?: boolean;
 };
+
+function ShellBarBranchSwitcher() {
+  const { branchScope, setBranchScope } = useBranchScope();
+  return (
+    <BranchSwitcher
+      showAllOption
+      scope={branchScope}
+      onScopeChange={setBranchScope}
+      className="max-w-full"
+    />
+  );
+}
 
 /** Sticky top bar: page title pins on scroll; sidebar toggles via menu or Ctrl+B. */
 export function DashboardShellBar({
   showBranchSwitcher = true,
+  showNotifications = true,
 }: DashboardShellBarProps) {
   const { isPinned, config } = useDashboardScrollHeader();
-  const { branchScope, setBranchScope } = useBranchScope();
+  const showActions = showNotifications || showBranchSwitcher;
 
   return (
     <div
@@ -46,10 +61,10 @@ export function DashboardShellBar({
           ) : null}
         </AnimatePresence>
       </div>
-      {showBranchSwitcher ? (
+      {showActions ? (
         <div className="flex w-full min-w-0 items-center justify-end gap-1 md:w-auto">
-          <NotificationBell />
-          <BranchSwitcher showAllOption scope={branchScope} onScopeChange={setBranchScope} className="max-w-full" />
+          {showNotifications ? <NotificationBell /> : null}
+          {showBranchSwitcher ? <ShellBarBranchSwitcher /> : null}
         </div>
       ) : null}
     </div>

@@ -7,9 +7,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { AlertCircle } from "lucide-react";
 
 const RESOLVE_LINES = [
-  "Preparing your workspace",
-  "Checking your role",
-  "Almost there",
+  "Signing you in",
+  "Loading your pharmacy data",
+  "Preparing dashboard",
 ] as const;
 
 export type AppEntryLoaderPhase = "resolving" | "redirecting" | "error";

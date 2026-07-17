@@ -1,28 +1,51 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
 import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
-import { storeCreatePharmacyNotification, storeListNotificationsForPharmacy } from "@/lib/db/notifications-store";
+import {
+  storeCreatePharmacyNotification,
+  storeListNotificationsForPharmacy,
+  storeListPlatformNotifications,
+} from "@/lib/db/notifications-store";
 
-export async function GET() {
+function formatNotifications(
+  notifications: Awaited<ReturnType<typeof storeListNotificationsForPharmacy>>,
+) {
+  return notifications.map((n) => ({
+    id: n.id,
+    title: n.title,
+    message: n.message,
+    type: n.type,
+    read: n.is_read,
+    date: n.created_at,
+    actionUrl: n.action_url,
+  }));
+}
+
+export async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const wantPlatform =
+      request.nextUrl.searchParams.get("scope") === "platform";
+    const isPlatformAdmin = wantPlatform
+      ? await resolveIsAppPlatformAdmin(user.id)
+      : false;
+
+    if (wantPlatform) {
+      if (!isPlatformAdmin) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      const notifications = await storeListPlatformNotifications();
+      return NextResponse.json(formatNotifications(notifications));
+    }
+
     const pharmacyId = await requireUserPharmacyId(user.id);
     const notifications = await storeListNotificationsForPharmacy(pharmacyId);
-
-    const formattedNotifications = notifications.map((n) => ({
-      id: n.id,
-      title: n.title,
-      message: n.message,
-      type: n.type,
-      read: n.is_read,
-      date: n.created_at,
-    }));
-
-    return NextResponse.json(formattedNotifications);
+    return NextResponse.json(formatNotifications(notifications));
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to fetch notifications";

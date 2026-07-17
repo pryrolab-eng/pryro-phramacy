@@ -71,7 +71,7 @@ export function AdminSidebarUserMenu({ userName }: { userName: string }) {
             <div
               className={cn(
                 "flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold",
-                "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900",
+                "bg-primary text-primary-foreground",
               )}
             >
               {initial}

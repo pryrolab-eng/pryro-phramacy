@@ -18,7 +18,7 @@ export type BranchScopeValue = "all" | string;
 
 type Props = {
   className?: string;
-  /** When true, shows "All branches" option for report scoping */
+  /** When true, shows "All branches" for unrestricted owners/admins (reports). */
   showAllOption?: boolean;
   /** Current scope value ("all" or branch ID) */
   scope?: string;
@@ -26,8 +26,13 @@ type Props = {
   onScopeChange?: (value: string) => void;
 };
 
-export function BranchSwitcher({ className, showAllOption, scope, onScopeChange }: Props) {
-  const { activeBranchId } = useActivePharmacy();
+export function BranchSwitcher({
+  className,
+  showAllOption,
+  scope,
+  onScopeChange,
+}: Props) {
+  const { activeBranchId, allowedBranchIds } = useActivePharmacy();
   const {
     branches,
     isLoading,
@@ -35,6 +40,10 @@ export function BranchSwitcher({ className, showAllOption, scope, onScopeChange 
     canSwitchBranch,
     isAccessBlocked,
   } = useEntitledBranches();
+
+  /** "All branches" is only for unrestricted staff (owners/admins / no allow-list). */
+  const canViewAllBranches = allowedBranchIds === null;
+  const showAll = Boolean(showAllOption && canViewAllBranches);
 
   if (isLoading) {
     return (
@@ -72,20 +81,7 @@ export function BranchSwitcher({ className, showAllOption, scope, onScopeChange 
   const activeBranch =
     branches.find((b) => b.id === activeBranchId) ?? branches[0];
 
-  // Show "All branches" mode for report scoping
-  if (showAllOption && !canSwitchBranch) {
-    return (
-      <BranchSwitcherSelect
-        branches={branches}
-        activeBranchId={activeBranchId}
-        showAllOption
-        scope={scope}
-        onScopeChange={onScopeChange}
-        className={className}
-      />
-    );
-  }
-
+  // Single assigned location — locked label (no switcher, no "All")
   if (!canSwitchBranch) {
     return (
       <div
@@ -93,14 +89,19 @@ export function BranchSwitcher({ className, showAllOption, scope, onScopeChange 
         title={
           isAccessBlocked
             ? "Branch switching is disabled while pharmacy access is paused"
-            : "Active branch"
+            : allowedBranchIds !== null
+              ? "Your assigned location"
+              : "Active branch"
         }
       >
         <GitBranch className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
-        <span className="max-w-[160px] truncate">{activeBranch.name}</span>
-        {isAccessBlocked ? (
+        <span className="max-w-[160px] truncate">
+          {activeBranch.name}
+          {isHeadquartersBranch(activeBranch) ? " · HQ" : ""}
+        </span>
+        {(isAccessBlocked || allowedBranchIds !== null) && (
           <Lock className="h-3 w-3 shrink-0 text-neutral-400" aria-hidden />
-        ) : null}
+        )}
       </div>
     );
   }
@@ -109,7 +110,7 @@ export function BranchSwitcher({ className, showAllOption, scope, onScopeChange 
     <BranchSwitcherSelect
       branches={branches}
       activeBranchId={activeBranchId}
-      showAllOption={showAllOption}
+      showAllOption={showAll}
       scope={scope}
       onScopeChange={onScopeChange}
       className={className}
@@ -134,15 +135,13 @@ function BranchSwitcherSelect({
 }) {
   const { switchBranch } = useActivePharmacy();
 
-  // Determine current value: "all" for all branches, or branch ID
   const currentValue = showAllOption
-    ? (scope ?? "all")
+    ? (scope === "all" ? "all" : (scope ?? activeBranchId ?? branches[0]?.id ?? ""))
     : (activeBranchId ?? branches[0]?.id ?? "");
 
   const handleValueChange = (value: string) => {
     if (showAllOption && onScopeChange) {
       onScopeChange(value);
-      // Also switch the server-side active branch when selecting a specific branch
       if (value !== "all") {
         void switchBranch(value);
       }
@@ -160,14 +159,14 @@ function BranchSwitcherSelect({
           className,
         )}
       >
-        <SelectValue placeholder="Select branch" />
+        <SelectValue placeholder="Working location" />
       </SelectTrigger>
       <SelectContent>
         {showAllOption && (
           <SelectItem value="all">
             <div className="flex items-center gap-1.5">
               <Layers className="h-3.5 w-3.5 text-neutral-500" />
-              All branches
+              All branches (reports)
             </div>
           </SelectItem>
         )}

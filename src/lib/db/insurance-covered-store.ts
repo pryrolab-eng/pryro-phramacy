@@ -83,6 +83,14 @@ export async function storeListMedicationsForProviderCoverage(
   };
 }
 
+export async function storeResolveInsuranceProvider(
+  pharmacyId: string,
+  providerId: string,
+) {
+  requirePrisma();
+  return resolveInsuranceProviderFromDb(pharmacyId, providerId);
+}
+
 export async function storeUpdateMedicationProviderCoverage(input: {
   pharmacyId: string;
   medicationId: string;

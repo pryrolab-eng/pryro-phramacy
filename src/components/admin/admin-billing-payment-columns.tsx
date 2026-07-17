@@ -2,17 +2,11 @@
 
 import { type ColumnDef } from "@tanstack/react-table";
 
-import { Badge } from "@/components/ui/badge";
+import { Badge, badgeVariantFromTone } from "@/components/ui/badge";
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
 import type { AdminBillingPaymentRow } from "@/lib/http/admin/billing";
 import { formatMoney } from "@/lib/platform-currency";
-
-function statusVariant(status: string) {
-  if (status === "completed") return "default" as const;
-  if (status === "failed") return "destructive" as const;
-  if (status === "pending" || status === "processing") return "secondary" as const;
-  return "outline" as const;
-}
+import { paymentStatusTone } from "@/lib/ui/status-tone";
 
 export function adminBillingPaymentColumns(): ColumnDef<AdminBillingPaymentRow>[] {
   return [
@@ -65,7 +59,12 @@ export function adminBillingPaymentColumns(): ColumnDef<AdminBillingPaymentRow>[
         <DataTableColumnHeader column={column} title="Status" />
       ),
       cell: ({ row }) => (
-        <Badge variant={statusVariant(row.original.status)}>
+        <Badge
+          variant={badgeVariantFromTone(
+            paymentStatusTone(row.original.status),
+          )}
+          className="capitalize"
+        >
           {row.original.status}
         </Badge>
       ),

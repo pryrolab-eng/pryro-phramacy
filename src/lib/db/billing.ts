@@ -19,6 +19,7 @@ export type RecordSubscriptionPaymentResult = {
   recorded: boolean;
   invoiceId?: string;
   emailSent?: boolean;
+  pharmacyId?: string;
   pharmacyName?: string;
   customerEmail?: string;
   planName?: string;
@@ -271,6 +272,7 @@ export async function recordSubscriptionPaymentFromDb(
     recorded: true,
     invoiceId: invoice.id,
     emailSent: false,
+    pharmacyId: tx.pharmacy_id,
     pharmacyName: pharmacy?.name ?? "Your pharmacy",
     customerEmail: recipient,
     planName,

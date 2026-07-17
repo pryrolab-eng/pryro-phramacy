@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Receipt } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Badge, badgeVariantFromTone } from "@/components/ui/badge";
 import {
   Dialog,
   DialogTrigger,
@@ -13,7 +13,7 @@ import {
   DashboardButton,
   DashboardListRow,
 } from "@/components/dashboard";
-import { invoiceStatusVariant } from "@/lib/billing/format-billing";
+import { invoiceStatusTone } from "@/lib/ui/status-tone";
 import type { SubscriptionInvoice } from "@/lib/saas/types";
 
 type Props = {
@@ -22,6 +22,7 @@ type Props = {
 
 export function BillingInvoiceRow({ invoice }: Props) {
   const [open, setOpen] = useState(false);
+  const statusVariant = badgeVariantFromTone(invoiceStatusTone(invoice.status));
 
   return (
     <DashboardListRow className="items-center gap-4 py-3">
@@ -29,7 +30,7 @@ export function BillingInvoiceRow({ invoice }: Props) {
         <div className="flex flex-wrap items-center gap-2">
           <Receipt className="size-4 text-neutral-400" />
           <span className="text-sm font-medium">{invoice.invoice_number}</span>
-          <Badge variant={invoiceStatusVariant(invoice.status)} className="h-5 text-[10px] capitalize">
+          <Badge variant={statusVariant} className="h-5 text-[10px] capitalize">
             {invoice.status}
           </Badge>
         </div>
@@ -67,7 +68,7 @@ export function BillingInvoiceRow({ invoice }: Props) {
                 <div className="flex justify-between gap-4">
                   <dt className="text-neutral-500">Status</dt>
                   <dd>
-                    <Badge variant={invoiceStatusVariant(invoice.status)}>
+                    <Badge variant={statusVariant} className="capitalize">
                       {invoice.status}
                     </Badge>
                   </dd>

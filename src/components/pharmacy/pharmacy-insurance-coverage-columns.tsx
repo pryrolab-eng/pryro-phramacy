@@ -9,7 +9,6 @@ import { DataTableColumnHeader } from "@/components/ui/data-table-column-header"
 import type { InsuranceCoveredMedicationRow } from "@/lib/http/insurance-covered-medications";
 
 export type PharmacyInsuranceCoverageColumnOptions = {
-  saving: boolean;
   onToggle: (med: InsuranceCoveredMedicationRow, covered: boolean) => void;
   onExternalCode: (
     med: InsuranceCoveredMedicationRow,
@@ -19,11 +18,9 @@ export type PharmacyInsuranceCoverageColumnOptions = {
 
 function InsurerCodeCell({
   med,
-  saving,
   onExternalCode,
 }: {
   med: InsuranceCoveredMedicationRow;
-  saving: boolean;
   onExternalCode: (code: string | null) => void;
 }) {
   const [code, setCode] = useState(med.externalCode ?? "");
@@ -37,7 +34,7 @@ function InsurerCodeCell({
       className="h-8 max-w-[200px]"
       placeholder={med.covered ? "e.g. RSSB code" : "—"}
       value={code}
-      disabled={!med.covered || saving}
+      disabled={!med.covered}
       onChange={(e) => setCode(e.target.value)}
       onBlur={() => {
         const trimmed = code.trim() || null;
@@ -62,7 +59,7 @@ export function pharmacyInsuranceCoverageColumns(
         <span className="flex flex-wrap items-center gap-2 font-medium">
           {row.original.name}
           {row.original.covered ? (
-            <Badge variant="secondary" className="text-[10px] font-normal">
+            <Badge variant="success" className="text-[10px] font-normal">
               Covered
             </Badge>
           ) : null}
@@ -89,7 +86,6 @@ export function pharmacyInsuranceCoverageColumns(
       cell: ({ row }) => (
         <Switch
           checked={row.original.covered}
-          disabled={opts.saving}
           onCheckedChange={(checked) => opts.onToggle(row.original, checked)}
           aria-label={`Covered for insurer: ${row.original.name}`}
         />
@@ -105,7 +101,6 @@ export function pharmacyInsuranceCoverageColumns(
       cell: ({ row }) => (
         <InsurerCodeCell
           med={row.original}
-          saving={opts.saving}
           onExternalCode={(code) => opts.onExternalCode(row.original, code)}
         />
       ),

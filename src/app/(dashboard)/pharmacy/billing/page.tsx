@@ -59,6 +59,10 @@ import {
   limitUsageBarClass,
   limitUsageTextClass,
 } from '@/lib/billing/limit-display'
+import {
+  statusToneIconClass,
+  statusToneSurfaceClass,
+} from '@/lib/ui/status-tone'
 
 export default function PharmacyBillingPage() {
   return (
@@ -132,7 +136,7 @@ function PharmacyBillingPageContent() {
     }
   }, [searchParams, can])
 
-  if (subQuery.isPending || plansQuery.isPending) {
+  if ((subQuery.isPending && !subQuery.data) || (plansQuery.isPending && !plansQuery.data)) {
     return <DashboardPageLoading label="Loading billing…" />
   }
 
@@ -229,15 +233,15 @@ function PharmacyBillingPageContent() {
         {showRenewBanner && (
           <DashboardSectionCard
             title="Renewal coming up"
-            className="border-amber-200/80 bg-amber-50/30 dark:border-amber-900/50 dark:bg-amber-950/20"
+            className={statusToneSurfaceClass.warning}
             action={
               <DashboardButton size="sm" onClick={() => setActiveTab('upgrade')}>
                 Renew / change plan
               </DashboardButton>
             }
           >
-            <p className="flex items-start gap-2 text-sm text-amber-900 dark:text-amber-200">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <p className="flex items-start gap-2 text-sm">
+              <AlertTriangle className={cn("mt-0.5 size-4 shrink-0", statusToneIconClass.warning)} />
               Your plan renews on {renewDate?.toLocaleDateString()} ({daysUntilRenew}{' '}
               day{daysUntilRenew !== 1 ? 's' : ''} left). Choose a plan to pay for the next
               period.
@@ -257,7 +261,7 @@ function PharmacyBillingPageContent() {
             {summary?.main_subscription?.status === 'pending_payment' && (
               <DashboardSectionCard
                 title="Complete payment"
-                className="border-amber-200/80 bg-amber-50/30 dark:border-amber-900/50 dark:bg-amber-950/20"
+                className={statusToneSurfaceClass.warning}
                 action={
                   <DashboardButton size="sm" onClick={() => setActiveTab('upgrade')}>
                     <CreditCard className="mr-1 h-4 w-4" />
@@ -265,8 +269,8 @@ function PharmacyBillingPageContent() {
                   </DashboardButton>
                 }
               >
-                <p className="flex items-start gap-2 text-sm text-amber-900 dark:text-amber-200">
-                  <Clock className="mt-0.5 size-4 shrink-0" />
+                <p className="flex items-start gap-2 text-sm">
+                  <Clock className={cn("mt-0.5 size-4 shrink-0", statusToneIconClass.warning)} />
                   Your {summary.main_subscription.plan?.name ?? 'selected'} plan is waiting for payment.
                   Complete payment to activate your subscription and unlock all features.
                 </p>
@@ -335,7 +339,7 @@ function PharmacyBillingPageContent() {
                           key={i}
                           className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400"
                         >
-                          <CheckCircle className="size-3.5 shrink-0 text-emerald-500" />
+                          <CheckCircle className={cn("size-3.5 shrink-0", statusToneIconClass.success)} />
                           {f}
                         </li>
                       ))}

@@ -56,11 +56,11 @@ export const dashboardChrome = {
 
 export const dashboardButtonClass = {
   outline:
-    "h-8 rounded-lg border-neutral-200/80 bg-white px-3 text-neutral-700 shadow-sm hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800",
+    "h-8 rounded-lg border-primary/25 bg-white px-3 text-primary shadow-sm hover:bg-primary/5 dark:border-primary/30 dark:bg-transparent dark:text-primary dark:hover:bg-primary/10",
   primary:
-    "h-8 rounded-lg bg-neutral-900 px-3 text-white shadow-sm hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-white",
+    "h-8 rounded-lg bg-primary px-3 text-primary-foreground shadow-sm hover:bg-primary/90",
   ghost:
-    "h-8 rounded-lg px-3 text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800",
+    "h-8 rounded-lg px-3 text-neutral-600 hover:bg-primary/5 hover:text-primary dark:text-neutral-300 dark:hover:bg-primary/10",
   destructive:
     "h-8 rounded-lg bg-red-600 px-3 text-white shadow-sm hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700",
 } as const;

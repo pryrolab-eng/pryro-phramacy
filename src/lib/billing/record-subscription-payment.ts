@@ -5,6 +5,10 @@ import {
   paymentReceiptEmailText,
 } from "@/lib/email/payment-receipt";
 import { resolveEmailTemplate } from "@/lib/email/template-overrides";
+import {
+  emitPlatformAdminNotification,
+  PLATFORM_ADMIN_EVENT,
+} from "@/lib/notifications/platform-admin";
 
 /** Idempotent: invoice + payments row + receipt email after subscription payment completes. */
 export async function recordSubscriptionPayment(
@@ -15,6 +19,30 @@ export async function recordSubscriptionPayment(
   if (!result.recorded) {
     return { recorded: false };
   }
+
+  void emitPlatformAdminNotification({
+    eventType: PLATFORM_ADMIN_EVENT.subscriptionPaid,
+    title: "Subscription payment received",
+    message: [
+      result.pharmacyName,
+      result.planName ? `paid for ${result.planName}` : "completed a subscription payment",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    type: "success",
+    actionUrl: result.pharmacyId
+      ? `/admin/tenants`
+      : `/admin/billing`,
+    payload: {
+      pharmacyId: result.pharmacyId,
+      pharmacyName: result.pharmacyName,
+      planName: result.planName,
+      amount: result.amount,
+      currency: result.currency,
+      invoiceNumber: result.invoiceNumber,
+      transactionId,
+    },
+  });
 
   const recipient = result.customerEmail ?? "";
   let emailSent = false;

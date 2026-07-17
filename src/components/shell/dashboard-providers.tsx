@@ -76,3 +76,20 @@ export function DashboardProviders({
     </PharmacyProvider>
   );
 }
+
+/**
+ * Platform admin shell — no pharmacy, branch, or tenant prefetch.
+ * Admin pages use platform APIs only.
+ */
+export function AdminProviders({ children }: { children: ReactNode }) {
+  return (
+    <SidebarProvider>
+      <AiPanelProvider>
+        <DashboardScrollHeaderProvider>
+          {children}
+        </DashboardScrollHeaderProvider>
+        <AiFloatingTrigger />
+      </AiPanelProvider>
+    </SidebarProvider>
+  );
+}

@@ -1,4 +1,6 @@
 import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
+import { resolveActivePharmacyContext } from "@/lib/pharmacy/active-pharmacy";
+import { assertBranchAllowedForUser } from "@/lib/pharmacy/staff-branch-access";
 import {
   entitlementErrorResponse,
   requirePharmacyEntitlement,
@@ -26,6 +28,16 @@ export async function guardPharmacyFeatureForUser(
   const pharmacyId = await getRequestPharmacyId(userId);
   if (!pharmacyId) {
     throw new Error("Pharmacy not found");
+  }
+
+  if (options.branchId) {
+    const ctx = await resolveActivePharmacyContext(userId);
+    await assertBranchAllowedForUser(
+      userId,
+      pharmacyId,
+      ctx.role,
+      options.branchId,
+    );
   }
 
   await requirePharmacyEntitlement({

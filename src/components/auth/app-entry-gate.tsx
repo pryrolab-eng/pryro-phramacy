@@ -2,114 +2,85 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useIsRestoring, useQueryClient } from "@tanstack/react-query";
 import { AppEntryLoader } from "@/components/auth/app-entry-loader";
 import { AppEntrySetPassword } from "@/components/auth/app-entry-set-password";
-import { getMeContext, meContextKeys } from "@/lib/http/me-context";
-import { pharmacyDashboardKeys, getCombinedDashboardData } from "@/lib/http/pharmacy-dashboard";
-import { defaultReportRange } from "@/lib/pharmacy/branch-scope";
+import { meContextKeys } from "@/lib/http/me-context";
+import { pharmacyDashboardKeys } from "@/lib/http/pharmacy-dashboard";
 import { saasKeys } from "@/lib/http/saas";
-import { getSaasBranches } from "@/lib/http/saas-branches";
-import { entitlementsKeys, getPharmacyEntitlementsSnapshot } from "@/lib/http/entitlements";
+import { entitlementsKeys } from "@/lib/http/entitlements";
+import { staffUsersQueryKey } from "@/lib/http/staff";
+import type { SessionBootstrapPayload } from "@/lib/auth/session-bootstrap-types";
 
-/** Avoid a sub-second flash before redirect. */
-const MIN_DISPLAY_MS = 750;
-/** Abort and offer retry if routing takes too long. */
+/** Abort and offer retry if bootstrap takes too long. */
 const MAX_WAIT_MS = 20_000;
 
 type Phase = "resolving" | "set-password" | "redirecting" | "error";
 
-function wait(ms: number) {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-}
+function seedBootstrapCache(
+  queryClient: ReturnType<typeof useQueryClient>,
+  payload: SessionBootstrapPayload,
+) {
+  queryClient.setQueryData(meContextKeys.all, payload.me);
 
-/** Fire prefetches in batches so we don't exhaust the 10-connection Prisma pool. */
-async function batchPrefetch(
-  fns: (() => Promise<unknown>)[],
-  batchSize: number,
-): Promise<void> {
-  for (let i = 0; i < fns.length; i += batchSize) {
-    const batch = fns.slice(i, i + batchSize);
-    await Promise.allSettled(batch.map((fn) => fn()));
+  if (payload.entitlements) {
+    queryClient.setQueryData(
+      entitlementsKeys.pharmacy(),
+      payload.entitlements,
+    );
+  }
+
+  if (payload.dashboard) {
+    // Match useCombinedPharmacyDashboard key exactly.
+    queryClient.setQueryData(
+      pharmacyDashboardKeys.combined(undefined, 30),
+      payload.dashboard,
+    );
+    // Also seed legacy sales-chart key if anything still reads it.
+    queryClient.setQueryData(
+      pharmacyDashboardKeys.salesChart(),
+      payload.dashboard.salesChart,
+    );
+  }
+
+  if (payload.subscription) {
+    queryClient.setQueryData(saasKeys.subscription(), payload.subscription);
+  }
+
+  if (payload.plans) {
+    queryClient.setQueryData(saasKeys.plans(), payload.plans);
+  }
+
+  if (payload.staff) {
+    queryClient.setQueryData(staffUsersQueryKey, payload.staff);
   }
 }
 
 export function AppEntryGate() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const isRestoring = useIsRestoring();
   const [phase, setPhase] = useState<Phase>("resolving");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const runId = useRef(0);
   const navigatedRef = useRef(false);
 
   const redirectTo = useCallback(
-    async (path: string, started: number) => {
+    (path: string) => {
       if (navigatedRef.current) return;
       navigatedRef.current = true;
-
-      // Batch 1: sidebar-critical data only — 3 concurrent, 3s cap
-      // Dashboard data loads on its own via React Query when the page mounts
-      await Promise.race([
-        batchPrefetch(
-          [
-            // Prefetch me context for sidebar/header
-            () =>
-              queryClient.prefetchQuery({
-                queryKey: meContextKeys.all,
-                queryFn: getMeContext,
-                staleTime: 15_000,
-              }),
-            // Prefetch branches for branch switcher dropdown
-            () =>
-              queryClient.prefetchQuery({
-                queryKey: saasKeys.branches(),
-                queryFn: async () => {
-                  const data = await getSaasBranches();
-                  return data.branches;
-                },
-                staleTime: 30_000,
-              }),
-            // Prefetch entitlements for feature gating
-            () =>
-              queryClient.prefetchQuery({
-                queryKey: entitlementsKeys.pharmacy(),
-                queryFn: getPharmacyEntitlementsSnapshot,
-                staleTime: 30_000,
-              }),
-          ],
-          3,
-        ),
-        wait(3000),
-      ]);
-
-      // Fire-and-forget: preheat dashboard in the background
-      // If it completes before the page mounts, dashboard renders instantly
-      if (path.startsWith("/pharmacy/")) {
-        const range = defaultReportRange(30);
-        queryClient.prefetchQuery({
-          queryKey: [...pharmacyDashboardKeys.all, "combined", "all"],
-          queryFn: () => getCombinedDashboardData({ ...range }),
-          staleTime: 10 * 60 * 1000,
-        });
-      }
-
-      // Minimum display time so the user doesn't see a flash
-      const elapsed = Date.now() - started;
-      const remaining = Math.max(0, MIN_DISPLAY_MS - elapsed);
-      await wait(remaining);
-
       setPhase("redirecting");
       router.prefetch(path);
       router.replace(path);
     },
-    [queryClient, router],
+    [router],
   );
 
   const resolveAndRedirect = useCallback(async () => {
     const id = ++runId.current;
     setPhase("resolving");
     setErrorMessage(null);
-    const started = Date.now();
+    navigatedRef.current = false;
 
     try {
       const controller = new AbortController();
@@ -118,7 +89,7 @@ export function AppEntryGate() {
         MAX_WAIT_MS,
       );
 
-      const res = await fetch("/api/auth/home", {
+      const res = await fetch("/api/auth/bootstrap", {
         credentials: "include",
         cache: "no-store",
         signal: controller.signal,
@@ -132,24 +103,24 @@ export function AppEntryGate() {
         return;
       }
 
-      const body = (await res.json()) as {
-        ok?: boolean;
-        path?: string;
-        mustChangePassword?: boolean;
-        reason?: string;
-      };
+      const body = (await res.json()) as
+        | SessionBootstrapPayload
+        | { ok?: false; reason?: string };
 
-      if (!res.ok || !body.ok || !body.path) {
+      if (!res.ok || !body.ok || !("path" in body) || !body.path) {
         throw new Error("Could not determine where to send you.");
       }
 
       if (body.mustChangePassword) {
+        queryClient.setQueryData(meContextKeys.all, body.me);
         setPhase("set-password");
         return;
       }
 
+      seedBootstrapCache(queryClient, body);
+
       if (runId.current !== id) return;
-      await redirectTo(body.path, started);
+      redirectTo(body.path);
     } catch (err) {
       if (runId.current !== id) return;
       const aborted = err instanceof Error && err.name === "AbortError";
@@ -162,7 +133,7 @@ export function AppEntryGate() {
             : "Something went wrong.",
       );
     }
-  }, [redirectTo, router]);
+  }, [queryClient, redirectTo, router]);
 
   const handlePasswordSet = useCallback(() => {
     navigatedRef.current = false;
@@ -172,11 +143,13 @@ export function AppEntryGate() {
   }, [queryClient, resolveAndRedirect]);
 
   useEffect(() => {
+    // Wait until persisted RQ cache finishes restoring so bootstrap seed is not wiped.
+    if (isRestoring) return;
     void resolveAndRedirect();
     return () => {
       runId.current += 1;
     };
-  }, [resolveAndRedirect]);
+  }, [isRestoring, resolveAndRedirect]);
 
   if (phase === "set-password") {
     return <AppEntrySetPassword onComplete={handlePasswordSet} />;

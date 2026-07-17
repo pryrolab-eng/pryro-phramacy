@@ -1,5 +1,10 @@
 import type { BranchUsage } from "@/lib/saas/types";
 import type { SaasBranchWithUsage } from "@/lib/http/saas-branches";
+import {
+  statusToneBarClass,
+  usageTone,
+  type StatusTone,
+} from "@/lib/ui/status-tone";
 
 export function usagePct(
   usage:
@@ -14,16 +19,18 @@ export function usagePct(
 export function usageBarTone(
   pct: number,
   blocked: boolean,
-): "default" | "warning" | "danger" {
-  if (blocked || pct >= 100) return "danger";
-  if (pct >= 80) return "warning";
-  return "default";
+): Extract<StatusTone, "success" | "warning" | "danger"> {
+  return usageTone(pct, blocked);
 }
 
-export function usageBarClassName(tone: ReturnType<typeof usageBarTone>) {
-  if (tone === "danger") return "bg-red-500 dark:bg-red-400";
-  if (tone === "warning") return "bg-amber-500 dark:bg-amber-400";
-  return "bg-emerald-500 dark:bg-emerald-400";
+/** @deprecated Prefer usageBarTone → statusToneBarClass; kept as "default"|"warning"|"danger" */
+export function usageBarClassName(
+  tone: "default" | "warning" | "danger" | ReturnType<typeof usageBarTone>,
+) {
+  if (tone === "default") return statusToneBarClass.success;
+  if (tone === "warning") return statusToneBarClass.warning;
+  if (tone === "danger") return statusToneBarClass.danger;
+  return statusToneBarClass[tone];
 }
 
 export function branchStats(branches: SaasBranchWithUsage[]) {

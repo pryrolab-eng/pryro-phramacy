@@ -33,6 +33,8 @@ import {
   getInsuranceCoveredMedications,
   insuranceCoveredMedicationsKey,
   patchInsuranceCoveredMedication,
+  type InsuranceCoveredMedicationsResponse,
+  type PatchInsuranceCoveredMedicationInput,
 } from "@/lib/http/insurance-covered-medications";
 import { pharmacyInsuranceCoverageColumns } from "@/components/pharmacy/pharmacy-insurance-coverage-columns";
 
@@ -42,6 +44,8 @@ type PharmacyInsuranceMedicinesPanelProps = {
   /** Open formulary upload on mount (from ?import=1). */
   autoOpenImport?: boolean;
 };
+
+const LIST_STALE_MS = 5 * 60 * 1000;
 
 export function PharmacyInsuranceMedicinesPanel({
   embedded = false,
@@ -57,6 +61,7 @@ export function PharmacyInsuranceMedicinesPanel({
   const providersQuery = useQuery({
     queryKey: insuranceProvidersQueryKey,
     queryFn: getInsuranceProviders,
+    staleTime: LIST_STALE_MS,
   });
 
   const providers = useMemo(() => {
@@ -69,21 +74,56 @@ export function PharmacyInsuranceMedicinesPanel({
     setProviderId(providers[0].id);
   }, [providers, providerId]);
 
+  const medsKey = insuranceCoveredMedicationsKey(providerId);
+
   const medsQuery = useQuery({
-    queryKey: insuranceCoveredMedicationsKey(providerId),
+    queryKey: medsKey,
     queryFn: () => getInsuranceCoveredMedications(providerId),
     enabled: Boolean(providerId),
+    staleTime: LIST_STALE_MS,
   });
 
   const patchMutation = useMutation({
     mutationFn: patchInsuranceCoveredMedication,
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: insuranceCoveredMedicationsKey(providerId),
-      });
+    onMutate: async (vars: PatchInsuranceCoveredMedicationInput) => {
+      await queryClient.cancelQueries({ queryKey: medsKey });
+      const previous =
+        queryClient.getQueryData<InsuranceCoveredMedicationsResponse>(medsKey);
+
+      if (previous) {
+        queryClient.setQueryData<InsuranceCoveredMedicationsResponse>(medsKey, {
+          ...previous,
+          medications: previous.medications.map((m) =>
+            m.id === vars.medicationId
+              ? {
+                  ...m,
+                  covered: vars.covered,
+                  externalCode:
+                    vars.externalCode === undefined
+                      ? m.externalCode
+                      : vars.externalCode,
+                  notes:
+                    vars.notes === undefined ? m.notes : vars.notes,
+                }
+              : m,
+          ),
+        });
+      }
+
+      return { previous };
     },
-    onError: (err: Error) => {
+    onError: (err: Error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(medsKey, context.previous);
+      }
       toast.error(err.message || "Could not update coverage");
+    },
+    onSuccess: (_data, vars) => {
+      toast.success(
+        vars.covered
+          ? "Marked covered"
+          : "Marked not covered",
+      );
     },
   });
 
@@ -98,26 +138,14 @@ export function PharmacyInsuranceMedicinesPanel({
   const columns = useMemo(
     () =>
       pharmacyInsuranceCoverageColumns({
-        saving: patchMutation.isPending,
         onToggle: (med, covered) => {
-          patchMutation.mutate(
-            {
-              medicationId: med.id,
-              providerId,
-              covered,
-              externalCode: med.externalCode,
-              notes: med.notes,
-            },
-            {
-              onSuccess: () => {
-                toast.success(
-                  covered
-                    ? `${med.name} marked covered`
-                    : `${med.name} marked not covered`,
-                );
-              },
-            },
-          );
+          patchMutation.mutate({
+            medicationId: med.id,
+            providerId,
+            covered,
+            externalCode: med.externalCode,
+            notes: med.notes,
+          });
         },
         onExternalCode: (med, externalCode) => {
           patchMutation.mutate({
@@ -131,6 +159,9 @@ export function PharmacyInsuranceMedicinesPanel({
       }),
     [patchMutation, providerId],
   );
+
+  const medsLoading = medsQuery.isPending;
+  const showMedsStats = Boolean(providerId) && (Boolean(medsQuery.data) || !medsLoading);
 
   return (
     <>
@@ -156,25 +187,28 @@ export function PharmacyInsuranceMedicinesPanel({
         />
       )}
 
-      {providerId && !medsQuery.isPending ? (
+      {showMedsStats ? (
         <DashboardMetricGrid>
           <DashboardStatCard
             label="Covered"
             icon={HeartPulse}
             value={String(coveredCount)}
             hint={`For ${provider?.name ?? "selected insurer"}`}
+            loading={medsLoading}
           />
           <DashboardStatCard
             label="In catalog"
             icon={Package}
             value={String(medications.length)}
             hint="Active products shown"
+            loading={medsLoading}
           />
           <DashboardStatCard
             label="Not covered"
             icon={UserX}
             value={String(Math.max(0, medications.length - coveredCount))}
             hint="Patient pays 100% at POS"
+            loading={medsLoading}
           />
         </DashboardMetricGrid>
       ) : null}
@@ -203,7 +237,7 @@ export function PharmacyInsuranceMedicinesPanel({
                 setProviderId(id);
                 setTableSearch("");
               }}
-              disabled={providersQuery.isPending}
+              disabled={providersQuery.isPending && providers.length === 0}
             >
               <SelectTrigger
                 id="insurer-select"
@@ -212,7 +246,9 @@ export function PharmacyInsuranceMedicinesPanel({
               >
                 <SelectValue
                   placeholder={
-                    providersQuery.isPending ? "Loading insurers…" : "Insurer"
+                    providersQuery.isPending && providers.length === 0
+                      ? "Loading insurers…"
+                      : "Insurer"
                   }
                 />
               </SelectTrigger>
@@ -248,7 +284,8 @@ export function PharmacyInsuranceMedicinesPanel({
         }
         isLoading={
           Boolean(providerId) &&
-          (medsQuery.isPending || (medsQuery.isFetching && medications.length === 0))
+          medsQuery.isPending &&
+          medications.length === 0
         }
         error={
           medsQuery.isError

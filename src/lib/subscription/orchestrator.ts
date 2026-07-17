@@ -738,6 +738,34 @@ export class SubscriptionOrchestrator {
   ): Promise<void> {
     await storeCancelMainSubscription({ subscriptionId, pharmacyId });
     await this.syncProjection(pharmacyId);
+
+    try {
+      const { prisma } = await import("@/lib/db/prisma");
+      const {
+        emitPlatformAdminNotification,
+        PLATFORM_ADMIN_EVENT,
+      } = await import("@/lib/notifications/platform-admin");
+      const pharmacy = await prisma.pharmacies.findUnique({
+        where: { id: pharmacyId },
+        select: { name: true },
+      });
+      await emitPlatformAdminNotification({
+        eventType: PLATFORM_ADMIN_EVENT.subscriptionCancelled,
+        title: "Subscription cancelled",
+        message: pharmacy?.name
+          ? `${pharmacy.name} cancelled their subscription.`
+          : "A pharmacy cancelled their subscription.",
+        type: "warning",
+        actionUrl: `/admin/tenants`,
+        payload: {
+          pharmacyId,
+          pharmacyName: pharmacy?.name,
+          subscriptionId,
+        },
+      });
+    } catch (error) {
+      console.error("cancelSubscription platform notify:", error);
+    }
   }
 
   /** Mark main subscriptions past expires_at as expired and sync pharmacy cache. */

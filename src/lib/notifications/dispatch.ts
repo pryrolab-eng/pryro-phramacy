@@ -32,6 +32,12 @@ function titleForEvent(eventType: string, payload: Record<string, unknown>): str
       return "Sale completed";
     case "platform.maintenance":
       return "Maintenance notice";
+    case "platform.pharmacy_registered":
+      return "New pharmacy registered";
+    case "platform.subscription_paid":
+      return "Subscription payment received";
+    case "platform.subscription_cancelled":
+      return "Subscription cancelled";
     default:
       return "Notification";
   }
@@ -49,6 +55,25 @@ function messageForEvent(eventType: string, payload: Record<string, unknown>): s
       if (receipt) parts.push(`Receipt: ${receipt}.`);
       if (total != null) parts.push(`Total: ${total}.`);
       return parts.join(" ");
+    }
+    case "platform.pharmacy_registered": {
+      const name = payload.pharmacyName;
+      return name
+        ? `${name} joined the platform.`
+        : "A new pharmacy joined the platform.";
+    }
+    case "platform.subscription_paid": {
+      const name = payload.pharmacyName;
+      const plan = payload.planName;
+      return [name, plan ? `paid for ${plan}` : "completed a subscription payment"]
+        .filter(Boolean)
+        .join(" ");
+    }
+    case "platform.subscription_cancelled": {
+      const name = payload.pharmacyName;
+      return name
+        ? `${name} cancelled their subscription.`
+        : "A pharmacy cancelled their subscription.";
     }
     default:
       return "You have a new notification.";
@@ -104,22 +129,25 @@ async function processOutboxRow(row: OutboxRow): Promise<void> {
 
   let notificationId: string | null = null;
 
-  if (row.pharmacy_id) {
-    notificationId = await storeInsertNotification({
-      pharmacyId: row.pharmacy_id,
-      userId: row.user_id,
-      title,
-      message,
-      type,
-      metadata: row.payload,
-    });
-    await logDelivery({
-      notificationId,
-      outboxId: row.id,
-      channel: "in_app",
-      status: "sent",
-    });
-  }
+  const actionUrl =
+    typeof row.payload.actionUrl === "string" ? row.payload.actionUrl : null;
+
+  // Pharmacy feed when pharmacy_id is set; platform admin feed when null.
+  notificationId = await storeInsertNotification({
+    pharmacyId: row.pharmacy_id,
+    userId: row.pharmacy_id ? row.user_id : null,
+    title,
+    message,
+    type,
+    actionUrl,
+    metadata: row.payload,
+  });
+  await logDelivery({
+    notificationId,
+    outboxId: row.id,
+    channel: "in_app",
+    status: "sent",
+  });
 
   if ((await getEnableNotifications()) && isSmtpConfigured()) {
     if (row.user_id) {

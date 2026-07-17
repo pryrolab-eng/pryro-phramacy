@@ -196,5 +196,6 @@ export function useCombinedInventory(options?: {
     gcTime: COMBINED_GC_MS,
     refetchOnWindowFocus: false,
     retry: 1,
+    placeholderData: (previousData) => previousData,
   });
 }

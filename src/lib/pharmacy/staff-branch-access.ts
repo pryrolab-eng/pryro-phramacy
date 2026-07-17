@@ -45,3 +45,97 @@ export async function assertBranchAllowedForUser(
     throw new Error("You do not have access to this branch");
   }
 }
+
+/**
+ * Pick a branch the staff member may use.
+ * Prefers `preferredBranchId` when allowed; otherwise HQ (if allowed), else oldest allowed.
+ */
+export async function pickStaffScopedBranchId(
+  pharmacyId: string,
+  allowedBranchIds: string[] | null,
+  preferredBranchId: string | null,
+): Promise<string | null> {
+  if (allowedBranchIds !== null && allowedBranchIds.length === 0) {
+    return null;
+  }
+
+  const branches = await prisma.branches.findMany({
+    where: {
+      pharmacy_id: pharmacyId,
+      is_active: { not: false },
+      ...(allowedBranchIds !== null
+        ? { id: { in: allowedBranchIds } }
+        : {}),
+    },
+    orderBy: [{ is_headquarters: "desc" }, { created_at: "asc" }],
+    select: { id: true, is_headquarters: true },
+  });
+
+  if (branches.length === 0) return null;
+
+  if (
+    preferredBranchId &&
+    branches.some((b) => b.id === preferredBranchId)
+  ) {
+    return preferredBranchId;
+  }
+
+  const hq = branches.find((b) => b.is_headquarters);
+  return hq?.id ?? branches[0]?.id ?? null;
+}
+
+/**
+ * Resolve which branch filter to apply for reads/writes.
+ * - Requested id: must belong to pharmacy + be allowed
+ * - Unset ("all"): unrestricted → null (whole pharmacy);
+ *   restricted staff → pinned to their active/allowed branch (never other outlets)
+ */
+export async function resolveDataBranchScope(
+  userId: string,
+  pharmacyId: string,
+  role: string | null,
+  requestedBranchId: string | null | undefined,
+  activeBranchId: string | null,
+): Promise<{ branchId: string | null; allowedBranchIds: string[] | null }> {
+  const allowedBranchIds = await getStaffAllowedBranchIds(
+    userId,
+    pharmacyId,
+    role,
+  );
+
+  if (requestedBranchId) {
+    const branch = await prisma.branches.findFirst({
+      where: {
+        id: requestedBranchId,
+        pharmacy_id: pharmacyId,
+        is_active: { not: false },
+      },
+      select: { id: true },
+    });
+    if (!branch) {
+      throw new Error("Invalid branch for the active pharmacy");
+    }
+    if (
+      allowedBranchIds !== null &&
+      !allowedBranchIds.includes(requestedBranchId)
+    ) {
+      throw new Error("You do not have access to this branch");
+    }
+    return { branchId: requestedBranchId, allowedBranchIds };
+  }
+
+  // "All branches" — only for unrestricted users
+  if (allowedBranchIds === null) {
+    return { branchId: null, allowedBranchIds };
+  }
+
+  const pinned = await pickStaffScopedBranchId(
+    pharmacyId,
+    allowedBranchIds,
+    activeBranchId,
+  );
+  if (!pinned) {
+    throw new Error("No active branch. Ask an owner to assign you a location.");
+  }
+  return { branchId: pinned, allowedBranchIds };
+}

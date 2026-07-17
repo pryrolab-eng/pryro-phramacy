@@ -2,13 +2,18 @@
 
 import { type ColumnDef } from "@tanstack/react-table";
 
-import { Badge } from "@/components/ui/badge";
+import { Badge, badgeVariantFromTone } from "@/components/ui/badge";
 import { DataTableColumnHeader } from "@/components/ui/data-table-column-header";
 import {
   pharmacyAccessLabel,
-  pharmacyAccessVariant,
 } from "@/lib/admin/plan-stats";
 import type { AdminBillingPharmacyRow } from "@/lib/http/admin/billing";
+import {
+  pharmacyAccessTone,
+  statusToneTextClass,
+  subscriptionStatusTone,
+} from "@/lib/ui/status-tone";
+import { cn } from "@/lib/utils";
 
 export function adminBillingPharmacyColumns(): ColumnDef<AdminBillingPharmacyRow>[] {
   return [
@@ -43,21 +48,36 @@ export function adminBillingPharmacyColumns(): ColumnDef<AdminBillingPharmacyRow
       id: "billing",
       header: "Billing status",
       cell: ({ row }) => {
+        const billingStatus = row.original.main_billing_status ?? "—";
+        const statusTone = subscriptionStatusTone(
+          billingStatus === "—" ? "active" : billingStatus,
+        );
+
         if (row.original.pending_plan_name) {
           return (
             <div className="space-y-1">
-              <Badge variant="secondary">
-                {row.original.main_billing_status ?? "Active"}
+              <Badge
+                variant={badgeVariantFromTone(statusTone)}
+                className="capitalize"
+              >
+                {billingStatus === "—" ? "Active" : billingStatus}
               </Badge>
-              <p className="text-xs text-amber-700 dark:text-amber-400">
+              <p className={cn("text-xs", statusToneTextClass.warning)}>
                 Pending: {row.original.pending_plan_name}
               </p>
             </div>
           );
         }
         return (
-          <Badge variant="outline">
-            {row.original.main_billing_status ?? "—"}
+          <Badge
+            variant={badgeVariantFromTone(
+              subscriptionStatusTone(
+                billingStatus === "—" ? null : billingStatus,
+              ),
+            )}
+            className="capitalize"
+          >
+            {billingStatus}
           </Badge>
         );
       },
@@ -68,7 +88,11 @@ export function adminBillingPharmacyColumns(): ColumnDef<AdminBillingPharmacyRow
         <DataTableColumnHeader column={column} title="Access" />
       ),
       cell: ({ row }) => (
-        <Badge variant={pharmacyAccessVariant(row.original.access_status)}>
+        <Badge
+          variant={badgeVariantFromTone(
+            pharmacyAccessTone(row.original.access_status),
+          )}
+        >
           {pharmacyAccessLabel(row.original.access_status)}
         </Badge>
       ),

@@ -2,7 +2,7 @@
 
 export const dashboardSidebarTokens = {
   brandIcon:
-    "flex size-8 shrink-0 items-center justify-center rounded-lg border border-neutral-200/80 bg-neutral-900 text-white shadow-sm dark:border-neutral-700 dark:bg-neutral-100 dark:text-neutral-900",
+    "flex size-8 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary text-primary-foreground shadow-sm",
   brandTitle: "truncate text-sm font-semibold tracking-tight text-neutral-900 dark:text-neutral-50",
   brandSubtitle: "truncate text-xs text-neutral-500 dark:text-neutral-400",
   groupLabel:
@@ -10,15 +10,15 @@ export const dashboardSidebarTokens = {
   premiumLabel:
     "flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-600/90 dark:text-amber-500/90",
   navActive:
-    "data-[active=true]:bg-neutral-900 data-[active=true]:font-medium data-[active=true]:text-white hover:data-[active=true]:bg-neutral-800 dark:data-[active=true]:bg-neutral-100 dark:data-[active=true]:text-neutral-900 dark:hover:data-[active=true]:bg-white",
+    "data-[active=true]:bg-primary data-[active=true]:font-medium data-[active=true]:text-primary-foreground hover:data-[active=true]:bg-primary/90",
   navItem:
-    "h-9 rounded-lg text-sm text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800/80 dark:hover:text-neutral-50",
+    "h-9 rounded-lg text-sm text-neutral-700 hover:bg-primary/5 hover:text-primary dark:text-neutral-300 dark:hover:bg-primary/10 dark:hover:text-primary",
   navLocked:
     "h-9 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50 dark:text-neutral-400 dark:hover:bg-neutral-800/50",
   upgradeCard:
     "relative mx-2 mb-1 overflow-hidden rounded-lg shadow-sm",
   footerUser:
-    "rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800/60",
+    "rounded-lg hover:bg-primary/5 dark:hover:bg-primary/10",
   sidebarScroll: "sidebar-scroll",
   collapsedHidden: "group-data-[collapsible=icon]:hidden",
   collapsedOnly: "hidden group-data-[collapsible=icon]:block",

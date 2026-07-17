@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
-import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { parseBranchScopeFromRequest } from "@/lib/pharmacy/branch-scope";
-import { storeListInventory, storeStockAlerts, storeListExpiryAlerts } from "@/lib/db/inventory-store";
+import { resolveRequestBranchScope } from "@/lib/pharmacy/get-session-branch";
+import {
+  storeListInventory,
+  storeStockAlerts,
+  storeListExpiryAlerts,
+} from "@/lib/db/inventory-store";
 import { cacheGet, cacheSet } from "@/lib/cache/redis-cache";
 
 const REDIS_TTL = 300;
@@ -43,16 +47,27 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const pharmacyId = await requireUserPharmacyId(user.id);
     const scope = parseBranchScopeFromRequest(request);
+    const { pharmacyId, branchId } = await resolveRequestBranchScope(
+      user.id,
+      scope.branchId,
+    );
 
-    const data = await getCachedInventoryDataCached(user.id, pharmacyId, scope.branchId ?? null);
+    const data = await getCachedInventoryDataCached(
+      user.id,
+      pharmacyId,
+      branchId,
+    );
 
     return NextResponse.json(data);
   } catch (error) {
     console.error("GET /api/inventory/combined", error);
     return NextResponse.json(
-      { inventory: [], stockAlerts: { all: [], lowStock: [], expiring: [] }, expiryAlerts: [] },
+      {
+        inventory: [],
+        stockAlerts: { all: [], lowStock: [], expiring: [] },
+        expiryAlerts: [],
+      },
       { status: 200 },
     );
   }

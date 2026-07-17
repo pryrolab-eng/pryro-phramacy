@@ -30,6 +30,7 @@ import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 
 import { ADMIN_SIDEBAR_NAV } from '@/lib/admin/navigation'
 import { PHARMACY_ROUTES } from '@/lib/routes/pharmacy-paths'
+import { statusToneBadgeClass } from '@/lib/ui/status-tone'
 
 const superAdminNavigation = ADMIN_SIDEBAR_NAV.map((item) => ({
   name: item.title,
@@ -90,10 +91,12 @@ function SubscriptionPlanCard() {
   }, [])
 
   const getStatusColor = () => {
-    if (planData.status === 'expired') return 'text-red-600 bg-red-50'
-    if (planData.daysRemaining != null && planData.daysRemaining <= 7) return 'text-red-600 bg-red-50'
-    if (planData.daysRemaining != null && planData.daysRemaining <= 15) return 'text-orange-600 bg-orange-50'
-    return 'text-green-600 bg-green-50'
+    if (planData.status === 'expired') return statusToneBadgeClass.danger
+    if (planData.daysRemaining != null && planData.daysRemaining <= 7)
+      return statusToneBadgeClass.danger
+    if (planData.daysRemaining != null && planData.daysRemaining <= 15)
+      return statusToneBadgeClass.caution
+    return statusToneBadgeClass.success
   }
 
   return (
@@ -192,7 +195,7 @@ export default function Sidebar() {
           <div className="flex h-16 items-center px-6">
             <div className="flex items-baseline gap-2">
               <span className="text-xl font-bold text-blue-600">Pryro</span>
-              <span className="text-xs text-black">For pharmacy</span>
+              <span className="text-xs text-primary">For pharmacy</span>
             </div>
           </div>
           <div className="flex-1 flex items-center justify-center">
@@ -214,7 +217,7 @@ export default function Sidebar() {
           {!isCollapsed && (
             <div className="flex items-baseline gap-2">
               <span className="text-xl font-bold text-blue-600">Pryro</span>
-              <span className="text-xs text-black">For pharmacy</span>
+              <span className="text-xs text-primary">For pharmacy</span>
             </div>
           )}
           <button
@@ -243,7 +246,7 @@ export default function Sidebar() {
               className={`group flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                 isActive
                   ? 'bg-blue-100 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-200 hover:text-gray-900'
+                  : 'text-gray-600 hover:bg-gray-200 hover:text-primary'
               }`}
               title={isCollapsed ? item.name : ''}
             >
@@ -271,7 +274,7 @@ export default function Sidebar() {
                     </span>
                   </div>
                   <div>
-                    <div className="text-sm font-medium text-gray-900">{userName}</div>
+                    <div className="text-sm font-medium text-gray-800">{userName}</div>
                     <div className="text-xs text-gray-500">
                       {userRole === 'superadmin' ? 'Super Admin' : userRole === 'pharmacist' ? 'Pharmacist' : 'Pharmacy Owner'}
                     </div>

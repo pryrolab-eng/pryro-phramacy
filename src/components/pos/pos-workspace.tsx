@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
-  AlertTriangle,
   Banknote,
   CreditCard,
+  Maximize2,
+  Minimize2,
   Minus,
   Package,
   Plus,
@@ -17,6 +18,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
@@ -38,10 +46,13 @@ import {
   paginateList,
   PosCatalogPagination,
 } from "@/components/pos/pos-catalog-pagination";
+import { PosCategoryFilter } from "@/components/pos/pos-category-filter";
 import { PosShiftPanel } from "@/components/pos/pos-shift-panel";
 import {
   POS_CART_SCROLL_AFTER_LINES,
   POS_CATALOG_DEFAULT_PAGE_SIZE,
+  POS_LOW_STOCK_THRESHOLD,
+  formatPosNearExpiryLabel,
   posSurfaces,
 } from "@/components/pos/pos-tokens";
 import { cn } from "@/lib/utils";
@@ -141,6 +152,20 @@ function PaymentMethodButton({
   );
 }
 
+/** Sidebar shorter than this uses payment dropdown to keep cart visible. */
+const POS_COMPACT_PAYMENT_MAX_HEIGHT = 760;
+
+function formatStockHighlight(stock: number): {
+  label: string;
+  tone: "ok" | "low" | "out";
+} {
+  if (stock <= 0) return { label: "Out of stock", tone: "out" };
+  if (stock <= POS_LOW_STOCK_THRESHOLD) {
+    return { label: `Low stock · ${stock}`, tone: "low" };
+  }
+  return { label: `Stock ${stock}`, tone: "ok" };
+}
+
 export function PosWorkspace(props: PosWorkspaceProps) {
   const {
     searchInputRef,
@@ -154,7 +179,6 @@ export function PosWorkspace(props: PosWorkspaceProps) {
     fastMoving,
     productGroups,
     priceAdjustments,
-    onPriceAdjustment,
     onAddGroup,
     onAddProduct,
     onQuickAddProduct,
@@ -242,37 +266,118 @@ export function PosWorkspace(props: PosWorkspaceProps) {
   };
 
   const cartNeedsScroll = cart.length > POS_CART_SCROLL_AFTER_LINES;
+  const [fullscreen, setFullscreen] = useState(false);
+  const [compactPayment, setCompactPayment] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
 
-  return (
-    <div className="flex flex-col gap-4">
-      <DashboardMetricGrid className="grid-cols-2 sm:grid-cols-4">
-        <DashboardStatCard
-          label="Cart"
-          icon={ShoppingCart}
-          value={itemCount}
-          hint={`${cart.length} line${cart.length === 1 ? "" : "s"}`}
-        />
-        <DashboardStatCard
-          label="Total due"
-          icon={CreditCard}
-          value={`${displayTotal.toLocaleString()} RWF`}
-          hint={customer.insuranceType ? "Patient copay" : "Before payment"}
-        />
-        <DashboardStatCard
-          label="Catalog"
-          icon={Package}
-          value={filteredGroups.length}
-          hint="Products match filter"
-        />
-        <DashboardStatCard
-          label="Payer"
-          icon={User}
-          value={customer.name.trim() || "Walk-in"}
-          hint={customer.id ? "Registered customer" : customer.phone || "Walk-in — not in registry"}
-        />
-      </DashboardMetricGrid>
+  /** Product area was trapping the wheel — pass through to page when list can't scroll. */
+  useEffect(() => {
+    if (fullscreen) return;
+    const el = catalogListRef.current;
+    if (!el) return;
 
-      <div className={posSurfaces.workspace}>
+    const onWheel = (event: WheelEvent) => {
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      const maxScroll = scrollHeight - clientHeight;
+      const noOverflow = maxScroll <= 1;
+      const atTop = scrollTop <= 0;
+      const atBottom = scrollTop >= maxScroll - 1;
+      const goingUp = event.deltaY < 0;
+      const goingDown = event.deltaY > 0;
+
+      if (noOverflow || (goingUp && atTop) || (goingDown && atBottom)) {
+        const root =
+          document.getElementById("dashboard-main-scroll") ??
+          document.scrollingElement;
+        if (!root) return;
+        event.preventDefault();
+        root.scrollTop += event.deltaY;
+      }
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [fullscreen, catalogTab, paginatedGroups.length, paginatedFastMoving.length]);
+
+  useEffect(() => {
+    const node = sidebarRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+
+    const update = (height: number) => {
+      setCompactPayment(height > 0 && height < POS_COMPACT_PAYMENT_MAX_HEIGHT);
+    };
+
+    update(node.getBoundingClientRect().height);
+    const observer = new ResizeObserver((entries) => {
+      const height = entries[0]?.contentRect.height ?? 0;
+      update(height);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [fullscreen]);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFullscreen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.body.dataset.posFullscreen = "true";
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      delete document.body.dataset.posFullscreen;
+    };
+  }, [fullscreen]);
+
+  const content = (
+    <div
+      className={cn(
+        "flex flex-col gap-4",
+        fullscreen && "h-full max-h-full min-h-0 flex-1 gap-0 overflow-hidden",
+      )}
+    >
+      {!fullscreen ? (
+        <DashboardMetricGrid className="grid-cols-2 sm:grid-cols-4">
+          <DashboardStatCard
+            label="Cart"
+            icon={ShoppingCart}
+            value={itemCount}
+            hint={`${cart.length} line${cart.length === 1 ? "" : "s"}`}
+          />
+          <DashboardStatCard
+            label="Total due"
+            icon={CreditCard}
+            value={`${displayTotal.toLocaleString()} RWF`}
+            hint={customer.insuranceType ? "Patient copay" : "Before payment"}
+          />
+          <DashboardStatCard
+            label="Catalog"
+            icon={Package}
+            value={filteredGroups.length}
+            hint="Products match filter"
+          />
+          <DashboardStatCard
+            label="Payer"
+            icon={User}
+            value={customer.name.trim() || "Walk-in"}
+            hint={
+              customer.id
+                ? "Registered customer"
+                : customer.phone || "Walk-in — not in registry"
+            }
+          />
+        </DashboardMetricGrid>
+      ) : null}
+
+      <div
+        className={cn(
+          posSurfaces.workspace,
+          fullscreen && posSurfaces.workspaceFullscreen,
+        )}
+      >
         {/* Catalog */}
         <section className={posSurfaces.catalog} aria-label="Product catalog">
           <div className={posSurfaces.catalogHeader}>
@@ -302,34 +407,27 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                 <Plus className="h-4 w-4" />
                 <span className="hidden sm:inline">Add product</span>
               </DashboardButton>
+              <DashboardButton
+                size="icon"
+                className="h-10 w-10 shrink-0"
+                tone="outline"
+                title={fullscreen ? "Exit full window (Esc)" : "Full window POS"}
+                aria-pressed={fullscreen}
+                onClick={() => setFullscreen((open) => !open)}
+              >
+                {fullscreen ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </DashboardButton>
             </div>
 
-            <div className="flex gap-2 overflow-x-auto pb-0.5">
-              <button
-                type="button"
-                onClick={() => onCategoryChange("all")}
-                className={cn(
-                  posSurfaces.categoryChip,
-                  selectedCategory === "all" && posSurfaces.categoryChipActive,
-                )}
-              >
-                All
-              </button>
-              {categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => onCategoryChange(cat.name)}
-                  className={cn(
-                    posSurfaces.categoryChip,
-                    selectedCategory === cat.name &&
-                      posSurfaces.categoryChipActive,
-                  )}
-                >
-                  {cat.name}
-                </button>
-              ))}
-            </div>
+            <PosCategoryFilter
+              categories={categories}
+              selectedCategory={selectedCategory}
+              onCategoryChange={onCategoryChange}
+            />
           </div>
 
           <Tabs
@@ -356,7 +454,10 @@ export function PosWorkspace(props: PosWorkspaceProps) {
             >
               <div
                 ref={catalogTab === "all" ? catalogListRef : undefined}
-                className={cn(posSurfaces.catalogList, "space-y-2")}
+                className={cn(
+                  posSurfaces.catalogList,
+                  fullscreen && posSurfaces.catalogListFullscreen,
+                )}
               >
                 {filteredGroups.length === 0 ? (
                   <DashboardPanelEmpty
@@ -365,77 +466,74 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                     description="Try another search, category, or scan a barcode."
                   />
                 ) : (
-                  paginatedGroups.map((group) => (
-                    <div
-                      key={group.medicationId}
-                      className={posSurfaces.productCard}
-                      onClick={() => onAddGroup(group)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") onAddGroup(group);
-                      }}
-                      role="button"
-                      tabIndex={0}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-sm text-neutral-900 dark:text-neutral-50">
-                          {formatProductGroupLabel(group)}
-                        </p>
-                        <div className="mt-1.5 flex flex-wrap gap-1">
-                          <Badge variant="outline" className="text-[10px]">
-                            FEFO · {group.fefoBatch.batch}
-                          </Badge>
-                          {group.batchCount > 1 && (
-                            <Badge variant="secondary" className="text-[10px]">
-                              {group.batchCount} batches
-                            </Badge>
+                  <div
+                    className={cn(
+                      posSurfaces.catalogGrid,
+                      fullscreen && posSurfaces.catalogGridFullscreen,
+                    )}
+                  >
+                    {paginatedGroups.map((group) => {
+                      const price =
+                        priceAdjustments[group.fefoBatch.id] ??
+                        group.fefoBatch.price;
+                      const expiryLabel = formatPosNearExpiryLabel(
+                        group.nearestExpiryDays,
+                      );
+                      const stock = formatStockHighlight(group.totalStock);
+                      return (
+                        <div
+                          key={group.medicationId}
+                          className={cn(
+                            posSurfaces.productCard,
+                            stock.tone === "low" && posSurfaces.productCardLow,
                           )}
-                          {group.requiresPrescription && (
-                            <Badge variant="destructive" className="text-[10px]">
-                              Rx
-                            </Badge>
-                          )}
-                          {group.nearestExpiryDays <= 30 && (
-                            <Badge variant="destructive" className="text-[10px]">
-                              <AlertTriangle className="mr-0.5 h-3 w-3" />
-                              {group.nearestExpiryDays}d
-                            </Badge>
-                          )}
+                          onClick={() => onAddGroup(group)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") onAddGroup(group);
+                          }}
+                          role="button"
+                          tabIndex={0}
+                        >
+                          <div className="flex items-start justify-between gap-1.5">
+                            <p className="line-clamp-2 min-w-0 flex-1 text-sm font-medium leading-snug text-neutral-900 dark:text-neutral-50">
+                              {formatProductGroupLabel(group)}
+                            </p>
+                            {group.requiresPrescription ? (
+                              <Badge
+                                variant="destructive"
+                                className="shrink-0 text-[10px]"
+                              >
+                                Rx
+                              </Badge>
+                            ) : null}
+                          </div>
+                          <div className={posSurfaces.productCardMeta}>
+                            <span
+                              className={cn(
+                                stock.tone === "low" &&
+                                  posSurfaces.productCardStockLow,
+                                stock.tone === "out" &&
+                                  posSurfaces.productCardStockOut,
+                              )}
+                            >
+                              {stock.label}
+                            </span>
+                            {expiryLabel ? (
+                              <span className={posSurfaces.productCardExpiry}>
+                                {expiryLabel}
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className={posSurfaces.productCardPrice}>
+                            {price.toLocaleString()}{" "}
+                            <span className="text-[10px] font-medium text-neutral-500">
+                              RWF
+                            </span>
+                          </p>
                         </div>
-                        <p className="mt-1 text-xs text-neutral-500">
-                          Stock {group.totalStock}
-                        </p>
-                      </div>
-                      <div
-                        className="flex shrink-0 flex-col items-end gap-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <p className="text-sm font-semibold tabular-nums text-neutral-900 dark:text-neutral-50">
-                          {(
-                            priceAdjustments[group.fefoBatch.id] ??
-                            group.fefoBatch.price
-                          ).toLocaleString()}{" "}
-                          <span className="text-xs font-medium text-neutral-500">
-                            RWF
-                          </span>
-                        </p>
-                        <Input
-                          type="number"
-                          aria-label={`Adjust price for ${group.name}`}
-                          className="h-7 w-28 text-right text-xs tabular-nums"
-                          value={
-                            priceAdjustments[group.fefoBatch.id] ??
-                            group.fefoBatch.price
-                          }
-                          onChange={(e) =>
-                            onPriceAdjustment(
-                              group.fefoBatch.id,
-                              Number(e.target.value),
-                            )
-                          }
-                        />
-                      </div>
-                    </div>
-                  ))
+                      );
+                    })}
+                  </div>
                 )}
               </div>
               {filteredGroups.length > 0 ? (
@@ -446,7 +544,13 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                   onPageChange={goToCatalogPage}
                   onPageSizeChange={setPageSize}
                 />
-              ) : null}
+              ) : (
+                <div className={posSurfaces.catalogFooter}>
+                  <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                    No products
+                  </p>
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent
@@ -455,7 +559,10 @@ export function PosWorkspace(props: PosWorkspaceProps) {
             >
               <div
                 ref={catalogTab === "favorites" ? catalogListRef : undefined}
-                className={cn(posSurfaces.catalogList, "space-y-2")}
+                className={cn(
+                  posSurfaces.catalogList,
+                  fullscreen && posSurfaces.catalogListFullscreen,
+                )}
               >
                 {fastMoving.length === 0 ? (
                   <DashboardPanelEmpty
@@ -464,27 +571,101 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                     description="Sales velocity data will appear here."
                   />
                 ) : (
-                  paginatedFastMoving.map((product) => {
-                    const group = productGroups.find(
-                      (g) => g.medicationId === product.medicationId,
-                    );
-                    return (
-                      <div
-                        key={product.id}
-                        className={posSurfaces.productCard}
-                        onClick={() =>
-                          group ? onAddGroup(group) : onAddProduct(product)
-                        }
-                      >
-                        <p className="flex-1 text-sm font-medium">
-                          {product.name}
-                        </p>
-                        <span className="text-sm font-semibold tabular-nums text-neutral-900 dark:text-neutral-50">
-                          {product.price.toLocaleString()} RWF
-                        </span>
-                      </div>
-                    );
-                  })
+                  <div
+                    className={cn(
+                      posSurfaces.catalogGrid,
+                      fullscreen && posSurfaces.catalogGridFullscreen,
+                    )}
+                  >
+                    {paginatedFastMoving.map((product, index) => {
+                      const group = productGroups.find(
+                        (g) => g.medicationId === product.medicationId,
+                      );
+                      const rank = (catalogPage - 1) * pageSize + index + 1;
+                      const stock = group?.totalStock ?? product.stock;
+                      const requiresRx =
+                        group?.requiresPrescription ??
+                        product.requiresPrescription;
+                      const expiryDays =
+                        group?.nearestExpiryDays ?? product.daysToExpiry;
+                      const expiryLabel = formatPosNearExpiryLabel(expiryDays);
+                      const stockHighlight = formatStockHighlight(stock);
+                      const price = group
+                        ? (priceAdjustments[group.fefoBatch.id] ??
+                          group.fefoBatch.price)
+                        : product.price;
+
+                      return (
+                        <div
+                          key={product.id}
+                          className={cn(
+                            posSurfaces.productCardFast,
+                            stockHighlight.tone === "low" &&
+                              posSurfaces.productCardLow,
+                          )}
+                          onClick={() =>
+                            group ? onAddGroup(group) : onAddProduct(product)
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              group
+                                ? onAddGroup(group)
+                                : onAddProduct(product);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
+                        >
+                          <div className="flex items-start justify-between gap-1.5">
+                            <span className={posSurfaces.productCardFastRank}>
+                              #{rank}
+                            </span>
+                            {requiresRx ? (
+                              <Badge
+                                variant="destructive"
+                                className="shrink-0 text-[10px]"
+                              >
+                                Rx
+                              </Badge>
+                            ) : (
+                              <span className="relative flex h-1.5 w-1.5 shrink-0">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+                                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+                              </span>
+                            )}
+                          </div>
+                          <p className="line-clamp-2 text-sm font-medium leading-snug text-neutral-900 dark:text-neutral-50">
+                            {group
+                              ? formatProductGroupLabel(group)
+                              : product.name}
+                          </p>
+                          <div className={posSurfaces.productCardMeta}>
+                            <span
+                              className={cn(
+                                stockHighlight.tone === "low" &&
+                                  posSurfaces.productCardStockLow,
+                                stockHighlight.tone === "out" &&
+                                  posSurfaces.productCardStockOut,
+                              )}
+                            >
+                              {stockHighlight.label}
+                            </span>
+                            {expiryLabel ? (
+                              <span className={posSurfaces.productCardExpiry}>
+                                {expiryLabel}
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className={posSurfaces.productCardPrice}>
+                            {price.toLocaleString()}{" "}
+                            <span className="text-[10px] font-medium text-neutral-500">
+                              RWF
+                            </span>
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
               {fastMoving.length > 0 ? (
@@ -495,13 +676,23 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                   onPageChange={goToCatalogPage}
                   onPageSizeChange={setPageSize}
                 />
-              ) : null}
+              ) : (
+                <div className={posSurfaces.catalogFooter}>
+                  <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                    No products
+                  </p>
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         </section>
 
-        {/* Order sidebar */}
-        <aside className={posSurfaces.sidebar} aria-label="Order checkout">
+        {/* Cart + payment */}
+        <aside
+          ref={sidebarRef}
+          className={posSurfaces.sidebar}
+          aria-label="Order and payment"
+        >
           <div className={posSurfaces.sidebarTop}>
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">
@@ -512,7 +703,7 @@ export function PosWorkspace(props: PosWorkspaceProps) {
               </Badge>
             </div>
 
-            <div className="relative space-y-2 overflow-visible rounded-xl border border-neutral-200/80 bg-neutral-50/50 p-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+            <div className="relative z-20 space-y-2 overflow-visible rounded-lg border border-neutral-200/80 bg-neutral-50/50 p-2.5 dark:border-neutral-800 dark:bg-neutral-900/40">
               <Label className="text-xs text-neutral-500">Payer</Label>
               <div className="relative flex gap-2">
                 <Input
@@ -532,7 +723,7 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                   <Plus className="h-4 w-4" />
                 </DashboardButton>
                 {showCustomerSuggestions ? (
-                  <div className="absolute left-0 top-full z-50 mt-1 max-h-40 w-[calc(100%-2.75rem)] overflow-y-auto rounded-lg border border-neutral-200/80 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+                  <div className="absolute left-0 top-full z-[110] mt-1 max-h-40 w-[calc(100%-2.75rem)] overflow-y-auto rounded-lg border border-neutral-200/80 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
                     {customerSearchFetching ? (
                       <p className="px-3 py-2 text-sm text-neutral-500">
                         Searching…
@@ -608,6 +799,9 @@ export function PosWorkspace(props: PosWorkspaceProps) {
           <div
             className={cn(
               posSurfaces.sidebarCart,
+              cart.length === 0
+                ? posSurfaces.sidebarCartEmpty
+                : posSurfaces.sidebarCartScroll,
               cartNeedsScroll && posSurfaces.sidebarCartCap,
             )}
             aria-label="Cart line items"
@@ -618,7 +812,7 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                 icon={ShoppingCart}
                 title="Cart is empty"
                 description="Select products from the catalog or scan a barcode."
-                className="min-h-[120px] border-0 bg-transparent py-6 shadow-none"
+                className="min-h-0 border-0 bg-transparent py-4 shadow-none"
               />
             ) : (
               <>
@@ -679,73 +873,96 @@ export function PosWorkspace(props: PosWorkspaceProps) {
             )}
           </div>
 
-          <div className={posSurfaces.sidebarFooter}>
+          <div
+            className={cn(
+              posSurfaces.sidebarFooter,
+              compactPayment &&
+                fullscreen &&
+                posSurfaces.sidebarFooterFullscreen,
+            )}
+          >
             <div className={posSurfaces.totalDisplay}>
               <p className="text-xs font-medium uppercase tracking-wide opacity-80">
                 Total due
               </p>
-              <p className="text-2xl font-semibold tabular-nums tracking-tight">
+              <p className="text-xl font-semibold tabular-nums tracking-tight">
                 {displayTotal.toLocaleString()} RWF
               </p>
               {canInsurance && customer.insuranceType ? (
-                <p className="mt-1 text-xs opacity-80">
+                <p className="mt-0.5 text-xs opacity-80">
                   Insurance {insuranceCoverage.toLocaleString()} · Patient{" "}
                   {patientAmount.toLocaleString()}
                 </p>
               ) : (
-                <p className="mt-1 text-xs opacity-80">
+                <p className="mt-0.5 text-xs opacity-80">
                   Subtotal {subtotal.toLocaleString()} RWF
                 </p>
               )}
             </div>
 
-            <PosShiftPanel
-              branchId={activeBranchId}
-              showTeamShifts={showTeamShifts}
-              shiftRequired
-            />
-
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label className="text-xs text-neutral-500">Payment method</Label>
-              <div className={posSurfaces.paymentGrid}>
-                <PaymentMethodButton
-                  active={paymentMethod === "cash"}
-                  onClick={() => onPaymentMethodChange("cash")}
+              {fullscreen && compactPayment ? (
+                <Select
+                  value={paymentMethod || "cash"}
+                  onValueChange={onPaymentMethodChange}
                 >
-                  <Banknote className="h-4 w-4" />
-                  Cash
-                </PaymentMethodButton>
-                <PaymentMethodButton
-                  active={paymentMethod === "card"}
-                  onClick={() => onPaymentMethodChange("card")}
-                >
-                  <CreditCard className="h-4 w-4" />
-                  Card
-                </PaymentMethodButton>
-                <PaymentMethodButton
-                  active={paymentMethod === "mobile"}
-                  onClick={() => onPaymentMethodChange("mobile")}
-                >
-                  <Smartphone className="h-4 w-4" />
-                  Mobile
-                </PaymentMethodButton>
-                {canInsurance ? (
-                  <>
-                    <PaymentMethodButton
-                      active={paymentMethod === "insurance"}
-                      onClick={() => onPaymentMethodChange("insurance")}
-                    >
-                      Insurance
-                    </PaymentMethodButton>
-                    <PaymentMethodButton
-                      active={paymentMethod === "split"}
-                      onClick={() => onPaymentMethodChange("split")}
-                    >
-                      Split
-                    </PaymentMethodButton>
-                  </>
-                ) : null}
-              </div>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Select payment method" />
+                  </SelectTrigger>
+                  <SelectContent className="z-[110]">
+                    <SelectItem value="cash">Cash</SelectItem>
+                    <SelectItem value="card">Card</SelectItem>
+                    <SelectItem value="mobile">Mobile</SelectItem>
+                    {canInsurance ? (
+                      <>
+                        <SelectItem value="insurance">Insurance</SelectItem>
+                        <SelectItem value="split">Split</SelectItem>
+                      </>
+                    ) : null}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className={posSurfaces.paymentGrid}>
+                  <PaymentMethodButton
+                    active={paymentMethod === "cash"}
+                    onClick={() => onPaymentMethodChange("cash")}
+                  >
+                    <Banknote className="h-4 w-4" />
+                    Cash
+                  </PaymentMethodButton>
+                  <PaymentMethodButton
+                    active={paymentMethod === "card"}
+                    onClick={() => onPaymentMethodChange("card")}
+                  >
+                    <CreditCard className="h-4 w-4" />
+                    Card
+                  </PaymentMethodButton>
+                  <PaymentMethodButton
+                    active={paymentMethod === "mobile"}
+                    onClick={() => onPaymentMethodChange("mobile")}
+                  >
+                    <Smartphone className="h-4 w-4" />
+                    Mobile
+                  </PaymentMethodButton>
+                  {canInsurance ? (
+                    <>
+                      <PaymentMethodButton
+                        active={paymentMethod === "insurance"}
+                        onClick={() => onPaymentMethodChange("insurance")}
+                      >
+                        Insurance
+                      </PaymentMethodButton>
+                      <PaymentMethodButton
+                        active={paymentMethod === "split"}
+                        onClick={() => onPaymentMethodChange("split")}
+                      >
+                        Split
+                      </PaymentMethodButton>
+                    </>
+                  ) : null}
+                </div>
+              )}
             </div>
 
             {canInsurance && paymentMethod === "split" && (
@@ -767,6 +984,12 @@ export function PosWorkspace(props: PosWorkspaceProps) {
               </div>
             )}
 
+            <PosShiftPanel
+              branchId={activeBranchId}
+              showTeamShifts={showTeamShifts}
+              shiftRequired
+            />
+
             {shiftBlocksSale ? (
               <p className="text-center text-xs font-medium text-amber-800 dark:text-amber-200">
                 Open your cashier shift above to complete a sale.
@@ -774,7 +997,7 @@ export function PosWorkspace(props: PosWorkspaceProps) {
             ) : null}
             <DashboardButton
               tone="primary"
-              className="h-12 w-full text-base"
+              className="h-11 w-full text-base"
               onClick={onProcessSale}
               disabled={saleDisabled}
             >
@@ -790,7 +1013,7 @@ export function PosWorkspace(props: PosWorkspaceProps) {
                 <DropdownMenuTrigger asChild>
                   <DashboardButton className="flex-1">More</DashboardButton>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent align="end" className="z-[110] w-48">
                   {canHold && (
                     <DropdownMenuItem onClick={onHoldSale}>Hold sale</DropdownMenuItem>
                   )}
@@ -821,4 +1044,24 @@ export function PosWorkspace(props: PosWorkspaceProps) {
       </div>
     </div>
   );
+
+  if (fullscreen) {
+    return (
+      <>
+        <div className="invisible flex flex-col gap-4" aria-hidden>
+          <div className="h-[28rem]" />
+        </div>
+        <div
+          className={posSurfaces.fullscreenOverlay}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Point of Sale full window"
+        >
+          {content}
+        </div>
+      </>
+    );
+  }
+
+  return content;
 }

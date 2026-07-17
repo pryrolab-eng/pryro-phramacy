@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { statusToneBarClass } from "@/lib/ui/status-tone";
 
 export function NotificationBell() {
   const { notifications, unreadCount, connected, markRead } =
@@ -35,7 +36,7 @@ export function NotificationBell() {
           <span
             className={cn(
               "absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full",
-              connected ? "bg-emerald-500" : "bg-muted-foreground/40",
+              connected ? statusToneBarClass.success : "bg-muted-foreground/40",
             )}
             aria-hidden
           />

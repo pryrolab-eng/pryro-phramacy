@@ -11,6 +11,7 @@ type Props = {
   loading?: boolean;
   className?: string;
   valueClassName?: string;
+  iconClassName?: string;
 };
 
 export function DashboardStatCard({
@@ -21,6 +22,7 @@ export function DashboardStatCard({
   loading,
   className,
   valueClassName,
+  iconClassName,
 }: Props) {
   return (
     <div className={cn(dashboardSurfaces.card, "p-4", className)}>
@@ -28,7 +30,10 @@ export function DashboardStatCard({
         <p className={dashboardText.statLabel}>{label}</p>
         <div className={dashboardSurfaces.iconBox}>
           <Icon
-            className="h-4 w-4 text-neutral-600 dark:text-neutral-300"
+            className={cn(
+              "h-4 w-4 text-neutral-600 dark:text-neutral-300",
+              iconClassName,
+            )}
             strokeWidth={1.75}
           />
         </div>

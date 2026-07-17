@@ -16,7 +16,7 @@ export function DashboardProgressTrack({ value, className, barClassName }: Props
       )}
     >
       <div
-        className={cn("h-full rounded-full bg-neutral-900 transition-all dark:bg-neutral-100", barClassName)}
+        className={cn("h-full rounded-full bg-primary transition-all", barClassName)}
         style={{ width: `${pct}%` }}
       />
     </div>

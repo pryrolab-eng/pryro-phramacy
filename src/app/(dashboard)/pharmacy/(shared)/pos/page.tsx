@@ -75,6 +75,11 @@ import { createPosPageContext } from '@/lib/ai/page-context'
 import { useActivePharmacy } from '@/components/providers/active-pharmacy-provider'
 import { PosReturnsDialog } from '@/components/pos/pos-returns-dialog'
 import { PosWorkspace } from '@/components/pos/pos-workspace'
+import { PosAlertsSheet } from '@/components/pos/pos-alerts-sheet'
+import {
+  POS_EXPIRY_ALERT_DAYS,
+  POS_LOW_STOCK_THRESHOLD,
+} from '@/components/pos/pos-tokens'
 import { PosAddProductForm } from '@/components/pos/pos-add-product-form'
 import { PosInsuranceProcessingDialog } from '@/components/pos/pos-insurance-processing-dialog'
 import { PosReceiptPreviewDialog } from '@/components/pos/pos-receipt-preview-dialog'
@@ -704,8 +709,15 @@ function POSPageContent() {
     )
   }
 
-  const lowStockCount = products.filter((p) => p.stock <= 20).length
-  const expiringCount = products.filter((p) => p.daysToExpiry <= 90).length
+  const alertsTotal = useMemo(() => {
+    const ids = new Set<string>()
+    for (const p of products) {
+      if (p.stock <= POS_LOW_STOCK_THRESHOLD || p.daysToExpiry <= POS_EXPIRY_ALERT_DAYS) {
+        ids.add(p.id)
+      }
+    }
+    return ids.size
+  }, [products])
 
   return (
     <DashboardPageShell className="[&>div]:max-w-none [&>div]:space-y-4 [&>div]:p-4 md:[&>div]:p-6">
@@ -729,18 +741,28 @@ function POSPageContent() {
               <Plus className="mr-1.5 h-4 w-4" />
               Add product
             </DashboardButton>
-            <DashboardButton tone="outline" onClick={() => setAlertsOpen(true)}>
-              Alerts
-              {(lowStockCount > 0 || expiringCount > 0) && (
-                <span className="ml-1.5 inline-flex gap-0.5">
-                  {lowStockCount > 0 && (
-                    <span className="size-1.5 rounded-full bg-red-500" />
-                  )}
-                  {expiringCount > 0 && (
-                    <span className="size-1.5 rounded-full bg-amber-500" />
-                  )}
-                </span>
+            <DashboardButton
+              tone="outline"
+              className={cn(
+                alertsTotal > 0 &&
+                  "border-orange-300 text-orange-800 hover:bg-orange-50 dark:border-orange-800 dark:text-orange-200 dark:hover:bg-orange-950/40",
               )}
+              onClick={() => setAlertsOpen(true)}
+            >
+              <AlertTriangle
+                className={cn(
+                  "mr-1.5 h-4 w-4",
+                  alertsTotal > 0
+                    ? "text-orange-600 dark:text-orange-400"
+                    : "text-neutral-500",
+                )}
+              />
+              Alerts
+              {alertsTotal > 0 ? (
+                <Badge className="ml-1.5 h-5 min-w-5 rounded-md border-0 bg-orange-600 px-1.5 text-[11px] font-semibold tabular-nums text-white hover:bg-orange-600">
+                  {alertsTotal}
+                </Badge>
+              ) : null}
             </DashboardButton>
             {can('pos.returns') && (
               <DashboardButton tone="outline" onClick={() => setReturnsDialogOpen(true)}>
@@ -1066,94 +1088,15 @@ function POSPageContent() {
         </DashboardDialogContent>
       </Dialog>
 
-      {/* Alerts drawer */}
-      {alertsOpen && (
-        <div className={cn("fixed right-0 top-0 z-50 flex h-full w-80 flex-col border-l shadow-xl", dashboardSurfaces.card)}>
-          <div className="p-3 border-b flex justify-between items-center">
-            <h2 className="font-medium text-sm">Alerts</h2>
-            <div className="flex gap-1">
-              <DashboardButton size="sm" className="h-7 text-xs" onClick={() => {
-                const alerts = products.filter(p => p.stock <= 20 || p.daysToExpiry <= 90)
-                const headers = ['Name', 'Category', 'Generic Name', 'Strength', 'Dosage Form', 'Batch', 'Barcode', 'Stock', 'Price', 'Expiry Date', 'Days Left', 'Requires Prescription', 'Status']
-                const rows = alerts.map(p => [
-                  p.name,
-                  p.category ?? '',
-                  p.genericName ?? '',
-                  p.strength ?? '',
-                  p.dosageForm ?? '',
-                  p.batch,
-                  p.barcode ?? '',
-                  p.stock,
-                  p.price,
-                  p.expiryDate ?? '',
-                  p.daysToExpiry >= 9999 ? 'N/A' : p.daysToExpiry,
-                  p.requiresPrescription ? 'Yes' : 'No',
-                  p.stock <= 20 && p.daysToExpiry <= 90 ? 'Low Stock & Expiring' :
-                  p.stock <= 20 ? 'Low Stock' : 'Expiring',
-                ])
-                const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n')
-                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = `product-alerts-${new Date().toISOString().slice(0, 10)}.csv`
-                a.click()
-                URL.revokeObjectURL(url)
-                toast.success(`Exported ${alerts.length} product(s)`)
-              }}>
-                Excel
-              </DashboardButton>
-              <DashboardButton size="icon" className="h-7 w-7" onClick={() => setAlertsOpen(false)}>×</DashboardButton>
-            </div>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto p-3 space-y-3">
-            {/* Low Stock */}
-            {products.filter(p => p.stock <= 20).length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                  <span className="text-xs font-medium text-red-600">Low Stock ({products.filter(p => p.stock <= 20).length})</span>
-                </div>
-                <div className="space-y-1">
-                  {products.filter(p => p.stock <= 20).map(product => (
-                    <div key={product.id} className="p-2 bg-red-50 rounded text-xs border-l-2 border-red-500">
-                      <div className="font-medium">{product.name}</div>
-                      <div className="text-gray-500">Stock: {product.stock}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Expiring */}
-            {products.filter(p => p.daysToExpiry <= 90).length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-                  <span className="text-xs font-medium text-yellow-600">Expiring ({products.filter(p => p.daysToExpiry <= 90).length})</span>
-                </div>
-                <div className="space-y-1">
-                  {products.filter(p => p.daysToExpiry <= 90).map(product => (
-                    <div key={product.id} className={`p-2 rounded text-xs border-l-2 ${
-                      product.daysToExpiry <= 30 ? 'bg-red-50 border-red-500' :
-                      product.daysToExpiry <= 60 ? 'bg-yellow-50 border-yellow-500' :
-                      'bg-blue-50 border-blue-500'
-                    }`}>
-                      <div className="font-medium">{product.name}</div>
-                      <div className="text-gray-500">{product.daysToExpiry}d left</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {products.filter(p => p.stock <= 20 || p.daysToExpiry <= 90).length === 0 && (
-              <div className="text-green-600 text-xs text-center py-4">✅ No alerts</div>
-            )}
-          </div>
-        </div>
-      )}
+      <PosAlertsSheet
+        open={alertsOpen}
+        onOpenChange={setAlertsOpen}
+        products={products}
+        onSelectProduct={(name) => {
+          setSearchTerm(name)
+          requestAnimationFrame(() => searchInputRef.current?.focus())
+        }}
+      />
 
       <Dialog open={quickAddDialog !== null} onOpenChange={() => setQuickAddDialog(null)}>
         <DashboardDialogContent
@@ -1404,7 +1347,7 @@ function POSPageContent() {
         </DashboardDialogContent>
       </Dialog>
 
-      <FeatureGate featureKey="pos.returns">
+      <FeatureGate featureKey="pos.returns" hideWhenLocked>
         <PosReturnsDialog
           open={returnsDialogOpen}
           onOpenChange={setReturnsDialogOpen}

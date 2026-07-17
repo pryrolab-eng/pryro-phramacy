@@ -1,11 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
 import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import { storeMarkNotificationRead } from "@/lib/db/notifications-store";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-export async function PATCH(_request: Request, context: RouteContext) {
+export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const user = await getAuthUser();
     if (!user) {
@@ -13,6 +14,21 @@ export async function PATCH(_request: Request, context: RouteContext) {
     }
 
     const { id } = await context.params;
+    const wantPlatform =
+      request.nextUrl.searchParams.get("scope") === "platform";
+
+    if (wantPlatform) {
+      const isPlatformAdmin = await resolveIsAppPlatformAdmin(user.id);
+      if (!isPlatformAdmin) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      const updated = await storeMarkNotificationRead(id, null);
+      if (!updated) {
+        return NextResponse.json({ error: "Notification not found" }, { status: 404 });
+      }
+      return NextResponse.json({ success: true });
+    }
+
     const pharmacyId = await requireUserPharmacyId(user.id);
     const updated = await storeMarkNotificationRead(id, pharmacyId);
 

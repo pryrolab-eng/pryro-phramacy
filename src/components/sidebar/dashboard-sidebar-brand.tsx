@@ -68,10 +68,12 @@ export function DashboardSidebarBrand({
                   dashboardSidebarTokens.brandIcon,
                   "size-8 shrink-0",
                   hasLogo && "border-0 bg-transparent p-0",
+                  // Light brand tint needs a dark/primary icon — not white on pale blue.
+                  !hasLogo && branded && primaryColor && "border-primary/25 text-primary",
                 )}
                 style={
                   !hasLogo && branded && primaryColor
-                    ? { backgroundColor: `${primaryColor}18` }
+                    ? { backgroundColor: `${primaryColor}18`, color: primaryColor }
                     : undefined
                 }
               >
@@ -79,6 +81,11 @@ export function DashboardSidebarBrand({
                   logoUrl={logoUrl}
                   name={title}
                   icon={Icon}
+                  iconClassName={
+                    !hasLogo && branded && primaryColor
+                      ? "text-current"
+                      : undefined
+                  }
                   imageClassName={cn(
                     "h-7 w-auto max-w-[120px]",
                     "group-data-[collapsible=icon]:h-6 group-data-[collapsible=icon]:max-w-[1.5rem]",

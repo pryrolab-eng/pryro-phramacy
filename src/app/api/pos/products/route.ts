@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
-import { requireUserBranchId } from "@/lib/pharmacy/get-session-branch";
+import { requireAllowedRequestBranchId } from "@/lib/pharmacy/get-session-branch";
 import { parseBranchScopeFromRequest } from "@/lib/pharmacy/branch-scope";
 import { storeListPosProducts } from "@/lib/db/pos-store";
 
@@ -14,15 +14,11 @@ export async function GET(request: NextRequest) {
 
     const pharmacyId = await requireUserPharmacyId(user.id);
     const scope = parseBranchScopeFromRequest(request);
-    
-    // Use client-passed branchId if provided, otherwise fall back to session branch
-    let branchId: string;
-    if (scope.branchId) {
-      branchId = scope.branchId;
-    } else {
-      branchId = await requireUserBranchId(user.id);
-    }
-    
+    const branchId = await requireAllowedRequestBranchId(
+      user.id,
+      scope.branchId,
+    );
+
     const products = await storeListPosProducts(pharmacyId, branchId);
 
     return NextResponse.json(products);
@@ -30,10 +26,16 @@ export async function GET(request: NextRequest) {
     const message =
       error instanceof Error ? error.message : "Error fetching products";
     console.error("Error fetching products:", error);
-    if (message.includes("No active branch")) {
+    if (message.includes("No active branch") || message.includes("assign you")) {
       return NextResponse.json(
         { error: message, code: "NO_ACTIVE_BRANCH" },
         { status: 400 },
+      );
+    }
+    if (message.includes("do not have access")) {
+      return NextResponse.json(
+        { error: message, code: "BRANCH_FORBIDDEN" },
+        { status: 403 },
       );
     }
     if (message.includes("Pharmacy not found")) {

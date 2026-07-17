@@ -2,6 +2,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  getCombinedDashboardData,
   getPharmacyCategorySalesChart,
   getPharmacyDashboardStats,
   getPharmacyInventoryChart,
@@ -19,7 +20,6 @@ import {
   type WeeklySalesChartPoint,
 } from "@/lib/http/pharmacy-dashboard";
 import type { BranchScopeQuery } from "@/lib/pharmacy/branch-scope";
-import { fetchJson } from "@/lib/http/client";
 
 export {
   pharmacyDashboardKeys,
@@ -43,29 +43,31 @@ export type CombinedDashboardData = {
   inventoryChart: InventoryChartPoint[];
 };
 
-async function getCombinedDashboard(scope?: BranchScopeQuery): Promise<CombinedDashboardData> {
-  const params = new URLSearchParams();
-  if (scope?.branchId) params.set("branchId", scope.branchId);
-  if (scope?.from) params.set("from", scope.from);
-  if (scope?.to) params.set("to", scope.to);
-  const query = params.toString();
-  return fetchJson<CombinedDashboardData>(
-    `/api/pharmacy/dashboard/combined${query ? `?${query}` : ""}`,
-  );
-}
-
 export function useCombinedPharmacyDashboard(options?: {
   enabled?: boolean;
   scope?: BranchScopeQuery;
+  scopeDays?: number;
 }) {
+  const queryClient = useQueryClient();
+  const days = options?.scopeDays ?? 30;
+  const queryKey = pharmacyDashboardKeys.combined(
+    options?.scope?.branchId,
+    days,
+  );
   return useQuery({
-    queryKey: [...pharmacyDashboardKeys.all, "combined", options?.scope?.branchId ?? "all"],
-    queryFn: () => getCombinedDashboard(options?.scope),
+    queryKey,
+    queryFn: () => getCombinedDashboardData(options?.scope),
     enabled: options?.enabled ?? true,
     staleTime: DASHBOARD_STALE_MS,
     gcTime: DASHBOARD_GC_MS,
     refetchOnWindowFocus: false,
+    refetchOnMount: false,
     retry: 1,
+    placeholderData: (previousData) => previousData,
+    initialData: () =>
+      queryClient.getQueryData<CombinedDashboardData>(queryKey),
+    initialDataUpdatedAt: () =>
+      queryClient.getQueryState(queryKey)?.dataUpdatedAt,
   });
 }
 

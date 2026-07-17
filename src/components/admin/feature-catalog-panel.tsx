@@ -264,7 +264,7 @@ function groupNavButtonClass(active: boolean) {
   return cn(
     "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors",
     active
-      ? "bg-neutral-900 font-medium text-neutral-50 dark:bg-neutral-100 dark:text-neutral-900"
+      ? "bg-primary font-medium text-primary-foreground"
       : "text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800/80",
   );
 }

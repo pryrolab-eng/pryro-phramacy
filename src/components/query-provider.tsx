@@ -5,19 +5,11 @@ import {
   PersistQueryClientProvider,
   type Persister,
 } from "@tanstack/react-query-persist-client";
-import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useMemo } from "react";
 
-const ReactQueryDevtools =
-  process.env.NODE_ENV === "development"
-    ? dynamic(
-        () =>
-          import("@tanstack/react-query-devtools").then((mod) => ({
-            default: mod.ReactQueryDevtools,
-          })),
-        { ssr: false },
-      )
-    : () => null;
+// Static import so the devtools share the same @tanstack/react-query
+// module instance (require() created a duplicate context -> "No QueryClient set").
+import { ReactQueryDevtools as ReactQueryDevtoolsBase } from "@tanstack/react-query-devtools";
 
 const CACHE_KEY = "rq:persist";
 
@@ -49,16 +41,18 @@ function createLocalStoragePersister(): Persister {
 }
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(
+  const queryClient = useMemo(
     () =>
       new QueryClient({
         defaultOptions: {
           queries: {
             staleTime: 60 * 1000,
+            gcTime: 30 * 60 * 1000,
             refetchOnWindowFocus: false,
           },
         },
       }),
+    [],
   );
 
   return (
@@ -81,7 +75,10 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
     >
       {children}
       {process.env.NODE_ENV === "development" && (
-        <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
+        <ReactQueryDevtoolsBase
+          buttonPosition="bottom-left"
+          initialIsOpen={false}
+        />
       )}
     </PersistQueryClientProvider>
   );

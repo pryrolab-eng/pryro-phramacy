@@ -2,29 +2,41 @@ import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { dashboardSurfaces } from "@/components/dashboard/dashboard-tokens";
+import {
+  statusToneChipClass,
+  type StatusTone,
+} from "@/lib/ui/status-tone";
+
+const ADMIN_CHIP_TONE: Record<
+  "neutral" | "active" | "inactive" | "plan",
+  StatusTone
+> = {
+  neutral: "muted",
+  active: "success",
+  inactive: "muted",
+  plan: "muted",
+};
 
 /** Unified status/plan chips across admin dashboard lists. */
 export function AdminStatusChip({
   children,
   tone = "neutral",
+  statusTone,
   className,
   title,
 }: {
   children: ReactNode;
+  /** @deprecated Prefer `statusTone` for semantic colors */
   tone?: "neutral" | "active" | "inactive" | "plan";
+  statusTone?: StatusTone;
   className?: string;
   title?: string;
 }) {
-  const toneClass = {
-    neutral:
-      "border-neutral-200/80 bg-neutral-50 text-neutral-600 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-neutral-300",
-    active:
-      "border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-400",
-    inactive:
-      "border-neutral-200/80 bg-neutral-50 text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800/40 dark:text-neutral-500",
-    plan:
-      "border-neutral-200/80 bg-white text-neutral-700 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/60 dark:text-neutral-200",
-  }[tone];
+  const resolved = statusTone ?? ADMIN_CHIP_TONE[tone];
+  const toneClass =
+    tone === "plan" && !statusTone
+      ? "border-neutral-200/80 bg-white text-neutral-700 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/60 dark:text-neutral-200"
+      : statusToneChipClass[resolved];
 
   return (
     <span

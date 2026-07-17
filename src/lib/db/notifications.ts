@@ -93,21 +93,23 @@ export async function updateOutboxRowFromDb(
 }
 
 export async function insertNotificationFromDb(input: {
-  pharmacyId: string;
+  pharmacyId?: string | null;
   userId?: string | null;
   title: string;
   message: string;
   type: string;
+  actionUrl?: string | null;
   metadata?: Record<string, unknown>;
 }): Promise<string> {
   const row = await prisma.notifications.create({
     data: {
-      pharmacy_id: input.pharmacyId,
+      pharmacy_id: input.pharmacyId ?? null,
       user_id: input.userId ?? null,
       title: input.title,
       message: input.message,
       type: input.type,
       is_read: false,
+      action_url: input.actionUrl ?? null,
       metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
     },
     select: { id: true },
@@ -153,6 +155,26 @@ export async function listNotificationsForPharmacyFromDb(
   });
 }
 
+/** Platform admin feed: rows with no pharmacy (platform-scoped). */
+export async function listPlatformNotificationsFromDb(
+  limit = 50,
+): Promise<NotificationListItem[]> {
+  return prisma.notifications.findMany({
+    where: { pharmacy_id: null },
+    orderBy: { created_at: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      title: true,
+      message: true,
+      type: true,
+      is_read: true,
+      created_at: true,
+      action_url: true,
+    },
+  });
+}
+
 export async function listNotificationsSinceFromDb(
   pharmacyId: string,
   since: Date,
@@ -161,6 +183,29 @@ export async function listNotificationsSinceFromDb(
   return prisma.notifications.findMany({
     where: {
       pharmacy_id: pharmacyId,
+      created_at: { gt: since },
+    },
+    orderBy: { created_at: "asc" },
+    take: limit,
+    select: {
+      id: true,
+      title: true,
+      message: true,
+      type: true,
+      is_read: true,
+      created_at: true,
+      action_url: true,
+    },
+  });
+}
+
+export async function listPlatformNotificationsSinceFromDb(
+  since: Date,
+  limit = 20,
+): Promise<NotificationListItem[]> {
+  return prisma.notifications.findMany({
+    where: {
+      pharmacy_id: null,
       created_at: { gt: since },
     },
     orderBy: { created_at: "asc" },
@@ -236,10 +281,13 @@ function parseEventPrefs(value: unknown): NotificationEventPrefs {
 
 export async function markNotificationReadFromDb(
   notificationId: string,
-  pharmacyId: string,
+  pharmacyId: string | null,
 ): Promise<boolean> {
   const result = await prisma.notifications.updateMany({
-    where: { id: notificationId, pharmacy_id: pharmacyId },
+    where: {
+      id: notificationId,
+      pharmacy_id: pharmacyId,
+    },
     data: { is_read: true },
   });
   return result.count > 0;

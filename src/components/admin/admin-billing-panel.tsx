@@ -41,6 +41,10 @@ import type { AdminPharmacyRow } from '@/lib/http/admin/pharmacies'
 import type { AdminBillingReconciliationRow } from '@/lib/http/admin/billing'
 import { formatMoney, getPlatformCurrency } from '@/lib/platform-currency'
 import { getPendingPaymentMaxAgeDays } from '@/lib/admin/cancel-pending-billing'
+import {
+  statusToneIconClass,
+  statusToneTextClass,
+} from '@/lib/ui/status-tone'
 
 function BillingNotice({ message }: { message: string }) {
   return (
@@ -208,20 +212,23 @@ export function AdminBillingPanel() {
         <DashboardStatCard
           label="Completed"
           icon={CheckCircle2}
+          iconClassName={statusToneIconClass.success}
           value={summary?.completed_count ?? 0}
         />
         <DashboardStatCard
           label="Pending"
           icon={Clock}
+          iconClassName={statusToneIconClass.warning}
           value={summary?.pending_count ?? 0}
         />
         <DashboardStatCard
           label="Failed"
           icon={AlertCircle}
+          iconClassName={statusToneIconClass.danger}
           value={summary?.failed_count ?? 0}
           valueClassName={
             (summary?.failed_count ?? 0) > 0
-              ? 'text-amber-700 dark:text-amber-400'
+              ? statusToneTextClass.danger
               : undefined
           }
         />

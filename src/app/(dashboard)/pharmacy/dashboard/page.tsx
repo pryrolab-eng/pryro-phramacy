@@ -7,12 +7,8 @@ import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
 import {
   useCombinedPharmacyDashboard,
   useInvalidatePharmacyDashboard,
-  usePharmacySalesChart,
   useCreatePharmacistMutation,
   type PharmacyDashboardStats,
-  type RecentSaleRow,
-  type StockAlertsResponse,
-  type SalesChartPoint,
 } from '@/hooks'
 import { toast } from 'sonner'
 import { Button } from "@/components/ui/button"
@@ -80,8 +76,10 @@ export default function PharmacyDashboard() {
 function PharmacyDashboardContent() {
   const { branchScope, setBranchScope, scopeQuery, days } = useBranchReportScope()
 
-  const combinedQuery = useCombinedPharmacyDashboard({ scope: scopeQuery })
-  const salesChartQuery = usePharmacySalesChart()
+  const combinedQuery = useCombinedPharmacyDashboard({
+    scope: scopeQuery,
+    scopeDays: days,
+  })
   const { invalidateStats, invalidateRecentSales, invalidateStockAlerts } =
     useInvalidatePharmacyDashboard()
 
@@ -89,7 +87,7 @@ function PharmacyDashboardContent() {
   const recentSales = combinedQuery.data?.recentSales ?? []
   const lowStockItems = combinedQuery.data?.stockAlerts?.lowStock ?? []
   const expiringItems = combinedQuery.data?.stockAlerts?.expiring ?? []
-  const salesChartData = salesChartQuery.data ?? []
+  const salesChartData = combinedQuery.data?.salesChart ?? []
 
   // AI page context for suggestions
   const pageContext = useMemo(
@@ -108,7 +106,8 @@ function PharmacyDashboardContent() {
   )
   useAiPageContext('pharmacy_dashboard', pageContext)
 
-  const overviewLoading = combinedQuery.isPending || salesChartQuery.isPending
+  // Only block UI when we have nothing to show (bootstrap/cache miss).
+  const overviewLoading = combinedQuery.isPending && !combinedQuery.data
 
   useRealtimeUpdates(
     useCallback(
@@ -199,7 +198,7 @@ function PharmacyDashboardContent() {
       title="Sales performance"
       description="Monthly revenue trends"
       config={salesChartConfig}
-      loading={salesChartQuery.isPending}
+      loading={overviewLoading}
     >
       <AreaChart data={salesChartData}>
         <CartesianGrid strokeDasharray="3 3" />
@@ -526,7 +525,7 @@ function PharmacyDashboardContent() {
             title="Monthly performance"
             description="Revenue trends from your sales data"
             config={salesChartConfig}
-            loading={salesChartQuery.isPending}
+            loading={overviewLoading}
             chartClassName="aspect-auto h-[280px]"
           >
             <BarChart data={salesChartData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>

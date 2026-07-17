@@ -56,5 +56,6 @@ export function useCombinedSales(options?: { enabled?: boolean }) {
     gcTime: COMBINED_GC_MS,
     refetchOnWindowFocus: false,
     retry: 1,
+    placeholderData: (previousData) => previousData,
   });
 }

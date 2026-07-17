@@ -178,29 +178,27 @@ export const PLAN_ORDER = ["premium", "standard", "trial"] as const;
  * Can the store use the app? (Not the plan name.)
  * Legacy DB status `trial` meant "on free plan", not suspended — show as Active.
  */
+import { badgeVariantFromTone, type BadgeProps } from "@/components/ui/badge";
+import {
+  pharmacyAccessTone,
+} from "@/lib/ui/status-tone";
+
 export function pharmacyAccessLabel(status: string | null | undefined): string {
   const s = String(status ?? "active").trim().toLowerCase();
   if (s === "suspended") return "Suspended";
   if (s === "inactive") return "Inactive";
+  if (s === "pending_payment") return "Pending payment";
+  if (s === "subscription_expired") return "Expired";
+  if (s === "no_subscription") return "No subscription";
+  if (s === "past_due") return "Past due";
+  if (s === "subscription_cancelled") return "Cancelled";
   return "Active";
 }
 
 export function pharmacyAccessVariant(
   status: string | null | undefined,
-): "default" | "secondary" | "destructive" | "outline" {
-  const s = String(status ?? "active").trim().toLowerCase();
-  if (s === "suspended") return "destructive";
-  if (s === "inactive") return "outline";
-  if (
-    s === "pending_payment" ||
-    s === "subscription_expired" ||
-    s === "no_subscription" ||
-    s === "past_due" ||
-    s === "subscription_cancelled"
-  ) {
-    return "secondary";
-  }
-  return "default";
+): NonNullable<BadgeProps["variant"]> {
+  return badgeVariantFromTone(pharmacyAccessTone(status));
 }
 
 /** @deprecated Use pharmacyAccessLabel */

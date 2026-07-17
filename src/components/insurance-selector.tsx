@@ -40,7 +40,7 @@ export function InsuranceSelector({ value, onValueChange, coveragePercent }: Ins
         <SelectTrigger className="text-xs">
           <SelectValue placeholder={loading ? "Loading..." : "Select insurance type"} />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="z-[110]">
           {insuranceOptions.map((option) => (
             <SelectItem key={option.value} value={option.value} className="text-xs">
               <div className="flex items-center justify-between w-full">

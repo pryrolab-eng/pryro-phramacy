@@ -7,6 +7,8 @@ import {
   insertNotificationFromDb,
   listNotificationsForPharmacyFromDb,
   listNotificationsSinceFromDb,
+  listPlatformNotificationsFromDb,
+  listPlatformNotificationsSinceFromDb,
   listPendingOutboxRowsFromDb,
   markNotificationReadFromDb,
   updateOutboxRowFromDb,
@@ -75,6 +77,13 @@ export async function storeListNotificationsForPharmacy(
   return listNotificationsForPharmacyFromDb(pharmacyId, limit);
 }
 
+export async function storeListPlatformNotifications(
+  limit?: number,
+): Promise<NotificationListItem[]> {
+  requirePrisma();
+  return listPlatformNotificationsFromDb(limit);
+}
+
 export async function storeListNotificationsSince(
   pharmacyId: string,
   since: Date,
@@ -82,6 +91,14 @@ export async function storeListNotificationsSince(
 ): Promise<NotificationListItem[]> {
   requirePrisma();
   return listNotificationsSinceFromDb(pharmacyId, since, limit);
+}
+
+export async function storeListPlatformNotificationsSince(
+  since: Date,
+  limit?: number,
+): Promise<NotificationListItem[]> {
+  requirePrisma();
+  return listPlatformNotificationsSinceFromDb(since, limit);
 }
 
 export async function storeCreatePharmacyNotification(
@@ -101,7 +118,7 @@ export async function storeGetNotificationChannelPrefs(
 
 export async function storeMarkNotificationRead(
   notificationId: string,
-  pharmacyId: string,
+  pharmacyId: string | null,
 ): Promise<boolean> {
   requirePrisma();
   return markNotificationReadFromDb(notificationId, pharmacyId);

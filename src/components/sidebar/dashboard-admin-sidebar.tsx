@@ -99,13 +99,13 @@ export function DashboardAdminSidebar(
       <SidebarFooter className="shrink-0 gap-1.5 border-t border-neutral-100/80 p-2 dark:border-neutral-800/80">
         <div
           className={cn(
-            "mx-1 mb-1 flex items-center gap-2 rounded-lg border border-neutral-200/80 bg-neutral-50/80 px-2.5 py-2 text-xs text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900/40 dark:text-neutral-400",
+            "mx-1 mb-1 flex items-center gap-2 rounded-lg border border-primary/15 bg-primary/5 px-2.5 py-2 text-xs text-neutral-600 dark:border-primary/20 dark:bg-primary/10 dark:text-neutral-300",
             dashboardSidebarTokens.collapsedHidden,
           )}
         >
-          <Sparkles className="size-3.5 shrink-0 text-neutral-500" />
+          <Sparkles className="size-3.5 shrink-0 text-primary" />
           <span className="min-w-0 flex-1 leading-snug">
-            <span className="font-medium text-neutral-700 dark:text-neutral-300">
+            <span className="font-medium text-primary">
               Ctrl+K
             </span>{" "}
             global search

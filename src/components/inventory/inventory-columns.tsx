@@ -9,7 +9,7 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
+import { Badge, badgeVariantFromTone } from "@/components/ui/badge";
 import { PRYROX_BRAND_BLUE } from "@/lib/brand/colors";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -39,25 +39,40 @@ export type InventoryTableRow = {
   expiryDate: string;
 };
 
-function getStockStatus(stock: number, minStock: number) {
+function getStockStatus(stock: number, minStock: number): {
+  label: string;
+  variant: ReturnType<typeof badgeVariantFromTone>;
+} {
   if (stock <= minStock)
-    return { label: "Low Stock", variant: "destructive" as const };
+    return { label: "Low Stock", variant: badgeVariantFromTone("danger") };
   if (stock <= minStock * 2)
-    return { label: "Medium", variant: "secondary" as const };
-  return { label: "In Stock", variant: "default" as const };
+    return { label: "Medium", variant: badgeVariantFromTone("warning") };
+  return { label: "In Stock", variant: badgeVariantFromTone("success") };
 }
 
-function getExpiryStatus(expiryDate: string) {
+function getExpiryStatus(expiryDate: string): {
+  label: string;
+  variant: ReturnType<typeof badgeVariantFromTone>;
+} {
   const today = new Date();
   const expiry = new Date(expiryDate);
   const daysToExpiry = Math.ceil(
     (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
   );
   if (daysToExpiry <= 30)
-    return { label: `${daysToExpiry}d`, variant: "destructive" as const };
+    return {
+      label: `${daysToExpiry}d`,
+      variant: badgeVariantFromTone("danger"),
+    };
   if (daysToExpiry <= 60)
-    return { label: `${daysToExpiry}d`, variant: "secondary" as const };
-  return { label: `${daysToExpiry}d`, variant: "outline" as const };
+    return {
+      label: `${daysToExpiry}d`,
+      variant: badgeVariantFromTone("warning"),
+    };
+  return {
+    label: `${daysToExpiry}d`,
+    variant: badgeVariantFromTone("success"),
+  };
 }
 
 export type InventoryColumnsOptions = {

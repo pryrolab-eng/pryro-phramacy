@@ -52,7 +52,8 @@ import { useActivePharmacy } from '@/components/providers/active-pharmacy-provid
 export default function StaffManagePage() {
   const searchParams = useSearchParams()
   const usersQuery = useUsers()
-  const { activePharmacyId, context, isPending: ctxPending } = useActivePharmacy()
+  const { activePharmacyId, context, isPending: ctxPending, hasSnapshot } =
+    useActivePharmacy()
 
   const activeMembership = useMemo(
     () => context.memberships.find((m) => m.pharmacyId === activePharmacyId),
@@ -151,7 +152,10 @@ export default function StaffManagePage() {
     }
   }
 
-  if (usersQuery.isPending || ctxPending) {
+  if (
+    (usersQuery.isPending && !usersQuery.data) ||
+    (ctxPending && !hasSnapshot)
+  ) {
     return <DashboardPageLoading label="Loading staff…" />
   }
 

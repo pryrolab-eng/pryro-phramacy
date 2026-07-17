@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { AlertCircle } from "lucide-react";
 
 const RESOLVE_LINES = [
-  "Preparing your workspace",
-  "Checking your role",
-  "Almost there",
+  "Signing you in",
+  "Loading your pharmacy data",
+  "Preparing dashboard",
 ] as const;
 
 export type AppEntryLoaderPhase = "resolving" | "redirecting" | "error";
@@ -45,8 +46,8 @@ export function AppEntryLoader({
       className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-white px-6"
       role="status"
       aria-live="polite"
-      aria-busy="true"
-      aria-label="Loading your workspace"
+      aria-busy={phase !== "error"}
+      aria-label={phase === "error" ? "Error loading workspace" : "Loading your workspace"}
     >
       <div className="relative z-10 flex w-full max-w-sm flex-col items-center text-center">
         <motion.div
@@ -55,7 +56,13 @@ export function AppEntryLoader({
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.35, ease: "easeOut" }}
         >
-          <Spinner className="size-8 text-neutral-500" />
+          {phase === "error" ? (
+            <div className="size-12 rounded-full bg-red-100 flex items-center justify-center">
+              <AlertCircle className="size-6 text-red-600" />
+            </div>
+          ) : (
+            <Spinner className="size-8 text-neutral-500" />
+          )}
         </motion.div>
 
         <div

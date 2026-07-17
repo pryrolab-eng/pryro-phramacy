@@ -1,7 +1,11 @@
 import { NextRequest } from "next/server";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
+import { resolveIsAppPlatformAdmin } from "@/lib/platform-admin";
 import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
-import { storeListNotificationsSince } from "@/lib/db/notifications-store";
+import {
+  storeListNotificationsSince,
+  storeListPlatformNotificationsSince,
+} from "@/lib/db/notifications-store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,11 +18,23 @@ export async function GET(request: NextRequest) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  let pharmacyId: string;
-  try {
-    pharmacyId = await requireUserPharmacyId(user.id);
-  } catch {
-    return new Response("Pharmacy not found", { status: 404 });
+  const wantPlatform =
+    request.nextUrl.searchParams.get("scope") === "platform";
+
+  if (wantPlatform) {
+    const isPlatformAdmin = await resolveIsAppPlatformAdmin(user.id);
+    if (!isPlatformAdmin) {
+      return new Response("Forbidden", { status: 403 });
+    }
+  }
+
+  let pharmacyId: string | null = null;
+  if (!wantPlatform) {
+    try {
+      pharmacyId = await requireUserPharmacyId(user.id);
+    } catch {
+      return new Response("Pharmacy not found", { status: 404 });
+    }
   }
 
   const encoder = new TextEncoder();
@@ -34,15 +50,18 @@ export async function GET(request: NextRequest) {
         );
       };
 
-      send({ type: "connected", pharmacyId });
+      send({
+        type: "connected",
+        scope: wantPlatform ? "platform" : "pharmacy",
+        pharmacyId,
+      });
 
       const poll = async () => {
         if (closed) return;
         try {
-          const rows = await storeListNotificationsSince(
-            pharmacyId,
-            lastSeen,
-          );
+          const rows = wantPlatform
+            ? await storeListPlatformNotificationsSince(lastSeen)
+            : await storeListNotificationsSince(pharmacyId!, lastSeen);
 
           for (const row of rows) {
             if (row.created_at) {

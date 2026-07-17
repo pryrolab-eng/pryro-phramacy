@@ -14,10 +14,10 @@ export type PlanDistributionRow = {
 };
 
 const PLAN_DOT_CLASS = [
-  "bg-blue-600",
-  "bg-neutral-900 dark:bg-neutral-100",
-  "bg-neutral-400",
-  "bg-neutral-300",
+  "bg-primary",
+  "bg-primary/70",
+  "bg-primary/40",
+  "bg-primary/20",
 ] as const;
 
 function planDotClass(index: number): string {
@@ -72,10 +72,10 @@ export function AdminPlanDistributionPanel({
               value={plan.percentage}
               barClassName={
                 index === 0
-                  ? "bg-blue-600 dark:bg-blue-500"
+                  ? "bg-primary"
                   : index === 1
-                    ? "bg-neutral-900 dark:bg-neutral-100"
-                    : "bg-neutral-300 dark:bg-neutral-600"
+                    ? "bg-primary/70"
+                    : "bg-primary/35"
               }
             />
           </AdminFlatRow>

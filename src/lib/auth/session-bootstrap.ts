@@ -61,12 +61,16 @@ export async function buildMeContextResponse(
     allowedBranchIds,
     permissions,
     mustChangePassword,
-    memberships: ctx.memberships.map((m) => ({
-      pharmacyId: m.pharmacy_id,
-      pharmacyName: m.pharmacy_name,
-      role: m.role,
-      isActive: m.pharmacy_id === ctx.activePharmacyId,
-    })),
+    memberships: ctx.memberships
+      .filter((m): m is typeof m & { pharmacy_id: string } =>
+        Boolean(m.pharmacy_id),
+      )
+      .map((m) => ({
+        pharmacyId: m.pharmacy_id,
+        pharmacyName: m.pharmacy_name,
+        role: m.role,
+        isActive: m.pharmacy_id === ctx.activePharmacyId,
+      })),
   };
 }
 

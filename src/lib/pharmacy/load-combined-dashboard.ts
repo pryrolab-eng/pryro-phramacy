@@ -7,11 +7,49 @@ import {
   storeGetInventoryChart,
 } from "@/lib/db/reports-store";
 import { fetchRecentPosSalesRows } from "@/lib/db/reports";
-import { storeStockAlerts } from "@/lib/db/inventory-store";
+import {
+  storeStockAlerts,
+  type StockAlertItem,
+} from "@/lib/db/inventory-store";
 import { cacheGet, cacheSet } from "@/lib/cache/redis-cache";
-import type { CombinedDashboardData } from "@/lib/http/pharmacy-dashboard";
+import type {
+  CombinedDashboardData,
+  StockAlertRow,
+  StockAlertsResponse,
+} from "@/lib/http/pharmacy-dashboard";
 
 const REDIS_TTL = 300; // 5 minutes
+
+function mapStockAlertItem(item: StockAlertItem): StockAlertRow {
+  const expiry = item.expiry ? new Date(item.expiry) : null;
+  const expiresIn =
+    expiry && !Number.isNaN(expiry.getTime())
+      ? Math.ceil(
+          (expiry.getTime() - Date.now()) / (24 * 60 * 60 * 1000),
+        )
+      : 0;
+
+  return {
+    id: item.id,
+    product: item.name,
+    current_stock: item.quantity ?? 0,
+    min_stock: item.minimum ?? 0,
+    category: item.category,
+    expires_in: expiresIn,
+  };
+}
+
+function mapStockAlerts(alerts: {
+  all: StockAlertItem[];
+  lowStock: StockAlertItem[];
+  expiring: StockAlertItem[];
+}): StockAlertsResponse {
+  return {
+    all: alerts.all.map(mapStockAlertItem),
+    lowStock: alerts.lowStock.map(mapStockAlertItem),
+    expiring: alerts.expiring.map(mapStockAlertItem),
+  };
+}
 
 const EMPTY_DASHBOARD: CombinedDashboardData = {
   stats: {
@@ -70,7 +108,7 @@ export async function loadCombinedDashboardData(
   const data: CombinedDashboardData = {
     stats,
     recentSales,
-    stockAlerts,
+    stockAlerts: mapStockAlerts(stockAlerts),
     salesChart,
     weeklySales,
     categorySales,

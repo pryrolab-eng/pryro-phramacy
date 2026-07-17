@@ -62,7 +62,6 @@ export function PharmacyInsuranceMedicinesPanel({
     queryKey: insuranceProvidersQueryKey,
     queryFn: getInsuranceProviders,
     staleTime: LIST_STALE_MS,
-    placeholderData: (previous) => previous,
   });
 
   const providers = useMemo(() => {
@@ -82,7 +81,6 @@ export function PharmacyInsuranceMedicinesPanel({
     queryFn: () => getInsuranceCoveredMedications(providerId),
     enabled: Boolean(providerId),
     staleTime: LIST_STALE_MS,
-    placeholderData: (previous) => previous,
   });
 
   const patchMutation = useMutation({
@@ -162,6 +160,9 @@ export function PharmacyInsuranceMedicinesPanel({
     [patchMutation, providerId],
   );
 
+  const medsLoading = medsQuery.isPending;
+  const showMedsStats = Boolean(providerId) && (Boolean(medsQuery.data) || !medsLoading);
+
   return (
     <>
       {embedded ? (
@@ -186,28 +187,28 @@ export function PharmacyInsuranceMedicinesPanel({
         />
       )}
 
-      {providerId && (medsQuery.data || !medsQuery.isPending) ? (
+      {showMedsStats ? (
         <DashboardMetricGrid>
           <DashboardStatCard
             label="Covered"
             icon={HeartPulse}
             value={String(coveredCount)}
             hint={`For ${provider?.name ?? "selected insurer"}`}
-            loading={medsQuery.isPending && !medsQuery.data}
+            loading={medsLoading}
           />
           <DashboardStatCard
             label="In catalog"
             icon={Package}
             value={String(medications.length)}
             hint="Active products shown"
-            loading={medsQuery.isPending && !medsQuery.data}
+            loading={medsLoading}
           />
           <DashboardStatCard
             label="Not covered"
             icon={UserX}
             value={String(Math.max(0, medications.length - coveredCount))}
             hint="Patient pays 100% at POS"
-            loading={medsQuery.isPending && !medsQuery.data}
+            loading={medsLoading}
           />
         </DashboardMetricGrid>
       ) : null}

@@ -10,6 +10,7 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import { usePharmacyCategorySalesChart } from "@/hooks/usePharmacyDashboard"
+import type { CategorySalesChartPoint } from "@/lib/http/pharmacy-dashboard"
 
 const chartConfig = {
   sales: { label: "Sales" },
@@ -20,16 +21,25 @@ const chartConfig = {
   other: { label: "Other", color: "#1e40af" },
 } satisfies ChartConfig
 
-export function PharmacyRadialChart() {
-  const chartQuery = usePharmacyCategorySalesChart()
-  const chartData = chartQuery.data ?? []
+type Props = {
+  /** When provided (e.g. from combined dashboard), skip a separate fetch. */
+  data?: CategorySalesChartPoint[]
+  loading?: boolean
+}
+
+export function PharmacyRadialChart({ data, loading }: Props = {}) {
+  const chartQuery = usePharmacyCategorySalesChart({
+    enabled: data === undefined,
+  })
+  const chartData = data ?? chartQuery.data ?? []
+  const isLoading = data !== undefined ? Boolean(loading) : chartQuery.isPending
 
   return (
     <DashboardChartCard
       title="Sales by category"
       description="Category mix from your sales"
       config={chartConfig}
-      loading={chartQuery.isPending}
+      loading={isLoading}
       className="flex flex-col"
       chartClassName="mx-auto aspect-square max-h-[250px]"
       footer={

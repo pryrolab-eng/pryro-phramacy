@@ -40,9 +40,8 @@ import {
 import { FeatureGate } from "@/components/subscription/feature-gate"
 import { InsuranceClaimsReportPanel } from "@/components/reports/insurance-claims-report-panel"
 import {
+  useCombinedReports,
   useInvalidateReports,
-  useReportsInventory,
-  useReportsSales,
 } from "@/hooks/useReports"
 import { useBranchReportScope } from "@/hooks/useBranchReportScope"
 import type { BranchScopeQuery } from "@/lib/pharmacy/branch-scope"
@@ -155,42 +154,38 @@ function ReportsPageInner() {
     return { ...baseScopeQuery, from: from.toISOString(), to: to.toISOString() }
   }, [baseScopeQuery, startDate, endDate, timeRange])
 
-  const salesReportQuery = useReportsSales({ scope: scopeQuery })
-  const inventoryReportQuery = useReportsInventory()
+  const combinedReportsQuery = useCombinedReports({
+    scope: scopeQuery,
+    enabled: reportType !== "insurance",
+  })
   const invalidateReports = useInvalidateReports()
 
-  const reportsData: ReportsData = salesReportQuery.data ?? {
-    dailySales: [],
-    topProducts: [],
-    paymentBreakdown: [],
-    totalSales: 0,
-    totalOrders: 0,
-    activeCustomers: 0,
-  }
+  const reportsData: ReportsData =
+    combinedReportsQuery.data?.salesReport ?? {
+      dailySales: [],
+      topProducts: [],
+      paymentBreakdown: [],
+      totalSales: 0,
+      totalOrders: 0,
+      activeCustomers: 0,
+    }
   const inventoryData: InventoryAlert[] =
-    inventoryReportQuery.data?.inventoryAlerts ?? []
+    combinedReportsQuery.data?.inventoryReport?.inventoryAlerts ?? []
 
   React.useEffect(() => {
-    if (salesReportQuery.isSuccess) {
+    if (combinedReportsQuery.isSuccess) {
       setLastUpdated(new Date())
       setError(null)
     }
-    if (salesReportQuery.isError) {
+    if (combinedReportsQuery.isError) {
       setError("Failed to load reports. Please try again.")
     }
-  }, [salesReportQuery.isSuccess, salesReportQuery.isError])
+  }, [combinedReportsQuery.isSuccess, combinedReportsQuery.isError])
 
   const loading =
     reportType === "insurance"
       ? false
-      : salesReportQuery.isPending || inventoryReportQuery.isPending
-
-  React.useEffect(() => {
-    const interval = setInterval(() => {
-      void invalidateReports()
-    }, 30000)
-    return () => clearInterval(interval)
-  }, [invalidateReports])
+      : combinedReportsQuery.isPending && !combinedReportsQuery.data
 
   const fetchReportsData = () => {
     void invalidateReports()

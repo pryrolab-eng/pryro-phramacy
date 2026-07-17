@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { unstable_cache } from "next/cache";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
 import {
   parseBranchScopeFromRequest,
@@ -16,17 +15,17 @@ import { cacheGet, cacheSet } from "@/lib/cache/redis-cache";
 
 const REDIS_TTL = 300;
 
-async function getCachedReportsData(
-  userId: string,
+async function loadReportsData(
   pharmacyId: string,
   branchId: string | null,
+  range: { from: string; to: string },
 ) {
-  const cacheKey = `reports:${pharmacyId}:${branchId ?? "all"}`;
+  const rangeKey = `${range.from.slice(0, 10)}_${range.to.slice(0, 10)}`;
+  const cacheKey = `reports:${pharmacyId}:${branchId ?? "all"}:${rangeKey}`;
 
   const cached = await cacheGet(cacheKey);
   if (cached) return cached;
 
-  const range = defaultReportRange(30);
   const today = new Date().toISOString().split("T")[0];
   const branchScope = branchId ?? undefined;
 
@@ -48,12 +47,6 @@ async function getCachedReportsData(
   return data;
 }
 
-const getCachedReportsDataCached = unstable_cache(
-  getCachedReportsData,
-  ["pharmacy-reports"],
-  { revalidate: 300, tags: ["pharmacy-reports"] },
-);
-
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser();
@@ -67,11 +60,12 @@ export async function GET(request: NextRequest) {
       scope.branchId,
     );
 
-    const data = await getCachedReportsDataCached(
-      user.id,
-      pharmacyId,
-      branchId,
-    );
+    const range =
+      scope.from && scope.to
+        ? { from: scope.from, to: scope.to }
+        : defaultReportRange(30);
+
+    const data = await loadReportsData(pharmacyId, branchId, range);
 
     return NextResponse.json(data);
   } catch (error) {

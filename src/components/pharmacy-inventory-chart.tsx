@@ -10,24 +10,33 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import { usePharmacyInventoryChart } from "@/hooks/usePharmacyDashboard"
+import type { InventoryChartPoint } from "@/lib/http/pharmacy-dashboard"
 
 const chartConfig = {
   inStock: { label: "In Stock", color: "#3b82f6" },
   lowStock: { label: "Low Stock", color: "#60a5fa" },
 } satisfies ChartConfig
 
-export function PharmacyInventoryChart() {
-  const chartQuery = usePharmacyInventoryChart()
-  const chartData = chartQuery.data ?? []
+type Props = {
+  data?: InventoryChartPoint[]
+  loading?: boolean
+}
+
+export function PharmacyInventoryChart({ data, loading }: Props = {}) {
+  const chartQuery = usePharmacyInventoryChart({
+    enabled: data === undefined,
+  })
+  const chartData = data ?? chartQuery.data ?? []
+  const isLoading = data !== undefined ? Boolean(loading) : chartQuery.isPending
 
   return (
     <DashboardChartCard
       title="Inventory status"
       description="Monthly inventory levels overview"
       config={chartConfig}
-      loading={chartQuery.isPending}
+      loading={isLoading}
       empty={
-        chartData.length === 0 ? (
+        !isLoading && chartData.length === 0 ? (
           <DashboardPanelEmpty
             icon={Package}
             title="No inventory data"

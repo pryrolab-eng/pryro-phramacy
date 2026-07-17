@@ -88,6 +88,10 @@ function PharmacyDashboardContent() {
   const lowStockItems = combinedQuery.data?.stockAlerts?.lowStock ?? []
   const expiringItems = combinedQuery.data?.stockAlerts?.expiring ?? []
   const salesChartData = combinedQuery.data?.salesChart ?? []
+  const categorySalesData = combinedQuery.data?.categorySales ?? []
+  const weeklySalesData = combinedQuery.data?.weeklySales ?? []
+  const inventoryChartData = combinedQuery.data?.inventoryChart ?? []
+  const chartsLoading = combinedQuery.isPending && !combinedQuery.data
 
   // AI page context for suggestions
   const pageContext = useMemo(
@@ -509,14 +513,23 @@ function PharmacyDashboardContent() {
         <TabsContent value="sales" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <SalesChart />
-            <PharmacyRadialChart />
+            <PharmacyRadialChart
+              data={categorySalesData}
+              loading={chartsLoading}
+            />
           </div>
         </TabsContent>
         
         <TabsContent value="inventory" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
-            <PharmacyBarChart />
-            <PharmacyInventoryChart />
+            <PharmacyBarChart
+              data={weeklySalesData}
+              loading={chartsLoading}
+            />
+            <PharmacyInventoryChart
+              data={inventoryChartData}
+              loading={chartsLoading}
+            />
           </div>
         </TabsContent>
         

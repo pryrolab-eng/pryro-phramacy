@@ -45,6 +45,9 @@ export function useInvalidateReports() {
       queryClient.invalidateQueries({ queryKey: [...reportsKeys.all, "sales"] }),
       queryClient.invalidateQueries({ queryKey: reportsKeys.inventory() }),
       queryClient.invalidateQueries({
+        queryKey: [...reportsKeys.all, "combined"],
+      }),
+      queryClient.invalidateQueries({
         queryKey: [...reportsKeys.all, "insurance-claims"],
       }),
     ]);

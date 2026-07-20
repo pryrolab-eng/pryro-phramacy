@@ -268,6 +268,7 @@ export function PosWorkspace(props: PosWorkspaceProps) {
   const cartNeedsScroll = cart.length > POS_CART_SCROLL_AFTER_LINES;
   const [fullscreen, setFullscreen] = useState(false);
   const [compactPayment, setCompactPayment] = useState(false);
+  const [dialogHost, setDialogHost] = useState<HTMLElement | null>(null);
   const sidebarRef = useRef<HTMLElement>(null);
 
   /** Product area was trapping the wheel — pass through to page when list can't scroll. */
@@ -319,7 +320,10 @@ export function PosWorkspace(props: PosWorkspaceProps) {
   useEffect(() => {
     if (!fullscreen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setFullscreen(false);
+      if (event.key !== "Escape") return;
+      // Radix modals (shift, returns, etc.) should receive Escape first.
+      if (document.querySelector('[role="dialog"][data-state="open"]')) return;
+      setFullscreen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     const previousOverflow = document.body.style.overflow;
@@ -988,6 +992,7 @@ export function PosWorkspace(props: PosWorkspaceProps) {
               branchId={activeBranchId}
               showTeamShifts={showTeamShifts}
               shiftRequired
+              dialogContainer={fullscreen ? dialogHost : undefined}
             />
 
             {shiftBlocksSale ? (
@@ -1053,12 +1058,16 @@ export function PosWorkspace(props: PosWorkspaceProps) {
         </div>
         <div
           className={posSurfaces.fullscreenOverlay}
-          role="dialog"
-          aria-modal="true"
+          role="region"
           aria-label="Point of Sale full window"
         >
           {content}
         </div>
+        <div
+          id="pos-dialog-host"
+          ref={setDialogHost}
+          className="pointer-events-none fixed inset-0 z-[130] [&>*]:pointer-events-auto"
+        />
       </>
     );
   }

@@ -31,6 +31,20 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.log
+dev*.log
+
+# local scratch / one-off dumps (do not commit)
+/scratch/
+/admin*.html
+/signin_resp.html
+/admin_headers.txt
+/admin_session_cookie.txt
+/make_session.cjs
+/check_*.js
+/check_*.sql
+/add_*.sql
+/baseline.sql
 
 # local env files
 .env*.local

@@ -1,7 +1,0 @@
-HTTP/1.1 307 Temporary Redirect
-location: /sign-in
-Date: Thu, 16 Jul 2026 17:11:27 GMT
-Connection: keep-alive
-Keep-Alive: timeout=5
-Transfer-Encoding: chunked
-

@@ -32,6 +32,9 @@ export function formatPosExpiryAlertLabel(daysToExpiry: number): string {
   return `Expires in ${daysToExpiry}d`;
 }
 
+/** Portaled modals in full-window POS (overlay is z-[100]). */
+export const POS_MODAL_LAYER_Z = 130;
+
 /** Product catalog pagination sizes (even counts fit the card grid). */
 export const POS_CATALOG_PAGE_SIZES = [10, 16, 20, 24, 30] as const;
 

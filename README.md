@@ -1,365 +1,275 @@
 # Pryrox
 
-> Multi-tenant pharmacy management SaaS built with Next.js, PostgreSQL, and Redis.
-
-Pryrox is a SaaS platform that lets independent pharmacies and pharmacy chains manage inventory, point-of-sale transactions, customer records, prescriptions, insurance claims, staff, and subscription billing from a single tenant-isolated workspace. Each pharmacy is isolated in application logic (active pharmacy context, Prisma queries scoped by `pharmacy_id`), and access inside a pharmacy is gated by a five-tier role system.
+Multi-tenant pharmacy management SaaS: inventory, POS, customers, prescriptions, insurance, staff, branches, reports, and subscription billing — each pharmacy isolated by `pharmacy_id` with role-based access.
 
 ---
 
-## Table of Contents
+## Table of contents
 
-1. [Tech Stack](#tech-stack)
-2. [Prerequisites](#prerequisites)
-3. [Local Setup](#local-setup)
-4. [Environment Variables](#environment-variables)
-5. [User Roles](#user-roles)
-6. [Architecture Overview](#architecture-overview)
-7. [Available Scripts](#available-scripts)
-8. [Project Structure](#project-structure)
-9. [Critical Warnings](#critical-warnings)
-10. [Documentation](#documentation)
+1. [Tech stack](#tech-stack)
+2. [Features](#features)
+3. [Prerequisites](#prerequisites)
+4. [Local setup](#local-setup)
+5. [Environment variables](#environment-variables)
+6. [User roles](#user-roles)
+7. [Architecture](#architecture)
+8. [Scripts](#scripts)
+9. [Project structure](#project-structure)
+10. [Critical warnings](#critical-warnings)
+11. [Documentation](#documentation)
 
 ---
 
-## Tech Stack
+## Tech stack
 
 | Layer | Technology |
 |---|---|
-| Framework | Next.js 14 (App Router), TypeScript, React 18 |
-| Styling | Tailwind CSS, shadcn/ui, Framer Motion, Lucide icons |
-| Charts | Recharts |
-| State management | Zustand |
-| Data fetching | React Query (`@tanstack/react-query`) — no raw `fetch` in `useEffect` |
+| App | **Next.js 16** (App Router), **React 19**, TypeScript |
+| UI | Tailwind CSS, shadcn/ui (Radix), Lucide, Recharts |
+| Client data | TanStack React Query, Zustand |
 | Forms | React Hook Form + Zod |
-| Backend / Database | PostgreSQL via Prisma (Supabase-hosted, used as database only) |
-| Auth | Native JWT (bcryptjs, custom `/api/auth/*` routes — **no** `@supabase` SDK imports) |
-| Payments | Polar (card/international) |
-| Job queue | Redis + BullMQ (email notifications, maintenance alerts) |
-| Export | jsPDF, jspdf-autotable, xlsx, jsbarcode |
-| 2FA | otplib + qrcode |
+| Database | PostgreSQL via **Prisma** (host may be Supabase Postgres — **no** Supabase Auth/SDK) |
+| Auth | Native JWT cookies (`NATIVE_AUTH_ENABLED`, `app_sessions`) |
+| Cache / jobs | Redis (`ioredis`) + BullMQ worker |
+| Analytics | Optional **ClickHouse** (dashboard / sales / reports charts) |
+| Payments | Polar (card / international subscriptions) |
+| Edge gating | `src/proxy.ts` (session + protected routes) |
 
-See [`docs/architecture.md`](docs/architecture.md) for the full architectural breakdown.
+---
+
+## Features
+
+- **Multi-tenant pharmacies** with branches, HQ, and staff assignments
+- **POS** — catalog, cart, payment methods, cashier shifts, hold/void/returns, full-window mode
+- **Inventory** — stock, purchases, transfers, expiry/low-stock alerts, import
+- **Insurance** — providers, formulary / covered meds, claims integrated into checkout
+- **Patients & prescriptions** — clinical queue alongside retail customers
+- **Sales & reports** — history, analytics; Postgres OLTP + optional ClickHouse OLAP
+- **SaaS billing** — plans, entitlements, Polar checkout/webhooks, usage limits
+- **Platform admin** — pharmacies, plans, features, branding, maintenance
+- **Notifications** — in-app list + SSE stream; email via BullMQ + SMTP
+- **Integrations** — Polar, optional RRA/EBM fiscal paths, Cloudinary or local uploads
 
 ---
 
 ## Prerequisites
 
-- **Node.js** ≥ 18.17
-- **npm** ≥ 9
-- **PostgreSQL** 14+ (hosted Supabase or local)
-- **Redis** (for email job queue / maintenance notifications)
-- **SMTP** for sign-up confirmation and password-reset emails
-- A **Polar account** for card/international subscription payments (optional)
+- Node.js ≥ 18.17, npm ≥ 9
+- PostgreSQL 14+ (local Supabase stack or hosted)
+- Redis (email / cache / rate limits when enabled)
+- SMTP for auth and invite emails
+- Docker (optional) for local ClickHouse via `docker-compose.yml`
+- Polar account (optional) for paid subscriptions
 
 ---
 
-## Local Setup
+## Local setup
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/pryrolab-eng/pryro-phramacy.git
 cd pryro-phramacy
 
-# 2. Install dependencies
 npm install
-
-# 3. Configure environment variables
 cp .env.example .env
-# Then open .env and fill in the values (see "Environment Variables" below)
+# Fill DATABASE_URL, AUTH_SECRET, SMTP_*, NEXT_PUBLIC_APP_URL, etc.
 
-# 4. Apply the schema (pick ONE path)
+# Schema — pick one path:
+npx supabase db reset --local   # Docker local DB + seed.sql
+# or: npm run db:sql:push       # push migrations to existing DB
+npm run db:generate
 
-# 4a — Local Postgres + migrations (Supabase CLI reads supabase/migrations/)
-npx supabase db reset --local   # Docker; runs seed.sql
-
-# 4b — Existing database: push migrations only
-# npm run db:sql:push
-
-# 4c — Sync Prisma client after schema changes
-# npm run db:generate
-
-# 5. Start Redis (required for email job queue)
+# Redis (email worker / cache)
 docker run -d --name pryrox-redis -p 6379:6379 redis:7-alpine
-# Then set REDIS_HOST=127.0.0.1 in your .env
 
-# 6. Start the development server + worker
+# Optional analytics
+npm run clickhouse:up
+npm run clickhouse:migrate
+npm run clickhouse:sync
+
+# App + BullMQ worker
 npm run dev:all
 ```
 
-The app will be available at `http://localhost:3000`. The worker processes email jobs in the background.
+App: [http://localhost:3000](http://localhost:3000). UI-only (no worker): `npm run dev`.
 
-> **Note:** `npm run dev:all` uses `concurrently` to run both the Next.js dev server and the BullMQ worker. If you only need the UI without email sending, use `npm run dev`.
+### Seed user (local)
 
----
-
-## Seed Users
-
-After `npx supabase db reset --local`, Supabase runs `supabase/seed.sql`. Currently only the platform admin user exists:
+After `npx supabase db reset --local`, `supabase/seed.sql` creates:
 
 | Email | Password | Role |
 |---|---|---|
-| `abdousentore@gmail.com` | `seedpass123` | Platform superadmin (`is_platform_admin = true`, no pharmacy) |
+| `abdousentore@gmail.com` | `seedpass123` | Platform admin (`is_platform_admin`) |
 
-> **Note:** Previous test users (pharmacy@test.com, pharmacist@test.com, etc.) have been removed. The database is clean with only the admin account.
-
-> **Security:** these accounts exist only for local development. Do not run `seed.sql` against production, and do not reuse `seedpass123` anywhere public.
+Local only — do not seed production or reuse this password publicly.
 
 ---
 
-## Environment Variables
+## Environment variables
 
-A working `.env` file requires the following variables. See [`docs/environment-variables.md`](docs/environment-variables.md) for the full reference.
+See [`.env.example`](.env.example) and [`docs/environment-variables.md`](docs/environment-variables.md).
 
 ### Required
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | PostgreSQL connection string (Prisma) |
-| `NATIVE_AUTH_ENABLED` | Set to `true` (native JWT cookies + SMTP auth) |
-| `AUTH_SECRET` | Secret for signing session JWTs (min 32 characters) |
-| `NEXT_PUBLIC_APP_URL` | Public application URL (used in Polar callbacks and auth emails) |
-| `SMTP_HOST` | SMTP server hostname |
-| `SMTP_PORT` | SMTP server port (usually 587) |
-| `SMTP_USER` | SMTP username |
-| `SMTP_PASS` | SMTP password |
-| `SMTP_FROM` | Sender email address |
+| `DATABASE_URL` | Postgres (Prisma; pooler OK on serverless) |
+| `NATIVE_AUTH_ENABLED` | `true` — native JWT auth |
+| `AUTH_SECRET` | JWT signing secret (≥ 32 chars) |
+| `NEXT_PUBLIC_APP_URL` | Public URL (auth emails, Polar returns) |
+| `SMTP_HOST` / `PORT` / `USER` / `PASS` / `FROM` | Transactional email |
 
-### Payment Gateways
+### Common optional
 
 | Variable | Purpose |
 |---|---|
-| `POLAR_ACCESS_TOKEN` | Polar organization access token (`polar_pat_...`) |
-| `POLAR_WEBHOOK_SECRET` | Polar webhook secret (`whsec_...`) |
-| `POLAR_SERVER` | `sandbox` (dev) or `production` |
+| `REDIS_URL` or `REDIS_HOST` / `PORT` | Cache, queue, rate limits |
+| `POLAR_*` | Subscription checkout + webhooks |
+| `CRON_SECRET` | Auth for `/api/cron/*` (e.g. ClickHouse sync) |
+| `CLICKHOUSE_*` | Analytics reads; unset → Postgres-only charts |
+| `CLOUDINARY_*` / `UPLOAD_DIR` | Logos & uploads |
+| `GOOGLE_CLIENT_ID` / `SECRET` | Google OAuth |
+| `NVIDIA_*` | Optional AI drug-safety features |
+| `ENTITLEMENTS_ENFORCE` | Plan feature gates (default on) |
 
-### Redis (for email job queue)
-
-| Variable | Purpose |
-|---|---|
-| `REDIS_HOST` | Redis host (default `127.0.0.1` for local Docker) |
-| `REDIS_PORT` | Redis port (default `6379`) |
-| `REDIS_PASSWORD` | Redis password (optional for local) |
-
-### Optional
-
-| Variable | Purpose |
-|---|---|
-| `CLOUDINARY_CLOUD_NAME` | Cloudinary CDN for pharmacy logos |
-| `CLOUDINARY_API_KEY` | Cloudinary API key |
-| `CLOUDINARY_API_SECRET` | Cloudinary API secret |
-| `CRON_SECRET` | Auth token for `/api/cron/*` (external scheduler e.g. cron-job.org) |
-| `POLAR_CHECKOUT_CURRENCY` | Checkout currency (default `usd`) |
-| `POLAR_RWF_PER_USD` | RWF/USD rate for price conversion (default `1300`) |
-
-> **Security:** never commit `.env`. It is already listed in `.gitignore`. Use `.env.example` as the template you commit.
+Never commit `.env`.
 
 ---
 
-## User Roles
+## User roles
 
-### Database Model
+No separate `roles` table. Access is:
 
-There is **no** `roles` table. Application access is modeled as follows:
-
-| Concept | PostgreSQL object | Notes |
-|---|---|---|
-| Allowed role labels | Enum type **`public.user_role`** | Values: `admin`, `pharmacy_owner`, `pharmacist`, `cashier`, `staff` |
-| Tenant membership | **`public.pharmacy_users`** column **`role`** | One active row per user per pharmacy |
-| Platform operator | **`public.users`** column **`is_platform_admin`** | Superadmin UI; not stored in `pharmacy_users` |
-| Reporting (read-only) | **`public.user_roles_view`** | Denormalized view, not a table |
-
-### Behavior
-
-| Role | Access scope |
+| Concept | Where |
 |---|---|
-| `superadmin` (UI) | Platform-wide. Manages all pharmacies, categories, insurance providers, and subscription plans. |
-| `pharmacy_owner` | Tenant admin for a single pharmacy. Manages staff, branches, settings, subscription, branding, API keys. |
-| `pharmacist` | Clinical access. Operates prescription queue, inventory, POS, and customer records. |
-| `cashier` | POS-only access. Can run sales but not modify inventory, staff, or settings. |
-| `staff` | Limited read access. General employees who need visibility without write permissions. |
+| Role enum | `public.user_role` — `admin`, `pharmacy_owner`, `pharmacist`, `cashier`, `staff` |
+| Membership | `pharmacy_users.role` per pharmacy |
+| Platform operator | `users.is_platform_admin` |
+
+| Role | Scope |
+|---|---|
+| Platform admin | All pharmacies, plans, platform settings |
+| `pharmacy_owner` | Tenant admin: staff, branches, billing, branding |
+| `pharmacist` | Clinical + inventory + POS |
+| `cashier` | POS-focused (shifts, sales) |
+| `staff` | Limited visibility |
 
 ---
 
-## Architecture Overview
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Browser / Client                         │
-│  Next.js 14 App Router (React Server + Client Components)       │
-│  Tailwind CSS · shadcn/ui · Recharts · Framer Motion            │
-│  React Query for all data fetching                              │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ HTTPS
-┌────────────────────────────▼────────────────────────────────────┐
-│                    Next.js Server (Vercel / Node)               │
-│                                                                 │
-│  middleware.ts            ──► Native JWT session + route guards │
-│  src/app/api/**           ──► Route Handlers (REST-style API)   │
-│  src/app/(dashboard)/**   ──► Server + Client page components   │
-│  src/app/(auth)/**        ──► Sign-in, Sign-up, 2FA, Reset      │
-└──────────┬──────────────────────────────────────┬───────────────┘
-           │ Prisma (DATABASE_URL)                │ fetch (server)
-┌──────────▼──────────────┐           ┌───────────▼───────────────┐
-│   PostgreSQL            │           │   Payment Gateway         │
-│  · Application tables   │           │   Polar (Card/Intl)       │
-│  · Native auth tables   │           └───────────────────────────┘
-│  · app_sessions         │
-└─────────────────────────┘
-┌─────────────────────────┐
-│   Redis + BullMQ        │
-│  · Email job queue      │
-│  · Maintenance alerts   │
-│  · Background worker    │
-└─────────────────────────┘
+Browser (React Query → /api/*)
+        │
+        ▼
+Next.js 16 (Node / Vercel)
+  src/proxy.ts          session + route guards
+  src/app/api/**        Route Handlers (~200 REST-style endpoints)
+  src/lib/db/*          Prisma stores (preferred data layer)
+  src/lib/queue         BullMQ jobs
+        │
+        ├── PostgreSQL (Prisma / SQL migrations under supabase/migrations)
+        ├── Redis (cache, queues, optional rate limits)
+        ├── ClickHouse (optional analytics)
+        └── Polar / SMTP / Cloudinary
 ```
 
-**Request flow:** A client component calls `fetch('/api/...')` → a Route Handler verifies the session with `getAuthUser()` → it reads/writes via Prisma scoped to the active pharmacy → JSON is returned and the client re-renders.
+**Data path:** Client hook → `src/lib/http/*` → Route Handler → `getAuthUser()` → pharmacy-scoped Prisma store → JSON.
 
-**Email flow:** API enqueues job → BullMQ worker picks up → sends via SMTP (rate-limited, 50 concurrent).
-
-Full details in [`docs/architecture.md`](docs/architecture.md).
+**Prisma-first:** New and touched server code uses `@/lib/db/prisma` and store modules. Do not add `@supabase/*` SDK usage; Supabase (if used) is Postgres hosting + SQL migrations only.
 
 ---
 
-## Available Scripts
+## Scripts
 
 | Command | Purpose |
 |---|---|
-| `npm run dev` | Start Next.js dev server on `http://localhost:3000` |
-| `npm run dev:all` | Start dev server + BullMQ worker concurrently |
-| `npm run worker` | Start the BullMQ email worker standalone |
-| `npm run build` | Create a production build |
-| `npm start` | Start the production server |
-| `npm run lint` | Run `next lint` |
-| `npm run db:generate` | Regenerate Prisma client |
-| `npm run db:push` | Push Prisma schema to database |
-| `npm run db:studio` | Open Prisma Studio |
-| `npm run db:sql:push` | Push Supabase SQL migrations |
-| `npm run db:sql:reset` | Reset local Supabase database |
+| `npm run dev` | Next.js dev (webpack) |
+| `npm run dev:turbo` | Next.js with Turbopack |
+| `npm run dev:all` | Dev server + BullMQ worker |
+| `npm run worker` | Worker only |
+| `npm run build` / `start` | Production build / serve |
+| `npm run lint` | ESLint |
+| `npm run db:generate` | Prisma client |
+| `npm run db:sql:push` | Apply Supabase SQL migrations |
+| `npm run db:sql:reset` | Reset local Supabase DB |
+| `npm run db:studio` | Prisma Studio |
+| `npm run db:seed:demo` | Demo pharmacy seed script |
+| `npm run clickhouse:up` / `down` | Local ClickHouse Docker |
+| `npm run clickhouse:migrate` / `sync` / `ping` | CH schema + backfill |
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
 pryrox/
 ├── src/
 │   ├── app/
-│   │   ├── (auth)/              # Sign-in, sign-up, forgot password, verify email, 2FA
-│   │   ├── (dashboard)/         # Role-based dashboards (superadmin, pharmacy-owner, etc.)
-│   │   ├── api/                 # REST-style Route Handlers
-│   │   │   ├── admin/           # Admin settings, maintenance, API keys
-│   │   │   ├── auth/            # Native JWT auth (sign-in, sign-up, 2FA, OAuth)
-│   │   │   ├── billing/         # Billing and payment processing
-│   │   │   ├── entitlements/    # Feature access / plan enforcement
-│   │   │   ├── me/              # Current user context, profile
-│   │   │   ├── polar/           # Polar checkout, webhooks, status polling
-│   │   │   ├── saas/            # Subscription CRUD, invoices, plans
-│   │   │   ├── staff/           # Staff management, invites
-│   │   │   └── subscriptions/   # Plan changes, upgrades, downgrades
-│   │   └── page.tsx             # Public landing page
-│   ├── components/
-│   │   ├── admin/               # Admin settings panels, dialogs
-│   │   ├── auth/                # Auth forms (sign-in, sign-up, forgot-password)
-│   │   ├── billing/             # Billing status badge, invoice rows
-│   │   ├── dashboard/           # Dashboard shells, cards, grids, tables
-│   │   ├── subscription/        # Plan cards, checkout dialogs, upgrade banners
-│   │   └── ui/                  # shadcn/ui components
-│   ├── hooks/                   # Custom React hooks (React Query wrappers)
+│   │   ├── (auth)/            # Sign-in, sign-up, 2FA, password reset
+│   │   ├── (dashboard)/       # Pharmacy + admin dashboards (POS, inventory, …)
+│   │   ├── (admin)/           # Platform admin surfaces
+│   │   ├── api/               # Route Handlers (auth, pos, inventory, saas, …)
+│   │   ├── onboarding/        # Tenant onboarding
+│   │   └── payment/           # Checkout success / return
+│   ├── components/            # UI (pos, dashboard, subscription, ui, …)
+│   ├── hooks/                 # React Query hooks
 │   ├── lib/
-│   │   ├── auth/                # JWT, API key hashing, session management
-│   │   ├── billing/             # Format billing, limit display
-│   │   ├── db/                  # Prisma store functions (subscriptions, payments)
-│   │   ├── email/               # Email templates (maintenance, staff invites)
-│   │   ├── polar.ts             # Polar client
-│   │   ├── platform-settings.ts # Platform settings helpers
-│   │   ├── polar/               # Polar client, fulfillment, checkout errors
-│   │   ├── queue/               # Redis connection, BullMQ queue, worker
-│   │   └── subscription/        # Orchestrator, access blocks, lifecycle, match plans
-│   ├── store/                   # Zustand stores
-│   └── types/                   # Shared TypeScript types
-├── prisma/
-│   └── schema.prisma            # Database schema
-├── supabase/
-│   └── migrations/              # SQL migration history
-├── docs/                        # Project documentation
-├── middleware.ts                 # Session refresh + protected-path enforcement
-├── tailwind.config.ts
-└── tsconfig.json
+│   │   ├── auth/              # JWT sessions, bootstrap
+│   │   ├── db/                # Prisma + domain stores
+│   │   ├── http/              # Browser API clients
+│   │   ├── queue/             # BullMQ worker
+│   │   ├── cache/             # Redis cache helpers
+│   │   ├── clickhouse/        # Optional analytics client
+│   │   └── subscription/      # Entitlements & lifecycle
+│   ├── store/                 # Zustand
+│   └── proxy.ts               # Edge session / route protection
+├── prisma/schema.prisma
+├── supabase/migrations/       # Canonical SQL history
+├── clickhouse/                # Local CH init
+├── scripts/                   # Ops / seed / ClickHouse helpers
+├── docs/                      # Architecture & module docs
+├── docker-compose.yml         # ClickHouse
+└── .env.example
 ```
 
 ---
 
-## Critical Warnings
+## Critical warnings
 
-### Do NOT use `prisma db push --accept-data-loss`
+### Do not use `prisma db push --accept-data-loss`
 
-This command **destroyed all data** in the database. Never use it. Use `npm run db:sql:push` (Supabase SQL migrations) or `prisma db push` without `--accept-data-loss`.
+It can wipe production data. Prefer `npm run db:sql:push` (SQL migrations) or careful `prisma db push` without data-loss flags.
 
-### Supabase is PostgreSQL only
+### Supabase = Postgres only
 
-Supabase is used **only** as a hosted PostgreSQL database. There are **zero** `@supabase` SDK imports anywhere in the codebase. Auth is fully native (bcryptjs, custom JWT). Do not add Supabase SDK dependencies.
+Zero `@supabase` SDK imports. Auth is native JWT. Migrations live under `supabase/migrations/`; keep `prisma/schema.prisma` in sync.
 
-### `hashApiKeySecret` is now async
+### Redis for email / worker
 
-Uses Web Crypto API (`crypto.subtle.digest`) instead of Node.js `createHash`. All callers must `await` it.
-
-### `require()` in ESM context
-
-`tailwind.config.ts` uses ESM imports. Do not use `require()` — it will crash with `ReferenceError: require is not defined`.
+Without Redis, the BullMQ worker cannot send maintenance / invite mail. Set `REDIS_HOST=127.0.0.1` (or `REDIS_URL`) when using `npm run worker` / `dev:all`.
 
 ### Pending subscriptions
 
-A `pending_payment` subscription is **not** an active plan. It should:
-- Block dashboard access (via `accessBlockReason`)
-- Show a "Pay now" banner on the billing page
-- **Never** show as "Current plan" with a disabled button
-- **Never** block the user from selecting a different plan
+A `pending_payment` plan is not active: block dashboard via access reasons, show pay CTA, and never treat it as the current paid plan.
 
-### Redis is required for email
+### ClickHouse is optional
 
-Without Redis running, the BullMQ worker cannot process email jobs (maintenance notifications, staff invites). Set `REDIS_HOST=127.0.0.1` in `.env` and run `docker run -d --name pryrox-redis -p 6379:6379 redis:7-alpine`.
+If `CLICKHOUSE_URL` is unset, analytics fall back to Postgres. Local: `npm run clickhouse:up` then migrate/sync.
 
 ---
 
 ## Documentation
 
-All project documentation lives under [`docs/`](docs/) and renders directly on GitHub.
-
-### Core references
-
-| Document | What it covers |
+| Doc | Topic |
 |---|---|
-| [`docs/architecture.md`](docs/architecture.md) | System architecture, data flow, role-based routing |
-| [`docs/database.md`](docs/database.md) | All tables, columns, foreign keys, RLS policies |
-| [`docs/api.md`](docs/api.md) | All API route groups, HTTP methods, auth requirements |
-| [`docs/environment-variables.md`](docs/environment-variables.md) | Complete env var reference |
-| [`docs/feature-status.md`](docs/feature-status.md) | Working / partial / broken status for every feature |
-| [`docs/entitlements.md`](docs/entitlements.md) | Feature gating and plan enforcement |
-| [`docs/subscription-lifecycle.md`](docs/subscription-lifecycle.md) | Subscription states, transitions, access blocks |
-
-### Module documentation
-
-Each major feature module has its own document under [`docs/modules/`](docs/modules/):
-
-- [Authentication & 2FA](docs/modules/authentication.md)
-- [Superadmin Dashboard](docs/modules/superadmin-dashboard.md)
-- [Admin Dashboard](docs/modules/admin-dashboard.md)
-- [Pharmacy Owner Dashboard](docs/modules/pharmacy-owner-dashboard.md)
-- [Pharmacist Dashboard](docs/modules/pharmacist-dashboard.md)
-- [Inventory Management](docs/modules/inventory.md)
-- [Point of Sale (POS)](docs/modules/pos.md)
-- [Sales History](docs/modules/sales.md)
-- [Customer Management](docs/modules/customers.md)
-- [Patients & Prescriptions](docs/modules/patients-prescriptions.md)
-- [Insurance Management](docs/modules/insurance.md)
-- [Staff Management](docs/modules/staff-management.md)
-- [Subscription & Billing](docs/modules/subscription-billing.md)
-- [Settings](docs/modules/settings.md)
-- [Reports](docs/modules/reports.md)
-- [Branches](docs/modules/branches.md)
-- [Realtime Updates](docs/modules/realtime-updates.md)
-- [Internationalization](docs/modules/internationalization.md)
+| [`docs/architecture.md`](docs/architecture.md) | System design |
+| [`docs/database.md`](docs/database.md) | Schema overview |
+| [`docs/api.md`](docs/api.md) | API route groups |
+| [`docs/environment-variables.md`](docs/environment-variables.md) | Full env reference |
+| [`docs/feature-status.md`](docs/feature-status.md) | Feature readiness |
+| [`docs/entitlements.md`](docs/entitlements.md) | Plan gating |
+| [`docs/subscription-lifecycle.md`](docs/subscription-lifecycle.md) | Billing states |
+| [`docs/modules/`](docs/modules/) | Per-feature modules (POS, inventory, insurance, …) |
 
 ---
 

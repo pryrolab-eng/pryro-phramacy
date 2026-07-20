@@ -4,9 +4,9 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
+  DashboardButton,
   DashboardDialogContent,
   DashboardDialogHeader,
   DashboardDialogTitle,
@@ -28,12 +28,15 @@ type Props = {
   showTeamShifts?: boolean;
   /** Block sales until the current user opens a shift. */
   shiftRequired?: boolean;
+  /** Mount dialogs in this element (full-window POS layer above z-100). */
+  dialogContainer?: HTMLElement | null;
 };
 
 export function PosShiftPanel({
   branchId,
   showTeamShifts = false,
   shiftRequired = true,
+  dialogContainer,
 }: Props) {
   const shiftQuery = useCashierShift(branchId);
   const teamQuery = useTeamOpenCashierShifts(branchId, showTeamShifts);
@@ -50,6 +53,24 @@ export function PosShiftPanel({
   const shiftOpen = Boolean(shift);
   const busy = openMutation.isPending || closeMutation.isPending;
 
+  const expectedCash = Number(
+    shift?.expected_cash ??
+      Number(shift?.opening_cash ?? 0) + Number(shift?.liveCashSales ?? 0),
+  );
+
+  const beginOpenShift = () => {
+    if (busy || !branchId) return;
+    setOpeningCash("0");
+    setOpenDialog(true);
+  };
+
+  const beginCloseShift = () => {
+    if (busy || !shift) return;
+    setActualCash(String(expectedCash));
+    setCloseNotes("");
+    setCloseDialog(true);
+  };
+
   const openShift = async () => {
     if (!branchId) return;
     try {
@@ -59,7 +80,6 @@ export function PosShiftPanel({
       });
       setOpenDialog(false);
       toast.success("Shift opened");
-      void shiftQuery.refetch();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not open shift");
     }
@@ -80,28 +100,9 @@ export function PosShiftPanel({
         duration: 8000,
       });
       setCloseDialog(false);
-      void shiftQuery.refetch();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not close shift");
     }
-  };
-
-  const onToggle = (checked: boolean) => {
-    if (busy) return;
-    if (checked) {
-      setOpeningCash("0");
-      setOpenDialog(true);
-      return;
-    }
-    if (!shift) return;
-    setActualCash(
-      String(
-        shift.expected_cash ??
-          Number(shift.opening_cash) + Number(shift.liveCashSales ?? 0),
-      ),
-    );
-    setCloseNotes("");
-    setCloseDialog(true);
   };
 
   if (!branchId) {
@@ -120,22 +121,34 @@ export function PosShiftPanel({
       )}
     >
       <div className="flex items-center gap-2">
-        <Label
-          htmlFor="pos-cashier-shift"
-          className="min-w-0 flex-1 cursor-pointer text-xs font-medium text-neutral-700 dark:text-neutral-200"
-        >
-          Cashier shift
-          <span className="ml-1.5 font-normal text-neutral-500">
-            {shiftOpen ? "Open" : "Closed"}
-          </span>
-        </Label>
-        <Switch
-          id="pos-cashier-shift"
-          checked={shiftOpen}
-          disabled={busy || shiftQuery.isLoading}
-          onCheckedChange={onToggle}
-          aria-label={shiftOpen ? "Close cashier shift" : "Open cashier shift"}
-        />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-neutral-700 dark:text-neutral-200">
+            Cashier shift
+            <span className="ml-1.5 font-normal text-neutral-500">
+              {shiftQuery.isLoading ? "…" : shiftOpen ? "Open" : "Closed"}
+            </span>
+          </p>
+        </div>
+        {shiftOpen ? (
+          <DashboardButton
+            size="sm"
+            className="h-7 shrink-0 px-2 text-xs"
+            disabled={busy || shiftQuery.isLoading}
+            onClick={beginCloseShift}
+          >
+            Close shift
+          </DashboardButton>
+        ) : (
+          <DashboardButton
+            tone="primary"
+            size="sm"
+            className="h-7 shrink-0 px-2 text-xs"
+            disabled={busy || shiftQuery.isLoading}
+            onClick={beginOpenShift}
+          >
+            Open shift
+          </DashboardButton>
+        )}
       </div>
 
       {shift ? (
@@ -147,14 +160,7 @@ export function PosShiftPanel({
             {Number(shift.liveTotalSales ?? shift.total_sales ?? 0).toLocaleString()}{" "}
             RWF
           </p>
-          <p>
-            Cash:{" "}
-            {Number(
-              shift.expected_cash ??
-                Number(shift.opening_cash) + Number(shift.liveCashSales ?? 0),
-            ).toLocaleString()}{" "}
-            RWF
-          </p>
+          <p>Cash: {expectedCash.toLocaleString()} RWF</p>
         </div>
       ) : null}
 
@@ -186,17 +192,30 @@ export function PosShiftPanel({
       ) : null}
 
       <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-        <DashboardDialogContent className="sm:max-w-sm">
+        <DashboardDialogContent className="sm:max-w-sm" portalContainer={dialogContainer}>
           <DashboardDialogHeader>
             <DashboardDialogTitle>Open shift</DashboardDialogTitle>
+            <DashboardDialogDescription>
+              Enter the opening float, then start the shift.
+            </DashboardDialogDescription>
           </DashboardDialogHeader>
           <DashboardDialogBody className="space-y-3">
             <div className="space-y-1">
-              <Label>Opening cash (RWF)</Label>
+              <Label htmlFor="pos-opening-cash">Opening cash (RWF)</Label>
               <Input
+                id="pos-opening-cash"
                 type="number"
+                min={0}
+                step="1"
+                autoFocus
                 value={openingCash}
                 onChange={(e) => setOpeningCash(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void openShift();
+                  }
+                }}
               />
             </div>
           </DashboardDialogBody>
@@ -211,26 +230,30 @@ export function PosShiftPanel({
       </Dialog>
 
       <Dialog open={closeDialog} onOpenChange={setCloseDialog}>
-        <DashboardDialogContent className="sm:max-w-sm">
+        <DashboardDialogContent className="sm:max-w-sm" portalContainer={dialogContainer}>
           <DashboardDialogHeader>
             <DashboardDialogTitle>Close shift</DashboardDialogTitle>
             <DashboardDialogDescription>
-              Expected:{" "}
-              {Number(
-                shift?.expected_cash ??
-                  Number(shift?.opening_cash ?? 0) +
-                    Number(shift?.liveCashSales ?? 0),
-              ).toLocaleString()}{" "}
-              RWF
+              Expected cash in drawer: {expectedCash.toLocaleString()} RWF
             </DashboardDialogDescription>
           </DashboardDialogHeader>
           <DashboardDialogBody className="space-y-3">
             <div className="space-y-1">
-              <Label>Actual cash (RWF)</Label>
+              <Label htmlFor="pos-actual-cash">Actual cash (RWF)</Label>
               <Input
+                id="pos-actual-cash"
                 type="number"
+                min={0}
+                step="1"
+                autoFocus
                 value={actualCash}
                 onChange={(e) => setActualCash(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void closeShift();
+                  }
+                }}
               />
             </div>
             <Input

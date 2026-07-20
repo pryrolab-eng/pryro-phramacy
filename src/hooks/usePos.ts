@@ -191,7 +191,8 @@ export function useCashierShift(branchId: string | null) {
     queryKey: posKeys.shift(branchId),
     queryFn: () => getCurrentCashierShift(branchId!),
     enabled: Boolean(branchId),
-    refetchInterval: 60_000,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -203,7 +204,8 @@ export function useTeamOpenCashierShifts(
     queryKey: posKeys.teamOpenShifts(branchId),
     queryFn: () => getTeamOpenCashierShifts(branchId!),
     enabled: Boolean(branchId) && enabled,
-    refetchInterval: 60_000,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 }
 

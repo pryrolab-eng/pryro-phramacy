@@ -177,3 +177,9 @@ body[data-pos-fullscreen] [role="listbox"],
 body[data-pos-fullscreen] [role="menu"] {
   z-index: 110 !important;
 }
+
+/* Radix dialog portals above full-window POS (z-100) */
+body[data-pos-fullscreen] #pos-dialog-host [data-radix-dialog-overlay],
+body[data-pos-fullscreen] #pos-dialog-host [role="dialog"][data-state="open"] {
+  z-index: 130 !important;
+}

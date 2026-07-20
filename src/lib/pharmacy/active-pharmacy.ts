@@ -66,7 +66,11 @@ export async function resolveActivePharmacyId(
 export async function resolveActivePharmacyContext(
   userId: string,
 ): Promise<ActivePharmacyContext> {
-  const memberships = await loadMemberships(userId);
+  const [memberships, userRow] = await Promise.all([
+    loadMemberships(userId),
+    storeGetUserActiveContext(userId),
+  ]);
+
   if (memberships.length === 0) {
     return {
       activePharmacyId: null,
@@ -75,8 +79,6 @@ export async function resolveActivePharmacyContext(
       memberships: [],
     };
   }
-
-  const userRow = await storeGetUserActiveContext(userId);
 
   let activePharmacyId = userRow?.active_pharmacy_id ?? null;
   let activeBranchId = userRow?.active_branch_id ?? null;

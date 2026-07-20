@@ -12,8 +12,8 @@ import { entitlementsKeys } from "@/lib/http/entitlements";
 import { staffUsersQueryKey } from "@/lib/http/staff";
 import type { SessionBootstrapPayload } from "@/lib/auth/session-bootstrap-types";
 
-/** Abort and offer retry if bootstrap takes too long. */
-const MAX_WAIT_MS = 20_000;
+/** Abort and offer retry if bootstrap takes too long (dev cold-compile can exceed 20s). */
+const MAX_WAIT_MS = 60_000;
 
 type Phase = "resolving" | "set-password" | "redirecting" | "error";
 

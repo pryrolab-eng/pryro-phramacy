@@ -34,14 +34,16 @@ const EMPTY: PharmacyEntitlementsSnapshot = {
   featureLabels: {},
 };
 
+const ENTITLEMENTS_STALE_MS = 5 * 60 * 1000;
+
 export function usePharmacyEntitlements(options?: { enabled?: boolean }) {
   const query = useQuery({
     queryKey: entitlementsKeys.pharmacy(),
     queryFn: getPharmacyEntitlementsSnapshot,
     enabled: options?.enabled ?? true,
-    staleTime: 30 * 1000,
-    refetchOnWindowFocus: true,
-    refetchInterval: 60 * 1000,
+    staleTime: ENTITLEMENTS_STALE_MS,
+    refetchOnWindowFocus: false,
+    refetchInterval: ENTITLEMENTS_STALE_MS,
     refetchIntervalInBackground: false,
     /** Keep last snapshot visible while session refetches on reload/focus. */
     placeholderData: (previousData) => previousData,

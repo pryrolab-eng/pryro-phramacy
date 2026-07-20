@@ -18,7 +18,7 @@ export function useRealtimeUpdates(onUpdate: (update: RealtimeUpdate) => void) {
   const query = useQuery({
     queryKey: realtimeKeys.updates(),
     queryFn: getRealtimeUpdates,
-    refetchInterval: 30_000,
+    refetchInterval: 90_000,
     refetchIntervalInBackground: false,
   });
 

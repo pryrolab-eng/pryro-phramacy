@@ -3,10 +3,8 @@
 import Link from 'next/link'
 import { useCallback, useMemo, useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
 import {
   useCombinedPharmacyDashboard,
-  useInvalidatePharmacyDashboard,
   useCreatePharmacistMutation,
   type PharmacyDashboardStats,
 } from '@/hooks'
@@ -80,8 +78,6 @@ function PharmacyDashboardContent() {
     scope: scopeQuery,
     scopeDays: days,
   })
-  const { invalidateStats, invalidateRecentSales, invalidateStockAlerts } =
-    useInvalidatePharmacyDashboard()
 
   const localStats = combinedQuery.data?.stats ?? EMPTY_STATS
   const recentSales = combinedQuery.data?.recentSales ?? []
@@ -112,21 +108,6 @@ function PharmacyDashboardContent() {
 
   // Only block UI when we have nothing to show (bootstrap/cache miss).
   const overviewLoading = combinedQuery.isPending && !combinedQuery.data
-
-  useRealtimeUpdates(
-    useCallback(
-      (update) => {
-        if (update.type === 'inventory_update') {
-          void invalidateStockAlerts()
-        }
-        if (update.type === 'new_sale') {
-          void invalidateStats()
-          void invalidateRecentSales()
-        }
-      },
-      [invalidateStats, invalidateRecentSales, invalidateStockAlerts],
-    ),
-  )
 
   const [isAddingPharmacist, setIsAddingPharmacist] = useState(false)
   const [newPharmacist, setNewPharmacist] = useState({

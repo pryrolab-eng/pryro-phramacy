@@ -1,10 +1,9 @@
 'use client'
 
 import { useState, useEffect, useMemo, Suspense } from 'react'
-import { useSearchParams, useRouter, usePathname } from 'next/navigation'
+import { useSearchParams, usePathname } from 'next/navigation'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
 import { isHeadquartersBranch } from '@/lib/pharmacy/branch-hq'
-import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
 import { CategorySelect } from '@/components/catalog/category-select'
 import type { CategoryCatalogItem } from '@/lib/pharmacy/category-catalog'
 import {
@@ -69,7 +68,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
-import { Package, Plus, AlertTriangle, Calendar, Upload, Download, QrCode, TrendingUp } from 'lucide-react'
+import { Package, Plus, AlertTriangle, Calendar, Upload, Download, QrCode, TrendingUp, Loader2 } from 'lucide-react'
 import {
   inventoryColumns,
   type InventoryTableRow,
@@ -94,6 +93,7 @@ import {
 import { parseExcelFile } from '@/lib/import/parse-excel'
 import { downloadImportTemplate } from '@/lib/import/templates'
 import { PharmacyInsuranceMedicinesPanel } from '@/components/pharmacy/pharmacy-insurance-medicines-panel'
+import { replaceUrlShallow } from '@/lib/navigation/shallow-url'
 import JsBarcode from 'jsbarcode'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar } from 'recharts'
 import { useAiPageContext } from '@/components/ai-panel'
@@ -158,7 +158,6 @@ function toInventoryItem(row: InventoryListRow): InventoryItem {
 
 export default function InventoryPage() {
   const searchParams = useSearchParams()
-  const router = useRouter()
   const pathname = usePathname()
   const { can } = usePharmacyEntitlements()
   const { activeBranchId } = useActivePharmacy()
@@ -185,7 +184,9 @@ export default function InventoryPage() {
   const { inventory, setInventory } = usePharmacyStore()
   const combinedQuery = useCombinedInventory({ branchId: activeBranchId })
   const inventoryQuery = { data: combinedQuery.data?.inventory, isPending: combinedQuery.isPending }
-  const analyticsQuery = useInventoryAnalytics()
+  const analyticsQuery = useInventoryAnalytics({
+    enabled: activeTab === 'analytics' && showAnalyticsTab,
+  })
   const suppliersQuery = useInventorySuppliers()
   const categoriesQuery = useInventoryCategories()
   const invalidateInventory = useInvalidateInventory()
@@ -243,6 +244,7 @@ export default function InventoryPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [productToDelete, setProductToDelete] = useState<string | null>(null)
   const [isEditingProduct, setIsEditingProduct] = useState(false)
+  const [isSavingEditProduct, setIsSavingEditProduct] = useState(false)
   const [editProduct, setEditProduct] = useState<InventoryItem | null>(null)
   const [addInsuranceDraft, setAddInsuranceDraft] = useState<InsuranceCoverageDraft>(
     () => emptyInsuranceCoverageDraft(),
@@ -294,14 +296,9 @@ export default function InventoryPage() {
     else params.set('tab', value)
     if (value !== 'insurance') params.delete('import')
     const qs = params.toString()
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+    replaceUrlShallow(qs ? `${pathname}?${qs}` : pathname)
   }
 
-  useRealtimeUpdates((update) => {
-    if (update.type === 'inventory_update') {
-      void invalidateInventory.invalidateAll()
-    }
-  })
 
   const handleAddProduct = async () => {
     try {
@@ -771,7 +768,8 @@ export default function InventoryPage() {
   }
 
   const handleEditProduct = async () => {
-    if (!editProduct) return
+    if (!editProduct || isSavingEditProduct) return
+    setIsSavingEditProduct(true)
     try {
       await updateMutation.mutateAsync({
         id: editProduct.id,
@@ -816,6 +814,8 @@ export default function InventoryPage() {
           error instanceof Error ? error.message : "Failed to update product",
         variant: "destructive",
       })
+    } finally {
+      setIsSavingEditProduct(false)
     }
   }
 
@@ -1292,11 +1292,13 @@ export default function InventoryPage() {
 
         {canInsurance ? (
           <TabsContent value="insurance" className="space-y-4">
-            <FeatureGate featureKey="pos.insurance">
-              <Suspense fallback={<DashboardPageLoading label="Loading insurance coverage…" />}>
-                <PharmacyInsuranceMedicinesPanel embedded />
-              </Suspense>
-            </FeatureGate>
+            {activeTab === 'insurance' ? (
+              <FeatureGate featureKey="pos.insurance">
+                <Suspense fallback={<DashboardPageLoading label="Loading insurance coverage…" />}>
+                  <PharmacyInsuranceMedicinesPanel embedded />
+                </Suspense>
+              </FeatureGate>
+            ) : null}
           </TabsContent>
         ) : null}
         
@@ -1402,9 +1404,11 @@ export default function InventoryPage() {
           </div>
         </TabsContent>
         
-        <TabsContent value="analytics" className="space-y-4">
-          <FeatureGate featureKey="inventory.analytics">
-          <div className="grid gap-4 md:grid-cols-2">
+        {showAnalyticsTab ? (
+          <TabsContent value="analytics" className="space-y-4">
+            {activeTab === 'analytics' ? (
+              <FeatureGate featureKey="inventory.analytics">
+                <div className="grid gap-4 md:grid-cols-2">
             <DashboardChartCard
               title="Stock by category"
               description="Inventory distribution"
@@ -1435,10 +1439,12 @@ export default function InventoryPage() {
                 <Tooltip formatter={(value) => [`${Number(value).toLocaleString()} RWF`, 'Value']} />
                 <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} />
               </LineChart>
-            </DashboardChartCard>
-          </div>
-          </FeatureGate>
-        </TabsContent>
+                </DashboardChartCard>
+              </div>
+              </FeatureGate>
+            ) : null}
+          </TabsContent>
+        ) : null}
         
         <TabsContent value="actions" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
@@ -1902,6 +1908,7 @@ export default function InventoryPage() {
       <Dialog
         open={isEditingProduct}
         onOpenChange={(open) => {
+          if (!open && isSavingEditProduct) return
           setIsEditingProduct(open)
           if (!open) {
             setEditProduct(null)
@@ -1925,6 +1932,7 @@ export default function InventoryPage() {
                 <Input 
                   type="number" 
                   value={editProduct.stock}
+                  disabled={isSavingEditProduct}
                   onChange={(e) =>
                     setEditProduct({
                       ...editProduct,
@@ -1938,6 +1946,7 @@ export default function InventoryPage() {
                 <Input 
                   type="number" 
                   value={editProduct.price}
+                  disabled={isSavingEditProduct}
                   onChange={(e) =>
                     setEditProduct({
                       ...editProduct,
@@ -1951,6 +1960,7 @@ export default function InventoryPage() {
                 <Input 
                   type="number" 
                   value={editProduct.minStock}
+                  disabled={isSavingEditProduct}
                   onChange={(e) =>
                     setEditProduct({
                       ...editProduct,
@@ -1972,6 +1982,7 @@ export default function InventoryPage() {
           )}
           <DashboardDialogFooter>
             <DashboardButton
+              disabled={isSavingEditProduct}
               onClick={() => {
                 setIsEditingProduct(false)
                 setEditProduct(null)
@@ -1980,7 +1991,20 @@ export default function InventoryPage() {
             >
               Cancel
             </DashboardButton>
-            <DashboardButton tone="primary" onClick={handleEditProduct}>Save Changes</DashboardButton>
+            <DashboardButton
+              tone="primary"
+              onClick={handleEditProduct}
+              disabled={isSavingEditProduct}
+            >
+              {isSavingEditProduct ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
+              )}
+            </DashboardButton>
           </DashboardDialogFooter>
         </DashboardDialogContent>
       </Dialog>

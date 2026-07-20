@@ -70,13 +70,22 @@ const EMPTY_DASHBOARD: CombinedDashboardData = {
   inventoryChart: [],
 };
 
+function dashboardCacheKey(
+  pharmacyId: string,
+  branchId: string | undefined,
+  range: { from: string; to: string },
+): string {
+  const rangeKey = `${range.from.slice(0, 10)}_${range.to.slice(0, 10)}`;
+  return `dashboard:${pharmacyId}:${branchId ?? "all"}:${rangeKey}`;
+}
+
 export async function loadCombinedDashboardData(
   pharmacyId: string,
   branchId?: string,
   range: { from: string; to: string } = defaultReportRange(30),
 ): Promise<CombinedDashboardData> {
   const today = new Date().toISOString().split("T")[0];
-  const cacheKey = `dashboard:${pharmacyId}:${branchId ?? "all"}:${today}`;
+  const cacheKey = dashboardCacheKey(pharmacyId, branchId, range);
 
   try {
     const cached = await cacheGet(cacheKey);

@@ -10,7 +10,7 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const POLL_MS = 3_000;
+const POLL_MS = 10_000;
 
 export async function GET(request: NextRequest) {
   const user = await getAuthUser();

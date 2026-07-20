@@ -13,6 +13,7 @@ import { dashboardSurfaces } from "@/components/dashboard/dashboard-tokens";
 import { cn } from "@/lib/utils";
 import { useEffect, useRef, type ReactNode } from "react";
 import { GlobalPrefetchProvider } from "@/components/global-prefetch-provider";
+import { RealtimeInvalidationBridge } from "@/components/shell/realtime-invalidation-bridge";
 
 type Props = {
   children: ReactNode;
@@ -63,6 +64,7 @@ export function DashboardProviders({
             {withPharmacyContext ? (
               <ActivePharmacyProvider>
                 <PharmacyBrandingProvider>
+                  <RealtimeInvalidationBridge />
                   <GlobalPrefetchProvider>{children}</GlobalPrefetchProvider>
                 </PharmacyBrandingProvider>
               </ActivePharmacyProvider>

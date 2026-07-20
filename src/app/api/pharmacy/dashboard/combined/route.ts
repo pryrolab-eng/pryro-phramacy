@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { unstable_cache } from "next/cache";
 import { getAuthUser } from "@/lib/auth/get-auth-user";
 import { requireUserPharmacyId } from "@/lib/pharmacy/get-session-pharmacy";
 import {
@@ -25,14 +24,11 @@ export async function GET(request: NextRequest) {
         ? { from: scope.from, to: scope.to }
         : defaultReportRange(30);
 
-    const getCachedData = unstable_cache(
-      async () =>
-        loadCombinedDashboardData(pharmacyId, scope.branchId, range),
-      [`dashboard-${pharmacyId}-${scope.branchId ?? "all"}`],
-      { revalidate: 600, tags: [`dashboard-${pharmacyId}`] },
+    const data = await loadCombinedDashboardData(
+      pharmacyId,
+      scope.branchId,
+      range,
     );
-
-    const data = await getCachedData();
     return NextResponse.json(data);
   } catch (error) {
     console.error("GET /api/pharmacy/dashboard/combined", error);

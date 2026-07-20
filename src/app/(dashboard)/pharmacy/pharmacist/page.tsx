@@ -2,9 +2,7 @@
 
 import { useEffect } from 'react'
 import { usePharmacyStore } from '@/hooks/usePharmacyStore'
-import { useRealtimeUpdates } from '@/hooks/useRealtimeUpdates'
 import {
-  useInvalidatePharmacistDashboard,
   usePharmacistActivities,
   usePharmacistChartData,
   usePharmacistDashboardStats,
@@ -90,7 +88,6 @@ export default function PharmacistDashboard() {
 function PharmacistDashboardContent() {
   const router = useRouter()
   const { setAlerts } = usePharmacyStore()
-  const invalidate = useInvalidatePharmacistDashboard()
 
   const statsQuery = usePharmacistDashboardStats()
   const prescriptionsQuery = usePharmacistPrescriptions()
@@ -132,16 +129,6 @@ function PharmacistDashboardContent() {
     activities: activitiesQuery.isPending,
     charts: chartQuery.isPending,
   }
-
-  useRealtimeUpdates((update) => {
-    if (update.type === 'inventory_update') {
-      void invalidate.invalidateStockAlerts()
-    }
-    if (update.type === 'new_sale') {
-      void invalidate.invalidateStats()
-      void invalidate.invalidateActivities()
-    }
-  })
 
   const trackActivity = (type: string, data: Record<string, unknown>) => {
     trackActivityMutation.mutate({ type, data })

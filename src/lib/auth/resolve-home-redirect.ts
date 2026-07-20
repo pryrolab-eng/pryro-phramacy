@@ -1,5 +1,6 @@
 import type { AuthUser } from "@/lib/auth/types";
 import { prisma } from "@/lib/db/prisma";
+import type { MeContextResponse } from "@/lib/http/me-context";
 import { PHARMACY_ROUTES } from "@/lib/routes/pharmacy-paths";
 import { isStaffWorkspaceRole } from "@/lib/rbac/pharmacy-roles";
 import { selectPrimaryMembership } from "@/utils/select-pharmacy-membership";
@@ -15,6 +16,60 @@ export const POST_AUTH_ENTRY_PATH = "/app";
 export type HomeRedirectResult =
   | { kind: "redirect"; path: string }
   | { kind: "unauthenticated" };
+
+function isPlatformAdminFromMemberships(
+  me: Pick<MeContextResponse, "user" | "memberships">,
+): boolean {
+  const primary = selectPrimaryMembership(
+    me.memberships.map((m) => ({ pharmacy_id: m.pharmacyId, role: m.role })),
+  );
+  return (
+    me.user.isPlatformAdmin ||
+    primary?.role === "superadmin" ||
+    primary?.role === "admin"
+  );
+}
+
+/** Derive post-login path from an already-loaded me context (avoids duplicate membership queries). */
+export async function resolveHomePathFromMeContext(
+  userId: string,
+  me: MeContextResponse,
+): Promise<string> {
+  if (isPlatformAdminFromMemberships(me)) {
+    return "/admin";
+  }
+
+  const userPharmacy = selectPrimaryMembership(
+    me.memberships.map((m) => ({ pharmacy_id: m.pharmacyId, role: m.role })),
+  );
+
+  if (!userPharmacy) {
+    const ownedPharmacy = await prisma.pharmacies.findFirst({
+      where: { owner_id: userId },
+      select: { id: true },
+    });
+
+    if (ownedPharmacy?.id) {
+      try {
+        await storeUpsertPharmacyMembership({
+          pharmacyId: ownedPharmacy.id,
+          userId,
+          role: "pharmacy_owner",
+        });
+        return PHARMACY_ROUTES.dashboard;
+      } catch {
+        // Membership repair failed; continue to onboarding.
+      }
+    }
+
+    return "/onboarding";
+  }
+
+  if (isStaffWorkspaceRole(userPharmacy.role)) {
+    return PHARMACY_ROUTES.staffDashboard;
+  }
+  return PHARMACY_ROUTES.dashboard;
+}
 
 /**
  * Resolves where an authenticated user should land after sign-in, OAuth, or 2FA.

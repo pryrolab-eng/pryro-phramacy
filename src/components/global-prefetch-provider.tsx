@@ -24,7 +24,7 @@ export function GlobalPrefetchProvider({ children }: { children: React.ReactNode
   const { scopeQuery, days } = useBranchReportScope();
 
   useEffect(() => {
-    // Warm core pharmacy caches so tab switches hit cache (no full-page loaders).
+    // Defer cross-page prefetch so the current route wins the connection pool first.
     const prefetchAll = async () => {
       await Promise.allSettled([
         queryClient.prefetchQuery({
@@ -72,7 +72,17 @@ export function GlobalPrefetchProvider({ children }: { children: React.ReactNode
       ]);
     };
 
-    void prefetchAll();
+    if (typeof window.requestIdleCallback === "function") {
+      const id = window.requestIdleCallback(() => {
+        void prefetchAll();
+      }, { timeout: 5000 });
+      return () => window.cancelIdleCallback(id);
+    }
+
+    const timer = window.setTimeout(() => {
+      void prefetchAll();
+    }, 2000);
+    return () => window.clearTimeout(timer);
   }, [queryClient, scopeQuery, days]);
 
   return <>{children}</>;
